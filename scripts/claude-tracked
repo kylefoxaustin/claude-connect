@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# claude-tracked — open Claude Code in its own Tilix window with a unique X11
+# title so Conductor can focus the precise window/tab on tile click.
+#
+# Install:
+#   sudo install -m755 scripts/claude-tracked /usr/local/bin/
+#
+# Usage:
+#   claude-tracked <name> [claude args...]
+#
+# Example:
+#   claude-tracked keyhole-yolo --resume
+#
+# Notes:
+#   - The window title becomes "claude:<name>". Conductor matches by exactly
+#     this prefix in `wmctrl -lp` output.
+#   - Falls back to gnome-terminal then xterm if tilix isn't installed.
+set -euo pipefail
+
+NAME="${1:?usage: claude-tracked <name> [claude args...]}"
+shift || true
+
+TITLE="claude:${NAME}"
+
+if command -v tilix >/dev/null 2>&1; then
+  exec tilix --title "${TITLE}" -- bash -c "claude $*; exec bash"
+elif command -v gnome-terminal >/dev/null 2>&1; then
+  # gnome-terminal sets the title via -t; some versions ignore it once a shell
+  # rewrites PS1. Best-effort.
+  exec gnome-terminal --title="${TITLE}" -- bash -c "claude $*; exec bash"
+elif command -v xterm >/dev/null 2>&1; then
+  exec xterm -T "${TITLE}" -e bash -c "claude $*; exec bash"
+else
+  echo "claude-tracked: no supported terminal emulator found (tilix, gnome-terminal, xterm)" >&2
+  exit 127
+fi

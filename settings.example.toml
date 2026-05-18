@@ -1,0 +1,34 @@
+# Copy to settings.toml and edit. Conductor reads ./settings.toml at startup.
+
+[server]
+host = "127.0.0.1"
+port = 8765
+
+[scanner]
+# Seconds between full process rescans. Inotify pushes mtime updates between scans.
+interval_seconds = 3.0
+# Glob roots searched for ~/.claude/projects/*. Override if you keep Claude state elsewhere.
+claude_home = "~/.claude"
+
+[bus]
+# Adapter: "markdown" (Kyle's claude-bus), "jsonl" (generic), or "fake" (synthetic events).
+adapter = "markdown"
+
+# Markdown adapter: append-only `## YYYY-MM-DD HH:MM [tag]` log.
+markdown_path = "~/Documents/claude-bus/messages.md"
+state_dir     = "~/.claude/bus-state"
+script_path   = "~/.claude/bin/bus.sh"
+
+# JSONL adapter (alternative): one event per line; see conductor/bus.py for schema.
+jsonl_path = "~/.skippy/bus.jsonl"
+
+# Seconds of bus quiet before the bus tile dims.
+idle_seconds = 30.0
+
+[skippy]
+# Stubbed for now. Set enabled = true to render placeholder Skippy tiles.
+enabled = true
+
+[ui]
+# Seconds an ended session tile fades out before removal.
+end_fadeout_seconds = 30.0

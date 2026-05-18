@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Conductor</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>Conductor</h1>
+      <div class="topbar-meta">
+        <span id="conn-state" class="conn-state conn-down">disconnected</span>
+        <span id="session-count">0 sessions</span>
+        <button id="refresh-btn" title="Force rescan">Refresh</button>
+      </div>
+    </header>
+
+    <main id="grid" class="grid">
+      <!-- Tiles injected by tiles.js. -->
+    </main>
+
+    <!-- SVG overlay for connection lines, sized to viewport. -->
+    <svg id="lines-overlay" class="lines-overlay" aria-hidden="true"></svg>
+
+    <!-- Bus modal, hidden by default. -->
+    <div id="bus-modal" class="modal hidden">
+      <div class="modal-card">
+        <header>
+          <h2>Bus events</h2>
+          <button id="bus-modal-close">×</button>
+        </header>
+        <ul id="bus-modal-feed" class="bus-feed"></ul>
+      </div>
+    </div>
+
+    <script type="module" src="/static/app.js"></script>
+  </body>
+</html>
