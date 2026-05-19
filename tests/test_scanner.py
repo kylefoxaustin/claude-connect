@@ -13,9 +13,11 @@ from conductor.scanner import (
     encode_cwd,
     extract_preview,
     newest_jsonl,
+    parse_custom_title,
     parse_session_meta,
 )
 from conductor.models import Status
+from conductor.windows import _best_title_match
 
 
 def test_encode_cwd_replaces_slashes():
@@ -76,6 +78,54 @@ def test_parse_session_meta_no_summary(tmp_path: Path):
     assert sid == "session-noname"
     assert title is None
     assert count == 1
+
+
+def test_parse_custom_title_from_head(tmp_path: Path):
+    p = tmp_path / "s.jsonl"
+    lines = [
+        {"type": "customTitle", "customTitle": "Project: 95emulator", "sessionId": "s"},
+        {"type": "user", "message": {"content": "hi"}},
+    ]
+    p.write_text("\n".join(json.dumps(o) for o in lines))
+    assert parse_custom_title(p) == "Project: 95emulator"
+
+
+def test_parse_custom_title_newest_wins(tmp_path: Path):
+    p = tmp_path / "s.jsonl"
+    lines = [
+        {"type": "customTitle", "customTitle": "Old Name", "sessionId": "s"},
+        {"type": "user", "message": {"content": "hi"}},
+        {"type": "customTitle", "customTitle": "New Name", "sessionId": "s"},
+    ]
+    p.write_text("\n".join(json.dumps(o) for o in lines))
+    assert parse_custom_title(p) == "New Name"
+
+
+def test_parse_custom_title_absent(tmp_path: Path):
+    p = tmp_path / "s.jsonl"
+    p.write_text(json.dumps({"type": "user", "message": {"content": "hi"}}))
+    assert parse_custom_title(p) is None
+
+
+def test_best_title_match_prefers_most_specific():
+    # tilix windows all share a pid; titles disambiguate.
+    windows = [
+        (0x1, 8040, "skippy ✳ Project keyhole-sizer"),
+        (0x2, 8040, "skippy ✳ Project: Keyhole"),
+        (0x3, 8040, "skippy ⠐ Project: 95emulator"),
+    ]
+    # "keyhole" appears in two titles; the shorter (Keyhole) is the better match.
+    assert _best_title_match(windows, "keyhole") == 0x2
+    # "keyhole-sizer" only matches the sizer window.
+    assert _best_title_match(windows, "keyhole-sizer") == 0x1
+    # customTitle match is exact.
+    assert _best_title_match(windows, "Project: 95emulator") == 0x3
+
+
+def test_best_title_match_no_match_returns_none():
+    windows = [(0x1, 8040, "skippy ✳ Project: Keyhole")]
+    assert _best_title_match(windows, "nonexistent") is None
+    assert _best_title_match(windows, None) is None
 
 
 def test_extract_preview_text_blocks(tmp_path: Path):

@@ -1,11 +1,10 @@
 // app.js — WebSocket client + top-level state. Delegates rendering to tiles.js / lines.js.
 
-import { renderGrid, flashTilePreview, fadeOutSession } from "/static/tiles.js";
+import { renderGrid, flashTilePreview, fadeOutSession, resetLayout } from "/static/tiles.js";
 import { redrawLines, animateLineFor } from "/static/lines.js";
 
 const state = {
   sessions: [],     // SessionRecord[]
-  skippy: [],       // SkippyTile[]
   fadeoutSeconds: 30,
   wmctrlAvailable: false,
 
@@ -55,7 +54,6 @@ function handleMessage({ kind, payload }) {
   switch (kind) {
     case "sessions":
       state.sessions = payload.sessions || [];
-      state.skippy = payload.skippy || [];
       state.fadeoutSeconds = payload.fadeout_seconds ?? 30;
       state.wmctrlAvailable = !!payload.wmctrl_available;
       sessionCountEl.textContent = `${state.sessions.length} session${state.sessions.length === 1 ? "" : "s"}`;
@@ -107,6 +105,10 @@ function animateLineForTag(tag) {
   const match = state.sessions.find((s) => s.tag === tag);
   if (match) animateLineFor(match.session_id);
 }
+
+document.getElementById("reset-layout-btn").addEventListener("click", () => {
+  resetLayout();
+});
 
 document.getElementById("refresh-btn").addEventListener("click", async () => {
   try {

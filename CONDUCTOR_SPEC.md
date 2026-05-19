@@ -263,7 +263,7 @@ Total realistic budget: ~2–3 evenings of Claude-Code-assisted coding for phase
 
 1. **Bus implementation** — JSONL log file watcher. Path configurable via `settings.toml`.
 2. **Multiple Claudes in one project dir** — assumed one Claude per project dir (tile keyed by project_dir).
-3. **Skippy framework activity** — yes, but stubbed for now (placeholder tiles, distinct visual treatment).
+3. **Skippy framework activity** — considered but removed; Conductor monitors Claude Code sessions + the bus only.
 4. **Tile order** — manual drag + pin, localStorage-persisted.
 5. **Session-end behavior** — fade out, remove after 30s.
 
@@ -287,7 +287,6 @@ claude-connect/                   # repo root
 │   ├── activity.py
 │   ├── windows.py
 │   ├── bus.py
-│   ├── skippy.py
 │   ├── models.py
 │   ├── settings.py
 │   └── ws.py

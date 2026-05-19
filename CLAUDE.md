@@ -27,6 +27,5 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - ✅ Phase 3: BusAdapter + Bus tile + notification badge
 - ✅ Phase 4: SVG connection lines + flow animation
 - ✅ Phase 5: claude-tracked + WindowMapper + focus action
-- 🟡 Skippy adapter — stubbed (placeholder tiles only)
 
 See `CONDUCTOR_SPEC.md` for full design.

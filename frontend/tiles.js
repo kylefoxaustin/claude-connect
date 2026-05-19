@@ -1,78 +1,126 @@
-// tiles.js — render Claude session tiles + Bus tile + Skippy tiles.
+// tiles.js — render Claude session tiles + Bus tile.
+//
+// Layout model: each tile is absolutely positioned within #grid. Positions
+// (per tile key) live in localStorage and survive re-renders. New tiles
+// cascade into the next free slot in a virtual row-major grid.
 
-const PIN_KEY = "conductor.pinnedOrder.v1";
+import { redrawLines } from "/static/lines.js";
 
-function loadPinnedOrder() {
-  try {
-    return JSON.parse(localStorage.getItem(PIN_KEY) || "[]");
-  } catch {
-    return [];
-  }
+const POS_KEY = "conductor.positions.v1";
+
+const TILE_W   = 280;
+const TILE_H   = 220;   // approximate; tiles can grow taller from content
+const GAP      = 16;
+const OFFSET_X = 20;
+const OFFSET_Y = 20;
+const DRAG_THRESHOLD = 4;  // px before a click becomes a drag
+
+function loadPositions() {
+  try { return JSON.parse(localStorage.getItem(POS_KEY) || "{}"); }
+  catch { return {}; }
 }
-function savePinnedOrder(order) {
-  try { localStorage.setItem(PIN_KEY, JSON.stringify(order)); } catch {}
+function savePositions(p) {
+  try { localStorage.setItem(POS_KEY, JSON.stringify(p)); } catch {}
 }
 
-let pinnedOrder = loadPinnedOrder();
-let dragSrcKey = null;
+let positions = loadPositions();
 
-function tileKeyForSession(s)  { return `session:${s.session_id}`; }
-function tileKeyForSkippy(t)   { return `skippy:${t.component_id}`; }
+function tileKeyForSession(s) { return `session:${s.session_id}`; }
 const BUS_KEY = "bus:bus";
+
+export function resetLayout() {
+  positions = {};
+  savePositions(positions);
+  renderGrid(window.conductorState);
+  requestAnimationFrame(() => redrawLines(window.conductorState));
+}
+
+function viewportCols() {
+  return Math.max(1, Math.floor((window.innerWidth - 2 * OFFSET_X + GAP) / (TILE_W + GAP)));
+}
+
+function clampX(x) {
+  const maxX = Math.max(OFFSET_X, window.innerWidth - TILE_W - OFFSET_X);
+  return Math.min(Math.max(0, x), maxX);
+}
+
+// Find next free slot in row-major order that doesn't overlap any stored position.
+function nextCascadeSlot() {
+  const cols = viewportCols();
+  const occupied = Object.values(positions);
+  const minDx = (TILE_W + GAP) / 2;
+  const minDy = (TILE_H + GAP) / 2;
+  for (let row = 0; row < 200; row++) {
+    for (let col = 0; col < cols; col++) {
+      const x = OFFSET_X + col * (TILE_W + GAP);
+      const y = OFFSET_Y + row * (TILE_H + GAP);
+      const overlap = occupied.some(p => Math.abs(p.x - x) < minDx && Math.abs(p.y - y) < minDy);
+      if (!overlap) return { x, y };
+    }
+  }
+  return { x: OFFSET_X, y: OFFSET_Y };
+}
+
+function ensurePosition(key) {
+  if (!positions[key]) {
+    positions[key] = nextCascadeSlot();
+    savePositions(positions);
+  }
+  return positions[key];
+}
+
+function applyPosition(tile, key) {
+  const p = ensurePosition(key);
+  tile.style.left = clampX(p.x) + "px";
+  tile.style.top  = Math.max(0, p.y) + "px";
+}
+
+function updateGridExtent() {
+  // Grow #grid's min-height so the body scroll covers the lowest tile.
+  const grid = document.getElementById("grid");
+  if (!grid) return;
+  let maxBottom = 0;
+  for (const child of grid.children) {
+    const bottom = child.offsetTop + child.offsetHeight;
+    if (bottom > maxBottom) maxBottom = bottom;
+  }
+  grid.style.minHeight = (maxBottom + OFFSET_Y) + "px";
+}
 
 export function renderGrid(state) {
   const grid = document.getElementById("grid");
 
-  // Build [{key, html-builder}] in a stable order: pinned first (in pinned order),
-  // then unpinned by activity recency.
+  // Always render: Bus tile + every session tile.
   const items = [];
   items.push({ key: BUS_KEY, render: () => busTile(state) });
   for (const s of state.sessions) {
     items.push({ key: tileKeyForSession(s), render: () => sessionTile(s, state) });
   }
-  for (const t of state.skippy) {
-    items.push({ key: tileKeyForSkippy(t), render: () => skippyTile(t) });
-  }
 
-  // Sort: pinned (in pinnedOrder), then unpinned (by last_activity desc, bus pinned-ish to top).
-  const pinnedSet = new Set(pinnedOrder);
-  const pinnedItems = pinnedOrder
-    .map((k) => items.find((it) => it.key === k))
-    .filter(Boolean);
-  const unpinnedItems = items.filter((it) => !pinnedSet.has(it.key));
-  unpinnedItems.sort((a, b) => sortKey(b, state) - sortKey(a, state));
+  // Garbage-collect positions for tiles that no longer exist (so cascade slots
+  // they were occupying free up). Keep BUS_KEY always.
+  const liveKeys = new Set(items.map(it => it.key));
+  let mutated = false;
+  for (const k of Object.keys(positions)) {
+    if (!liveKeys.has(k)) { delete positions[k]; mutated = true; }
+  }
+  if (mutated) savePositions(positions);
 
   grid.innerHTML = "";
-  for (const it of [...pinnedItems, ...unpinnedItems]) {
+  for (const it of items) {
     const node = it.render();
     node.dataset.tileKey = it.key;
-    if (pinnedSet.has(it.key)) {
-      const pinBtn = node.querySelector(".pin-btn");
-      if (pinBtn) pinBtn.classList.add("pinned");
-    }
-    wireDragHandlers(node);
     grid.appendChild(node);
+    applyPosition(node, it.key);
+    wirePointerDrag(node, it.key);
   }
-}
-
-function sortKey(item, state) {
-  if (item.key === BUS_KEY) return Number.POSITIVE_INFINITY; // bus tile first among unpinned
-  if (item.key.startsWith("session:")) {
-    const id = item.key.slice("session:".length);
-    const s = state.sessions.find((x) => x.session_id === id);
-    return s ? s.last_activity_at : 0;
-  }
-  return -1; // skippy tiles last
+  updateGridExtent();
 }
 
 function statusLabel(status) {
   return {
-    active: "active",
-    warm: "warm",
-    idle: "idle",
-    dormant: "dormant",
-    waiting: "waiting",
-    ended: "ended",
+    active: "active", warm: "warm", idle: "idle", dormant: "dormant",
+    waiting: "waiting", ended: "ended",
   }[status] || status;
 }
 
@@ -102,30 +150,7 @@ function el(tag, props = {}, ...children) {
   return e;
 }
 
-function pinButton(key) {
-  const isPinned = pinnedOrder.includes(key);
-  return el("button", {
-    class: "icon-btn pin-btn" + (isPinned ? " pinned" : ""),
-    title: isPinned ? "Unpin" : "Pin",
-    onclick: (e) => {
-      e.stopPropagation();
-      togglePin(key);
-    },
-  }, isPinned ? "★" : "☆");
-}
-
-function togglePin(key) {
-  if (pinnedOrder.includes(key)) {
-    pinnedOrder = pinnedOrder.filter((k) => k !== key);
-  } else {
-    pinnedOrder.push(key);
-  }
-  savePinnedOrder(pinnedOrder);
-  renderGrid(window.conductorState);
-}
-
 function sessionTile(s, state) {
-  const key = tileKeyForSession(s);
   const focusBtn = el("button", {
     class: "icon-btn",
     title: state.wmctrlAvailable ? "Focus terminal" : "wmctrl not installed",
@@ -134,7 +159,7 @@ function sessionTile(s, state) {
       e.stopPropagation();
       if (state.wmctrlAvailable) window.requestFocus(s.session_id);
     },
-  }, "⏵");
+  }, "▶");
 
   const pending = s.pending_count || 0;
   const pendingBadge = pending > 0
@@ -161,7 +186,7 @@ function sessionTile(s, state) {
         el("span", { class: `status-dot ${s.status}`, title: statusLabel(s.status) }),
         el("span", { class: "tile-title" }, s.title || "(untitled)"),
       ),
-      el("div", { class: "tile-actions" }, pendingBadge, pinButton(key), focusBtn),
+      el("div", { class: "tile-actions" }, pendingBadge, focusBtn),
     ),
     el("div", { class: "tile-projectdir", title: s.project_dir },
       tagChip, tagChip ? " " : null, s.project_dir,
@@ -174,7 +199,6 @@ function sessionTile(s, state) {
   );
 
   if (s.status === "ended") {
-    // Trigger CSS fade by toggling .fading on next frame.
     requestAnimationFrame(() => tile.classList.add("fading"));
   }
   return tile;
@@ -182,9 +206,21 @@ function sessionTile(s, state) {
 
 function busTile(state) {
   const total = state.busTotal || 0;
-  // Aggregate pending across all known tags (per-session tiles also show their own).
   const pendingByTag = state.busPendingByTag || {};
-  const totalPending = Object.values(pendingByTag).reduce((a, b) => a + (b || 0), 0);
+  // Split pending into "active" (tags with a live tile right now) vs the full
+  // backlog (includes dormant tags like a frontend session not launched in days).
+  const activeTags = new Set(
+    (state.sessions || []).filter((s) => s.status !== "ended" && s.tag).map((s) => s.tag),
+  );
+  let activePending = 0;
+  let allPending = 0;
+  for (const [tag, n] of Object.entries(pendingByTag)) {
+    const c = n || 0;
+    allPending += c;
+    if (activeTags.has(tag)) activePending += c;
+  }
+  const pendingTitle = `${activePending} unread for active sessions`
+    + (allPending > activePending ? ` · ${allPending} total incl. dormant tags` : "");
   const recentItems = (state.busRecent || []).slice(-5).reverse().map((ev) => {
     const t = new Date(ev.timestamp * 1000).toLocaleTimeString();
     const body = ev.payload_summary || "";
@@ -196,86 +232,106 @@ function busTile(state) {
   return el("div", {
     class: "tile bus-tile",
     dataset: { busTile: "1" },
-    onclick: () => window.openBusModal(),
+    onclick: (e) => {
+      // Only open modal on a plain click — not the end of a drag (handled in pointerup).
+      if (e.target.closest("button, .pending-badge")) return;
+      if (!tileWasDragged) window.openBusModal();
+    },
   },
     el("div", { class: "tile-header" },
       el("div", { class: "tile-title-wrap" },
         el("span", { class: "status-dot active" }),
         el("span", { class: "tile-title" }, "Bus",
-          totalPending > 0 ? el("span", { class: "bus-badge" }, String(totalPending)) : null,
+          el("span", { class: "bus-badge msgs", title: `${total} messages on the bus` }, `📨 ${total}`),
+          activePending > 0
+            ? el("span", { class: "bus-badge pending", title: pendingTitle }, `📬 ${activePending}`)
+            : null,
         ),
       ),
-      el("div", { class: "tile-actions" }, pinButton(BUS_KEY)),
     ),
     el("div", { class: "tile-projectdir" }, `claude-bus · ${adapter}`),
     el("div", { class: "tile-preview" }, previewText),
     el("div", { class: "tile-footer" },
-      el("span", {}, `total: ${total}`),
+      el("span", { title: "all unread across every tag, including dormant ones" },
+        `${allPending} unread`),
       el("span", {}, `tags: ${Object.keys(state.busTopology?.subscribers || {}).length}`),
     ),
   );
 }
 
-function skippyTile(t) {
-  const key = tileKeyForSkippy(t);
-  return el("div", {
-    class: `tile skippy-tile status-${t.status}`,
-    dataset: { skippyId: t.component_id },
-  },
-    el("div", { class: "tile-header" },
-      el("div", { class: "tile-title-wrap" },
-        el("span", { class: `status-dot ${t.status}` }),
-        el("span", { class: "tile-title" }, t.label),
-      ),
-      el("div", { class: "tile-actions" }, pinButton(key)),
-    ),
-    el("div", { class: "tile-projectdir" }, "skippy framework"),
-    el("div", { class: "tile-preview" }, t.detail),
-    el("div", { class: "tile-footer" },
-      el("span", {}, statusLabel(t.status)),
-      el("span", {}, "stub"),
-    ),
-  );
+// --- Pointer-based drag -----------------------------------------------------
+// Uses pointer events with a small movement threshold so simple clicks (and
+// double-clicks for focus) still work. Updates lines.js in real time as you
+// drag so the SVG connections track the tile.
+
+let tileWasDragged = false; // read by bus-tile onclick to suppress modal-after-drag
+
+function wirePointerDrag(tile, key) {
+  let pointerId = null;
+  let startX = 0, startY = 0;
+  let origX  = 0, origY  = 0;
+  let dragging = false;
+
+  tile.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    if (e.target.closest("button, .pending-badge")) return;
+    pointerId = e.pointerId;
+    startX = e.clientX; startY = e.clientY;
+    origX = parseFloat(tile.style.left) || 0;
+    origY = parseFloat(tile.style.top)  || 0;
+    dragging = false;
+    tileWasDragged = false;
+    tile.setPointerCapture(pointerId);
+  });
+
+  tile.addEventListener("pointermove", (e) => {
+    if (e.pointerId !== pointerId) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    if (!dragging && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
+      dragging = true;
+      tile.classList.add("dragging");
+      tile.style.zIndex = "100";
+    }
+    if (dragging) {
+      tile.style.left = (origX + dx) + "px";
+      tile.style.top  = Math.max(0, origY + dy) + "px";
+      redrawLines(window.conductorState);
+    }
+  });
+
+  function endPointer(e) {
+    if (e.pointerId !== pointerId) return;
+    if (dragging) {
+      const x = parseFloat(tile.style.left) || 0;
+      const y = parseFloat(tile.style.top)  || 0;
+      positions[key] = { x, y };
+      savePositions(positions);
+      tile.classList.remove("dragging");
+      tile.style.zIndex = "";
+      tileWasDragged = true;
+      updateGridExtent();
+      redrawLines(window.conductorState);
+      // Let click-suppression flag reset after the click event fires.
+      setTimeout(() => { tileWasDragged = false; }, 0);
+    }
+    try { tile.releasePointerCapture(pointerId); } catch {}
+    pointerId = null;
+    dragging = false;
+  }
+  tile.addEventListener("pointerup", endPointer);
+  tile.addEventListener("pointercancel", endPointer);
 }
 
-// --- Drag & pin reorder -----------------------------------------------------
-
-function wireDragHandlers(tile) {
-  tile.draggable = true;
-  tile.addEventListener("dragstart", (e) => {
-    dragSrcKey = tile.dataset.tileKey;
-    tile.classList.add("dragging");
-    e.dataTransfer.effectAllowed = "move";
-    try { e.dataTransfer.setData("text/plain", dragSrcKey); } catch {}
-  });
-  tile.addEventListener("dragend", () => {
-    tile.classList.remove("dragging");
-    document.querySelectorAll(".drop-target").forEach((n) => n.classList.remove("drop-target"));
-    dragSrcKey = null;
-  });
-  tile.addEventListener("dragover", (e) => {
-    if (!dragSrcKey || dragSrcKey === tile.dataset.tileKey) return;
-    e.preventDefault();
-    tile.classList.add("drop-target");
-  });
-  tile.addEventListener("dragleave", () => tile.classList.remove("drop-target"));
-  tile.addEventListener("drop", (e) => {
-    e.preventDefault();
-    tile.classList.remove("drop-target");
-    const srcKey = dragSrcKey;
-    const dstKey = tile.dataset.tileKey;
-    if (!srcKey || srcKey === dstKey) return;
-
-    // Pinning the dragged tile (and the target if not already pinned) gives us
-    // a stable manual order. Insertion before the target.
-    pinnedOrder = pinnedOrder.filter((k) => k !== srcKey);
-    if (!pinnedOrder.includes(dstKey)) pinnedOrder.push(dstKey);
-    const dstIdx = pinnedOrder.indexOf(dstKey);
-    pinnedOrder.splice(dstIdx, 0, srcKey);
-    savePinnedOrder(pinnedOrder);
-    renderGrid(window.conductorState);
-  });
-}
+// Re-clamp positions on viewport resize so tiles don't sit fully off-screen.
+window.addEventListener("resize", () => {
+  for (const child of document.querySelectorAll("#grid > .tile")) {
+    const key = child.dataset.tileKey;
+    if (!key || !positions[key]) continue;
+    child.style.left = clampX(positions[key].x) + "px";
+  }
+  updateGridExtent();
+});
 
 // --- helpers exposed for app.js ---------------------------------------------
 

@@ -73,16 +73,16 @@ html, body {
 .conn-down { background: rgba(248, 81, 73, 0.15); color: var(--status-ended); }
 
 .grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
-  padding: 20px;
   position: relative;
   z-index: 1;
+  /* Free positioning surface — tiles are absolutely positioned. min-height is
+     set dynamically by tiles.js so the body scroll covers the lowest tile. */
+  min-height: calc(100vh - 60px);
 }
 
 .tile {
-  position: relative;
+  position: absolute;
+  width: 280px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -91,12 +91,18 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  transition: border-color 0.2s, opacity 0.4s, transform 0.2s, box-shadow 0.2s;
+  transition: border-color 0.2s, opacity 0.4s, box-shadow 0.2s;
   cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
 }
-.tile:active { cursor: grabbing; }
-.tile.dragging { opacity: 0.6; transform: scale(1.02); }
-.tile.drop-target { outline: 2px dashed var(--accent); }
+.tile.dragging {
+  cursor: grabbing;
+  opacity: 0.85;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  transition: none;
+}
 .tile.fading { opacity: 0; transform: scale(0.95); }
 
 .tile-header {
@@ -209,15 +215,24 @@ html, body {
 
 .bus-badge {
   display: inline-block;
-  background: var(--status-ended);
-  color: white;
   font-size: 10px;
   font-weight: 700;
-  padding: 1px 6px;
+  padding: 1px 7px;
   border-radius: 999px;
   margin-left: 6px;
+  white-space: nowrap;
 }
-.bus-badge.zero { display: none; }
+/* Total message count — neutral/informational. */
+.bus-badge.msgs {
+  background: rgba(188, 140, 255, 0.16);
+  color: var(--bus-color);
+  border: 1px solid rgba(188, 140, 255, 0.35);
+}
+/* Unread for active sessions — actionable alert. */
+.bus-badge.pending {
+  background: var(--status-ended);
+  color: white;
+}
 
 .pending-badge {
   display: inline-flex;
@@ -247,14 +262,6 @@ html, body {
   border-radius: 3px;
   margin-right: 4px;
 }
-
-/* Skippy tiles: subtle distinction. */
-.tile.skippy-tile {
-  background: #15212b;
-  border-color: rgba(68, 147, 248, 0.3);
-  border-style: dotted;
-}
-.tile.skippy-tile .tile-title::before { content: "⚙ "; opacity: 0.7; }
 
 /* SVG connection-line overlay sits above the grid background but below tiles. */
 .lines-overlay {

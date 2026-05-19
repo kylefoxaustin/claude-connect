@@ -20,14 +20,10 @@ state_dir     = "~/.claude/bus-state"
 script_path   = "~/.claude/bin/bus.sh"
 
 # JSONL adapter (alternative): one event per line; see conductor/bus.py for schema.
-jsonl_path = "~/.skippy/bus.jsonl"
+jsonl_path = "~/.claude/bus.jsonl"
 
 # Seconds of bus quiet before the bus tile dims.
 idle_seconds = 30.0
-
-[skippy]
-# Stubbed for now. Set enabled = true to render placeholder Skippy tiles.
-enabled = true
 
 [ui]
 # Seconds an ended session tile fades out before removal.

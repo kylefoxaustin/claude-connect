@@ -35,7 +35,7 @@ class BusSettings:
     markdown_path: str = "~/Documents/claude-bus/messages.md"
     state_dir: str = "~/.claude/bus-state"
     script_path: str = "~/.claude/bin/bus.sh"
-    jsonl_path: str = "~/.skippy/bus.jsonl"
+    jsonl_path: str = "~/.claude/bus.jsonl"
     idle_seconds: float = 30.0
 
     @property
@@ -56,11 +56,6 @@ class BusSettings:
 
 
 @dataclass
-class SkippySettings:
-    enabled: bool = False
-
-
-@dataclass
 class UISettings:
     end_fadeout_seconds: float = 30.0
 
@@ -70,7 +65,6 @@ class Settings:
     server: ServerSettings = field(default_factory=ServerSettings)
     scanner: ScannerSettings = field(default_factory=ScannerSettings)
     bus: BusSettings = field(default_factory=BusSettings)
-    skippy: SkippySettings = field(default_factory=SkippySettings)
     ui: UISettings = field(default_factory=UISettings)
 
 
@@ -84,6 +78,5 @@ def load_settings(path: Path | str | None = None) -> Settings:
         server=ServerSettings(**data.get("server", {})),
         scanner=ScannerSettings(**data.get("scanner", {})),
         bus=BusSettings(**data.get("bus", {})),
-        skippy=SkippySettings(**data.get("skippy", {})),
         ui=UISettings(**data.get("ui", {})),
     )

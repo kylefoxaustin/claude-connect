@@ -43,39 +43,72 @@ def list_windows() -> list[tuple[int, int, str]]:
     return rows
 
 
-def focus_session(*, terminal_pid: int | None, title_hint: str | None) -> bool:
-    """Try to focus the terminal window for a session. Returns True on success.
+def _raise_window(wid: int) -> bool:
+    try:
+        r = subprocess.run(
+            ["wmctrl", "-i", "-a", f"0x{wid:08x}"], capture_output=True, timeout=2.0,
+        )
+        return r.returncode == 0
+    except (subprocess.TimeoutExpired, OSError):
+        return False
 
-    Strategy:
-      1. If there's a window titled `claude:<title_hint>`, focus by title (precise tab).
-      2. Else, find any window whose PID matches `terminal_pid` and raise it.
+
+def _best_title_match(windows: list[tuple[int, int, str]], hint: str | None) -> int | None:
+    """Window id whose title contains ``hint`` (case-insensitive). When several
+    match, prefer the shortest title — the least extra text around the hint, i.e.
+    the most specific match (so "keyhole" picks "Project: Keyhole" over
+    "Project keyhole-sizer")."""
+    if not hint:
+        return None
+    h = hint.lower()
+    matches = [(wid, title) for wid, _pid, title in windows if h in title.lower()]
+    if not matches:
+        return None
+    matches.sort(key=lambda wt: len(wt[1]))
+    return matches[0][0]
+
+
+def focus_session(
+    *,
+    terminal_pid: int | None,
+    title: str | None = None,
+    window_title: str | None = None,
+) -> bool:
+    """Focus a session's terminal window. Returns True on success.
+
+    A single terminal server (tilix, gnome-terminal-server) owns *all* its
+    windows, so they share one PID — PID matching alone can't tell them apart.
+    We match on the window title instead, scoped to that terminal's windows:
+
+      1. ``claude:<name>`` exact-ish title (the `claude-tracked` wrapper).
+      2. ``window_title`` (the session's customTitle, which Claude Code writes
+         to the X11 window title) — the reliable key.
+      3. ``title`` (summary / project basename) as a looser fallback.
+      4. Any window owned by ``terminal_pid`` (ambiguous last resort).
     """
     if not wmctrl_available():
         return False
 
-    if title_hint:
-        target = f"claude:{title_hint}"
-        try:
-            r = subprocess.run(
-                ["wmctrl", "-a", target], capture_output=True, timeout=2.0,
-            )
-            if r.returncode == 0:
+    windows = list_windows()
+    # Scope title matching to this terminal's own windows when we can identify
+    # them — disambiguates among sibling terminal windows and avoids matching
+    # unrelated app windows that happen to share a project name in their title.
+    term_windows = [w for w in windows if terminal_pid is not None and w[1] == terminal_pid]
+    search = term_windows or windows
+
+    for hint in (window_title, title):
+        if hint:
+            wid = _best_title_match(windows, f"claude:{hint}")
+            if wid is not None and _raise_window(wid):
                 return True
-        except (subprocess.TimeoutExpired, OSError):
-            pass
 
-    if terminal_pid is None:
-        return False
+    for hint in (window_title, title):
+        wid = _best_title_match(search, hint)
+        if wid is not None and _raise_window(wid):
+            return True
 
-    for wid, pid, _title in list_windows():
-        if pid == terminal_pid:
-            try:
-                r = subprocess.run(
-                    ["wmctrl", "-i", "-a", f"0x{wid:08x}"],
-                    capture_output=True, timeout=2.0,
-                )
-                if r.returncode == 0:
-                    return True
-            except (subprocess.TimeoutExpired, OSError):
-                continue
+    if terminal_pid is not None:
+        for wid, pid, _title in windows:
+            if pid == terminal_pid and _raise_window(wid):
+                return True
     return False

@@ -60,4 +60,4 @@ Each invocation opens a fresh Tilix window titled `claude:keyhole-yolo` that Con
 
 ## Phases
 
-See `CONDUCTOR_SPEC.md`. All phases 0–5 implemented; Skippy adapter is a stub (set `[skippy] enabled = true` to see placeholder tiles).
+See `CONDUCTOR_SPEC.md`. All phases 0–5 implemented.

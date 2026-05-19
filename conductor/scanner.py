@@ -153,6 +153,37 @@ def parse_session_meta(jsonl_path: Path) -> tuple[str, str | None, int]:
     return session_id, title, count
 
 
+def _head_lines(path: Path, max_bytes: int = 65536) -> list[str]:
+    try:
+        with path.open("rb") as f:
+            data = f.read(max_bytes)
+    except OSError:
+        return []
+    return [line for line in data.decode("utf-8", errors="replace").splitlines() if line.strip()]
+
+
+def parse_custom_title(jsonl_path: Path) -> str | None:
+    """Return the session's ``customTitle`` (set via /rename), newest wins, or None.
+
+    Claude Code writes this same string to the terminal/window title, so it's the
+    reliable hint for matching a session to its X11 window. The record is usually
+    near the head (rename at session start) but a later /rename appends a fresh
+    one near the tail — so we check the tail first, then fall back to the head.
+    """
+    def _find(lines: list[str]) -> str | None:
+        for line in reversed(lines):
+            try:
+                rec = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            ct = rec.get("customTitle")
+            if isinstance(ct, str) and ct.strip():
+                return ct.strip()
+        return None
+
+    return _find(_tail_lines(jsonl_path, max_bytes=131072)) or _find(_head_lines(jsonl_path))
+
+
 def extract_preview(jsonl_path: Path, max_chars: int = 200) -> str:
     """Pull the most recent text content from the jsonl as a one-line preview."""
     for line in reversed(_tail_lines(jsonl_path, max_bytes=32768)):
@@ -241,6 +272,7 @@ class SessionScanner:
                 message_count=msg_count,
                 preview=preview,
                 tag=derive_tag(cwd),
+                window_title=parse_custom_title(jsonl),
             )
             # Decision §12.2: one Claude per project dir; on collision keep the most recent.
             existing = out.get(cwd)

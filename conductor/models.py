@@ -30,6 +30,7 @@ class SessionRecord:
     ended_at: float | None = None  # set when status flips to ENDED
     tag: str = ""                  # claude-bus tag, e.g. "[backend]"
     pending_count: int = 0         # unread bus messages for this tag
+    window_title: str | None = None  # session's customTitle (/rename); matches the X11 window title
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -56,17 +57,3 @@ class BusTopology:
 
     def to_dict(self) -> dict[str, Any]:
         return {"subscribers": self.subscribers}
-
-
-@dataclass
-class SkippyTile:
-    """Placeholder tile for Skippy framework components (Mixtral, ChromaDB, ...)."""
-    component_id: str
-    label: str
-    status: Status
-    detail: str = ""
-
-    def to_dict(self) -> dict[str, Any]:
-        d = asdict(self)
-        d["status"] = self.status.value
-        return d

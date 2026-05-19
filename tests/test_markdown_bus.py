@@ -10,9 +10,11 @@ import pytest
 
 from conductor.bus import (
     MarkdownBusAdapter,
+    compute_pending,
     list_known_tags,
     parse_markdown_blocks,
     read_pending,
+    snapshot_history,
 )
 from conductor.scanner import derive_tag, tag_to_state_basename
 
@@ -113,6 +115,87 @@ def test_list_known_tags_unbracketed_fallback(tmp_path: Path):
 
 def test_list_known_tags_missing_dir(tmp_path: Path):
     assert list_known_tags(tmp_path / "nope") == []
+
+
+def _write_log(path: Path, blocks: list[tuple[str, str, str]]) -> None:
+    """blocks = [(ts, tag, body), ...] → write a claude-bus markdown log."""
+    parts = []
+    for ts, tag, body in blocks:
+        parts.append(f"## {ts} [{tag}]\n\n{body}\n")
+    path.write_text("\n".join(parts))
+
+
+def test_compute_pending_counts_unseen_from_other_tags(tmp_path: Path):
+    log = tmp_path / "messages.md"
+    _write_log(log, [
+        ("2026-05-19 10:00", "sizer", "first"),
+        ("2026-05-19 11:00", "backend", "second"),
+        ("2026-05-19 12:00", "sizer", "third"),
+    ])
+    # pai-sizer last saw the bus at 10:30 — so 11:00 and 12:00 are pending.
+    (tmp_path / "pai-sizer.last-seen").write_text("2026-05-19 10:30")
+    assert compute_pending(log, tmp_path, "[pai-sizer]") == 2
+
+
+def test_compute_pending_excludes_own_messages(tmp_path: Path):
+    log = tmp_path / "messages.md"
+    _write_log(log, [
+        ("2026-05-19 11:00", "sizer", "from me"),
+        ("2026-05-19 12:00", "backend", "from other"),
+    ])
+    (tmp_path / "sizer.last-seen").write_text("2026-05-19 10:00")
+    # Only the [backend] message counts; [sizer] is the reader's own tag.
+    assert compute_pending(log, tmp_path, "[sizer]") == 1
+
+
+def test_compute_pending_no_last_seen_returns_zero(tmp_path: Path):
+    log = tmp_path / "messages.md"
+    _write_log(log, [("2026-05-19 11:00", "backend", "hi")])
+    # No last-seen baseline → don't flood with historical messages.
+    assert compute_pending(log, tmp_path, "[pai-sizer]") == 0
+
+
+def test_compute_pending_accepts_bracketed_last_seen(tmp_path: Path):
+    log = tmp_path / "messages.md"
+    _write_log(log, [("2026-05-19 11:00", "backend", "hi")])
+    (tmp_path / "[docs].last-seen").write_text("2026-05-19 10:00")
+    assert compute_pending(log, tmp_path, "[docs]") == 1
+
+
+def test_snapshot_history_counts_all_blocks(tmp_path: Path):
+    log = tmp_path / "messages.md"
+    _write_log(log, [
+        ("2026-05-19 10:00", "sizer", "a"),
+        ("2026-05-19 11:00", "backend", "b"),
+    ])
+    events, total = snapshot_history(log)
+    assert total == 2
+    assert [e.source_session for e in events] == ["[sizer]", "[backend]"]
+
+
+def test_snapshot_history_missing_file(tmp_path: Path):
+    assert snapshot_history(tmp_path / "nope.md") == ([], 0)
+
+
+@pytest.mark.asyncio
+async def test_markdown_bus_flushes_final_block_when_quiescent(tmp_path: Path):
+    log = tmp_path / "messages.md"
+    log.write_text("")
+
+    adapter = MarkdownBusAdapter(log, poll_interval=0.05)
+    await adapter.start()
+    try:
+        await asyncio.sleep(0.1)
+        # A single appended block with no following header. The old behavior
+        # buffered it forever; now it should flush once the file goes quiet.
+        with log.open("a") as f:
+            f.write("## 2026-05-19 16:21 [sizer]\n\n[pai-sizer] test message\n")
+        gen = adapter.stream_events()
+        ev = await asyncio.wait_for(gen.__anext__(), timeout=2.0)
+        assert ev.source_session == "[sizer]"
+        assert "test message" in ev.payload_summary
+    finally:
+        await adapter.stop()
 
 
 @pytest.mark.asyncio

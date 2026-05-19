@@ -232,6 +232,81 @@ def read_pending(state_dir: Path, tag: str) -> int:
     return 0
 
 
+# Cache parsed bus headers keyed by (path, mtime) so compute_pending across
+# many tags in one scan loop doesn't re-read the log file each time.
+_HEADERS_CACHE: dict[Path, tuple[float, list[tuple[str, str]]]] = {}
+
+
+def _read_log_headers(messages_path: Path) -> list[tuple[str, str]]:
+    """Return ``[(ts_str, bracketed_tag), ...]`` for every header in the log.
+
+    Cached by mtime so repeated calls within one scan are cheap.
+    """
+    if not messages_path.exists():
+        return []
+    try:
+        mtime = messages_path.stat().st_mtime
+    except OSError:
+        return []
+    cached = _HEADERS_CACHE.get(messages_path)
+    if cached and cached[0] == mtime:
+        return cached[1]
+    try:
+        text = messages_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    headers: list[tuple[str, str]] = []
+    for line in text.splitlines():
+        m = _HEADER_RE.match(line)
+        if m:
+            headers.append((f"{m.group(1)} {m.group(2)}", f"[{m.group(3)}]"))
+    _HEADERS_CACHE[messages_path] = (mtime, headers)
+    return headers
+
+
+def _read_last_seen(state_dir: Path, tag: str) -> str | None:
+    bare = tag.strip("[]")
+    for name in (f"{tag}.last-seen", f"{bare}.last-seen"):
+        try:
+            return (state_dir / name).read_text().strip() or None
+        except (FileNotFoundError, OSError):
+            continue
+    return None
+
+
+def compute_pending(messages_path: Path, state_dir: Path, tag: str) -> int:
+    """Compute pending message count for a tag without waiting for the destination
+    session's ``bus.sh prompt-check`` to run.
+
+    Mirrors ``bus.sh prompt-check``: counts headers with ``ts > <tag>.last-seen``
+    and ``header_tag != [tag]``. If no ``<tag>.last-seen`` exists yet, returns
+    0 (the destination's first ``check`` will write the baseline; we don't
+    want to surface every historical message as "pending" on first contact).
+    """
+    last_seen = _read_last_seen(state_dir, tag)
+    if not last_seen:
+        return 0
+    me = tag if tag.startswith("[") else f"[{tag}]"
+    headers = _read_log_headers(messages_path)
+    return sum(1 for ts, ttag in headers if ts > last_seen and ttag != me)
+
+
+def snapshot_history(messages_path: Path) -> tuple[list[BusEvent], int]:
+    """Parse the full bus log once. Returns ``(all_events, count)``.
+
+    Used by main.py at startup to seed ``bus_total`` and ``recent_events`` so
+    the Bus tile reflects historical activity instead of starting at zero.
+    """
+    if not messages_path.exists():
+        return [], 0
+    try:
+        text = messages_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return [], 0
+    events = parse_markdown_blocks(text)
+    return events, len(events)
+
+
 def list_known_tags(state_dir: Path) -> list[str]:
     """Tags that have ever been seen by the bus (presence of ``<tag>.last-seen``).
 
@@ -325,17 +400,24 @@ class MarkdownBusAdapter:
                     if inode is None:
                         inode = st.st_ino
                     text = self._buf + chunk.decode("utf-8", errors="replace")
-                    # Split off the trailing partial block (no terminating header
-                    # yet) and keep it buffered for the next poll.
+                    # Emit every block whose end is bounded by a following header.
+                    # The trailing block stays buffered because its body may still
+                    # be mid-write (bus.sh emits header + body in separate echos).
                     last_header_pos = _last_header_start(text)
                     if last_header_pos is None:
-                        # No headers in chunk yet; keep buffering.
                         self._buf = text
                     else:
                         complete = text[:last_header_pos]
                         self._buf = text[last_header_pos:]
                         for ev in parse_markdown_blocks(complete):
                             await self._enqueue(ev)
+                elif self._buf and _last_header_start(self._buf) is not None:
+                    # File stopped growing and a complete header sits in the
+                    # buffer — the write has settled, so flush the final block
+                    # instead of waiting for a future message to bound it.
+                    for ev in parse_markdown_blocks(self._buf):
+                        await self._enqueue(ev)
+                    self._buf = ""
             except OSError as e:
                 log.debug("markdown bus tail OSError: %s", e)
 

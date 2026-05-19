@@ -1,7 +1,7 @@
 """FastAPI app + uvicorn entry for Conductor.
 
-Wires the SessionScanner, ActivityWatcher, BusAdapter, SkippyAdapter, and
-WebSocket hub. Serves the vanilla-JS frontend at `/`.
+Wires the SessionScanner, ActivityWatcher, BusAdapter, and WebSocket hub.
+Serves the vanilla-JS frontend at `/`.
 """
 
 from __future__ import annotations
@@ -24,13 +24,14 @@ from .bus import (
     FakeBusAdapter,
     JSONLBusAdapter,
     MarkdownBusAdapter,
+    compute_pending,
     list_known_tags,
     read_pending,
+    snapshot_history,
 )
 from .models import BusEvent, BusTopology, SessionRecord, Status
 from .scanner import SessionScanner, encode_cwd, extract_preview, newest_jsonl
 from .settings import Settings, load_settings
-from .skippy import SkippyAdapter
 from .windows import focus_session, wmctrl_available
 from .ws import WSHub
 
@@ -59,7 +60,6 @@ class AppState:
         self.scanner = SessionScanner(settings.scanner)
         self.activity = ActivityWatcher()
         self.bus: BusAdapter = _build_bus_adapter(settings)
-        self.skippy = SkippyAdapter(enabled=settings.skippy.enabled)
         self.hub = WSHub()
 
         self.sessions: dict[str, SessionRecord] = {}        # keyed by project_dir
@@ -72,6 +72,14 @@ class AppState:
 
     async def start(self) -> None:
         await self.activity.start()
+        # Seed bus state from the historical log so the Bus tile reflects past
+        # activity instead of starting at zero. The adapter itself tails from
+        # EOF, so this won't double-count.
+        if isinstance(self.bus, MarkdownBusAdapter):
+            history, total = snapshot_history(self.settings.bus.markdown_path_resolved)
+            self.bus_total = total
+            for ev in history[-RECENT_EVENTS_MAX:]:
+                self.recent_events.append(ev)
         await self.bus.start()
         self._scan_task = asyncio.create_task(self._scan_loop(), name="scan-loop")
         self._activity_task = asyncio.create_task(self._activity_loop(), name="activity-loop")
@@ -118,16 +126,19 @@ class AppState:
             if r.status == Status.ENDED and r.ended_at is not None and now - r.ended_at > expire:
                 self.sessions.pop(key, None)
 
-        # Hydrate per-session bus pending counts from ~/.claude/bus-state/<tag>.pending.
-        state_dir = self.settings.bus.state_dir_resolved
+        # Hydrate per-session bus pending counts. We compute these from the log
+        # + <tag>.last-seen rather than reading <tag>.pending, because the
+        # destination's .pending file only updates when *that* session next runs
+        # bus.sh prompt-check — so a freshly-arrived message wouldn't show up.
         for r in self.sessions.values():
             if r.tag:
-                r.pending_count = read_pending(state_dir, r.tag)
+                r.pending_count = self._pending_for(r.tag)
 
         # Topology for the markdown bus is implicit: every active tagged
         # session is a subscriber. Push it onto the adapter so /api/bus and
         # the connection-line drawing both see the same view.
         if isinstance(self.bus, MarkdownBusAdapter):
+            state_dir = self.settings.bus.state_dir_resolved
             subs: dict[str, list[str]] = {}
             for r in self.sessions.values():
                 if r.status != Status.ENDED and r.tag:
@@ -149,6 +160,9 @@ class AppState:
         self.activity.sync_watched_dirs(watch_dirs)
 
         await self.hub.broadcast("sessions", self._sessions_payload())
+        # Refresh the Bus tile too (topology + per-tag pending) so it stays live
+        # between bus events, not just on WS reconnect.
+        await self.hub.broadcast("bus", self._bus_payload())
 
     async def _activity_loop(self) -> None:
         queue = await self.activity.events()
@@ -181,21 +195,32 @@ class AppState:
                 "topology": self.bus.get_topology().to_dict(),
             })
 
+    # --- helpers -------------------------------------------------------------
+
+    def _pending_for(self, tag: str) -> int:
+        """Pending count for a tag. For the markdown bus, computed live from the
+        log; for other adapters, falls back to reading <tag>.pending."""
+        if isinstance(self.bus, MarkdownBusAdapter):
+            return compute_pending(
+                self.settings.bus.markdown_path_resolved,
+                self.settings.bus.state_dir_resolved,
+                tag,
+            )
+        return read_pending(self.settings.bus.state_dir_resolved, tag)
+
     # --- payloads ------------------------------------------------------------
 
     def _sessions_payload(self) -> dict[str, Any]:
         return {
             "sessions": [r.to_dict() for r in self.sessions.values()],
-            "skippy": [t.to_dict() for t in self.skippy.tiles()],
             "fadeout_seconds": self.settings.ui.end_fadeout_seconds,
             "wmctrl_available": wmctrl_available(),
         }
 
     def _bus_payload(self) -> dict[str, Any]:
         # Per-tag pending counts pulled fresh so the bus tile badge stays accurate.
-        state_dir = self.settings.bus.state_dir_resolved
         topology = self.bus.get_topology()
-        pending_by_tag = {tag: read_pending(state_dir, tag) for tag in topology.subscribers}
+        pending_by_tag = {tag: self._pending_for(tag) for tag in topology.subscribers}
         return {
             "total": self.bus_total,
             "recent": [e.to_dict() for e in list(self.recent_events)[-20:]],
@@ -240,7 +265,10 @@ async def focus(session_id: str, request: Request) -> dict[str, Any]:
     if rec is None:
         raise HTTPException(status_code=404, detail="session not found")
     ok = await asyncio.to_thread(
-        focus_session, terminal_pid=rec.terminal_pid, title_hint=rec.title,
+        focus_session,
+        terminal_pid=rec.terminal_pid,
+        title=rec.title,
+        window_title=rec.window_title,
     )
     return {"focused": ok, "wmctrl_available": wmctrl_available()}
 
@@ -266,8 +294,9 @@ async def check_bus(session_id: str, request: Request) -> dict[str, Any]:
     except asyncio.TimeoutError:
         proc.kill()
         raise HTTPException(status_code=504, detail="bus.sh check timed out")
-    # Refresh pending count immediately after check.
-    rec.pending_count = read_pending(state.settings.bus.state_dir_resolved, rec.tag)
+    # Refresh pending count immediately after check (bus.sh check bumps
+    # <tag>.last-seen, so compute_pending should now return 0).
+    rec.pending_count = state._pending_for(rec.tag)
     await state.hub.broadcast("session", rec.to_dict())
     return {
         "ok": proc.returncode == 0,
