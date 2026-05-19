@@ -90,10 +90,12 @@ function updateGridExtent() {
 export function renderGrid(state) {
   const grid = document.getElementById("grid");
 
-  // Always render: Bus tile + every session tile.
+  // Always render: Bus tile + every session tile (ended ones optional).
+  const showEnded = window.conductorPrefs ? window.conductorPrefs.showEnded : true;
   const items = [];
   items.push({ key: BUS_KEY, render: () => busTile(state) });
   for (const s of state.sessions) {
+    if (!showEnded && s.status === "ended") continue;
     items.push({ key: tileKeyForSession(s), render: () => sessionTile(s, state) });
   }
 

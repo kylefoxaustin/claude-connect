@@ -17,6 +17,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from .activity import ActivityWatcher
 from .bus import (
@@ -31,7 +32,7 @@ from .bus import (
 )
 from .models import BusEvent, BusTopology, SessionRecord, Status
 from .scanner import SessionScanner, encode_cwd, extract_preview, newest_jsonl
-from .settings import Settings, load_settings
+from .settings import DEFAULT_SETTINGS_PATH, Settings, dump_settings, load_settings
 from .windows import focus_session, wmctrl_available
 from .ws import WSHub
 
@@ -311,6 +312,42 @@ async def check_bus(session_id: str, request: Request) -> dict[str, Any]:
 async def get_bus(request: Request) -> dict[str, Any]:
     state: AppState = request.app.state.cond
     return state._bus_payload()
+
+
+class SettingsUpdate(BaseModel):
+    interval_seconds: float | None = None
+    end_fadeout_seconds: float | None = None
+
+
+def _tunable_settings(s: Settings) -> dict[str, Any]:
+    return {
+        "interval_seconds": s.scanner.interval_seconds,
+        "end_fadeout_seconds": s.ui.end_fadeout_seconds,
+    }
+
+
+@app.get("/api/settings")
+async def get_settings(request: Request) -> dict[str, Any]:
+    state: AppState = request.app.state.cond
+    return _tunable_settings(state.settings)
+
+
+@app.post("/api/settings")
+async def update_settings(payload: SettingsUpdate, request: Request) -> dict[str, Any]:
+    """Update the live, UI-tunable settings and persist them to settings.toml.
+
+    Applied in-memory immediately (the scan loop reads these each tick) and
+    written to disk so they survive a restart."""
+    state: AppState = request.app.state.cond
+    s = state.settings
+    if payload.interval_seconds is not None:
+        s.scanner.interval_seconds = max(0.5, min(60.0, payload.interval_seconds))
+    if payload.end_fadeout_seconds is not None:
+        s.ui.end_fadeout_seconds = max(0.0, min(600.0, payload.end_fadeout_seconds))
+    await asyncio.to_thread(dump_settings, s, DEFAULT_SETTINGS_PATH)
+    # Push the new fadeout to clients (it rides in the sessions payload).
+    await state.hub.broadcast("sessions", state._sessions_payload())
+    return _tunable_settings(s)
 
 
 @app.websocket("/ws")

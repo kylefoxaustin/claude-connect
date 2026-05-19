@@ -18,6 +18,36 @@ const state = {
 
 window.conductorState = state; // for ad-hoc debugging from devtools
 
+// --- Display preferences (client-side, localStorage) ------------------------
+const PREFS_KEY = "conductor.prefs.v1";
+const DEFAULT_PREFS = { theme: "dark", lines: true, animation: true, showEnded: true };
+
+function loadPrefs() {
+  try { return { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem(PREFS_KEY) || "{}") }; }
+  catch { return { ...DEFAULT_PREFS }; }
+}
+function savePrefs() {
+  try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch {}
+}
+const prefs = loadPrefs();
+window.conductorPrefs = prefs; // read by tiles.js (showEnded) and lines.js (animation)
+
+function applyTheme() {
+  document.documentElement.dataset.theme = prefs.theme;
+}
+function applyLinesVisibility() {
+  const overlay = document.getElementById("lines-overlay");
+  if (overlay) overlay.style.display = prefs.lines ? "" : "none";
+}
+function applyPrefs() {
+  applyTheme();
+  applyLinesVisibility();
+  renderGrid(state);
+  requestAnimationFrame(() => redrawLines(state));
+}
+applyTheme();            // apply ASAP to avoid a flash before first render
+applyLinesVisibility();
+
 const connStateEl = document.getElementById("conn-state");
 const sessionCountEl = document.getElementById("session-count");
 
@@ -123,6 +153,79 @@ document.getElementById("refresh-btn").addEventListener("click", async () => {
 });
 
 window.addEventListener("resize", () => requestAnimationFrame(() => redrawLines(state)));
+
+// Settings modal wiring.
+const settingsModal = document.getElementById("settings-modal");
+const setTheme = document.getElementById("set-theme");
+const setLines = document.getElementById("set-lines");
+const setAnimation = document.getElementById("set-animation");
+const setShowEnded = document.getElementById("set-showended");
+const setInterval_ = document.getElementById("set-interval");
+const setFadeout = document.getElementById("set-fadeout");
+const settingsStatus = document.getElementById("settings-status");
+
+function flashSettingsStatus(text) {
+  settingsStatus.textContent = text;
+  settingsStatus.style.opacity = "1";
+  setTimeout(() => { settingsStatus.style.opacity = "0"; }, 1500);
+}
+
+document.getElementById("settings-btn").addEventListener("click", async () => {
+  // Appearance from local prefs.
+  setTheme.value = prefs.theme;
+  setLines.checked = prefs.lines;
+  setAnimation.checked = prefs.animation;
+  setShowEnded.checked = prefs.showEnded;
+  // Behavior from the server (settings.toml).
+  try {
+    const r = await fetch("/api/settings");
+    if (r.ok) {
+      const s = await r.json();
+      setInterval_.value = s.interval_seconds;
+      setFadeout.value = s.end_fadeout_seconds;
+    }
+  } catch (e) { console.warn("settings fetch failed", e); }
+  settingsStatus.textContent = "";
+  settingsModal.classList.remove("hidden");
+});
+document.getElementById("settings-modal-close")
+  .addEventListener("click", () => settingsModal.classList.add("hidden"));
+settingsModal.addEventListener("click", (e) => {
+  if (e.target === settingsModal) settingsModal.classList.add("hidden");
+});
+
+// Appearance prefs: apply + persist locally on change.
+setTheme.addEventListener("change", () => { prefs.theme = setTheme.value; savePrefs(); applyTheme(); });
+setLines.addEventListener("change", () => { prefs.lines = setLines.checked; savePrefs(); applyLinesVisibility(); });
+setAnimation.addEventListener("change", () => { prefs.animation = setAnimation.checked; savePrefs(); });
+setShowEnded.addEventListener("change", () => {
+  prefs.showEnded = setShowEnded.checked; savePrefs();
+  renderGrid(state); requestAnimationFrame(() => redrawLines(state));
+});
+
+// Behavior settings: persist to settings.toml via the API.
+async function postSettings(body) {
+  try {
+    const r = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (r.ok) {
+      const s = await r.json();
+      setInterval_.value = s.interval_seconds;
+      setFadeout.value = s.end_fadeout_seconds;
+      flashSettingsStatus("Saved to settings.toml");
+    } else {
+      flashSettingsStatus("Save failed");
+    }
+  } catch (e) {
+    console.warn("settings save failed", e);
+    flashSettingsStatus("Save failed");
+  }
+}
+setInterval_.addEventListener("change", () => postSettings({ interval_seconds: parseFloat(setInterval_.value) }));
+setFadeout.addEventListener("change", () => postSettings({ end_fadeout_seconds: parseFloat(setFadeout.value) }));
 
 // Bus modal wiring.
 const modal = document.getElementById("bus-modal");

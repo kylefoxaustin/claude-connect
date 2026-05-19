@@ -58,6 +58,7 @@ export function redrawLines(state) {
 
 export function animateLineFor(sessionId) {
   if (sessionId === "broadcast") return; // app.js handles fan-out
+  if (window.conductorPrefs && !window.conductorPrefs.animation) return;
   const svg = document.getElementById("lines-overlay");
   if (!svg) return;
   const path = svg.querySelector(`path[data-session-id="${CSS.escape(sessionId)}"]`);

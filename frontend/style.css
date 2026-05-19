@@ -14,6 +14,28 @@
   --status-ended: #f85149;
 
   --bus-color: #bc8cff;
+  --bus-tile-bg: linear-gradient(135deg, #1a1230, #161b22);
+  --inset-bg: rgba(255, 255, 255, 0.02);
+}
+
+:root[data-theme="light"] {
+  --bg: #f6f8fa;
+  --bg-panel: #ffffff;
+  --border: #d0d7de;
+  --text: #1f2328;
+  --text-dim: #59636e;
+  --accent: #0969da;
+
+  --status-active: #1a7f37;
+  --status-warm: #9a6700;
+  --status-idle: #59636e;
+  --status-dormant: #afb8c1;
+  --status-waiting: #0969da;
+  --status-ended: #cf222e;
+
+  --bus-color: #8250df;
+  --bus-tile-bg: linear-gradient(135deg, #f3eefe, #ffffff);
+  --inset-bg: rgba(0, 0, 0, 0.03);
 }
 
 * { box-sizing: border-box; }
@@ -25,6 +47,7 @@ html, body {
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
+  transition: background-color 0.2s, color 0.2s;
 }
 
 .topbar {
@@ -174,7 +197,7 @@ html, body {
 
 .tile-preview {
   flex: 1;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--inset-bg);
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 6px 8px;
@@ -202,7 +225,7 @@ html, body {
 
 /* Bus tile distinct visual treatment. */
 .tile.bus-tile {
-  background: linear-gradient(135deg, #1a1230, #161b22);
+  background: var(--bus-tile-bg);
   border-color: rgba(188, 140, 255, 0.5);
   border-style: dashed;
 }
@@ -334,3 +357,54 @@ html, body {
 .bus-feed li .src { color: var(--accent); }
 .bus-feed li .dst { color: var(--bus-color); }
 .bus-feed li .topic { color: var(--status-active); margin: 0 6px; }
+
+/* Settings panel */
+.settings-body {
+  padding: 8px 16px 16px;
+  overflow-y: auto;
+}
+.settings-group { margin-top: 12px; }
+.settings-group h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  margin: 8px 0;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+}
+.settings-hint {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 11px;
+  font-weight: 400;
+  opacity: 0.7;
+  margin-left: 6px;
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+.settings-row select,
+.settings-row input[type="number"] {
+  background: var(--inset-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 13px;
+}
+.settings-row input[type="number"] { width: 64px; text-align: right; }
+.settings-row input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
+.settings-status {
+  font-size: 11px;
+  color: var(--status-active);
+  min-height: 14px;
+  margin: 6px 0 0;
+  transition: opacity 0.3s;
+}

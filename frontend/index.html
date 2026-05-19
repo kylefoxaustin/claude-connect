@@ -14,6 +14,7 @@
         <span id="session-count">0 sessions</span>
         <button id="reset-layout-btn" title="Clear stored tile positions and re-cascade">Reset layout</button>
         <button id="refresh-btn" title="Force rescan">Refresh</button>
+        <button id="settings-btn" title="Settings">⚙</button>
       </div>
     </header>
 
@@ -23,6 +24,52 @@
 
     <!-- SVG overlay for connection lines, sized to viewport. -->
     <svg id="lines-overlay" class="lines-overlay" aria-hidden="true"></svg>
+
+    <!-- Settings modal, hidden by default. -->
+    <div id="settings-modal" class="modal hidden">
+      <div class="modal-card">
+        <header>
+          <h2>Settings</h2>
+          <button id="settings-modal-close">×</button>
+        </header>
+        <div class="settings-body">
+          <section class="settings-group">
+            <h3>Appearance <span class="settings-hint">saved in this browser</span></h3>
+            <label class="settings-row">
+              <span>Theme</span>
+              <select id="set-theme">
+                <option value="dark">Dark</option>
+                <option value="light">Light</option>
+              </select>
+            </label>
+            <label class="settings-row">
+              <span>Connection lines</span>
+              <input type="checkbox" id="set-lines" />
+            </label>
+            <label class="settings-row">
+              <span>Flow animation</span>
+              <input type="checkbox" id="set-animation" />
+            </label>
+            <label class="settings-row">
+              <span>Tile close animation</span>
+              <input type="checkbox" id="set-showended" />
+            </label>
+          </section>
+          <section class="settings-group">
+            <h3>Behavior <span class="settings-hint">saved to settings.toml</span></h3>
+            <label class="settings-row">
+              <span>Rescan every</span>
+              <span><input type="number" id="set-interval" min="0.5" max="60" step="0.5" /> s</span>
+            </label>
+            <label class="settings-row">
+              <span>Fade ended after</span>
+              <span><input type="number" id="set-fadeout" min="0" max="600" step="5" /> s</span>
+            </label>
+            <p class="settings-status" id="settings-status"></p>
+          </section>
+        </div>
+      </div>
+    </div>
 
     <!-- Bus modal, hidden by default. -->
     <div id="bus-modal" class="modal hidden">
