@@ -37,6 +37,12 @@ class BusSettings:
     script_path: str = "~/.claude/bin/bus.sh"
     jsonl_path: str = "~/.claude/bus.jsonl"
     idle_seconds: float = 30.0
+    # Optional pretty-tag mapping: directory path -> bare tag name (e.g.
+    # "~/code/my-api" = "api"). Mirrors the case-table in your bus.sh so
+    # Conductor labels tiles with the same tag the bus uses. Anything not
+    # listed falls back to [other:<dirname>]. Lives in settings.toml (local,
+    # gitignored) so the repo ships no project-specific names.
+    tags: dict[str, str] = field(default_factory=dict)
 
     @property
     def markdown_path_resolved(self) -> Path:
@@ -121,4 +127,11 @@ def dump_settings(settings: Settings, path: Path | str | None = None) -> None:
         for k, v in kv.items():
             out.append(f"{k} = {_toml_scalar(v)}")
         out.append("")
+        # The pretty-tag map is a sub-table of [bus]; emit it right after the
+        # bus scalars so a UI-driven save round-trips it instead of dropping it.
+        if section == "bus" and settings.bus.tags:
+            out.append("[bus.tags]")
+            for path, tag in settings.bus.tags.items():
+                out.append(f"{_toml_scalar(path)} = {_toml_scalar(tag)}")
+            out.append("")
     candidate.write_text("\n".join(out).rstrip() + "\n")

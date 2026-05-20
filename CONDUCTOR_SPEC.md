@@ -224,12 +224,12 @@ Each tile is ~280×200 px, grid-tiled with CSS grid (auto-fill, gap 16px). Conte
 
 ```
 ┌────────────────────────────────┐
-│ ●  keyhole-yolo            ⏵   │  ← status dot, title from /rename, focus icon
-│ /home/kyle/code/keyhole         │  ← project dir, dimmed
+│ ●  api-server              ⏵   │  ← status dot, title from /rename, focus icon
+│ ~/code/api                      │  ← project dir, dimmed
 │                                │
 │ ┌────────────────────────────┐ │
-│ │ ...running yolo training   │ │  ← squashed activity preview
-│ │ at epoch 4/12, loss 0.341  │ │
+│ │ ...running test suite      │ │  ← squashed activity preview
+│ │ 42 passed, 3 failed        │ │
 │ │ ...                        │ │
 │ └────────────────────────────┘ │
 │                                │

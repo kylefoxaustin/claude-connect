@@ -2,7 +2,7 @@
 
 Three adapters ship:
 
-* ``MarkdownBusAdapter`` — Kyle's claude-bus (``~/Documents/claude-bus/messages.md``).
+* ``MarkdownBusAdapter`` — the reference claude-bus (``~/Documents/claude-bus/messages.md``).
   Append-only markdown of ``## YYYY-MM-DD HH:MM [tag]`` blocks. CWD-derived tag is
   the source; destination is always ``"broadcast"``; topic is empty.
 * ``JSONLBusAdapter`` — generic JSONL log (one event per line). See

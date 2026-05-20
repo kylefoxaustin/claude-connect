@@ -1,7 +1,8 @@
 # Claude Bus — Cross-Session Message Spec
 
-> Reproduced verbatim from Kyle's spec. Conductor's `MarkdownBusAdapter` in
-> `conductor/bus.py` integrates with this exact format.
+> Format spec for the reference message bus. Conductor's `MarkdownBusAdapter` in
+> `conductor/bus.py` integrates with this exact format. The runnable
+> implementation ships in [`../bus/`](../bus/).
 
 ## File locations
 
@@ -16,14 +17,15 @@ The message log is append-only markdown. The state dir holds per-session
 
 ## Session tags (auto-detected from CWD)
 
-| Tag                  | Working directory                                    |
-|----------------------|------------------------------------------------------|
-| `[backend]`          | `~/Documents/GitHub/keyhole`                         |
-| `[frontend]`         | `~/Documents/GitHub/keyhole-UI`                      |
-| `[sizer]`            | `~/Documents/GitHub/keyhole-sizer`                   |
-| `[docs]`             | `~/Documents/GitHub/personal-ai-framework`           |
-| `[pai-sizer]`        | `~/Documents/GitHub/personal-ai-assistant-sizer`     |
-| `[other:<basename>]` | anywhere else                                        |
+Each session is tagged by its working directory via the case-table in `bus.sh`.
+Map your own project dirs there; anything unmapped falls back to the basename.
+Example:
+
+| Tag                  | Working directory      |
+|----------------------|------------------------|
+| `[api]`              | `~/code/my-api`        |
+| `[web]`              | `~/code/my-web`        |
+| `[other:<basename>]` | anywhere else          |
 
 Tags are appended automatically — no configuration needed per session.
 
@@ -51,10 +53,10 @@ check. If yes, injects a one-line nudge:
 
 > "Claude Bus — N pending message(s) from [tag] since you last checked
 > (newest: YYYY-MM-DD HH:MM). Content NOT shown. At a natural pause,
-> mention to Kyle and ask whether to check."
+> mention to the user and ask whether to check."
 
 **Important:** Claude is instructed NOT to auto-check — it must pause, tell
-Kyle, and wait for approval before running `/msg-check`.
+the user, and wait for approval before running `/msg-check`.
 
 ## Message format
 
@@ -82,11 +84,11 @@ The `BUS_FILE` env var overrides the default log path (useful for testing).
 
 ## Adding a new session / directory
 
-1. Add a new case branch in `bus.sh` mapping the directory pattern to a tag.
-2. Add the tag to the whitelists in both `session-start` and `prompt-check`
-   case statements.
+1. Add a case branch in `bus.sh` mapping the directory pattern to a tag.
+2. Add the tag to `BUS_WHITELIST` so it participates in the automatic hooks.
 3. No other configuration needed — the state dir and log file are created
    automatically.
 
-> **Conductor mirror:** when you add a new tag, also extend `_BUS_TAG_TABLE`
-> in `conductor/scanner.py` so Conductor labels session tiles correctly.
+> **Conductor mirror:** when you add a named tag, also add it to the
+> `[bus.tags]` table in Conductor's `settings.toml` (`"<dir>" = "<tag>"`) so
+> Conductor labels session tiles with the same tag. See `settings.example.toml`.

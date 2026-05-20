@@ -20,7 +20,7 @@ Claude encodes the working-directory path into a single directory name under `~/
 
 ```
 cwd                              encoded
-/home/kyle/code/keyhole     →    -home-kyle-code-keyhole
+/home/user/code/api         →    -home-user-code-api
 /home/user/my-stuff         →    -home-user-my-stuff
 ```
 
@@ -50,7 +50,7 @@ One JSON object per line. Common record shapes Conductor relies on:
 
 Pseudo-schema:
 ```jsonc
-{ "type": "summary", "summary": "keyhole-yolo", "leafUuid": "..." }
+{ "type": "summary", "summary": "api-server", "leafUuid": "..." }
 { "type": "user",    "message": { "role": "user",      "content": [{"type": "text", "text": "..."}] }, "timestamp": "..." }
 { "type": "assistant","message":{ "role": "assistant", "content": [...] }, "timestamp": "..." }
 ```

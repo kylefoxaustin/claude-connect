@@ -10,24 +10,30 @@ BUS_FILE="${BUS_FILE:-$HOME/Documents/claude-bus/messages.md}"
 mkdir -p "$(dirname "$BUS_FILE")"
 touch "$BUS_FILE"
 
-# Auto-tag by working directory
+# Auto-tag by working directory.
+# Edit these case branches to map your own project dirs to short tags. Anything
+# unmatched falls back to other:<dirname>. Keep the tags here in sync with the
+# [bus.tags] table in Conductor's settings.toml so tiles show the same tag.
 CWD="${PWD:-$(pwd)}"
 case "$CWD" in
-  */keyhole-sizer|*/keyhole-sizer/*) TAG="sizer"    ;;
-  */keyhole-UI|*/keyhole-UI/*)       TAG="frontend" ;;
-  */keyhole|*/keyhole/*)             TAG="backend"  ;;
-  */personal-ai-framework|*/personal-ai-framework/*) TAG="docs" ;;
-  */personal-ai-assistant-sizer|*/personal-ai-assistant-sizer/*) TAG="pai-sizer" ;;
-  *)                             TAG="other:$(basename "$CWD")" ;;
+  */my-api|*/my-api/*)       TAG="api"    ;;
+  */my-web|*/my-web/*)       TAG="web"    ;;
+  */my-worker|*/my-worker/*) TAG="worker" ;;
+  *)                         TAG="other:$(basename "$CWD")" ;;
 esac
+
+# Tags that participate in the AUTOMATIC hooks (SessionStart context injection +
+# UserPromptSubmit nudges). This whitelist keeps the bus out of unrelated
+# sessions; un-whitelisted tags can still use the slash commands manually.
+BUS_WHITELIST="api|web|worker"
+
+# True if the given tag is in BUS_WHITELIST (a `|`-separated list).
+is_whitelisted() { case "|$BUS_WHITELIST|" in *"|$1|"*) return 0 ;; *) return 1 ;; esac; }
 
 # Helper: after a read/send/session-start, mark the newest message as "seen"
 # for THIS session tag so prompt-check doesn't re-flag it. No-op outside bus tags.
 mark_seen_if_bus_tag() {
-  case "$TAG" in
-    backend|frontend|sizer|docs|pai-sizer) ;;
-    *) return 0 ;;
-  esac
+  is_whitelisted "$TAG" || return 0
   local STATE_DIR="$HOME/.claude/bus-state"
   mkdir -p "$STATE_DIR"
   local NEWEST
@@ -78,12 +84,9 @@ case "$cmd" in
     # contents as additionalContext so the new session knows what
     # the OTHER session has said while it was offline.
     #
-    # Scoped: only fires inside keyhole-related directories so the
-    # bus doesn't pollute unrelated Claude Code sessions.
-    case "$TAG" in
-      backend|frontend|sizer|docs|pai-sizer) ;;  # Keyhole project / sizer / personal-ai-assistant — proceed
-      *) exit 0 ;;          # Anywhere else — no-op silently
-    esac
+    # Scoped: only fires for whitelisted tags so the bus doesn't
+    # pollute unrelated Claude Code sessions.
+    is_whitelisted "$TAG" || exit 0   # Anywhere else — no-op silently
     if [ ! -s "$BUS_FILE" ]; then
       mark_seen_if_bus_tag
       exit 0
@@ -107,10 +110,7 @@ EOF
     # If count > 0, emits JSON with a one-line additionalContext nudge
     # so Claude knows pending messages exist (without injecting content).
     # Silent + no-op outside the bus whitelist.
-    case "$TAG" in
-      backend|frontend|sizer|docs|pai-sizer) ;;
-      *) exit 0 ;;
-    esac
+    is_whitelisted "$TAG" || exit 0
 
     STATE_DIR="$HOME/.claude/bus-state"
     mkdir -p "$STATE_DIR"
@@ -149,7 +149,7 @@ EOF
     SENDERS="$(printf '%s\n' "$NEW_MSGS" | awk '{print $3}' | sort -u | tr '\n' ' ' | sed 's/ *$//')"
     NEWEST="$(printf '%s\n' "$NEW_MSGS" | tail -1 | awk '{print $1 " " $2}')"
 
-    NOTE="Claude Bus — $COUNT pending message(s) from $SENDERS on the cross-session log since you last checked (newest: $NEWEST). Content NOT shown. At a natural pause in your current work, mention to Kyle that pending messages exist and ask whether to check them now; run /msg-check once approved."
+    NOTE="Claude Bus — $COUNT pending message(s) from $SENDERS on the cross-session log since you last checked (newest: $NEWEST). Content NOT shown. At a natural pause in your current work, mention to the user that pending messages exist and ask whether to check them now; run /msg-check once approved."
     ESCAPED="$(printf '%s' "$NOTE" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"
 
     cat <<EOF
@@ -191,18 +191,14 @@ EOF
     cat > "$BUS_FILE" <<HEADER
 # Claude Bus — Cross-Session Messages
 
-Append-only log of messages between Claude Code sessions on Kyle's machine.
+Append-only log of messages between Claude Code sessions on this machine.
 Newest messages at the bottom. Each message is tagged with its sender session.
 
-Sessions are identified by working directory:
-  • \`[backend]\`  = ~/Documents/GitHub/keyhole
-  • \`[frontend]\` = ~/Documents/GitHub/keyhole-UI
-  • \`[sizer]\`    = ~/Documents/GitHub/keyhole-sizer
-  • \`[docs]\`     = ~/Documents/GitHub/personal-ai-framework
-  • \`[pai-sizer]\` = ~/Documents/GitHub/personal-ai-assistant-sizer
+Sessions are identified by working directory (see the case-table in bus.sh):
+  • named tags (e.g. \`[api]\`, \`[web]\`) = dirs you mapped in bus.sh
   • \`[other:<cwd>]\` = any other session
 
-Usage (from either session):
+Usage (from any session):
   \`/msg-send <your message>\`  — append a message to this log
   \`/msg-check\`                 — read the latest messages
   \`/msg-all\`                   — dump the full log
@@ -226,9 +222,7 @@ Claude Bus
   bus.sh all                 Print the entire log (used by /msg-all)
   bus.sh rotate [YYYY-MM]    Archive to messages-YYYY-MM.md, start fresh
   bus.sh session-start       Hook output: emit additionalContext JSON
-                             (no-op outside keyhole / keyhole-UI /
-                             keyhole-sizer / personal-ai-framework /
-                             personal-ai-assistant-sizer dirs)
+                             (no-op outside the BUS_WHITELIST tags)
   bus.sh prompt-check        Hook output: per-prompt check. Emits a
                              one-line additionalContext nudge if new
                              messages arrived since last check.

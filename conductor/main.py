@@ -59,7 +59,7 @@ def _build_bus_adapter(settings: Settings) -> BusAdapter:
 class AppState:
     def __init__(self, settings: Settings):
         self.settings = settings
-        self.scanner = SessionScanner(settings.scanner)
+        self.scanner = SessionScanner(settings.scanner, tag_map=settings.bus.tags)
         self.activity = ActivityWatcher()
         self.bus: BusAdapter = _build_bus_adapter(settings)
         self.hub = WSHub()

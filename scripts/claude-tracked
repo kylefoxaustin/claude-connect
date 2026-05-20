@@ -9,7 +9,7 @@
 #   claude-tracked <name> [claude args...]
 #
 # Example:
-#   claude-tracked keyhole-yolo --resume
+#   claude-tracked api-server --resume
 #
 # Notes:
 #   - The window title becomes "claude:<name>". Conductor matches by exactly

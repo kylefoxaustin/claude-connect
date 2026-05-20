@@ -30,26 +30,23 @@ def encode_cwd(path: str | os.PathLike[str]) -> str:
     return "-" + p.lstrip("/").replace("/", "-")
 
 
-# Claude-bus tag mapping (mirrors ~/.claude/bin/bus.sh case-table). Keys are
-# absolute paths; expanded against $HOME at call time.
-_BUS_TAG_TABLE: list[tuple[str, str]] = [
-    ("~/Documents/GitHub/keyhole",                      "[backend]"),
-    ("~/Documents/GitHub/keyhole-UI",                   "[frontend]"),
-    ("~/Documents/GitHub/keyhole-sizer",                "[sizer]"),
-    ("~/Documents/GitHub/personal-ai-framework",        "[docs]"),
-    ("~/Documents/GitHub/personal-ai-assistant-sizer",  "[pai-sizer]"),
-]
+def derive_tag(
+    project_dir: str | os.PathLike[str],
+    tag_map: dict[str, str] | None = None,
+) -> str:
+    """Return the claude-bus tag for a project dir.
 
-
-def derive_tag(project_dir: str | os.PathLike[str]) -> str:
-    """Return the claude-bus tag for a project dir per the spec's case-table.
-
-    Falls back to ``[other:<basename>]`` when no whitelisted dir matches.
+    ``tag_map`` maps a directory path (``~`` allowed) to a bare tag name, e.g.
+    ``{"~/code/my-api": "api"}`` — it should mirror the case-table in your
+    ``bus.sh`` so Conductor labels tiles with the same tag the bus uses. It
+    lives in ``settings.toml`` (local, gitignored), so no project-specific names
+    are baked into the code. Anything unmapped falls back to
+    ``[other:<basename>]``.
     """
     target = os.path.realpath(os.fspath(project_dir))
-    for path, tag in _BUS_TAG_TABLE:
+    for path, tag in (tag_map or {}).items():
         if os.path.realpath(os.path.expanduser(path)) == target:
-            return tag
+            return tag if tag.startswith("[") else f"[{tag}]"
     return f"[other:{os.path.basename(target.rstrip('/'))}]"
 
 
@@ -227,8 +224,9 @@ def classify_status(mtime_age: float, *, alive: bool, low_cpu: bool) -> Status:
 class SessionScanner:
     """One Claude per project dir (per project decision §12.2). Keyed by project_dir."""
 
-    def __init__(self, settings: ScannerSettings):
+    def __init__(self, settings: ScannerSettings, tag_map: dict[str, str] | None = None):
         self.settings = settings
+        self._tag_map = tag_map or {}
         self._cpu_samples: dict[int, float] = {}
 
     def scan(self) -> dict[str, SessionRecord]:
@@ -271,7 +269,7 @@ class SessionScanner:
                 last_activity_at=mtime,
                 message_count=msg_count,
                 preview=preview,
-                tag=derive_tag(cwd),
+                tag=derive_tag(cwd, self._tag_map),
                 window_title=parse_custom_title(jsonl),
             )
             # Decision §12.2: one Claude per project dir; on collision keep the most recent.

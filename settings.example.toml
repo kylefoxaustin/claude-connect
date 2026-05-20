@@ -11,7 +11,7 @@ interval_seconds = 3.0
 claude_home = "~/.claude"
 
 [bus]
-# Adapter: "markdown" (Kyle's claude-bus), "jsonl" (generic), or "fake" (synthetic events).
+# Adapter: "markdown" (the reference claude-bus), "jsonl" (generic), or "fake" (demo).
 adapter = "markdown"
 
 # Markdown adapter: append-only `## YYYY-MM-DD HH:MM [tag]` log.
@@ -24,6 +24,13 @@ jsonl_path = "~/.claude/bus.jsonl"
 
 # Seconds of bus quiet before the bus tile dims.
 idle_seconds = 30.0
+
+# Optional: map project directories to pretty tags, mirroring the case-table in
+# your bus.sh so tiles show the same tag the bus uses. Unmapped dirs fall back to
+# [other:<dirname>]. Use bare names (no brackets). Example:
+# [bus.tags]
+# "~/code/my-api" = "api"
+# "~/code/my-web" = "web"
 
 [ui]
 # Seconds an ended session tile fades out before removal.

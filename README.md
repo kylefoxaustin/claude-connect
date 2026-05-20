@@ -6,10 +6,10 @@ single workstation. Read-only observer — it never modifies Claude itself.
 ![version: 1.0](https://img.shields.io/badge/version-1.0-blue)
 
 ```
-┌─ ●  keyhole-yolo ──────────────┐  ┌─ ●  api-refactor ─────────────┐
-│ /home/kyle/code/keyhole    📬3 │  │ /home/kyle/code/api            │
+┌─ ●  api-server ────────────────┐  ┌─ ●  web-app ──────────────────┐
+│ ~/code/api                 📬3 │  │ ~/code/web                     │
 │ ┌──────────────────────────┐   │  │ ┌──────────────────────────┐  │
-│ │ ...running yolo training │   │  │ │ ...waiting on user input │  │
+│ │ ...running test suite    │   │  │ │ ...waiting on user input │  │
 │ └──────────────────────────┘   │  │ └──────────────────────────┘  │
 │  msgs: 47   ⏱ 2s ago           │  │  msgs: 12   ⏱ 1m ago          │
 └────────────────────────────────┘  └────────────────────────────────┘
@@ -120,7 +120,7 @@ Tilix window with a unique X11 title so focus and 📬 injection target precisel
 
 ```bash
 sudo install -m755 scripts/claude-tracked /usr/local/bin/
-claude-tracked keyhole-yolo --resume
+claude-tracked api-server --resume
 ```
 
 Without it, focus is best-effort: Conductor raises the terminal window owning the

@@ -62,19 +62,25 @@ def test_parse_markdown_blocks_truncates_to_80():
 def test_derive_tag_known_dirs(monkeypatch, tmp_path: Path):
     # Map ~ → tmp_path so we can build the canonical paths without polluting $HOME.
     monkeypatch.setenv("HOME", str(tmp_path))
-    backend_dir = tmp_path / "Documents/GitHub/keyhole"
-    backend_dir.mkdir(parents=True)
-    assert derive_tag(backend_dir) == "[backend]"
+    tag_map = {
+        "~/code/api": "api",
+        "~/code/web": "[web]",  # bracketed form is accepted too
+    }
+    api_dir = tmp_path / "code/api"
+    api_dir.mkdir(parents=True)
+    assert derive_tag(api_dir, tag_map) == "[api]"
 
-    frontend_dir = tmp_path / "Documents/GitHub/keyhole-UI"
-    frontend_dir.mkdir(parents=True)
-    assert derive_tag(frontend_dir) == "[frontend]"
+    web_dir = tmp_path / "code/web"
+    web_dir.mkdir(parents=True)
+    assert derive_tag(web_dir, tag_map) == "[web]"
 
 
 def test_derive_tag_other_falls_back_to_basename(tmp_path: Path):
     weird = tmp_path / "anywhere/quux"
     weird.mkdir(parents=True)
+    # Unmapped dir → basename fallback, with or without a tag_map.
     assert derive_tag(weird) == "[other:quux]"
+    assert derive_tag(weird, {"~/code/api": "api"}) == "[other:quux]"
 
 
 def test_tag_to_state_basename():

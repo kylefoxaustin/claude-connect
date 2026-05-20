@@ -46,6 +46,31 @@ def test_dump_settings_round_trips(tmp_path: Path):
     assert reloaded.server.port == 8765
 
 
+def test_load_settings_reads_bus_tags(tmp_path: Path):
+    p = tmp_path / "settings.toml"
+    p.write_text(textwrap.dedent("""
+        [bus]
+        adapter = "markdown"
+
+        [bus.tags]
+        "~/code/my-api" = "api"
+        "~/code/my-web" = "web"
+    """).strip())
+    s = load_settings(p)
+    assert s.bus.tags == {"~/code/my-api": "api", "~/code/my-web": "web"}
+
+
+def test_dump_settings_round_trips_bus_tags(tmp_path: Path):
+    # A UI-driven save must not drop the pretty-tag map.
+    p = tmp_path / "settings.toml"
+    s = Settings()
+    s.bus.tags = {"~/code/my-api": "api", "~/code/my-web": "web"}
+    dump_settings(s, p)
+    assert "[bus.tags]" in p.read_text()
+    reloaded = load_settings(p)
+    assert reloaded.bus.tags == {"~/code/my-api": "api", "~/code/my-web": "web"}
+
+
 def test_dump_settings_preserves_types(tmp_path: Path):
     # bool/int/float/str must survive the hand-rolled TOML writer.
     p = tmp_path / "settings.toml"

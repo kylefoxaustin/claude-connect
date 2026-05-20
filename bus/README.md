@@ -56,15 +56,21 @@ esac
 ```
 
 If you want a named tag to participate in the **automatic hooks** (SessionStart
-context injection + UserPromptSubmit nudges), also add it to the two whitelist
-`case` statements inside the `session-start` and `prompt-check` branches.
-Un-whitelisted tags can still use the slash commands manually; they just won't
-get the automatic nudges. This whitelist is what keeps the bus out of unrelated
-sessions.
+context injection + UserPromptSubmit nudges), also add it to the `BUS_WHITELIST`
+near the top of `bus.sh` (a `|`-separated list). Un-whitelisted tags can still
+use the slash commands manually; they just won't get the automatic nudges. The
+whitelist is what keeps the bus out of unrelated sessions.
 
-> **Keep Conductor in sync:** when you add a named tag here, also add it to
-> `_BUS_TAG_TABLE` in `conductor/scanner.py` so Conductor labels the tile with
-> the same tag. Point Conductor at your log via `[bus]` in `settings.toml`.
+> **Keep Conductor in sync:** when you add a named tag here, also add it to the
+> `[bus.tags]` table in Conductor's `settings.toml` so it labels the tile with
+> the same tag:
+>
+> ```toml
+> [bus.tags]
+> "~/code/my-api" = "api"
+> ```
+>
+> See `settings.example.toml`. Anything unmapped falls back to `[other:<dir>]`.
 
 ## What if a session isn't wired up?
 
