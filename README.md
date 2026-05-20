@@ -223,6 +223,12 @@ Check that `xdotool` is installed and the session's terminal window is on the cu
 
 ---
 
+## Maintainer
+
+Built and maintained by **Kyle Fox** ([@kylefoxaustin](https://github.com/kylefoxaustin)).
+
+Got an idea, found a bug, or want to share how you're using it? Open an [issue](https://github.com/kylefoxaustin/claude-connect/issues) or ping me on GitHub.
+
 ## Contributing
 
 Issues and PRs welcome. See [`CLAUDE.md`](CLAUDE.md) for the agent-friendly contributor guide.
