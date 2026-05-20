@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from . import __version__
 from .activity import ActivityWatcher
 from .bus import (
     BusAdapter,
@@ -135,18 +136,16 @@ class AppState:
             if r.tag:
                 r.pending_count = self._pending_for(r.tag)
 
-        # Topology for the markdown bus is implicit: every active tagged
-        # session is a subscriber. Push it onto the adapter so /api/bus and
-        # the connection-line drawing both see the same view.
+        # Topology for the markdown bus = tags that are actually *wired up* to
+        # the bus, i.e. have bus state (a `<tag>.last-seen` file). A session can
+        # be tagged (every CWD derives one) yet never have touched the bus; such
+        # un-wired sessions render as normal tiles but get no connection line, so
+        # you can see at a glance who's on the tunnel and who's deliberately out.
+        # list_known_tags() already covers wired sessions whether or not they
+        # currently have a tile; lines.js skips subscriber tags with no tile.
         if isinstance(self.bus, MarkdownBusAdapter):
             state_dir = self.settings.bus.state_dir_resolved
-            subs: dict[str, list[str]] = {}
-            for r in self.sessions.values():
-                if r.status != Status.ENDED and r.tag:
-                    subs.setdefault(r.tag, [])
-            # Also surface tags seen by the bus that don't currently have a tile.
-            for tag in list_known_tags(state_dir):
-                subs.setdefault(tag, [])
+            subs: dict[str, list[str]] = {tag: [] for tag in list_known_tags(state_dir)}
             self.bus.set_topology(BusTopology(subscribers=subs))
 
         # Sync inotify watch set.
@@ -250,7 +249,7 @@ app = FastAPI(title="Conductor", lifespan=lifespan)
 
 @app.get("/api/health")
 async def health() -> dict[str, Any]:
-    return {"ok": True, "version": "0.1.0"}
+    return {"ok": True, "version": __version__}
 
 
 @app.get("/api/sessions")

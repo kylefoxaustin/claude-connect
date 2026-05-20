@@ -27,5 +27,8 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - ✅ Phase 3: BusAdapter + Bus tile + notification badge
 - ✅ Phase 4: SVG connection lines + flow animation
 - ✅ Phase 5: claude-tracked + WindowMapper + focus action
+- ✅ v1.0: 📬 bubble injects /msg-check into the live Claude (guarded by a
+  per-user busy policy); un-wired sessions render without a bus line; bus
+  reference impl shipped in `bus/`.
 
 See `CONDUCTOR_SPEC.md` for full design.

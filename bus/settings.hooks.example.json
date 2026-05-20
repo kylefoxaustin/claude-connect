@@ -1,0 +1,34 @@
+{
+  "//": "Merge these blocks into ~/.claude/settings.json. The permissions.allow line pre-approves the bus script so Claude can run it without a prompt. The two hooks make every session bus-aware: SessionStart injects recent bus context, UserPromptSubmit nudges when new messages have arrived (without showing their content).",
+  "permissions": {
+    "allow": [
+      "Bash(/home/YOU/.claude/bin/bus.sh:*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/YOU/.claude/bin/bus.sh session-start",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/YOU/.claude/bin/bus.sh prompt-check",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}
