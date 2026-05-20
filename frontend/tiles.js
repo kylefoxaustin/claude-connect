@@ -164,11 +164,19 @@ function sessionTile(s, state) {
   }, "▶");
 
   const pending = s.pending_count || 0;
+  const guard = (window.conductorPrefs && window.conductorPrefs.busClickGuard) || "confirm-busy";
+  const busy = s.status === "active" || s.status === "warm";
+  const blocked = guard === "block-busy" && busy;
   const pendingBadge = pending > 0
     ? el("span", {
-        class: "pending-badge",
-        title: `${pending} unread bus message(s) — click to /msg-check`,
-        onclick: (e) => { e.stopPropagation(); window.requestCheck(s.session_id); },
+        class: blocked ? "pending-badge busy-blocked" : "pending-badge",
+        title: blocked
+          ? `${pending} unread — Claude is busy; injection disabled (Settings → Bus bubble click)`
+          : `${pending} unread bus message(s) — click to run /msg-check in this Claude (raises its window)`,
+        onclick: (e) => {
+          e.stopPropagation();
+          if (!blocked) window.requestCheck(s.session_id, s.status);
+        },
       }, `📬 ${pending}`)
     : null;
 

@@ -56,6 +56,22 @@
             </label>
           </section>
           <section class="settings-group">
+            <h3>Messages <span class="settings-hint">saved in this browser</span></h3>
+            <label class="settings-row">
+              <span>Bus bubble click</span>
+              <select id="set-bus-guard">
+                <option value="confirm-busy">Confirm if busy, inject if idle</option>
+                <option value="always">Always inject (no guard)</option>
+                <option value="block-busy">Block while busy</option>
+                <option value="always-confirm">Always confirm first</option>
+              </select>
+            </label>
+            <p class="settings-hint settings-row-note">
+              Clicking 📬 types <code>/msg-check</code> into the live Claude and
+              raises its window. “Busy” = actively writing (active/warm).
+            </p>
+          </section>
+          <section class="settings-group">
             <h3>Behavior <span class="settings-hint">saved to settings.toml</span></h3>
             <label class="settings-row">
               <span>Rescan every</span>

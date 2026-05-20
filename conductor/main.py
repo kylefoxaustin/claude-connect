@@ -33,7 +33,7 @@ from .bus import (
 from .models import BusEvent, BusTopology, SessionRecord, Status
 from .scanner import SessionScanner, encode_cwd, extract_preview, newest_jsonl
 from .settings import DEFAULT_SETTINGS_PATH, Settings, dump_settings, load_settings
-from .windows import focus_session, wmctrl_available
+from .windows import focus_session, send_keys_to_session, wmctrl_available
 from .ws import WSHub
 
 log = logging.getLogger("conductor")
@@ -276,35 +276,29 @@ async def focus(session_id: str, request: Request) -> dict[str, Any]:
 
 @app.post("/api/sessions/{session_id}/check")
 async def check_bus(session_id: str, request: Request) -> dict[str, Any]:
-    """Run `bus.sh check` for a session's tag: reads last 80 lines + clears pending."""
+    """Drive the *live* Claude session to read the bus.
+
+    Types ``/msg-check`` + Enter into the session's terminal window via xdotool
+    (activating it first — this steals focus). We deliberately do *not* run
+    `bus.sh check` server-side: letting the real Claude run the skill is what the
+    user asked for, and its own check bumps ``<tag>.last-seen`` so the pending
+    badge clears naturally on the next scan once the message is truly seen.
+    """
     state: AppState = request.app.state.cond
     rec = next((r for r in state.sessions.values() if r.session_id == session_id), None)
     if rec is None:
         raise HTTPException(status_code=404, detail="session not found")
-    script = state.settings.bus.script_path_resolved
-    if not script.exists():
-        raise HTTPException(status_code=503, detail=f"bus script not found at {script}")
-    proc = await asyncio.create_subprocess_exec(
-        str(script), "check",
-        cwd=rec.project_dir,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+    injected = await asyncio.to_thread(
+        send_keys_to_session,
+        text="/msg-check",
+        terminal_pid=rec.terminal_pid,
+        title=rec.title,
+        window_title=rec.window_title,
     )
-    try:
-        stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=5.0)
-    except asyncio.TimeoutError:
-        proc.kill()
-        raise HTTPException(status_code=504, detail="bus.sh check timed out")
-    # Refresh pending count immediately after check (bus.sh check bumps
-    # <tag>.last-seen, so compute_pending should now return 0).
-    rec.pending_count = state._pending_for(rec.tag)
-    await state.hub.broadcast("session", rec.to_dict())
     return {
-        "ok": proc.returncode == 0,
+        "injected": injected,
         "tag": rec.tag,
-        "pending_after": rec.pending_count,
-        "stdout": (stdout_b or b"").decode("utf-8", errors="replace")[-4096:],
-        "stderr": (stderr_b or b"").decode("utf-8", errors="replace")[-1024:],
+        "wmctrl_available": wmctrl_available(),
     }
 
 

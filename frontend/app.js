@@ -20,7 +20,11 @@ window.conductorState = state; // for ad-hoc debugging from devtools
 
 // --- Display preferences (client-side, localStorage) ------------------------
 const PREFS_KEY = "conductor.prefs.v1";
-const DEFAULT_PREFS = { theme: "dark", lines: true, animation: true, showEnded: true };
+const DEFAULT_PREFS = {
+  theme: "dark", lines: true, animation: true, showEnded: true,
+  // How a 📬 bubble click behaves: "confirm-busy" | "always" | "block-busy" | "always-confirm".
+  busClickGuard: "confirm-busy",
+};
 
 function loadPrefs() {
   try { return { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem(PREFS_KEY) || "{}") }; }
@@ -160,6 +164,7 @@ const setTheme = document.getElementById("set-theme");
 const setLines = document.getElementById("set-lines");
 const setAnimation = document.getElementById("set-animation");
 const setShowEnded = document.getElementById("set-showended");
+const setBusGuard = document.getElementById("set-bus-guard");
 const setInterval_ = document.getElementById("set-interval");
 const setFadeout = document.getElementById("set-fadeout");
 const settingsStatus = document.getElementById("settings-status");
@@ -176,6 +181,7 @@ document.getElementById("settings-btn").addEventListener("click", async () => {
   setLines.checked = prefs.lines;
   setAnimation.checked = prefs.animation;
   setShowEnded.checked = prefs.showEnded;
+  setBusGuard.value = prefs.busClickGuard;
   // Behavior from the server (settings.toml).
   try {
     const r = await fetch("/api/settings");
@@ -200,6 +206,11 @@ setLines.addEventListener("change", () => { prefs.lines = setLines.checked; save
 setAnimation.addEventListener("change", () => { prefs.animation = setAnimation.checked; savePrefs(); });
 setShowEnded.addEventListener("change", () => {
   prefs.showEnded = setShowEnded.checked; savePrefs();
+  renderGrid(state); requestAnimationFrame(() => redrawLines(state));
+});
+setBusGuard.addEventListener("change", () => {
+  prefs.busClickGuard = setBusGuard.value; savePrefs();
+  // Re-render so block-busy badges enable/disable to match the new policy.
   renderGrid(state); requestAnimationFrame(() => redrawLines(state));
 });
 
@@ -256,14 +267,45 @@ window.requestFocus = async function requestFocus(sessionId) {
   }
 };
 
-window.requestCheck = async function requestCheck(sessionId) {
+// Is this Claude actively working? jsonl touched in the last 30s (active/warm).
+// Best-effort: a session blocked on a quiet long tool call can still read idle.
+function sessionLooksBusy(status) {
+  return status === "active" || status === "warm";
+}
+
+window.requestCheck = async function requestCheck(sessionId, status) {
+  const guard = (window.conductorPrefs && window.conductorPrefs.busClickGuard) || "confirm-busy";
+  const busy = sessionLooksBusy(status);
+
+  // block-busy: tiles.js already disables the badge while busy; guard here too
+  // in case status changed between render and click.
+  if (guard === "block-busy" && busy) return;
+
+  if (guard === "always-confirm" || (guard === "confirm-busy" && busy)) {
+    const prompt = busy
+      ? "This Claude looks busy (mid-task). Inject /msg-check anyway? Keystrokes are queued and may interrupt its current work."
+      : "Inject /msg-check into this Claude?";
+    if (!window.confirm(prompt)) return;
+  }
+  // "always", or a confirmed/idle case above, falls through to inject.
+
   try {
     const r = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/check`, { method: "POST" });
     if (!r.ok) {
       console.warn("check failed", r.status);
       return;
     }
-    // Server already broadcasts the updated session record; nothing else to do.
+    const body = await r.json().catch(() => ({}));
+    // The server typed /msg-check into the live Claude window. The badge isn't
+    // cleared here — it clears on the next scan once that Claude's own check
+    // bumps <tag>.last-seen. If injection failed (no X / window not found),
+    // warn so the click doesn't look silently broken.
+    if (body.injected === false) {
+      console.warn(
+        "could not type /msg-check into the session window",
+        body.wmctrl_available ? "(window not found)" : "(wmctrl/xdotool unavailable)",
+      );
+    }
   } catch (e) {
     console.warn("check error", e);
   }
