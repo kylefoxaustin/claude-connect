@@ -25,6 +25,13 @@ function savePositions(p) {
 
 let positions = loadPositions();
 
+// While a tile is being dragged we must NOT rebuild the grid: renderGrid does a
+// full `innerHTML = ""` teardown, which would destroy the node mid-gesture
+// (releasing pointer capture) and leave the drop unsaved — the tile then snaps
+// back on the next periodic scan. So a drag defers any render until drop.
+let isDragging = false;
+let renderPending = false;
+
 function tileKeyForSession(s) { return `session:${s.session_id}`; }
 const BUS_KEY = "bus:bus";
 
@@ -88,6 +95,8 @@ function updateGridExtent() {
 }
 
 export function renderGrid(state) {
+  // Defer rebuilds during an active drag; the drop will flush the pending render.
+  if (isDragging) { renderPending = true; return; }
   const grid = document.getElementById("grid");
 
   // Always render: Bus tile + every session tile (ended ones optional).
@@ -300,6 +309,7 @@ function wirePointerDrag(tile, key) {
     const dy = e.clientY - startY;
     if (!dragging && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
       dragging = true;
+      isDragging = true;  // freeze grid rebuilds for the duration of the drag
       tile.classList.add("dragging");
       tile.style.zIndex = "100";
     }
@@ -328,6 +338,14 @@ function wirePointerDrag(tile, key) {
     try { tile.releasePointerCapture(pointerId); } catch {}
     pointerId = null;
     dragging = false;
+    // Drag over: unfreeze and flush any render that arrived while dragging, so
+    // the grid catches up on session/bus updates it skipped.
+    isDragging = false;
+    if (renderPending) {
+      renderPending = false;
+      renderGrid(window.conductorState);
+      requestAnimationFrame(() => redrawLines(window.conductorState));
+    }
   }
   tile.addEventListener("pointerup", endPointer);
   tile.addEventListener("pointercancel", endPointer);
