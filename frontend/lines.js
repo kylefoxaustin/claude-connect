@@ -35,6 +35,10 @@ export function redrawLines(state) {
   const subKeys = Object.keys(subs);
   if (!subKeys.length) return;
 
+  // Active tags are auto-notified of new traffic (solid line); the rest are
+  // passive — on the bus but only manual, so they won't see broadcasts (dashed).
+  const activeTags = new Set(state.busActiveTags || []);
+
   const c = center(bus);
   for (const key of subKeys) {
     // Markdown bus: subscriber keys are tags like "[backend]". Resolve to a
@@ -46,7 +50,7 @@ export function redrawLines(state) {
     const cx = (c.x + t.x) / 2;
     const cy = (c.y + t.y) / 2 - 20;
     path.setAttribute("d", `M${c.x},${c.y} Q${cx},${cy} ${t.x},${t.y}`);
-    path.setAttribute("class", "line");
+    path.setAttribute("class", activeTags.has(key) ? "line" : "line line-passive");
     // Index by both session_id and tag so animateLineFor() can target either.
     const sid = node.dataset.sessionId || "";
     const tag = node.dataset.tag || "";

@@ -12,6 +12,7 @@
       <div class="topbar-meta">
         <span id="conn-state" class="conn-state conn-down">disconnected</span>
         <span id="session-count">0 sessions</span>
+        <button id="compose-btn" title="Send a message on the bus">✉ Compose</button>
         <button id="reset-layout-btn" title="Clear stored tile positions and re-cascade">Reset layout</button>
         <button id="refresh-btn" title="Force rescan">Refresh</button>
         <button id="settings-btn" title="Settings">⚙</button>
@@ -24,6 +25,19 @@
 
     <!-- SVG overlay for connection lines, sized to viewport. -->
     <svg id="lines-overlay" class="lines-overlay" aria-hidden="true"></svg>
+
+    <!-- Legend explaining the bus wire styles. -->
+    <div id="line-legend" class="line-legend">
+      <div class="legend-title">Bus wires</div>
+      <div class="legend-row" title="Wired to the bus hooks — auto-notified of new messages, so it receives broadcasts.">
+        <svg class="legend-swatch" viewBox="0 0 28 8"><line x1="0" y1="4" x2="28" y2="4" class="legend-active" /></svg>
+        <span><strong>Active</strong> · auto-notified (gets broadcasts)</span>
+      </div>
+      <div class="legend-row" title="On the bus but manual only — can /msg-send and /msg-check, but isn't auto-notified. Won't see broadcasts unless you Ping it.">
+        <svg class="legend-swatch" viewBox="0 0 28 8"><line x1="0" y1="4" x2="28" y2="4" class="legend-passive" /></svg>
+        <span><strong>Passive</strong> · manual only (Ping to reach)</span>
+      </div>
+    </div>
 
     <!-- Settings modal, hidden by default. -->
     <div id="settings-modal" class="modal hidden">
@@ -83,6 +97,34 @@
             </label>
             <p class="settings-status" id="settings-status"></p>
           </section>
+        </div>
+      </div>
+    </div>
+
+    <!-- Compose modal, hidden by default. -->
+    <div id="compose-modal" class="modal hidden">
+      <div class="modal-card">
+        <header>
+          <h2>Compose bus message</h2>
+          <button id="compose-modal-close">×</button>
+        </header>
+        <div class="compose-body">
+          <textarea id="compose-text" rows="4" placeholder="Message to send on the bus…"></textarea>
+          <div class="compose-recipients">
+            <div class="compose-recipients-head">
+              <span>Recipients</span>
+              <label class="compose-all"><input type="checkbox" id="compose-all" checked /> All sessions</label>
+            </div>
+            <ul id="compose-recipient-list" class="compose-recipient-list"></ul>
+          </div>
+          <label class="compose-ping">
+            <input type="checkbox" id="compose-ping" />
+            <span>Ping recipients (inject <code>/msg-check</code> so they read it now)</span>
+          </label>
+          <div class="compose-actions">
+            <span class="compose-status" id="compose-status"></span>
+            <button id="compose-send" class="compose-send">Send</button>
+          </div>
         </div>
       </div>
     </div>

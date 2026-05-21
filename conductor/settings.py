@@ -37,6 +37,9 @@ class BusSettings:
     script_path: str = "~/.claude/bin/bus.sh"
     jsonl_path: str = "~/.claude/bus.jsonl"
     idle_seconds: float = 30.0
+    # Sender tag stamped on messages you compose from the dashboard, so they're
+    # distinguishable from any session (e.g. "operator" -> "[operator]").
+    sender_tag: str = "operator"
     # Optional pretty-tag mapping: directory path -> bare tag name (e.g.
     # "~/code/my-api" = "api"). Mirrors the case-table in your bus.sh so
     # Conductor labels tiles with the same tag the bus uses. Anything not
@@ -118,6 +121,7 @@ def dump_settings(settings: Settings, path: Path | str | None = None) -> None:
             "script_path": settings.bus.script_path,
             "jsonl_path": settings.bus.jsonl_path,
             "idle_seconds": settings.bus.idle_seconds,
+            "sender_tag": settings.bus.sender_tag,
         },
         "ui": {"end_fadeout_seconds": settings.ui.end_fadeout_seconds},
     }

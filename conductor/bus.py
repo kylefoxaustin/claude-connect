@@ -330,6 +330,21 @@ def list_known_tags(state_dir: Path) -> list[str]:
     return out
 
 
+def append_message(messages_path: Path, sender_tag: str, body: str) -> str:
+    """Append a message to the markdown bus in bus.sh's exact format.
+
+    Returns the timestamp written. Mirrors ``bus.sh send``: a blank line, the
+    ``## YYYY-MM-DD HH:MM [tag]`` header, a blank line, then the body — so the
+    MarkdownBusAdapter tails and emits it like any other message.
+    """
+    tag = sender_tag.strip().strip("[]") or "operator"
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+    messages_path.parent.mkdir(parents=True, exist_ok=True)
+    with messages_path.open("a", encoding="utf-8") as f:
+        f.write(f"\n## {ts} [{tag}]\n\n{body.rstrip()}\n")
+    return ts
+
+
 def list_sender_tags(messages_path: Path) -> list[str]:
     """Distinct bracketed sender tags that have appeared in the bus log.
 

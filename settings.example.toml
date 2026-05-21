@@ -25,6 +25,10 @@ jsonl_path = "~/.claude/bus.jsonl"
 # Seconds of bus quiet before the bus tile dims.
 idle_seconds = 30.0
 
+# Sender tag stamped on messages you compose from the dashboard (Compose button),
+# so they're distinct from any session. e.g. "operator" -> "[operator]".
+sender_tag = "operator"
+
 # Optional: map project directories to pretty tags, mirroring the case-table in
 # your bus.sh so tiles show the same tag the bus uses. Unmapped dirs fall back to
 # [other:<dirname>]. Use bare names (no brackets). Example:

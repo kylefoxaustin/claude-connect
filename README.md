@@ -2,7 +2,7 @@
 
 **A local browser dashboard for watching all your Claude Code sessions at once — plus an optional message bus that lets them talk to each other.**
 
-[![version: 1.0](https://img.shields.io/badge/version-1.0-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
+[![version: 1.1](https://img.shields.io/badge/version-1.1-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
 [![platform: linux](https://img.shields.io/badge/platform-linux-orange)](#requirements)
 [![safety: read--only](https://img.shields.io/badge/safety-read--only-green)](#how-it-works)
 
@@ -38,6 +38,7 @@ It's **read-only and local**. It watches Claude's `~/.claude/projects/*.jsonl` l
 - 🪟 **Live tiles** for every running Claude session — auto-discovered, no config
 - 🎯 **Click-to-focus** — clicking a tile raises the actual terminal window
 - 📬 **Cross-session messaging** with an animated bus tile showing live traffic
+- ✉️ **Compose from the dashboard** — send your own bus message to all sessions or a chosen few, with an optional "ping" that makes them read it now
 - 🟢 **Status indicators** — `active` / `warm` / `idle` / `dormant` / `waiting` / `ended`
 - 💾 **Persistent layout** — drag tiles to rearrange, your arrangement sticks
 - 🎨 **Themeable** — dark/light, animations, connection-line styling
@@ -106,7 +107,20 @@ Runs `/msg-check` *inside that live Claude* — it raises the window and types t
 
 ### Bus tile
 
-A central tile shows recent cross-session traffic. SVG lines fan out to every session that's on the bus and animate on each message.
+A central tile shows recent cross-session traffic. SVG lines fan out to every session that's on the bus and animate on each message. The line style tells you *how* a session is on the bus (see the legend, bottom-left):
+
+- **Active** (solid) — wired to the bus hooks, so it's **auto-notified** of new messages and receives broadcasts.
+- **Passive** (dashed, dim) — has used the bus manually (`/msg-send` / `/msg-check`) but isn't auto-notified, so it **won't see broadcasts** unless you Ping it. (These are sessions outside `bus.sh`'s hook whitelist — a deliberate scoping so the bus doesn't pester unrelated sessions.)
+
+### ✉ Compose
+
+Click **Compose** in the top bar to send your own message on the bus — like email for your sessions. You're a first-class sender (tagged `[operator]` by default; set `bus.sender_tag` in `settings.toml` to your name).
+
+- **All sessions** (default) — a broadcast everyone sees.
+- **Specific sessions** — uncheck "All" and pick recipients. The message is soft-addressed with a leading `@to [tag] …` line, so receivers (and the dashboard's connection-line animation) know who it's for. It's still on the shared log; addressing is advisory, not private.
+- **Ping recipients** — also injects `/msg-check` into the chosen sessions so they read it immediately (specific recipients only — broadcast-ping would steal focus across every window). `Ctrl/⌘+Enter` sends.
+
+> Sending makes Claude Connect a *writer* on the bus (it still never touches Claude's own state). Requires the markdown bus adapter.
 
 ### ⚙ Settings
 

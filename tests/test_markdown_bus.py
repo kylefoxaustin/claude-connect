@@ -10,6 +10,7 @@ import pytest
 
 from conductor.bus import (
     MarkdownBusAdapter,
+    append_message,
     compute_pending,
     list_known_tags,
     list_sender_tags,
@@ -18,6 +19,27 @@ from conductor.bus import (
     snapshot_history,
 )
 from conductor.scanner import derive_tag, tag_to_state_basename
+
+
+def test_append_message_round_trips(tmp_path):
+    log = tmp_path / "messages.md"
+    append_message(log, "operator", "hello everyone")
+    events = parse_markdown_blocks(log.read_text())
+    assert len(events) == 1
+    assert events[0].source_session == "[operator]"
+    assert events[0].payload_summary == "hello everyone"
+
+
+def test_append_message_normalizes_tag_and_appends(tmp_path):
+    log = tmp_path / "messages.md"
+    log.write_text("## 2026-05-21 09:00 [backend]\n\nfirst\n")
+    # Bracketed/whitespace sender is normalized to a bare tag in the header.
+    append_message(log, "[kyle] ", "@to [other:elm-forge]\nread this")
+    events = parse_markdown_blocks(log.read_text())
+    assert [e.source_session for e in events] == ["[backend]", "[kyle]"]
+    # The directed "@to" line is preserved in the body.
+    assert events[1].payload_summary.startswith("@to [other:elm-forge]")
+    assert list_sender_tags(log) == ["[backend]", "[kyle]"]
 
 
 def test_list_sender_tags(tmp_path):

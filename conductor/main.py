@@ -26,6 +26,7 @@ from .bus import (
     FakeBusAdapter,
     JSONLBusAdapter,
     MarkdownBusAdapter,
+    append_message,
     compute_pending,
     list_known_tags,
     list_sender_tags,
@@ -237,11 +238,20 @@ class AppState:
         # Per-tag pending counts pulled fresh so the bus tile badge stays accurate.
         topology = self.bus.get_topology()
         pending_by_tag = {tag: self._pending_for(tag) for tag in topology.subscribers}
+        # "Active" tags are auto-notified of new traffic (the bus.sh hooks fire
+        # for them, which is also what writes <tag>.last-seen). The rest are
+        # "passive" — they've used the bus manually but won't get broadcasts.
+        # For non-markdown adapters there's no such distinction, so all are active.
+        if isinstance(self.bus, MarkdownBusAdapter):
+            active_tags = list_known_tags(self.settings.bus.state_dir_resolved)
+        else:
+            active_tags = list(topology.subscribers)
         return {
             "total": self.bus_total,
             "recent": [e.to_dict() for e in list(self.recent_events)[-20:]],
             "topology": topology.to_dict(),
             "pending_by_tag": pending_by_tag,
+            "active_tags": active_tags,
             "adapter": self.settings.bus.adapter,
         }
 
@@ -321,6 +331,65 @@ async def check_bus(session_id: str, request: Request) -> dict[str, Any]:
 async def get_bus(request: Request) -> dict[str, Any]:
     state: AppState = request.app.state.cond
     return state._bus_payload()
+
+
+class BusMessage(BaseModel):
+    text: str
+    recipients: list[str] = []  # session tags; empty = broadcast to all
+    ping: bool = False          # also inject /msg-check into recipient windows
+
+
+@app.post("/api/bus/send")
+async def send_bus_message(payload: BusMessage, request: Request) -> dict[str, Any]:
+    """Compose-and-send a message to the bus from the dashboard (the human).
+
+    Broadcast when ``recipients`` is empty; otherwise soft-addressed with a
+    leading ``@to [tag]…`` line so receivers and Conductor know who it's for.
+    With ``ping`` (specific recipients only), also inject ``/msg-check`` into
+    each recipient's window so they read it now.
+    """
+    state: AppState = request.app.state.cond
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="message text is required")
+    if not isinstance(state.bus, MarkdownBusAdapter):
+        raise HTTPException(status_code=409, detail="sending requires the markdown bus adapter")
+
+    recipients = [t for t in (r.strip() for r in payload.recipients) if t]
+    body = text
+    if recipients:
+        body = "@to " + " ".join(recipients) + "\n" + text
+
+    await asyncio.to_thread(
+        append_message,
+        state.settings.bus.markdown_path_resolved,
+        state.settings.bus.sender_tag,
+        body,
+    )
+
+    # Optional ping: inject /msg-check into each recipient session (specific
+    # recipients only — broadcast-ping would steal focus across every window).
+    pinged: list[str] = []
+    if payload.ping and recipients:
+        wanted = set(recipients)
+        for rec in state.sessions.values():
+            if rec.tag in wanted and rec.status != Status.ENDED:
+                ok = await asyncio.to_thread(
+                    send_keys_to_session,
+                    text="/msg-check",
+                    terminal_pid=rec.terminal_pid,
+                    title=rec.title,
+                    window_title=rec.window_title,
+                )
+                if ok:
+                    pinged.append(rec.tag)
+
+    return {
+        "ok": True,
+        "sender": state.settings.bus.sender_tag,
+        "recipients": recipients or "all",
+        "pinged": pinged,
+    }
 
 
 class SettingsUpdate(BaseModel):

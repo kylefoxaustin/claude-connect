@@ -1,6 +1,6 @@
 # CLAUDE.md — Conductor
 
-Local browser dashboard for monitoring active Claude Code sessions on a single workstation. Read-only observer; never modifies Claude itself.
+Local browser dashboard for monitoring active Claude Code sessions on a single workstation. Observes read-only and never modifies Claude itself; the only outbound actions are bus-mediated — appending a composed message to the bus log (v1.1) and injecting `/msg-check` keystrokes into a session's terminal on request.
 
 ## Run
 - `make dev` — uvicorn with --reload on http://127.0.0.1:8765
@@ -30,5 +30,9 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - ✅ v1.0: 📬 bubble injects /msg-check into the live Claude (guarded by a
   per-user busy policy); un-wired sessions render without a bus line; bus
   reference impl shipped in `bus/`.
+- ✅ v1.1: Compose button → `POST /api/bus/send`. Send a bus message as
+  `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
+  ones (soft-addressed via a leading `@to [tag]…` line), with an optional
+  ping that injects /msg-check into the chosen sessions.
 
 See `CONDUCTOR_SPEC.md` for full design.

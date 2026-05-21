@@ -13,6 +13,7 @@ const state = {
   busTopology: { subscribers: {} },
   busUnseen: 0,
   busPendingByTag: {},
+  busActiveTags: [],  // tags auto-notified of traffic (solid line); others are passive
   busAdapter: "markdown",
 };
 
@@ -108,6 +109,7 @@ function handleMessage({ kind, payload }) {
       state.busRecent = payload.recent || [];
       state.busTopology = payload.topology || { subscribers: {} };
       state.busPendingByTag = payload.pending_by_tag || {};
+      state.busActiveTags = payload.active_tags || [];
       state.busAdapter = payload.adapter || state.busAdapter;
       renderGrid(state);
       requestAnimationFrame(() => redrawLines(state));
@@ -123,13 +125,23 @@ function handleMessage({ kind, payload }) {
       renderGrid(state);
       requestAnimationFrame(() => {
         redrawLines(state);
-        // Markdown bus: source is a tag (e.g. "[backend]"). Animate that tag's
-        // line back to the bus tile to visualize "this session sent a message".
-        animateLineForTag(ev.source_session);
+        // Directed messages from the dashboard carry a leading "@to [tag]…" line;
+        // animate toward the addressees. Otherwise animate the sender's own line
+        // back to the bus tile ("this session sent a message").
+        const to = parseToTags(ev.payload_summary);
+        if (to.length) to.forEach(animateLineForTag);
+        else animateLineForTag(ev.source_session);
       });
       break;
     }
   }
+}
+
+// Extract recipient tags from a directed message's leading "@to [a] [b]" line.
+function parseToTags(summary) {
+  const line = String(summary || "").split("\n")[0];
+  if (!line.startsWith("@to ")) return [];
+  return line.slice(4).match(/\[[^\]]+\]/g) || [];
 }
 
 // Resolve a tag (e.g. "[backend]") to the session_id it currently maps to,
@@ -257,6 +269,90 @@ window.openBusModal = function openBusModal() {
   modal.classList.add = modal.classList.add; // satisfy linter no-op
   modal.classList.remove("hidden");
 };
+
+// Compose modal wiring — send a bus message from the dashboard (the human).
+const composeModal = document.getElementById("compose-modal");
+const composeText = document.getElementById("compose-text");
+const composeAll = document.getElementById("compose-all");
+const composeList = document.getElementById("compose-recipient-list");
+const composePing = document.getElementById("compose-ping");
+const composeSend = document.getElementById("compose-send");
+const composeStatus = document.getElementById("compose-status");
+
+function closeCompose() { composeModal.classList.add("hidden"); }
+document.getElementById("compose-modal-close").addEventListener("click", closeCompose);
+composeModal.addEventListener("click", (e) => { if (e.target === composeModal) closeCompose(); });
+
+function syncComposeEnabled() {
+  const all = composeAll.checked;
+  for (const cb of composeList.querySelectorAll("input[type=checkbox]")) cb.disabled = all;
+  // Ping only makes sense for specific recipients (broadcast-ping = focus-steal all).
+  composePing.disabled = all;
+  if (all) composePing.checked = false;
+}
+
+function openCompose() {
+  composeStatus.textContent = "";
+  // Rebuild the recipient list from current (non-ended) sessions.
+  composeList.innerHTML = "";
+  for (const s of state.sessions) {
+    if (s.status === "ended") continue;
+    const li = document.createElement("li");
+    const id = `cr-${s.session_id}`;
+    li.innerHTML = `<label><input type="checkbox" value="${escapeHtml(s.tag)}" id="${id}" /> `
+      + `<span class="cr-tag">${escapeHtml(s.tag)}</span> <span class="cr-title">${escapeHtml(s.title)}</span></label>`;
+    composeList.appendChild(li);
+  }
+  composeList.querySelectorAll("input[type=checkbox]").forEach((cb) => {
+    cb.addEventListener("change", () => { if (cb.checked) composeAll.checked = false; syncComposeEnabled(); });
+  });
+  syncComposeEnabled();
+  composeModal.classList.remove("hidden");
+  composeText.focus();
+}
+document.getElementById("compose-btn").addEventListener("click", openCompose);
+composeAll.addEventListener("change", syncComposeEnabled);
+
+async function sendCompose() {
+  const text = composeText.value.trim();
+  if (!text) { composeStatus.textContent = "Enter a message."; return; }
+  const recipients = composeAll.checked
+    ? []
+    : [...composeList.querySelectorAll("input[type=checkbox]:checked")].map((cb) => cb.value);
+  if (!composeAll.checked && recipients.length === 0) {
+    composeStatus.textContent = "Pick recipients, or choose All.";
+    return;
+  }
+  composeSend.disabled = true;
+  composeStatus.textContent = "Sending…";
+  try {
+    const r = await fetch("/api/bus/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, recipients, ping: composePing.checked }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      composeStatus.textContent = `Failed: ${err.detail || r.status}`;
+      return;
+    }
+    const body = await r.json();
+    const to = body.recipients === "all" ? "all sessions" : recipients.join(", ");
+    const ping = (body.pinged && body.pinged.length) ? ` · pinged ${body.pinged.length}` : "";
+    composeStatus.textContent = `Sent to ${to}${ping}.`;
+    composeText.value = "";
+    setTimeout(closeCompose, 900);
+  } catch (e) {
+    composeStatus.textContent = "Send error.";
+    console.warn("compose send error", e);
+  } finally {
+    composeSend.disabled = false;
+  }
+}
+composeSend.addEventListener("click", sendCompose);
+composeText.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") sendCompose();
+});
 
 window.requestFocus = async function requestFocus(sessionId) {
   try {
