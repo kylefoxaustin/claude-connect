@@ -330,6 +330,20 @@ def list_known_tags(state_dir: Path) -> list[str]:
     return out
 
 
+def list_sender_tags(messages_path: Path) -> list[str]:
+    """Distinct bracketed sender tags that have appeared in the bus log.
+
+    A session that has *sent* a message is on the bus even if it has no
+    ``<tag>.last-seen`` file — e.g. an ``[other:*]`` tag that isn't in bus.sh's
+    auto-hook whitelist (so ``mark_seen`` never ran for it). Pairing this with
+    ``list_known_tags`` lets such sessions still get a connection line.
+    """
+    seen: dict[str, None] = {}
+    for _ts, tag in _read_log_headers(messages_path):
+        seen.setdefault(tag, None)
+    return list(seen)
+
+
 class MarkdownBusAdapter:
     """Tails ~/Documents/claude-bus/messages.md and emits one BusEvent per block."""
 

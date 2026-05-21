@@ -12,11 +12,36 @@ from conductor.bus import (
     MarkdownBusAdapter,
     compute_pending,
     list_known_tags,
+    list_sender_tags,
     parse_markdown_blocks,
     read_pending,
     snapshot_history,
 )
 from conductor.scanner import derive_tag, tag_to_state_basename
+
+
+def test_list_sender_tags(tmp_path):
+    log = tmp_path / "messages.md"
+    log.write_text(textwrap.dedent("""
+        ## 2026-05-21 10:00 [backend]
+
+        hi
+
+        ## 2026-05-21 10:01 [other:elm-forge]
+
+        wired in, test 1
+
+        ## 2026-05-21 10:02 [other:elm-forge]
+
+        test 2
+    """).strip())
+    tags = list_sender_tags(log)
+    # de-duped; an other:* sender (no .last-seen) is still reported
+    assert sorted(tags) == ["[backend]", "[other:elm-forge]"]
+
+
+def test_list_sender_tags_missing_file(tmp_path):
+    assert list_sender_tags(tmp_path / "nope.md") == []
 
 
 def test_parse_markdown_blocks_basic():

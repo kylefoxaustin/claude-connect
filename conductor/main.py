@@ -28,6 +28,7 @@ from .bus import (
     MarkdownBusAdapter,
     compute_pending,
     list_known_tags,
+    list_sender_tags,
     read_pending,
     snapshot_history,
 )
@@ -145,7 +146,13 @@ class AppState:
         # currently have a tile; lines.js skips subscriber tags with no tile.
         if isinstance(self.bus, MarkdownBusAdapter):
             state_dir = self.settings.bus.state_dir_resolved
-            subs: dict[str, list[str]] = {tag: [] for tag in list_known_tags(state_dir)}
+            msgs_path = self.settings.bus.markdown_path_resolved
+            # On the bus = has read-state (a `<tag>.last-seen`) OR has ever sent a
+            # message (appears as a sender in the log). The latter covers `other:*`
+            # tags that participate but aren't in bus.sh's auto-hook whitelist, so
+            # they never get a `.last-seen`. dict.fromkeys keeps it de-duped/ordered.
+            tags = dict.fromkeys([*list_known_tags(state_dir), *list_sender_tags(msgs_path)])
+            subs: dict[str, list[str]] = {tag: [] for tag in tags}
             self.bus.set_topology(BusTopology(subscribers=subs))
 
         # Sync inotify watch set.
