@@ -27,8 +27,17 @@ esac
 # sessions; un-whitelisted tags can still use the slash commands manually.
 BUS_WHITELIST="api|web|worker"
 
-# True if the given tag is in BUS_WHITELIST (a `|`-separated list).
-is_whitelisted() { case "|$BUS_WHITELIST|" in *"|$1|"*) return 0 ;; *) return 1 ;; esac; }
+# True if the given tag is auto-notified ("active"). Prefers the data-file
+# whitelist that Conductor manages (~/.claude/bus-state/active-tags, one tag per
+# line — toggled from the dashboard); falls back to BUS_WHITELIST when absent.
+is_whitelisted() {
+  local f="$HOME/.claude/bus-state/active-tags"
+  if [ -f "$f" ]; then
+    grep -qxF "$1" "$f"
+  else
+    case "|$BUS_WHITELIST|" in *"|$1|"*) return 0 ;; *) return 1 ;; esac
+  fi
+}
 
 # Helper: after a read/send/session-start, mark the newest message as "seen"
 # for THIS session tag so prompt-check doesn't re-flag it. No-op outside bus tags.

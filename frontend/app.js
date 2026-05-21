@@ -354,6 +354,24 @@ composeText.addEventListener("keydown", (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === "Enter") sendCompose();
 });
 
+// Toggle a tag's bus membership active <-> passive (writes the active-tags file).
+window.toggleBusActive = async function toggleBusActive(tag, makeActive) {
+  try {
+    const r = await fetch("/api/bus/active", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tag, active: makeActive }),
+    });
+    if (!r.ok) { console.warn("active toggle failed", r.status); return; }
+    const body = await r.json();
+    state.busActiveTags = body.active_tags || state.busActiveTags;
+    renderGrid(state);
+    requestAnimationFrame(() => redrawLines(state));
+  } catch (e) {
+    console.warn("active toggle error", e);
+  }
+};
+
 window.requestFocus = async function requestFocus(sessionId) {
   try {
     const r = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/focus`, { method: "POST" });

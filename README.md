@@ -2,7 +2,7 @@
 
 **A local browser dashboard for watching all your Claude Code sessions at once — plus an optional message bus that lets them talk to each other.**
 
-[![version: 1.1](https://img.shields.io/badge/version-1.1-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
+[![version: 1.2](https://img.shields.io/badge/version-1.2-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
 [![platform: linux](https://img.shields.io/badge/platform-linux-orange)](#requirements)
 [![safety: read--only](https://img.shields.io/badge/safety-read--only-green)](#how-it-works)
 
@@ -40,7 +40,8 @@ It's **read-only and local**. It watches Claude's `~/.claude/projects/*.jsonl` l
 - 📬 **Cross-session messaging** with an animated bus tile showing live traffic
 - ✉️ **Compose from the dashboard** — send your own bus message to all sessions or a chosen few, with an optional "ping" that makes them read it now
 - 🟢 **Status indicators** — `active` / `warm` / `idle` / `dormant` / `waiting` / `ended`
-- 💾 **Persistent layout** — drag tiles to rearrange, your arrangement sticks
+- 💾 **Persistent layout** — drag tiles to rearrange and **resize** them (corner grip); both stick
+- 🔀 **Active/Passive bus control** — click a tile's tag chip to toggle whether it's auto-notified of bus traffic
 - 🎨 **Themeable** — dark/light, animations, connection-line styling
 - 🔒 **Local only** — `127.0.0.1`, in-memory, restart-clean
 
@@ -94,8 +95,9 @@ Each tile is one live Claude session. It shows:
 - **Squashed live preview** of the latest message
 - **Message count + time since last activity**
 - **📬 bubble** — appears when this session has unread bus messages (only if the [bus](#cross-session-bus) is wired up)
+- **Tag chip** (e.g. `[backend]`) — its bus identity, and a click-toggle for [Active/Passive](#active--passive) membership
 
-**Drag tiles** to rearrange them. The layout persists across restarts.
+**Drag** a tile to move it; **drag the bottom-right corner** to resize it. Hover a truncated title to see it in full. Position and size persist across restarts.
 
 ### Click a tile
 
@@ -111,6 +113,12 @@ A central tile shows recent cross-session traffic. SVG lines fan out to every se
 
 - **Active** (solid) — wired to the bus hooks, so it's **auto-notified** of new messages and receives broadcasts.
 - **Passive** (dashed, dim) — has used the bus manually (`/msg-send` / `/msg-check`) but isn't auto-notified, so it **won't see broadcasts** unless you Ping it. (These are sessions outside `bus.sh`'s hook whitelist — a deliberate scoping so the bus doesn't pester unrelated sessions.)
+
+### Active / Passive
+
+Click a tile's **tag chip** to toggle that session between **Active** (auto-notified) and **Passive** (manual only) right from the dashboard. Conductor writes the membership to `~/.claude/bus-state/active-tags`, and `bus.sh` reads it — so the change takes effect on that session's **next prompt** (promote a throwaway session into the team, or stop pestering one). The list seeds from your existing active set on first toggle, so nothing changes until you click.
+
+> Requires the data-file-aware `bus.sh` (the shipped [`bus/bus.sh`](bus/bus.sh) reads `active-tags`, falling back to its built-in `BUS_WHITELIST` when the file is absent). If you wired up the bus before this, re-copy `bus/bus.sh`.
 
 ### ✉ Compose
 

@@ -330,6 +330,52 @@ def list_known_tags(state_dir: Path) -> list[str]:
     return out
 
 
+def _active_tags_path(state_dir: Path) -> Path:
+    return state_dir / "active-tags"
+
+
+def active_tags_configured(state_dir: Path) -> bool:
+    """True once the data-file whitelist exists (i.e. bus.sh has been migrated)."""
+    return _active_tags_path(state_dir).exists()
+
+
+def read_active_tags(state_dir: Path) -> list[str]:
+    """Bracketed tags listed in the ``active-tags`` data file (one bare tag per
+    line; blanks and ``#`` comments ignored). Empty if the file is absent."""
+    try:
+        lines = _active_tags_path(state_dir).read_text().splitlines()
+    except OSError:
+        return []
+    out: list[str] = []
+    for ln in lines:
+        ln = ln.strip()
+        if not ln or ln.startswith("#"):
+            continue
+        out.append(ln if ln.startswith("[") else f"[{ln}]")
+    return out
+
+
+def set_active_tag(state_dir: Path, tag: str, active: bool, *, seed: list[str]) -> list[str]:
+    """Add/remove ``tag`` in the active-tags data file; return the new bracketed
+    list. Seeds from ``seed`` (the current active set) when the file is created,
+    so migrating from the hardcoded whitelist preserves existing membership."""
+    base = read_active_tags(state_dir) if active_tags_configured(state_dir) else list(seed)
+    bare = tag.strip("[]")
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for t in (x.strip("[]") for x in base):
+        if t and t not in seen:
+            seen.add(t)
+            ordered.append(t)
+    if active and bare not in seen:
+        ordered.append(bare)
+    elif not active:
+        ordered = [t for t in ordered if t != bare]
+    state_dir.mkdir(parents=True, exist_ok=True)
+    _active_tags_path(state_dir).write_text("\n".join(ordered) + "\n")
+    return [f"[{t}]" for t in ordered]
+
+
 def append_message(messages_path: Path, sender_tag: str, body: str) -> str:
     """Append a message to the markdown bus in bus.sh's exact format.
 

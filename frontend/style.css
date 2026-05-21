@@ -105,12 +105,14 @@ html, body {
 
 .tile {
   position: absolute;
+  box-sizing: border-box;
   width: 280px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px 14px;
-  min-height: 200px;
+  min-height: 120px;
+  min-width: 200px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -119,6 +121,9 @@ html, body {
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
+  /* Drag-grip resize from the bottom-right corner; size persists per tile. */
+  resize: both;
+  overflow: auto;
 }
 .tile.dragging {
   cursor: grabbing;
@@ -292,7 +297,13 @@ html, body {
   padding: 0 5px;
   border-radius: 3px;
   margin-right: 4px;
+  border: 1px solid transparent;
 }
+/* Clickable bus-membership toggle: solid border = active, dashed/dim = passive. */
+.tag-chip.bus-toggle { cursor: pointer; }
+.tag-chip.bus-active { border-color: rgba(188, 140, 255, 0.5); }
+.tag-chip.bus-passive { border: 1px dashed rgba(188, 140, 255, 0.4); opacity: 0.6; }
+.tag-chip.bus-toggle:hover { background: rgba(188, 140, 255, 0.22); }
 
 /* SVG connection-line overlay sits above the grid background but below tiles. */
 .lines-overlay {

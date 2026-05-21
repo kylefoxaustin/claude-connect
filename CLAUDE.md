@@ -34,5 +34,10 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v1.2: Tile resize (corner grip, size persisted) + full-title tooltip.
+  Active⇄Passive per-tile toggle (click the tag chip) → `POST /api/bus/active`
+  writes `~/.claude/bus-state/active-tags`, the data-file whitelist that the
+  migrated `bus.sh` reads (falls back to defaults when absent). Connection
+  lines: solid = active (auto-notified), dashed = passive; legend bottom-left.
 
 See `CONDUCTOR_SPEC.md` for full design.

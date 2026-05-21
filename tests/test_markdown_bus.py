@@ -10,15 +10,45 @@ import pytest
 
 from conductor.bus import (
     MarkdownBusAdapter,
+    active_tags_configured,
     append_message,
     compute_pending,
     list_known_tags,
     list_sender_tags,
     parse_markdown_blocks,
+    read_active_tags,
     read_pending,
+    set_active_tag,
     snapshot_history,
 )
 from conductor.scanner import derive_tag, tag_to_state_basename
+
+
+def test_active_tags_absent_then_seeded(tmp_path):
+    # No file yet -> not configured, empty read.
+    assert not active_tags_configured(tmp_path)
+    assert read_active_tags(tmp_path) == []
+    # First toggle seeds from the current active set, then applies the change.
+    new = set_active_tag(tmp_path, "[other:elm-forge]", True, seed=["[backend]", "[docs]"])
+    assert active_tags_configured(tmp_path)
+    assert new == ["[backend]", "[docs]", "[other:elm-forge]"]
+    assert read_active_tags(tmp_path) == ["[backend]", "[docs]", "[other:elm-forge]"]
+
+
+def test_set_active_tag_remove_and_idempotent(tmp_path):
+    set_active_tag(tmp_path, "[backend]", True, seed=[])
+    set_active_tag(tmp_path, "[docs]", True, seed=[])
+    # Removing demotes to passive.
+    after = set_active_tag(tmp_path, "[backend]", False, seed=[])
+    assert after == ["[docs]"]
+    # Re-adding an existing tag doesn't duplicate.
+    again = set_active_tag(tmp_path, "[docs]", True, seed=[])
+    assert again == ["[docs]"]
+
+
+def test_read_active_tags_ignores_comments_and_brackets(tmp_path):
+    (tmp_path / "active-tags").write_text("# header\nbackend\n\n[docs]\n")
+    assert read_active_tags(tmp_path) == ["[backend]", "[docs]"]
 
 
 def test_append_message_round_trips(tmp_path):

@@ -56,10 +56,13 @@ esac
 ```
 
 If you want a named tag to participate in the **automatic hooks** (SessionStart
-context injection + UserPromptSubmit nudges), also add it to the `BUS_WHITELIST`
-near the top of `bus.sh` (a `|`-separated list). Un-whitelisted tags can still
-use the slash commands manually; they just won't get the automatic nudges. The
-whitelist is what keeps the bus out of unrelated sessions.
+context injection + UserPromptSubmit nudges), it must be "active." Active
+membership is read from `~/.claude/bus-state/active-tags` (one bare tag per
+line) when that file exists, falling back to the `BUS_WHITELIST` near the top of
+`bus.sh` otherwise. Conductor's dashboard toggles this file when you flip a
+tile's tag chip Active/Passive — or edit it by hand. Un-active tags can still
+use the slash commands manually; they just won't get the automatic nudges. This
+is what keeps the bus out of unrelated sessions.
 
 > **Keep Conductor in sync:** when you add a named tag here, also add it to the
 > `[bus.tags]` table in Conductor's `settings.toml` so it labels the tile with

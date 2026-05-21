@@ -28,9 +28,45 @@ let positions = loadPositions();
 // While a tile is being dragged we must NOT rebuild the grid: renderGrid does a
 // full `innerHTML = ""` teardown, which would destroy the node mid-gesture
 // (releasing pointer capture) and leave the drop unsaved — the tile then snaps
-// back on the next periodic scan. So a drag defers any render until drop.
+// back on the next periodic scan. So a drag defers any render until drop. The
+// same applies to a resize gesture (native grip).
 let isDragging = false;
+let isResizing = false;
 let renderPending = false;
+let resizeIdleTimer = null;
+let resizeSaveTimer = null;
+
+// One observer for all tiles. Persists a tile's size only when the *user*
+// resized it (the grip sets inline width, which our restore also sets — content
+// growth never does), and freezes rebuilds for the duration of the gesture.
+const tileResizeObserver = new ResizeObserver((entries) => {
+  let changed = false;
+  for (const entry of entries) {
+    const el = entry.target;
+    if (!el.style.width) continue;  // not user-resized / not restored
+    const key = el.dataset.tileKey;
+    if (!key) continue;
+    const w = Math.round(el.offsetWidth);
+    const h = Math.round(el.offsetHeight);
+    const p = positions[key] || {};
+    if (p.w !== w || p.h !== h) {
+      positions[key] = { ...p, w, h };
+      changed = true;
+    }
+  }
+  if (!changed) return;
+  // A real size change = an active resize gesture: freeze rebuilds, debounce the
+  // save, and keep lines tracking the moving edge.
+  isResizing = true;
+  clearTimeout(resizeIdleTimer);
+  resizeIdleTimer = setTimeout(() => {
+    isResizing = false;
+    if (renderPending) { renderPending = false; renderGrid(window.conductorState); }
+  }, 250);
+  clearTimeout(resizeSaveTimer);
+  resizeSaveTimer = setTimeout(() => savePositions(positions), 200);
+  redrawLines(window.conductorState);
+});
 
 function tileKeyForSession(s) { return `session:${s.session_id}`; }
 const BUS_KEY = "bus:bus";
@@ -80,6 +116,10 @@ function applyPosition(tile, key) {
   const p = ensurePosition(key);
   tile.style.left = clampX(p.x) + "px";
   tile.style.top  = Math.max(0, p.y) + "px";
+  // Restore a user-set size (if any). Tiles the user never resized stay
+  // auto-height (CSS min-height); resized ones get an explicit box + scroll.
+  if (p.w) tile.style.width = p.w + "px";
+  if (p.h) tile.style.height = p.h + "px";
 }
 
 function updateGridExtent() {
@@ -95,9 +135,10 @@ function updateGridExtent() {
 }
 
 export function renderGrid(state) {
-  // Defer rebuilds during an active drag; the drop will flush the pending render.
-  if (isDragging) { renderPending = true; return; }
+  // Defer rebuilds during an active drag or resize; the gesture flushes it after.
+  if (isDragging || isResizing) { renderPending = true; return; }
   const grid = document.getElementById("grid");
+  tileResizeObserver.disconnect();
 
   // Always render: Bus tile + every session tile (ended ones optional).
   const showEnded = window.conductorPrefs ? window.conductorPrefs.showEnded : true;
@@ -124,6 +165,7 @@ export function renderGrid(state) {
     grid.appendChild(node);
     applyPosition(node, it.key);
     wirePointerDrag(node, it.key);
+    tileResizeObserver.observe(node);
   }
   updateGridExtent();
 }
@@ -189,8 +231,15 @@ function sessionTile(s, state) {
       }, `📬 ${pending}`)
     : null;
 
+  const busActive = (state.busActiveTags || []).includes(s.tag);
   const tagChip = s.tag
-    ? el("span", { class: "tag-chip", title: "claude-bus tag (auto-derived from CWD)" }, s.tag)
+    ? el("span", {
+        class: `tag-chip bus-toggle ${busActive ? "bus-active" : "bus-passive"}`,
+        title: busActive
+          ? `${s.tag} · Active — auto-notified of new bus messages (gets broadcasts). Click to make Passive.`
+          : `${s.tag} · Passive — can send/read manually but won't get broadcasts. Click to make Active.`,
+        onclick: (e) => { e.stopPropagation(); window.toggleBusActive(s.tag, !busActive); },
+      }, s.tag)
     : null;
 
   const tile = el("div", {
@@ -203,7 +252,7 @@ function sessionTile(s, state) {
     el("div", { class: "tile-header" },
       el("div", { class: "tile-title-wrap" },
         el("span", { class: `status-dot ${s.status}`, title: statusLabel(s.status) }),
-        el("span", { class: "tile-title" }, s.title || "(untitled)"),
+        el("span", { class: "tile-title", title: s.title || "" }, s.title || "(untitled)"),
       ),
       el("div", { class: "tile-actions" }, pendingBadge, focusBtn),
     ),
@@ -293,7 +342,11 @@ function wirePointerDrag(tile, key) {
 
   tile.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
-    if (e.target.closest("button, .pending-badge")) return;
+    if (e.target.closest("button, .pending-badge, .bus-toggle")) return;
+    // Bottom-right ~18px is the native resize grip — let the browser handle it
+    // instead of starting a tile drag.
+    const r = tile.getBoundingClientRect();
+    if (e.clientX > r.right - 18 && e.clientY > r.bottom - 18) return;
     pointerId = e.pointerId;
     startX = e.clientX; startY = e.clientY;
     origX = parseFloat(tile.style.left) || 0;

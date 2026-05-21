@@ -26,11 +26,14 @@ from .bus import (
     FakeBusAdapter,
     JSONLBusAdapter,
     MarkdownBusAdapter,
+    active_tags_configured,
     append_message,
     compute_pending,
     list_known_tags,
     list_sender_tags,
+    read_active_tags,
     read_pending,
+    set_active_tag,
     snapshot_history,
 )
 from .models import BusEvent, BusTopology, SessionRecord, Status
@@ -243,7 +246,10 @@ class AppState:
         # "passive" — they've used the bus manually but won't get broadcasts.
         # For non-markdown adapters there's no such distinction, so all are active.
         if isinstance(self.bus, MarkdownBusAdapter):
-            active_tags = list_known_tags(self.settings.bus.state_dir_resolved)
+            sd = self.settings.bus.state_dir_resolved
+            # Prefer the toggleable data-file whitelist once bus.sh has been
+            # migrated to it; until then fall back to .last-seen presence.
+            active_tags = read_active_tags(sd) if active_tags_configured(sd) else list_known_tags(sd)
         else:
             active_tags = list(topology.subscribers)
         return {
@@ -390,6 +396,30 @@ async def send_bus_message(payload: BusMessage, request: Request) -> dict[str, A
         "recipients": recipients or "all",
         "pinged": pinged,
     }
+
+
+class ActiveToggle(BaseModel):
+    tag: str
+    active: bool
+
+
+@app.post("/api/bus/active")
+async def set_bus_active(payload: ActiveToggle, request: Request) -> dict[str, Any]:
+    """Flip a tag's bus membership between active (auto-notified) and passive.
+
+    Writes the ``active-tags`` data file that the migrated bus.sh reads, so the
+    change takes effect on that session's next prompt. Seeds the file from the
+    current active set on first use so nothing changes until you toggle.
+    """
+    state: AppState = request.app.state.cond
+    if not isinstance(state.bus, MarkdownBusAdapter):
+        raise HTTPException(status_code=409, detail="active/passive requires the markdown bus adapter")
+    sd = state.settings.bus.state_dir_resolved
+    seed = list_known_tags(sd)
+    new_active = await asyncio.to_thread(set_active_tag, sd, payload.tag, payload.active, seed=seed)
+    # Push the refreshed view so every client restyles wires immediately.
+    await state.hub.broadcast("bus", state._bus_payload())
+    return {"ok": True, "active_tags": new_active}
 
 
 class SettingsUpdate(BaseModel):
