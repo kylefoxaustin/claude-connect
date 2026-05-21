@@ -16,20 +16,23 @@
 
 ## Project directory hashing
 
-Claude encodes the working-directory path into a single directory name under `~/.claude/projects/`. Empirically the encoding replaces path separators with `-` and prefixes with `-`:
+Claude encodes the working-directory path into a single directory name under `~/.claude/projects/`. Empirically the current encoding replaces **every non-alphanumeric character** with `-` (so `/`, `_`, `.`, spaces all become `-`, and the leading `/` becomes the leading dash):
 
 ```
 cwd                              encoded
 /home/user/code/api         →    -home-user-code-api
-/home/user/my-stuff         →    -home-user-my-stuff
+/home/user/elm7_engine      →    -home-user-elm7-engine    (underscore → dash)
+/home/user/my.app           →    -home-user-my-app         (dot → dash)
 ```
+
+> ⚠️ **Encoding changed across Claude versions.** Older Claude only replaced `/`, leaving `_`/`.` intact — so stale dirs like `…elm7_engine` can coexist with current `…elm7-engine` dirs. Conductor follows the current rule; a session whose dir was created by an old Claude (underscore preserved) won't be matched until that session writes under the new encoding.
 
 Implementation in `conductor/scanner.py::encode_cwd()`:
 
 ```python
 def encode_cwd(path: str) -> str:
     p = os.path.realpath(path)
-    return "-" + p.lstrip("/").replace("/", "-")
+    return re.sub(r"[^A-Za-z0-9]", "-", p)
 ```
 
 If the encoding ever changes, fall back to:

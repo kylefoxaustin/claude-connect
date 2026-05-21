@@ -9,9 +9,11 @@ from pathlib import Path
 import pytest
 
 from conductor.scanner import (
+    build_cwd_index,
     classify_status,
     encode_cwd,
     extract_preview,
+    last_recorded_cwd,
     newest_jsonl,
     parse_custom_title,
     parse_session_meta,
@@ -23,6 +25,46 @@ from conductor.windows import _best_title_match
 def test_encode_cwd_replaces_slashes():
     assert encode_cwd("/home/kyle/code/keyhole") == "-home-kyle-code-keyhole"
     assert encode_cwd("/") == "-"
+
+
+def test_encode_cwd_replaces_underscores_and_dots():
+    # Current Claude replaces every non-alphanumeric char with '-', so paths with
+    # underscores or dots map to hyphens (e.g. elm7_engine -> elm7-engine).
+    assert encode_cwd("/home/u/elm7_engine") == "-home-u-elm7-engine"
+    assert encode_cwd("/home/u/my.app") == "-home-u-my-app"
+    # Existing hyphens are preserved (already valid).
+    assert encode_cwd("/home/u/riscv-tools/riscv-baremetal") == "-home-u-riscv-tools-riscv-baremetal"
+
+
+def test_last_recorded_cwd_tracks_latest(tmp_path: Path):
+    j = tmp_path / "s.jsonl"
+    j.write_text(
+        json.dumps({"type": "user", "cwd": "/home/u/launch-dir"}) + "\n"
+        + json.dumps({"type": "assistant", "cwd": "/home/u/launch-dir"}) + "\n"
+        + json.dumps({"type": "user", "cwd": "/home/u/moved-dir"}) + "\n"
+    )
+    assert last_recorded_cwd(j) == "/home/u/moved-dir"
+
+
+def test_last_recorded_cwd_none_when_absent(tmp_path: Path):
+    j = tmp_path / "s.jsonl"
+    j.write_text(json.dumps({"type": "user", "message": {}}) + "\n")
+    assert last_recorded_cwd(j) is None
+
+
+def test_build_cwd_index_maps_recorded_cwd_to_jsonl(tmp_path: Path):
+    # A session launched in "launch-dir" (so its folder is named for that) but
+    # whose latest record says it cd'd to "moved-dir" should be findable by the
+    # moved cwd — this is the cwd-drift fallback.
+    proj = tmp_path / "-home-u-launch-dir"
+    proj.mkdir()
+    (proj / "abc.jsonl").write_text(
+        json.dumps({"type": "user", "cwd": "/home/u/launch-dir"}) + "\n"
+        + json.dumps({"type": "user", "cwd": str(tmp_path / "moved-dir")}) + "\n"
+    )
+    (tmp_path / "moved-dir").mkdir()
+    index = build_cwd_index(tmp_path)
+    assert index[str(tmp_path / "moved-dir")] == proj / "abc.jsonl"
 
 
 def test_classify_status_active():

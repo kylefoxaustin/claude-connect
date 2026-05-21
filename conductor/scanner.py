@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 from collections.abc import Iterable
 from pathlib import Path
@@ -25,9 +26,17 @@ TERMINAL_NAMES = {
 
 
 def encode_cwd(path: str | os.PathLike[str]) -> str:
-    """Mirror Claude Code's project-dir hashing: replace / with -, leading dash."""
+    """Mirror Claude Code's project-dir encoding.
+
+    Claude sanitizes the absolute cwd into a single dir name under
+    ``~/.claude/projects/`` by replacing every non-alphanumeric character with
+    ``-`` (so the leading ``/`` becomes the leading dash, and ``/``, ``_``, ``.``,
+    spaces, etc. all become ``-``). Older Claude versions only replaced ``/`` and
+    left ``_``/``.`` intact, which is why stale dirs like ``…elm7_engine`` can
+    coexist with current ``…elm7-engine`` dirs — we follow the current rule.
+    """
     p = os.path.realpath(os.fspath(path))
-    return "-" + p.lstrip("/").replace("/", "-")
+    return re.sub(r"[^A-Za-z0-9]", "-", p)
 
 
 def derive_tag(
@@ -122,6 +131,54 @@ def _tail_lines(path: Path, max_bytes: int = 65536) -> list[str]:
     except Exception:
         return []
     return [line for line in text.splitlines() if line.strip()]
+
+
+def last_recorded_cwd(jsonl_path: Path) -> str | None:
+    """Return the most recent ``cwd`` recorded in a session jsonl, or None.
+
+    Claude writes a ``cwd`` field on each record reflecting the session's
+    *current* working directory. The jsonl itself stays in the project dir
+    derived from the *launch* cwd — so when a session cd's elsewhere, reading
+    this lets us still match it to its process by current cwd.
+    """
+    cwd: str | None = None
+    for line in _tail_lines(jsonl_path):
+        try:
+            obj = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(obj, dict) and isinstance(obj.get("cwd"), str):
+            cwd = obj["cwd"]
+    return cwd
+
+
+def build_cwd_index(projects_root: Path) -> dict[str, Path]:
+    """Map ``realpath(recorded_cwd) -> newest jsonl`` across all project dirs.
+
+    Used as a fallback when a process's current cwd doesn't resolve to an
+    existing project dir (the session cd'd away from its launch dir, or the
+    encoding differs). On collision keep the most recently modified jsonl.
+    """
+    index: dict[str, Path] = {}
+    try:
+        dirs = list(projects_root.iterdir())
+    except OSError:
+        return index
+    for d in dirs:
+        jsonl = newest_jsonl(d)
+        if jsonl is None:
+            continue
+        cwd = last_recorded_cwd(jsonl)
+        if not cwd:
+            continue
+        key = os.path.realpath(cwd)
+        prev = index.get(key)
+        try:
+            if prev is None or jsonl.stat().st_mtime > prev.stat().st_mtime:
+                index[key] = jsonl
+        except OSError:
+            index.setdefault(key, jsonl)
+    return index
 
 
 def parse_session_meta(jsonl_path: Path) -> tuple[str, str | None, int]:
@@ -232,6 +289,7 @@ class SessionScanner:
     def scan(self) -> dict[str, SessionRecord]:
         projects_root = self.settings.claude_home_path / "projects"
         out: dict[str, SessionRecord] = {}
+        cwd_index: dict[str, Path] | None = None  # built lazily on first miss
 
         for proc in self._iter_claude_processes():
             try:
@@ -240,8 +298,16 @@ class SessionScanner:
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
 
+            # Fast path: current cwd -> encoded project dir.
             session_dir = projects_root / encode_cwd(cwd)
             jsonl = newest_jsonl(session_dir)
+            if jsonl is None:
+                # Fallback: the session cd'd away from its launch dir (the jsonl
+                # stays in the launch-dir folder), so match by the cwd recorded
+                # inside each project's newest jsonl. Built once per scan.
+                if cwd_index is None:
+                    cwd_index = build_cwd_index(projects_root)
+                jsonl = cwd_index.get(os.path.realpath(cwd))
             if jsonl is None:
                 continue
 
@@ -271,6 +337,7 @@ class SessionScanner:
                 preview=preview,
                 tag=derive_tag(cwd, self._tag_map),
                 window_title=parse_custom_title(jsonl),
+                jsonl_path=str(jsonl),
             )
             # Decision §12.2: one Claude per project dir; on collision keep the most recent.
             existing = out.get(cwd)

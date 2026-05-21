@@ -31,10 +31,12 @@ class SessionRecord:
     tag: str = ""                  # claude-bus tag, e.g. "[backend]"
     pending_count: int = 0         # unread bus messages for this tag
     window_title: str | None = None  # session's customTitle (/rename); matches the X11 window title
+    jsonl_path: str = ""           # resolved session jsonl (backend-only; for activity matching)
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["status"] = self.status.value
+        d.pop("jsonl_path", None)  # internal; not needed by the frontend
         return d
 
 

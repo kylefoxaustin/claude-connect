@@ -154,7 +154,10 @@ class AppState:
         for r in self.sessions.values():
             if r.status == Status.ENDED:
                 continue
-            d = projects_root / encode_cwd(r.project_dir)
+            # Watch the dir the jsonl actually lives in (which can differ from the
+            # current cwd's encoded dir when a session cd'd away from its launch
+            # dir); fall back to the encoded current cwd if unresolved.
+            d = Path(r.jsonl_path).parent if r.jsonl_path else projects_root / encode_cwd(r.project_dir)
             if d.is_dir():
                 watch_dirs.append(d)
         self.activity.sync_watched_dirs(watch_dirs)
@@ -172,10 +175,16 @@ class AppState:
                 jsonl_path, preview = await queue.get()
             except asyncio.CancelledError:
                 return
-            # Find the session this jsonl belongs to.
+            # Find the session this jsonl belongs to (match the resolved path,
+            # so cd'd sessions still update; fall back to the encoded cwd dir).
             rec = None
+            jp = str(jsonl_path)
             for r in self.sessions.values():
-                if newest_jsonl(projects_root / encode_cwd(r.project_dir)) == jsonl_path:
+                if r.jsonl_path:
+                    if r.jsonl_path == jp:
+                        rec = r
+                        break
+                elif newest_jsonl(projects_root / encode_cwd(r.project_dir)) == jsonl_path:
                     rec = r
                     break
             if rec is None:
