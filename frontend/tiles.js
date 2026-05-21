@@ -378,7 +378,9 @@ function wirePointerDrag(tile, key) {
     if (dragging) {
       const x = parseFloat(tile.style.left) || 0;
       const y = parseFloat(tile.style.top)  || 0;
-      positions[key] = { x, y };
+      // Merge, don't overwrite — preserve any persisted size (w/h) from a resize,
+      // otherwise dragging a resized tile drops its size and it snaps back.
+      positions[key] = { ...positions[key], x, y };
       savePositions(positions);
       tile.classList.remove("dragging");
       tile.style.zIndex = "";

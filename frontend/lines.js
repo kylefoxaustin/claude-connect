@@ -45,18 +45,36 @@ export function redrawLines(state) {
     // session tile by tag, falling back to session_id (jsonl bus shape).
     const node = sessionTileElByTag(key) || sessionTileEl(key);
     if (!node) continue;
-    const t = center(node);
+    // Terminate the wire at the tag chip (the bus identity + Active/Passive
+    // toggle) rather than the tile center, so the connection point is obvious.
+    // Anchor at the chip's bottom-left corner so the line/plug sit off the label.
+    const chip = node.querySelector(".tag-chip");
+    let t;
+    if (chip) {
+      const r = chip.getBoundingClientRect();
+      t = { x: r.left, y: r.bottom };
+    } else {
+      t = center(node);
+    }
+    const active = activeTags.has(key);
     const path = document.createElementNS(SVG_NS, "path");
     const cx = (c.x + t.x) / 2;
     const cy = (c.y + t.y) / 2 - 20;
     path.setAttribute("d", `M${c.x},${c.y} Q${cx},${cy} ${t.x},${t.y}`);
-    path.setAttribute("class", activeTags.has(key) ? "line" : "line line-passive");
+    path.setAttribute("class", active ? "line" : "line line-passive");
     // Index by both session_id and tag so animateLineFor() can target either.
     const sid = node.dataset.sessionId || "";
     const tag = node.dataset.tag || "";
     if (sid) path.dataset.sessionId = sid;
     if (tag) path.dataset.tag = tag;
     svg.appendChild(path);
+    // A little "plug" dot where the wire meets the chip — filled = active.
+    const dot = document.createElementNS(SVG_NS, "circle");
+    dot.setAttribute("cx", t.x);
+    dot.setAttribute("cy", t.y);
+    dot.setAttribute("r", "3");
+    dot.setAttribute("class", active ? "line-plug" : "line-plug line-plug-passive");
+    svg.appendChild(dot);
   }
 }
 
