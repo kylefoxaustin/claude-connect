@@ -7,6 +7,26 @@
 import { redrawLines } from "/static/lines.js";
 
 const POS_KEY = "conductor.positions.v1";
+const MIN_KEY = "conductor.minimized.v1";
+
+function loadMinimized() {
+  try { return JSON.parse(localStorage.getItem(MIN_KEY) || "{}"); }
+  catch { return {}; }
+}
+function saveMinimized() {
+  try { localStorage.setItem(MIN_KEY, JSON.stringify(minimized)); } catch {}
+}
+// Set of minimized tile keys -> true. Minimized tiles drop out of the grid into
+// the bottom dock; their bus wire is hidden (the dock chip isn't a .tile, so
+// lines.js can't resolve it). State persists across restarts.
+let minimized = loadMinimized();
+
+function setMinimized(key, on) {
+  if (on) minimized[key] = true; else delete minimized[key];
+  saveMinimized();
+  renderGrid(window.conductorState);
+  requestAnimationFrame(() => redrawLines(window.conductorState));
+}
 
 const TILE_W   = 280;
 const TILE_H   = 220;   // approximate; tiles can grow taller from content
@@ -140,23 +160,31 @@ export function renderGrid(state) {
   const grid = document.getElementById("grid");
   tileResizeObserver.disconnect();
 
-  // Always render: Bus tile + every session tile (ended ones optional).
+  // Always render the Bus tile; session tiles go to the grid unless minimized
+  // (ended ones optional). Minimized sessions render as dock chips instead.
   const showEnded = window.conductorPrefs ? window.conductorPrefs.showEnded : true;
   const items = [];
   items.push({ key: BUS_KEY, render: () => busTile(state) });
+  const dockSessions = [];
   for (const s of state.sessions) {
     if (!showEnded && s.status === "ended") continue;
-    items.push({ key: tileKeyForSession(s), render: () => sessionTile(s, state) });
+    const key = tileKeyForSession(s);
+    if (minimized[key]) dockSessions.push({ key, s });
+    else items.push({ key, render: () => sessionTile(s, state) });
   }
 
-  // Garbage-collect positions for tiles that no longer exist (so cascade slots
-  // they were occupying free up). Keep BUS_KEY always.
-  const liveKeys = new Set(items.map(it => it.key));
+  // Garbage-collect layout + minimized state for tiles that no longer exist.
+  const liveKeys = new Set([...items.map(it => it.key), ...dockSessions.map(d => d.key)]);
   let mutated = false;
   for (const k of Object.keys(positions)) {
     if (!liveKeys.has(k)) { delete positions[k]; mutated = true; }
   }
   if (mutated) savePositions(positions);
+  let minMutated = false;
+  for (const k of Object.keys(minimized)) {
+    if (!liveKeys.has(k)) { delete minimized[k]; minMutated = true; }
+  }
+  if (minMutated) saveMinimized();
 
   grid.innerHTML = "";
   for (const it of items) {
@@ -167,7 +195,31 @@ export function renderGrid(state) {
     wirePointerDrag(node, it.key);
     tileResizeObserver.observe(node);
   }
+
+  // Bottom dock for minimized sessions.
+  const dock = document.getElementById("dock");
+  if (dock) {
+    dock.innerHTML = "";
+    for (const d of dockSessions) dock.appendChild(dockChip(d.s, d.key, state));
+    document.body.classList.toggle("has-dock", dockSessions.length > 0);
+  }
   updateGridExtent();
+}
+
+// A minimized session as a tiny dock chip: status dot + name + 📬, click to
+// restore. Still live — renderGrid rebuilds the dock on every update.
+function dockChip(s, key, state) {
+  const pending = s.pending_count || 0;
+  return el("div", {
+    class: "dock-chip",
+    title: `${s.title || "(untitled)"} · ${statusLabel(s.status)}`
+      + (pending ? ` · 📬 ${pending}` : "") + "\nClick to restore",
+    onclick: () => setMinimized(key, false),
+  },
+    el("span", { class: `status-dot ${s.status}`, title: statusLabel(s.status) }),
+    el("span", { class: "dock-chip-name" }, s.title || "(untitled)"),
+    pending ? el("span", { class: "dock-chip-badge" }, `📬${pending}`) : null,
+  );
 }
 
 function statusLabel(status) {
@@ -214,6 +266,12 @@ function sessionTile(s, state) {
     },
   }, "▶");
 
+  const minimizeBtn = el("button", {
+    class: "icon-btn",
+    title: "Minimize to dock (keeps monitoring)",
+    onclick: (e) => { e.stopPropagation(); setMinimized(tileKeyForSession(s), true); },
+  }, "–");
+
   const pending = s.pending_count || 0;
   const guard = (window.conductorPrefs && window.conductorPrefs.busClickGuard) || "confirm-busy";
   const busy = s.status === "active" || s.status === "warm";
@@ -254,7 +312,7 @@ function sessionTile(s, state) {
         el("span", { class: `status-dot ${s.status}`, title: statusLabel(s.status) }),
         el("span", { class: "tile-title", title: s.title || "" }, s.title || "(untitled)"),
       ),
-      el("div", { class: "tile-actions" }, pendingBadge, focusBtn),
+      el("div", { class: "tile-actions" }, pendingBadge, focusBtn, minimizeBtn),
     ),
     el("div", { class: "tile-projectdir", title: s.project_dir },
       tagChip, tagChip ? " " : null, s.project_dir,

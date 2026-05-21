@@ -2,7 +2,7 @@
 
 **A local browser dashboard for watching all your Claude Code sessions at once — plus an optional message bus that lets them talk to each other.**
 
-[![version: 1.2](https://img.shields.io/badge/version-1.2-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
+[![version: 1.3](https://img.shields.io/badge/version-1.3-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
 [![platform: linux](https://img.shields.io/badge/platform-linux-orange)](#requirements)
 [![safety: read--only](https://img.shields.io/badge/safety-read--only-green)](#how-it-works)
 
@@ -41,6 +41,7 @@ It's **read-only and local**. It watches Claude's `~/.claude/projects/*.jsonl` l
 - ✉️ **Compose from the dashboard** — send your own bus message to all sessions or a chosen few, with an optional "ping" that makes them read it now
 - 🟢 **Status indicators** — `active` / `warm` / `idle` / `dormant` / `waiting` / `ended`
 - 💾 **Persistent layout** — drag tiles to rearrange and **resize** them (corner grip); both stick
+- 🗕 **Minimize to dock** — tuck rarely-touched sessions into a bottom dock (still live), restore with a click
 - 🔀 **Active/Passive bus control** — click a tile's tag chip to toggle whether it's auto-notified of bus traffic
 - 🎨 **Themeable** — dark/light, animations, connection-line styling
 - 🔒 **Local only** — `127.0.0.1`, in-memory, restart-clean
@@ -97,7 +98,11 @@ Each tile is one live Claude session. It shows:
 - **📬 bubble** — appears when this session has unread bus messages (only if the [bus](#cross-session-bus) is wired up)
 - **Tag chip** (e.g. `[backend]`) — its bus identity, and a click-toggle for [Active/Passive](#active--passive) membership
 
-**Drag** a tile to move it; **drag the bottom-right corner** to resize it. Hover a truncated title to see it in full. Position and size persist across restarts.
+**Drag** a tile to move it; **drag the bottom-right corner** to resize it; the **`–`** button minimizes it to the bottom dock. Hover a truncated title to see it in full. Position, size, and minimized state persist across restarts.
+
+### Minimize / dock
+
+Click a tile's **`–`** to tuck it into a thin **dock** along the bottom — a tiny chip with its status dot, name, and 📬 badge. It's still monitored (the dot keeps updating; a new message still lights the badge), just out of the way. Hover for the full name; **click the chip to restore** it to its previous position and size. Minimized tiles' bus wires are hidden to keep the board clean.
 
 ### Click a tile
 
@@ -132,7 +137,7 @@ Click **Compose** in the top bar to send your own message on the bus — like em
 
 ### ⚙ Settings
 
-Theme, connection lines, animations, rescan cadence, and the **bus-bubble click policy**:
+Theme, connection lines (incl. **Lines behind tiles** to drop the wires behind the tiles for a cleaner board), animations, rescan cadence, and the **bus-bubble click policy**:
 
 | Policy                                      | Behavior                                                                                      |
 | ------------------------------------------- | --------------------------------------------------------------------------------------------- |

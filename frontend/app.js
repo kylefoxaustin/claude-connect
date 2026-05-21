@@ -23,6 +23,8 @@ window.conductorState = state; // for ad-hoc debugging from devtools
 const PREFS_KEY = "conductor.prefs.v1";
 const DEFAULT_PREFS = {
   theme: "dark", lines: true, animation: true, showEnded: true,
+  // Draw the bus lines behind the tiles instead of on top (declutter).
+  linesBehind: false,
   // How a 📬 bubble click behaves: "confirm-busy" | "always" | "block-busy" | "always-confirm".
   busClickGuard: "confirm-busy",
 };
@@ -44,9 +46,13 @@ function applyLinesVisibility() {
   const overlay = document.getElementById("lines-overlay");
   if (overlay) overlay.style.display = prefs.lines ? "" : "none";
 }
+function applyLinesBehind() {
+  document.body.classList.toggle("lines-behind", !!prefs.linesBehind);
+}
 function applyPrefs() {
   applyTheme();
   applyLinesVisibility();
+  applyLinesBehind();
   renderGrid(state);
   requestAnimationFrame(() => redrawLines(state));
 }
@@ -174,6 +180,7 @@ window.addEventListener("resize", () => requestAnimationFrame(() => redrawLines(
 const settingsModal = document.getElementById("settings-modal");
 const setTheme = document.getElementById("set-theme");
 const setLines = document.getElementById("set-lines");
+const setLinesBehind = document.getElementById("set-lines-behind");
 const setAnimation = document.getElementById("set-animation");
 const setShowEnded = document.getElementById("set-showended");
 const setBusGuard = document.getElementById("set-bus-guard");
@@ -191,6 +198,7 @@ document.getElementById("settings-btn").addEventListener("click", async () => {
   // Appearance from local prefs.
   setTheme.value = prefs.theme;
   setLines.checked = prefs.lines;
+  setLinesBehind.checked = prefs.linesBehind;
   setAnimation.checked = prefs.animation;
   setShowEnded.checked = prefs.showEnded;
   setBusGuard.value = prefs.busClickGuard;
@@ -215,6 +223,7 @@ settingsModal.addEventListener("click", (e) => {
 // Appearance prefs: apply + persist locally on change.
 setTheme.addEventListener("change", () => { prefs.theme = setTheme.value; savePrefs(); applyTheme(); });
 setLines.addEventListener("change", () => { prefs.lines = setLines.checked; savePrefs(); applyLinesVisibility(); });
+setLinesBehind.addEventListener("change", () => { prefs.linesBehind = setLinesBehind.checked; savePrefs(); applyLinesBehind(); });
 setAnimation.addEventListener("change", () => { prefs.animation = setAnimation.checked; savePrefs(); });
 setShowEnded.addEventListener("change", () => {
   prefs.showEnded = setShowEnded.checked; savePrefs();
