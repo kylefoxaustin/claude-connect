@@ -19,7 +19,7 @@ from conductor.scanner import (
     parse_session_meta,
 )
 from conductor.models import Status
-from conductor.windows import _best_title_match
+from conductor.windows import _best_title_match, _token_match
 
 
 def test_encode_cwd_replaces_slashes():
@@ -162,6 +162,21 @@ def test_best_title_match_prefers_most_specific():
     assert _best_title_match(windows, "keyhole-sizer") == 0x1
     # customTitle match is exact.
     assert _best_title_match(windows, "Project: 95emulator") == 0x3
+
+
+def test_token_match_handles_reworded_topic_title():
+    # Session "rk182x-evk-setup-guide" vs an auto-topic window title that doesn't
+    # substring-match it — token overlap should still pick the right window over
+    # unrelated siblings sharing the terminal PID.
+    windows = [
+        (0x1, 8040, "✳ Project keyhole-sizer"),
+        (0x2, 8040, "✳ Project: Keyhole"),
+        (0x3, 8040, "✳ Build Rockchip RK182X EVK setup guide"),
+    ]
+    assert _token_match(windows, None, "rk182x-evk-setup-guide") == 0x3
+    # No shared tokens anywhere -> no false positive.
+    assert _token_match(windows, None, "totally-different-xyz") is None
+    assert _token_match(windows, None, None) is None
 
 
 def test_best_title_match_no_match_returns_none():

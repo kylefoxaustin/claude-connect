@@ -7,6 +7,7 @@ frontend just dims the focus button.
 from __future__ import annotations
 
 import logging
+import re
 import shutil
 import subprocess
 import time
@@ -84,6 +85,32 @@ def _best_title_match(windows: list[tuple[int, int, str]], hint: str | None) -> 
     return matches[0][0]
 
 
+def _token_match(windows: list[tuple[int, int, str]], *hints: str | None) -> int | None:
+    """Window whose title shares the most word-tokens with the hints.
+
+    Handles auto-generated topic titles that don't substring-match the session
+    name — e.g. session ``rk182x-evk-setup-guide`` vs window
+    ``Build Rockchip RK182X EVK setup guide``: the tokens rk182x/evk/setup/guide
+    all hit, so the right window wins over unrelated siblings. Returns None if
+    nothing scores (no false positive)."""
+    toks: set[str] = set()
+    for h in hints:
+        if not h:
+            continue
+        for t in re.split(r"[^a-z0-9]+", h.lower()):
+            if len(t) >= 2:
+                toks.add(t)
+    if not toks:
+        return None
+    best_wid, best_score = None, 0
+    for wid, _pid, title in windows:
+        tl = title.lower()
+        score = sum(1 for t in toks if t in tl)
+        if score > best_score:
+            best_wid, best_score = wid, score
+    return best_wid if best_score > 0 else None
+
+
 def _resolve_window(
     *,
     terminal_pid: int | None,
@@ -100,7 +127,9 @@ def _resolve_window(
       2. ``window_title`` (the session's customTitle, which Claude Code writes
          to the X11 window title) — the reliable key.
       3. ``title`` (summary / project basename) as a looser fallback.
-      4. Any window owned by ``terminal_pid`` (ambiguous last resort).
+      4. Word-token overlap (handles reworded auto-topic titles).
+      5. The terminal's sole window — only if it owns exactly one (else give up
+         rather than focus the wrong sibling).
     """
     windows = list_windows()
     # Scope title matching to this terminal's own windows when we can identify
@@ -120,10 +149,17 @@ def _resolve_window(
         if wid is not None:
             return wid
 
-    if terminal_pid is not None:
-        for wid, pid, _title in windows:
-            if pid == terminal_pid:
-                return wid
+    # Token-overlap match (scoped to this terminal's windows) — catches reworded
+    # auto-topic titles that don't substring-match the session name.
+    wid = _token_match(search, window_title, title)
+    if wid is not None:
+        return wid
+
+    # Last resort: only when the terminal owns exactly one window. With several
+    # sibling windows and no title/token match, refuse to guess (focusing the
+    # wrong session is worse than doing nothing).
+    if len(term_windows) == 1:
+        return term_windows[0][0]
     return None
 
 

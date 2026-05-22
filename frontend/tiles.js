@@ -141,6 +141,7 @@ function openTileMenu(anchor, key) {
     });
     addItem("Minimize group", () => setGroupCollapsed(g.id, true));
     addItem("Remove from group", () => removeFromGroup(key));
+    addItem("Delete group", () => deleteGroup(g.id));
     const others = Object.values(groups).filter((x) => x.id !== g.id);
     if (others.length) {
       addSep("Move to");
@@ -318,6 +319,13 @@ export function renderGrid(state) {
   // kept even when a session isn't running, so they restore when it returns
   // (across reboots, or if you open the board before starting sessions). Cleanup
   // is user-driven: "Reset layout", Ungroup, or Remove from group.
+  // Exception: drop truly-empty groups (all members removed) so removing the
+  // last member clears the group — offline members (members.length > 0) stay.
+  let groupsMutated = false;
+  for (const g of Object.values(groups)) {
+    if (g.members.length === 0) { delete groups[g.id]; groupsMutated = true; }
+  }
+  if (groupsMutated) saveGroups();
 
   // Collapsed groups fold their members into a single group dock chip.
   const collapsedGroups = Object.values(groups).filter((g) => g.collapsed);
