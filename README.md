@@ -2,7 +2,7 @@
 
 **A local browser dashboard for watching all your Claude Code sessions at once — plus an optional message bus that lets them talk to each other.**
 
-[![version: 1.4](https://img.shields.io/badge/version-1.4-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
+[![version: 1.5](https://img.shields.io/badge/version-1.5-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
 [![platform: linux](https://img.shields.io/badge/platform-linux-orange)](#requirements)
 [![safety: read--only](https://img.shields.io/badge/safety-read--only-green)](#how-it-works)
 
@@ -219,6 +219,25 @@ Edit `settings.toml` (copied from `settings.example.toml`). Key knobs:
 | `bus.state_dir`               | Where unread state lives                                      | —       |
 | `bus.script_path`             | Path to `bus.sh`                                              | —       |
 | `ui.end_fadeout_seconds`      | How long ended-session tiles linger after exit                | `30`    |
+
+---
+
+## What's stored, and where
+
+Conductor keeps **no central database** — state lives in two clearly separated places:
+
+**Your browser (localStorage, per-origin `127.0.0.1:8765`)** — all the visual/layout customization. Written to disk by the browser, so it survives closing the tab, restarting the browser, restarting the server, and rebooting:
+
+| Key | Holds |
+| --- | --- |
+| `conductor.prefs.v1` | theme, connection-line visibility, lines-behind, flow animation, bus-bubble click policy |
+| `conductor.positions.v2` | tile positions **and sizes** |
+| `conductor.minimized.v2` | which tiles are minimized to the dock |
+| `conductor.groups.v2` | your groups (names, colors, members, collapsed state) |
+
+Layout/minimize/group state is keyed by **project directory**, so a session re-attaches to its saved spot, size, and group whenever it runs in the same directory — across reboots and even fresh (non-resumed) sessions. Conductor doesn't prune offline tiles' layout, so it waits for them to return. Clear it with **Reset layout**, **Ungroup**, or your browser's site-data tools.
+
+**On your machine (the bus), not the browser:** the cross-session bus log (`~/Documents/claude-bus/messages.md`), unread state (`~/.claude/bus-state/`), and the active/passive whitelist (`~/.claude/bus-state/active-tags`). The Conductor server itself is **in-memory and restart-clean** — it holds no persistent state of its own.
 
 ---
 

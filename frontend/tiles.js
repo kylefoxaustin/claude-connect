@@ -6,8 +6,11 @@
 
 import { redrawLines } from "/static/lines.js";
 
-const POS_KEY = "conductor.positions.v1";
-const MIN_KEY = "conductor.minimized.v1";
+// v2: tiles are keyed by project dir (stable across reboots) instead of the
+// session's ephemeral UUID — so layout/groups survive even fresh sessions. The
+// bump abandons the old UUID-keyed data rather than mixing schemes.
+const POS_KEY = "conductor.positions.v2";
+const MIN_KEY = "conductor.minimized.v2";
 
 function loadMinimized() {
   try { return JSON.parse(localStorage.getItem(MIN_KEY) || "{}"); }
@@ -32,7 +35,7 @@ function setMinimized(key, on) {
 // A group is a named, colored set of tile keys. Membership is assigned one tile
 // at a time via each tile's ▦ menu (no canvas multi-select). A tile is in at
 // most one group. Collapsing a group folds its members into one dock chip.
-const GROUPS_KEY = "conductor.groups.v1";
+const GROUPS_KEY = "conductor.groups.v2";
 const GROUP_PALETTE = [
   "#e06c75", "#e5c07b", "#98c379", "#56b6c2", "#61afef", "#c678dd", "#d19a66", "#ff79c6",
 ];
@@ -222,7 +225,10 @@ const tileResizeObserver = new ResizeObserver((entries) => {
   redrawLines(window.conductorState);
 });
 
-function tileKeyForSession(s) { return `session:${s.session_id}`; }
+// Key by project dir, not the session's ephemeral jsonl UUID, so a session in
+// the same dir reclaims its saved position/size/group across restarts/reboots
+// (the scanner already enforces one session per project dir).
+function tileKeyForSession(s) { return `proj:${s.project_dir}`; }
 const BUS_KEY = "bus:bus";
 
 export function resetLayout() {
@@ -308,15 +314,10 @@ export function renderGrid(state) {
     allSessionKeys.add(key);
   }
 
-  // GC groups: drop dead members; delete empty groups.
-  let groupsMutated = false;
-  for (const g of Object.values(groups)) {
-    const before = g.members.length;
-    g.members = g.members.filter((k) => allSessionKeys.has(k));
-    if (g.members.length !== before) groupsMutated = true;
-    if (g.members.length === 0) { delete groups[g.id]; groupsMutated = true; }
-  }
-  if (groupsMutated) saveGroups();
+  // No GC of offline tiles: positions/sizes/groups are keyed by project dir and
+  // kept even when a session isn't running, so they restore when it returns
+  // (across reboots, or if you open the board before starting sessions). Cleanup
+  // is user-driven: "Reset layout", Ungroup, or Remove from group.
 
   // Collapsed groups fold their members into a single group dock chip.
   const collapsedGroups = Object.values(groups).filter((g) => g.collapsed);
@@ -330,20 +331,6 @@ export function renderGrid(state) {
     if (minimized[key]) dockSessions.push({ key, s });
     else items.push({ key, render: () => sessionTile(s, state) });
   }
-
-  // GC layout + minimized for tiles that no longer exist (use ALL live keys so
-  // collapsed-group members aren't pruned).
-  const liveKeys = new Set([BUS_KEY, ...allSessionKeys]);
-  let mutated = false;
-  for (const k of Object.keys(positions)) {
-    if (!liveKeys.has(k)) { delete positions[k]; mutated = true; }
-  }
-  if (mutated) savePositions(positions);
-  let minMutated = false;
-  for (const k of Object.keys(minimized)) {
-    if (!liveKeys.has(k)) { delete minimized[k]; minMutated = true; }
-  }
-  if (minMutated) saveMinimized();
 
   grid.innerHTML = "";
   for (const it of items) {

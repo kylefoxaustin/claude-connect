@@ -34,6 +34,10 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v1.5: Durable layout. Tiles keyed by project dir (not the ephemeral
+  session UUID), and offline tiles' layout/groups are no longer GC'd — so
+  positions/sizes/groups survive reboots and fresh sessions. localStorage keys
+  bumped to v2 (positions/minimized/groups). README documents what's stored where.
 - ✅ v1.4: Color-coded groups. Per-tile ▦ menu assigns membership (no canvas
   multi-select — a popup that closes before re-render, avoiding drag/click
   conflicts). Minimize a whole group to one dock chip w/ rollup; ▦ Groups
