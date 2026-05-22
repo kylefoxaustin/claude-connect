@@ -25,6 +25,9 @@
 
     <!-- SVG overlay for connection lines, sized to viewport. -->
     <svg id="lines-overlay" class="lines-overlay" aria-hidden="true"></svg>
+    <!-- Always-on-top layer: in "lines behind" mode, anchors each wire to its
+         own tile (plug dot + short stub) so the connection stays visible. -->
+    <svg id="lines-front" class="lines-front" aria-hidden="true"></svg>
 
     <!-- Legend explaining the bus wire styles. -->
     <div id="line-legend" class="line-legend">

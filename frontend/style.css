@@ -324,6 +324,16 @@ html, body {
 }
 /* Optional: drop the wires below the tiles (grid is z-index 1). */
 body.lines-behind .lines-overlay { z-index: 0; }
+/* Anchor layer — above the tiles (grid z-1), below legend (z-5). Only used in
+   "lines behind" mode to keep each wire's plug + stub visible on its own tile. */
+.lines-front {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 3;
+}
 .line { stroke: var(--bus-color); stroke-width: 1.3; opacity: 0.45; fill: none; }
 /* Passive: on the bus but not auto-notified. Distinguished by the DASH (not by
    dimness — a faint line is invisible on dark themes), kept nearly as bright. */

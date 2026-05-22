@@ -2,7 +2,7 @@
 
 **A local browser dashboard for watching all your Claude Code sessions at once — plus an optional message bus that lets them talk to each other.**
 
-[![version: 1.3](https://img.shields.io/badge/version-1.3-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
+[![version: 1.3.1](https://img.shields.io/badge/version-1.3.1-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
 [![platform: linux](https://img.shields.io/badge/platform-linux-orange)](#requirements)
 [![safety: read--only](https://img.shields.io/badge/safety-read--only-green)](#how-it-works)
 
@@ -137,7 +137,7 @@ Click **Compose** in the top bar to send your own message on the bus — like em
 
 ### ⚙ Settings
 
-Theme, connection lines (incl. **Lines behind tiles** to drop the wires behind the tiles for a cleaner board), animations, rescan cadence, and the **bus-bubble click policy**:
+Theme, connection lines (incl. **Lines behind tiles** to drop the wires behind the tiles for a cleaner board — each wire still stays anchored to its own tile via a plug + stub drawn on top), animations, rescan cadence, and the **bus-bubble click policy**:
 
 | Policy                                      | Behavior                                                                                      |
 | ------------------------------------------- | --------------------------------------------------------------------------------------------- |

@@ -223,7 +223,10 @@ settingsModal.addEventListener("click", (e) => {
 // Appearance prefs: apply + persist locally on change.
 setTheme.addEventListener("change", () => { prefs.theme = setTheme.value; savePrefs(); applyTheme(); });
 setLines.addEventListener("change", () => { prefs.lines = setLines.checked; savePrefs(); applyLinesVisibility(); });
-setLinesBehind.addEventListener("change", () => { prefs.linesBehind = setLinesBehind.checked; savePrefs(); applyLinesBehind(); });
+setLinesBehind.addEventListener("change", () => {
+  prefs.linesBehind = setLinesBehind.checked; savePrefs(); applyLinesBehind();
+  requestAnimationFrame(() => redrawLines(state));  // refresh the front anchor layer
+});
 setAnimation.addEventListener("change", () => { prefs.animation = setAnimation.checked; savePrefs(); });
 setShowEnded.addEventListener("change", () => {
   prefs.showEnded = setShowEnded.checked; savePrefs();

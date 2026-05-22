@@ -26,6 +26,16 @@ export function redrawLines(state) {
   svg.setAttribute("width", String(window.innerWidth));
   svg.setAttribute("height", String(window.innerHeight));
 
+  // The always-on-top anchor layer (plug + stub) used in "lines behind" mode.
+  const front = document.getElementById("lines-front");
+  if (front) {
+    front.setAttribute("viewBox", `0 0 ${window.innerWidth} ${window.innerHeight}`);
+    front.setAttribute("width", String(window.innerWidth));
+    front.setAttribute("height", String(window.innerHeight));
+    while (front.firstChild) front.removeChild(front.firstChild);
+  }
+  const behind = document.body.classList.contains("lines-behind");
+
   // Clear previous lines.
   while (svg.firstChild) svg.removeChild(svg.firstChild);
 
@@ -68,13 +78,29 @@ export function redrawLines(state) {
     if (sid) path.dataset.sessionId = sid;
     if (tag) path.dataset.tag = tag;
     svg.appendChild(path);
-    // A little "plug" dot where the wire meets the chip — filled = active.
+
+    // The plug dot (and, in behind mode, a short stub) anchor the wire to its
+    // chip. In behind mode they go on the front layer so they sit in front of
+    // THIS tile while the main wire stays behind every tile; otherwise they
+    // ride along with the wire in the main overlay.
+    const layer = (behind && front) ? front : svg;
+    if (behind && front) {
+      // Short stub continuing the curve's tangent at the chip (toward the
+      // control point), so the wire visibly emerges in front of its own tile.
+      const dx = cx - t.x, dy = cy - t.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const s = Math.min(24, len);
+      const stub = document.createElementNS(SVG_NS, "path");
+      stub.setAttribute("d", `M${t.x},${t.y} L${t.x + (dx / len) * s},${t.y + (dy / len) * s}`);
+      stub.setAttribute("class", active ? "line" : "line line-passive");
+      front.appendChild(stub);
+    }
     const dot = document.createElementNS(SVG_NS, "circle");
     dot.setAttribute("cx", t.x);
     dot.setAttribute("cy", t.y);
     dot.setAttribute("r", "3");
     dot.setAttribute("class", active ? "line-plug" : "line-plug line-plug-passive");
-    svg.appendChild(dot);
+    layer.appendChild(dot);
   }
 }
 
