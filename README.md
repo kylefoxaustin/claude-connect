@@ -2,7 +2,7 @@
 
 **A local browser dashboard for watching all your Claude Code sessions at once — plus an optional message bus that lets them talk to each other.**
 
-[![version: 1.3.1](https://img.shields.io/badge/version-1.3.1-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
+[![version: 1.4](https://img.shields.io/badge/version-1.4-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
 [![platform: linux](https://img.shields.io/badge/platform-linux-orange)](#requirements)
 [![safety: read--only](https://img.shields.io/badge/safety-read--only-green)](#how-it-works)
 
@@ -42,6 +42,7 @@ It's **read-only and local**. It watches Claude's `~/.claude/projects/*.jsonl` l
 - 🟢 **Status indicators** — `active` / `warm` / `idle` / `dormant` / `waiting` / `ended`
 - 💾 **Persistent layout** — drag tiles to rearrange and **resize** them (corner grip); both stick
 - 🗕 **Minimize to dock** — tuck rarely-touched sessions into a bottom dock (still live), restore with a click
+- ▦ **Groups** — color-code sessions into named groups; minimize a whole group to one dock chip with a rollup badge
 - 🔀 **Active/Passive bus control** — click a tile's tag chip to toggle whether it's auto-notified of bus traffic
 - 🎨 **Themeable** — dark/light, animations, connection-line styling
 - 🔒 **Local only** — `127.0.0.1`, in-memory, restart-clean
@@ -103,6 +104,16 @@ Each tile is one live Claude session. It shows:
 ### Minimize / dock
 
 Click a tile's **`–`** to tuck it into a thin **dock** along the bottom — a tiny chip with its status dot, name, and 📬 badge. It's still monitored (the dot keeps updating; a new message still lights the badge), just out of the way. Hover for the full name; **click the chip to restore** it to its previous position and size. Minimized tiles' bus wires are hidden to keep the board clean.
+
+### Groups
+
+For a crowded board, organize sessions into **named, color-coded groups**. Each tile has a **▦** button that opens a small menu:
+
+- **▦ → New group from this** (prompts for a name) — or **Add to ▸ {group}** to join an existing one. A tile belongs to one group; members get a colored top accent.
+- On a grouped tile: **Rename group**, **Move to ▸ {other}**, **Remove from group**, or **Minimize group** — which folds the *whole* group into a single dock chip (swatch + name + member count + active dot + total 📬). Click the chip to expand it back.
+- The **▦ Groups** panel (top bar) lists every group to rename, recolor, minimize/restore, or ungroup.
+
+Groups are *logical* (members keep their own positions — they aren't auto-arranged) and persist across restarts.
 
 ### Click a tile
 

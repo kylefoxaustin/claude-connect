@@ -1,6 +1,9 @@
 // app.js — WebSocket client + top-level state. Delegates rendering to tiles.js / lines.js.
 
-import { renderGrid, flashTilePreview, fadeOutSession, resetLayout } from "/static/tiles.js";
+import {
+  renderGrid, flashTilePreview, fadeOutSession, resetLayout,
+  getGroups, renameGroup, recolorGroup, deleteGroup, setGroupCollapsed, GROUP_COLORS,
+} from "/static/tiles.js";
 import { redrawLines, animateLineFor } from "/static/lines.js";
 
 const state = {
@@ -383,6 +386,59 @@ window.toggleBusActive = async function toggleBusActive(tag, makeActive) {
     console.warn("active toggle error", e);
   }
 };
+
+// Groups management panel (assignment happens per-tile via the ▦ menu).
+const groupsModal = document.getElementById("groups-modal");
+const groupsList = document.getElementById("groups-list");
+document.getElementById("groups-btn").addEventListener("click", () => { renderGroupsList(); groupsModal.classList.remove("hidden"); });
+document.getElementById("groups-modal-close").addEventListener("click", () => groupsModal.classList.add("hidden"));
+groupsModal.addEventListener("click", (e) => { if (e.target === groupsModal) groupsModal.classList.add("hidden"); });
+
+function renderGroupsList() {
+  const gs = getGroups();
+  groupsList.innerHTML = "";
+  if (!gs.length) {
+    groupsList.innerHTML = '<li class="groups-empty">No groups yet. Use a tile’s ▦ menu → “New group”.</li>';
+    return;
+  }
+  for (const g of gs) {
+    const li = document.createElement("li");
+    li.className = "groups-row";
+
+    const swatch = document.createElement("button");
+    swatch.className = "group-row-swatch";
+    swatch.style.background = g.color;
+    swatch.title = "Click to recolor";
+    swatch.addEventListener("click", () => {
+      const i = GROUP_COLORS.indexOf(g.color);
+      recolorGroup(g.id, GROUP_COLORS[(i + 1) % GROUP_COLORS.length]);
+      renderGroupsList();
+    });
+
+    const name = document.createElement("input");
+    name.className = "group-row-name";
+    name.value = g.name;
+    name.addEventListener("change", () => renameGroup(g.id, name.value.trim() || g.name));
+
+    const count = document.createElement("span");
+    count.className = "group-row-count";
+    count.textContent = `${g.members.length}`;
+
+    const collapseBtn = document.createElement("button");
+    collapseBtn.className = "group-row-btn";
+    collapseBtn.textContent = g.collapsed ? "Restore" : "Minimize";
+    collapseBtn.addEventListener("click", () => { setGroupCollapsed(g.id, !g.collapsed); renderGroupsList(); });
+
+    const del = document.createElement("button");
+    del.className = "group-row-btn";
+    del.textContent = "Ungroup";
+    del.title = "Delete the group (tiles stay)";
+    del.addEventListener("click", () => { deleteGroup(g.id); renderGroupsList(); });
+
+    li.append(swatch, name, count, collapseBtn, del);
+    groupsList.appendChild(li);
+  }
+}
 
 window.requestFocus = async function requestFocus(sessionId) {
   try {

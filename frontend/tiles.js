@@ -28,6 +28,140 @@ function setMinimized(key, on) {
   requestAnimationFrame(() => redrawLines(window.conductorState));
 }
 
+// --- Groups (per-tile assignment; logical/color-only) -----------------------
+// A group is a named, colored set of tile keys. Membership is assigned one tile
+// at a time via each tile's ▦ menu (no canvas multi-select). A tile is in at
+// most one group. Collapsing a group folds its members into one dock chip.
+const GROUPS_KEY = "conductor.groups.v1";
+const GROUP_PALETTE = [
+  "#e06c75", "#e5c07b", "#98c379", "#56b6c2", "#61afef", "#c678dd", "#d19a66", "#ff79c6",
+];
+function loadGroups() {
+  try { return JSON.parse(localStorage.getItem(GROUPS_KEY) || "{}"); }
+  catch { return {}; }
+}
+function saveGroups() {
+  try { localStorage.setItem(GROUPS_KEY, JSON.stringify(groups)); } catch {}
+}
+let groups = loadGroups();
+
+function groupForKey(key) {
+  for (const g of Object.values(groups)) if (g.members.includes(key)) return g;
+  return null;
+}
+function rerenderGroups() {
+  renderGrid(window.conductorState);
+  requestAnimationFrame(() => redrawLines(window.conductorState));
+}
+function newGroupFrom(key, name) {
+  const id = "g" + Date.now().toString(36);
+  const n = Object.keys(groups).length;
+  for (const g of Object.values(groups)) g.members = g.members.filter((k) => k !== key);
+  groups[id] = {
+    id,
+    name: (name && name.trim()) || `Group ${n + 1}`,
+    color: GROUP_PALETTE[n % GROUP_PALETTE.length],
+    members: [key],
+    collapsed: false,
+  };
+  saveGroups();
+  rerenderGroups();
+  return groups[id];
+}
+// Prompt for a name, then create. Cancel aborts; blank keeps the default.
+function promptNewGroup(key) {
+  const def = `Group ${Object.keys(groups).length + 1}`;
+  const nm = window.prompt("Name the new group:", def);
+  if (nm === null) return;  // cancelled
+  newGroupFrom(key, nm);
+}
+function addToGroup(key, id) {
+  if (!groups[id]) return;
+  for (const g of Object.values(groups)) g.members = g.members.filter((k) => k !== key);
+  groups[id].members.push(key);
+  saveGroups();
+  rerenderGroups();
+}
+function removeFromGroup(key) {
+  for (const g of Object.values(groups)) g.members = g.members.filter((k) => k !== key);
+  saveGroups();
+  rerenderGroups();  // empty groups are GC'd in renderGrid
+}
+export function getGroups() { return Object.values(groups); }
+export function renameGroup(id, name) { if (groups[id]) { groups[id].name = name; saveGroups(); rerenderGroups(); } }
+export function recolorGroup(id, color) { if (groups[id]) { groups[id].color = color; saveGroups(); rerenderGroups(); } }
+export function deleteGroup(id) { delete groups[id]; saveGroups(); rerenderGroups(); }
+export function setGroupCollapsed(id, on) { if (groups[id]) { groups[id].collapsed = !!on; saveGroups(); rerenderGroups(); } }
+export const GROUP_COLORS = GROUP_PALETTE;
+
+// Lightweight popup menu anchored to a tile's ▦ button. Closed before any group
+// mutation (which re-renders), so it never gets destroyed mid-action.
+let tileMenuEl = null;
+function closeTileMenu() {
+  if (!tileMenuEl) return;
+  tileMenuEl.remove();
+  tileMenuEl = null;
+  document.removeEventListener("pointerdown", onDocDownForMenu, true);
+}
+function onDocDownForMenu(e) {
+  if (tileMenuEl && !tileMenuEl.contains(e.target)) closeTileMenu();
+}
+function openTileMenu(anchor, key) {
+  closeTileMenu();
+  const g = groupForKey(key);
+  const menu = document.createElement("div");
+  menu.className = "tile-menu";
+  const addItem = (label, fn, color) => {
+    const it = document.createElement("button");
+    it.className = "tile-menu-item";
+    if (color) {
+      const sw = document.createElement("span");
+      sw.className = "tile-menu-swatch";
+      sw.style.background = color;
+      it.appendChild(sw);
+    }
+    it.appendChild(document.createTextNode(label));
+    it.addEventListener("click", (e) => { e.stopPropagation(); closeTileMenu(); fn(); });
+    menu.appendChild(it);
+  };
+  const addSep = (label) => {
+    const d = document.createElement("div");
+    d.className = "tile-menu-sep";
+    d.textContent = label;
+    menu.appendChild(d);
+  };
+  if (g) {
+    addSep(g.name);
+    addItem("Rename group", () => {
+      const nm = window.prompt("Rename group:", g.name);
+      if (nm && nm.trim()) renameGroup(g.id, nm.trim());
+    });
+    addItem("Minimize group", () => setGroupCollapsed(g.id, true));
+    addItem("Remove from group", () => removeFromGroup(key));
+    const others = Object.values(groups).filter((x) => x.id !== g.id);
+    if (others.length) {
+      addSep("Move to");
+      others.forEach((x) => addItem(x.name, () => addToGroup(key, x.id), x.color));
+    }
+    addItem("＋ New group", () => promptNewGroup(key));
+  } else {
+    addItem("＋ New group from this", () => promptNewGroup(key));
+    const all = Object.values(groups);
+    if (all.length) {
+      addSep("Add to");
+      all.forEach((x) => addItem(x.name, () => addToGroup(key, x.id), x.color));
+    }
+  }
+  document.body.appendChild(menu);
+  const r = anchor.getBoundingClientRect();
+  const left = Math.min(r.left, window.innerWidth - menu.offsetWidth - 8);
+  menu.style.top = `${Math.round(r.bottom + 4)}px`;
+  menu.style.left = `${Math.round(Math.max(8, left))}px`;
+  tileMenuEl = menu;
+  // Defer so the click that opened it doesn't immediately close it.
+  setTimeout(() => document.addEventListener("pointerdown", onDocDownForMenu, true), 0);
+}
+
 const TILE_W   = 280;
 const TILE_H   = 220;   // approximate; tiles can grow taller from content
 const GAP      = 16;
@@ -163,18 +297,43 @@ export function renderGrid(state) {
   // Always render the Bus tile; session tiles go to the grid unless minimized
   // (ended ones optional). Minimized sessions render as dock chips instead.
   const showEnded = window.conductorPrefs ? window.conductorPrefs.showEnded : true;
-  const items = [];
-  items.push({ key: BUS_KEY, render: () => busTile(state) });
-  const dockSessions = [];
+
+  // Index live sessions by tile key (preserves state.sessions order).
+  const sessionByKey = {};
+  const allSessionKeys = new Set();
   for (const s of state.sessions) {
     if (!showEnded && s.status === "ended") continue;
     const key = tileKeyForSession(s);
+    sessionByKey[key] = s;
+    allSessionKeys.add(key);
+  }
+
+  // GC groups: drop dead members; delete empty groups.
+  let groupsMutated = false;
+  for (const g of Object.values(groups)) {
+    const before = g.members.length;
+    g.members = g.members.filter((k) => allSessionKeys.has(k));
+    if (g.members.length !== before) groupsMutated = true;
+    if (g.members.length === 0) { delete groups[g.id]; groupsMutated = true; }
+  }
+  if (groupsMutated) saveGroups();
+
+  // Collapsed groups fold their members into a single group dock chip.
+  const collapsedGroups = Object.values(groups).filter((g) => g.collapsed);
+  const collapsedMembers = new Set(collapsedGroups.flatMap((g) => g.members));
+
+  const items = [{ key: BUS_KEY, render: () => busTile(state) }];
+  const dockSessions = [];
+  for (const key of allSessionKeys) {
+    if (collapsedMembers.has(key)) continue;
+    const s = sessionByKey[key];
     if (minimized[key]) dockSessions.push({ key, s });
     else items.push({ key, render: () => sessionTile(s, state) });
   }
 
-  // Garbage-collect layout + minimized state for tiles that no longer exist.
-  const liveKeys = new Set([...items.map(it => it.key), ...dockSessions.map(d => d.key)]);
+  // GC layout + minimized for tiles that no longer exist (use ALL live keys so
+  // collapsed-group members aren't pruned).
+  const liveKeys = new Set([BUS_KEY, ...allSessionKeys]);
   let mutated = false;
   for (const k of Object.keys(positions)) {
     if (!liveKeys.has(k)) { delete positions[k]; mutated = true; }
@@ -196,14 +355,37 @@ export function renderGrid(state) {
     tileResizeObserver.observe(node);
   }
 
-  // Bottom dock for minimized sessions.
+  // Bottom dock: collapsed groups (one chip each) + individually minimized tiles.
   const dock = document.getElementById("dock");
   if (dock) {
     dock.innerHTML = "";
+    for (const g of collapsedGroups) dock.appendChild(groupChip(g, sessionByKey, state));
     for (const d of dockSessions) dock.appendChild(dockChip(d.s, d.key, state));
-    document.body.classList.toggle("has-dock", dockSessions.length > 0);
+    document.body.classList.toggle("has-dock", collapsedGroups.length > 0 || dockSessions.length > 0);
   }
   updateGridExtent();
+}
+
+// A collapsed group as one dock chip: color swatch + name + rollup (member
+// count, any active, total 📬). Click to expand the whole group.
+function groupChip(g, sessionByKey) {
+  const members = g.members.map((k) => sessionByKey[k]).filter(Boolean);
+  const activeCount = members.filter((s) => s.status === "active" || s.status === "warm").length;
+  const pending = members.reduce((n, s) => n + (s.pending_count || 0), 0);
+  return el("div", {
+    class: "dock-chip group-chip",
+    style: `--group-color: ${g.color}`,
+    title: `${g.name} · ${members.length} session(s)`
+      + (activeCount ? ` · ${activeCount} active` : "")
+      + (pending ? ` · 📬 ${pending}` : "") + "\nClick to expand",
+    onclick: () => setGroupCollapsed(g.id, false),
+  },
+    el("span", { class: "group-swatch" }),
+    el("span", { class: "dock-chip-name" }, g.name),
+    el("span", { class: "group-count" }, `${members.length}`),
+    activeCount ? el("span", { class: "status-dot active", title: `${activeCount} active` }) : null,
+    pending ? el("span", { class: "dock-chip-badge" }, `📬${pending}`) : null,
+  );
 }
 
 // A minimized session as a tiny dock chip: status dot + name + 📬, click to
@@ -256,6 +438,9 @@ function el(tag, props = {}, ...children) {
 }
 
 function sessionTile(s, state) {
+  const key = tileKeyForSession(s);
+  const group = groupForKey(key);
+
   const focusBtn = el("button", {
     class: "icon-btn",
     title: state.wmctrlAvailable ? "Focus terminal" : "wmctrl not installed",
@@ -266,10 +451,19 @@ function sessionTile(s, state) {
     },
   }, "▶");
 
+  // ▦ opens the group menu (assign / move / remove / minimize group). Colored
+  // when the tile is in a group.
+  const groupBtn = el("button", {
+    class: "icon-btn group-btn",
+    style: group ? `color: ${group.color}` : null,
+    title: group ? `Group “${group.name}” — manage / minimize` : "Add to a group",
+    onclick: (e) => { e.stopPropagation(); openTileMenu(e.currentTarget, key); },
+  }, "▦");
+
   const minimizeBtn = el("button", {
     class: "icon-btn",
     title: "Minimize to dock (keeps monitoring)",
-    onclick: (e) => { e.stopPropagation(); setMinimized(tileKeyForSession(s), true); },
+    onclick: (e) => { e.stopPropagation(); setMinimized(key, true); },
   }, "–");
 
   const pending = s.pending_count || 0;
@@ -301,7 +495,8 @@ function sessionTile(s, state) {
     : null;
 
   const tile = el("div", {
-    class: `tile status-${s.status}` + (s.status === "ended" ? " fading-out" : ""),
+    class: `tile status-${s.status}` + (s.status === "ended" ? " fading-out" : "") + (group ? " grouped" : ""),
+    style: group ? `--group-color: ${group.color}` : null,
     dataset: { sessionId: s.session_id, projectDir: s.project_dir, tag: s.tag || "" },
     ondblclick: () => {
       if (state.wmctrlAvailable) window.requestFocus(s.session_id);
@@ -312,7 +507,7 @@ function sessionTile(s, state) {
         el("span", { class: `status-dot ${s.status}`, title: statusLabel(s.status) }),
         el("span", { class: "tile-title", title: s.title || "" }, s.title || "(untitled)"),
       ),
-      el("div", { class: "tile-actions" }, pendingBadge, focusBtn, minimizeBtn),
+      el("div", { class: "tile-actions" }, groupBtn, pendingBadge, focusBtn, minimizeBtn),
     ),
     el("div", { class: "tile-projectdir", title: s.project_dir },
       tagChip, tagChip ? " " : null, s.project_dir,

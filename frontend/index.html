@@ -13,6 +13,7 @@
         <span id="conn-state" class="conn-state conn-down">disconnected</span>
         <span id="session-count">0 sessions</span>
         <button id="compose-btn" title="Send a message on the bus">✉ Compose</button>
+        <button id="groups-btn" title="Manage groups">▦ Groups</button>
         <button id="reset-layout-btn" title="Clear stored tile positions and re-cascade">Reset layout</button>
         <button id="refresh-btn" title="Force rescan">Refresh</button>
         <button id="settings-btn" title="Settings">⚙</button>
@@ -135,6 +136,24 @@
             <span class="compose-status" id="compose-status"></span>
             <button id="compose-send" class="compose-send">Send</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Groups modal, hidden by default. -->
+    <div id="groups-modal" class="modal hidden">
+      <div class="modal-card">
+        <header>
+          <h2>Groups</h2>
+          <button id="groups-modal-close">×</button>
+        </header>
+        <div class="groups-body">
+          <p class="settings-hint">
+            Assign tiles to a group from each tile's <strong>▦</strong> menu. Here you can
+            rename (edit the field), recolor (click the swatch), Minimize the whole
+            group to the dock, or Ungroup (tiles stay).
+          </p>
+          <ul id="groups-list" class="groups-list"></ul>
         </div>
       </div>
     </div>
