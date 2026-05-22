@@ -70,6 +70,7 @@ class AppState:
         self.hub = WSHub()
 
         self.sessions: dict[str, SessionRecord] = {}        # keyed by project_dir
+        self._scan_misses: dict[str, int] = {}              # consecutive scans a session was absent
         self.recent_events: deque[BusEvent] = deque(maxlen=RECENT_EVENTS_MAX)
         self.bus_total = 0
 
@@ -116,15 +117,24 @@ class AppState:
         new_map = await asyncio.to_thread(self.scanner.scan)
         now = time.time()
 
-        # Mark missing sessions ENDED and start fade timer.
+        # Mark missing sessions ENDED — but only after 2 consecutive misses, so a
+        # transient /proc read failure during a session's teardown doesn't flap
+        # the tile in and out.
         for key, rec in list(self.sessions.items()):
-            if key not in new_map and rec.status != Status.ENDED:
-                rec.status = Status.ENDED
-                rec.ended_at = now
+            if rec.status == Status.ENDED:
+                continue
+            if key in new_map:
+                self._scan_misses.pop(key, None)
+            else:
+                self._scan_misses[key] = self._scan_misses.get(key, 0) + 1
+                if self._scan_misses[key] >= 2:
+                    rec.status = Status.ENDED
+                    rec.ended_at = now
 
         # Fold in new/updated sessions.
         for key, rec in new_map.items():
             self.sessions[key] = rec
+            self._scan_misses.pop(key, None)
 
         # Drop ended sessions whose fade window expired.
         expire = self.settings.ui.end_fadeout_seconds
@@ -132,6 +142,7 @@ class AppState:
             r = self.sessions[key]
             if r.status == Status.ENDED and r.ended_at is not None and now - r.ended_at > expire:
                 self.sessions.pop(key, None)
+                self._scan_misses.pop(key, None)
 
         # Hydrate per-session bus pending counts. We compute these from the log
         # + <tag>.last-seen rather than reading <tag>.pending, because the
@@ -199,6 +210,11 @@ class AppState:
                     rec = r
                     break
             if rec is None:
+                continue
+            # Don't resurrect a tile the scanner has ENDED — on /exit Claude
+            # writes trailing jsonl records, and flipping ENDED back to ACTIVE on
+            # each would flap the tile. The scanner re-adds it if it's truly alive.
+            if rec.status == Status.ENDED:
                 continue
             rec.last_activity_at = time.time()
             rec.preview = preview or extract_preview(jsonl_path)
