@@ -48,6 +48,21 @@ function saveGroups() {
 }
 let groups = loadGroups();
 
+// One-time repair: older builds assigned colors by group count, which could
+// collide after create/delete. Reassign duplicates to the first unused color.
+(function dedupeGroupColors() {
+  const used = new Set();
+  let changed = false;
+  for (const g of Object.values(groups)) {
+    if (used.has(g.color)) {
+      const c = GROUP_PALETTE.find((x) => !used.has(x));
+      if (c) { g.color = c; changed = true; }
+    }
+    used.add(g.color);
+  }
+  if (changed) saveGroups();
+})();
+
 function groupForKey(key) {
   for (const g of Object.values(groups)) if (g.members.includes(key)) return g;
   return null;
@@ -56,6 +71,14 @@ function rerenderGroups() {
   renderGrid(window.conductorState);
   requestAnimationFrame(() => redrawLines(window.conductorState));
 }
+function nextGroupColor() {
+  // First palette color not already in use, so groups stay visually distinct
+  // (count-based indexing collides after create/delete). Falls back to cycling
+  // once all are used.
+  const used = new Set(Object.values(groups).map((g) => g.color));
+  return GROUP_PALETTE.find((c) => !used.has(c))
+    || GROUP_PALETTE[Object.keys(groups).length % GROUP_PALETTE.length];
+}
 function newGroupFrom(key, name) {
   const id = "g" + Date.now().toString(36);
   const n = Object.keys(groups).length;
@@ -63,7 +86,7 @@ function newGroupFrom(key, name) {
   groups[id] = {
     id,
     name: (name && name.trim()) || `Group ${n + 1}`,
-    color: GROUP_PALETTE[n % GROUP_PALETTE.length],
+    color: nextGroupColor(),
     members: [key],
     collapsed: false,
   };
@@ -504,6 +527,13 @@ function sessionTile(s, state) {
       ),
       el("div", { class: "tile-actions" }, groupBtn, pendingBadge, focusBtn, minimizeBtn),
     ),
+    group ? el("div", { class: "tile-grouplabel" },
+      el("span", {
+        class: "group-label",
+        style: `color: ${group.color}; border-color: ${group.color}`,
+        title: `Group: ${group.name} — manage via ▦`,
+      }, `▦ ${group.name}`),
+    ) : null,
     el("div", { class: "tile-projectdir", title: s.project_dir },
       tagChip, tagChip ? " " : null, s.project_dir,
     ),

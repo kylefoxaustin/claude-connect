@@ -405,6 +405,18 @@ body.has-dock .dock { display: flex; }
 
 /* --- Groups --- */
 .tile.grouped { border-top: 3px solid var(--group-color); }
+/* Group name worn on the tile, in the group's color. */
+.tile-grouplabel { margin-top: -2px; }
+.group-label {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  white-space: nowrap;
+}
 .group-btn.group-btn { font-size: 12px; }  /* ▦ tints via inline color when grouped */
 
 /* Per-tile group menu (popup) */
