@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Conductor
+GenericName=Claude Code Session Dashboard
+Comment=Local dashboard for monitoring active Claude Code sessions
+Exec=@PYTHON@ @APPDIR@/app.py
+Path=@APPDIR@
+Icon=@APPDIR@/assets/conductor.svg
+Terminal=false
+Categories=Development;
+Keywords=claude;dashboard;sessions;monitor;
+StartupNotify=true
+StartupWMClass=conductor

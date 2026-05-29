@@ -87,6 +87,50 @@ make test    # run the pytest suite
 
 ---
 
+## Editions
+
+Conductor ships in two editions from the same codebase:
+
+| Edition | What it is | Run | Releases |
+|---|---|---|---|
+| **Web Browser** | The dashboard served at `http://127.0.0.1:8765`, opened in any browser. | `make dev` / `make run` | `vX.Y.Z` |
+| **Native App** | The *same* dashboard wrapped in a native desktop window (pywebview → WebKitGTK), with its own app-menu launcher and dock icon. | `make native` | `vX.Y.Z-native` |
+
+Same version number = same features; the `-native` suffix is just packaging. New
+features land once and both editions get them.
+
+### Native App Edition (Ubuntu)
+
+The native edition runs the identical FastAPI + JS app inside a WebKitGTK window.
+The uvicorn server runs in a background thread; **closing the window stops the
+server** (nothing is left running). If a Conductor is already serving the port
+(e.g. a `make dev` instance, or a second launch), the app *attaches* to it
+instead of starting a duplicate.
+
+```bash
+# 1. System WebKitGTK (not pip-installable — provides PyGObject + the WebKit2 typelib)
+sudo apt install python3-gi gir1.2-webkit2-4.0 libwebkit2gtk-4.0-37
+
+# 2. Build the native venv (--system-site-packages, so it can see system gi/WebKit) + pywebview
+make install-native
+
+# 3. Launch the native window
+make native
+
+# 4. (Optional) Add a launcher to your app menu / dock, with this checkout's paths baked in
+make install-desktop
+```
+
+`make install-native` creates a **separate** `.venv-native` so the Web edition's
+`.venv` stays untouched. `make install-desktop` writes
+`~/.local/share/applications/conductor.desktop` (icon: `assets/conductor.svg`,
+`StartupWMClass=conductor` for dock grouping) — re-run it if you move the repo.
+
+> Tested against WebKit2 **4.0** (Ubuntu 22.04). The SVG connection-line overlays
+> and tile drag render correctly under WebKitGTK.
+
+---
+
 ## Using the Dashboard
 
 ### Tiles
