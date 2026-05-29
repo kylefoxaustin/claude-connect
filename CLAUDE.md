@@ -36,6 +36,14 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.1.1: Stop the multi-session tile blink. `renderGrid` now reconciles
+  tiles (reuse the outer node per key + refresh content in place) instead of
+  `innerHTML=""` teardown every WS update. Preserving node identity means an
+  ended tile's opacity fade runs once to 0 instead of restarting on each of the
+  ~10 updates that arrive while several sessions tear down at once (the v1.5.3
+  fix only stopped the backend ENDED↔ACTIVE flap; this is the frontend layer).
+  Drag handlers + the resize observer now attach once, not per-render. Frontend
+  only, so it ships in both editions.
 - ✅ v2.1: Native App Edition. `app.py` launches the same FastAPI app in a
   pywebview/WebKitGTK window — uvicorn runs in a daemon thread, window-close
   stops it, and it attaches to an already-running instance instead of spawning

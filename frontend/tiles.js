@@ -206,6 +206,18 @@ function savePositions(p) {
 
 let positions = loadPositions();
 
+// Reconciliation registry. renderGrid reuses the SAME outer .tile node per key
+// across renders instead of `innerHTML = ""` teardown + rebuild. Preserving node
+// identity means a running CSS transition (the end-fade), the attached drag
+// handlers, and the resize observer all survive a re-render. The old teardown
+// recreated every tile on each WS update, which restarted the ended tile's
+// opacity transition from 1 — so when several sessions tore down at once the
+// burst of updates made ended tiles blink ~10× before finally disappearing.
+const tileNodes = new Map();   // tile key -> outer .tile element (persists across renders)
+// Keys whose end-fade has already played. A re-render mid-fade renders the node
+// already-.fading (opacity 0) instead of snapping back to 1 and replaying it.
+const fadedKeys = new Set();
+
 // While a tile is being dragged we must NOT rebuild the grid: renderGrid does a
 // full `innerHTML = ""` teardown, which would destroy the node mid-gesture
 // (releasing pointer capture) and leave the drop unsaved — the tile then snaps
@@ -258,6 +270,12 @@ const BUS_KEY = "bus:bus";
 export function resetLayout() {
   positions = {};
   savePositions(positions);
+  // Hard rebuild: drop the reused nodes so every tile re-cascades from a clean
+  // slate (in-place reuse would otherwise keep each node's old inline left/top).
+  for (const node of tileNodes.values()) tileResizeObserver.unobserve(node);
+  tileNodes.clear();
+  const grid = document.getElementById("grid");
+  if (grid) grid.innerHTML = "";
   renderGrid(window.conductorState);
   requestAnimationFrame(() => redrawLines(window.conductorState));
 }
@@ -322,20 +340,27 @@ export function renderGrid(state) {
   // Defer rebuilds during an active drag or resize; the gesture flushes it after.
   if (isDragging || isResizing) { renderPending = true; return; }
   const grid = document.getElementById("grid");
-  tileResizeObserver.disconnect();
 
   // Always render the Bus tile; session tiles go to the grid unless minimized
   // (ended ones optional). Minimized sessions render as dock chips instead.
   const showEnded = window.conductorPrefs ? window.conductorPrefs.showEnded : true;
 
-  // Index live sessions by tile key (preserves state.sessions order).
+  // Index live sessions by tile key (preserves state.sessions order; the scanner
+  // already enforces one session per project dir, so keys are unique).
   const sessionByKey = {};
-  const allSessionKeys = new Set();
+  const allSessionKeys = [];
   for (const s of state.sessions) {
     if (!showEnded && s.status === "ended") continue;
     const key = tileKeyForSession(s);
+    if (!(key in sessionByKey)) allSessionKeys.push(key);
     sessionByKey[key] = s;
-    allSessionKeys.add(key);
+  }
+
+  // Forget fade markers for keys that are gone or no longer ended, so a session
+  // that restarts (or a tile that's GC'd then returns) animates its next end.
+  for (const k of [...fadedKeys]) {
+    const s = sessionByKey[k];
+    if (!s || s.status !== "ended") fadedKeys.delete(k);
   }
 
   // No GC of offline tiles: positions/sizes/groups are keyed by project dir and
@@ -354,23 +379,44 @@ export function renderGrid(state) {
   const collapsedGroups = Object.values(groups).filter((g) => g.collapsed);
   const collapsedMembers = new Set(collapsedGroups.flatMap((g) => g.members));
 
-  const items = [{ key: BUS_KEY, render: () => busTile(state) }];
+  // Desired grid items in order: Bus tile first, then non-minimized,
+  // non-collapsed session tiles. (Tiles are absolutely positioned, so DOM order
+  // is cosmetic — new nodes just append.)
+  const items = [{ key: BUS_KEY, kind: "bus" }];
   const dockSessions = [];
   for (const key of allSessionKeys) {
     if (collapsedMembers.has(key)) continue;
     const s = sessionByKey[key];
     if (minimized[key]) dockSessions.push({ key, s });
-    else items.push({ key, render: () => sessionTile(s, state) });
+    else items.push({ key, kind: "session", s });
   }
 
-  grid.innerHTML = "";
+  // Reconcile: keep nodes whose key still wants a grid tile, drop the rest,
+  // create the new ones. No full teardown — reused nodes keep their identity.
+  const wantKeys = new Set(items.map((it) => it.key));
+  for (const [k, node] of tileNodes) {
+    if (!wantKeys.has(k)) {
+      tileResizeObserver.unobserve(node);
+      node.remove();
+      tileNodes.delete(k);
+    }
+  }
   for (const it of items) {
-    const node = it.render();
-    node.dataset.tileKey = it.key;
-    grid.appendChild(node);
-    applyPosition(node, it.key);
-    wirePointerDrag(node, it.key);
-    tileResizeObserver.observe(node);
+    let node = tileNodes.get(it.key);
+    const isNew = !node;
+    if (isNew) {
+      node = it.kind === "bus" ? createBusShell() : createSessionShell();
+      node.dataset.tileKey = it.key;
+      tileNodes.set(it.key, node);
+    }
+    if (it.kind === "bus") fillBusTile(node, state);
+    else fillSessionTile(node, it.s, state);
+    if (isNew) {
+      grid.appendChild(node);
+      applyPosition(node, it.key);
+      wirePointerDrag(node, it.key);
+      tileResizeObserver.observe(node);
+    }
   }
 
   // Bottom dock: collapsed groups (one chip each) + individually minimized tiles.
@@ -455,9 +501,28 @@ function el(tag, props = {}, ...children) {
   return e;
 }
 
-function sessionTile(s, state) {
+// The outer .tile node is created once per key and reused across renders. Its
+// dblclick handler reads the LIVE session from node.__sess (refreshed on every
+// fill) rather than closing over one — so a restarted session (new ephemeral
+// session_id, same project dir) still focuses the right terminal.
+function createSessionShell() {
+  const tile = el("div", { class: "tile" });
+  tile.addEventListener("dblclick", () => {
+    const s = tile.__sess;
+    if (s && window.conductorState && window.conductorState.wmctrlAvailable) {
+      window.requestFocus(s.session_id);
+    }
+  });
+  return tile;
+}
+
+// Update a session tile in place: refresh class/style/dataset and rebuild its
+// inner content on the existing node. The node identity is preserved so the
+// end-fade transition, drag handlers and resize observer all survive.
+function fillSessionTile(tile, s, state) {
   const key = tileKeyForSession(s);
   const group = groupForKey(key);
+  tile.__sess = s;
 
   const focusBtn = el("button", {
     class: "icon-btn",
@@ -512,14 +577,20 @@ function sessionTile(s, state) {
       }, s.tag)
     : null;
 
-  const tile = el("div", {
-    class: `tile status-${s.status}` + (s.status === "ended" ? " fading-out" : "") + (group ? " grouped" : ""),
-    style: group ? `--group-color: ${group.color}` : null,
-    dataset: { sessionId: s.session_id, projectDir: s.project_dir, tag: s.tag || "" },
-    ondblclick: () => {
-      if (state.wmctrlAvailable) window.requestFocus(s.session_id);
-    },
-  },
+  const ended = s.status === "ended";
+  const alreadyFaded = ended && fadedKeys.has(key);
+  // Carry .fading in the class string when the fade already played, so reusing
+  // (or recreating) the node keeps it at opacity 0 instead of replaying 1→0.
+  tile.className = `tile status-${s.status}`
+    + (ended ? " fading-out" : "")
+    + (alreadyFaded ? " fading" : "")
+    + (group ? " grouped" : "");
+  tile.style.setProperty("--group-color", group ? group.color : "");
+  tile.dataset.sessionId = s.session_id;
+  tile.dataset.projectDir = s.project_dir;
+  tile.dataset.tag = s.tag || "";
+
+  const children = [
     el("div", { class: "tile-header" },
       el("div", { class: "tile-title-wrap" },
         el("span", { class: `status-dot ${s.status}`, title: statusLabel(s.status) }),
@@ -542,15 +613,31 @@ function sessionTile(s, state) {
       el("span", {}, `msgs: ${s.message_count}`),
       el("span", {}, `⏱ ${ago(s.last_activity_at)}`),
     ),
-  );
+  ].filter(Boolean);
+  tile.replaceChildren(...children);
 
-  if (s.status === "ended") {
+  if (ended && !alreadyFaded) {
+    // Play the fade exactly once. Mark first so any re-render that lands
+    // mid-fade takes the alreadyFaded branch above and holds at opacity 0.
+    fadedKeys.add(key);
     requestAnimationFrame(() => tile.classList.add("fading"));
   }
   return tile;
 }
 
-function busTile(state) {
+// Bus tile shell — created once, reused. The click handler reads tileWasDragged
+// at call time, so it doesn't need rebinding per render.
+function createBusShell() {
+  const tile = el("div", { class: "tile bus-tile", dataset: { busTile: "1" } });
+  tile.addEventListener("click", (e) => {
+    // Only open modal on a plain click — not the end of a drag (handled in pointerup).
+    if (e.target.closest("button, .pending-badge")) return;
+    if (!tileWasDragged) window.openBusModal();
+  });
+  return tile;
+}
+
+function fillBusTile(tile, state) {
   const total = state.busTotal || 0;
   const pendingByTag = state.busPendingByTag || {};
   // Split pending into "active" (tags with a live tile right now) vs the full
@@ -575,15 +662,7 @@ function busTile(state) {
   const previewText = recentItems.length ? recentItems.join("\n") : "no events yet";
   const adapter = state.busAdapter || "markdown";
 
-  return el("div", {
-    class: "tile bus-tile",
-    dataset: { busTile: "1" },
-    onclick: (e) => {
-      // Only open modal on a plain click — not the end of a drag (handled in pointerup).
-      if (e.target.closest("button, .pending-badge")) return;
-      if (!tileWasDragged) window.openBusModal();
-    },
-  },
+  tile.replaceChildren(
     el("div", { class: "tile-header" },
       el("div", { class: "tile-title-wrap" },
         el("span", { class: "status-dot active" }),
@@ -603,6 +682,7 @@ function busTile(state) {
       el("span", {}, `tags: ${Object.keys(state.busTopology?.subscribers || {}).length}`),
     ),
   );
+  return tile;
 }
 
 // --- Pointer-based drag -----------------------------------------------------
