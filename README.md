@@ -2,7 +2,7 @@
 
 **A local browser dashboard for watching all your Claude Code sessions at once — plus an optional message bus that lets them talk to each other.**
 
-[![version: 1.5](https://img.shields.io/badge/version-1.5-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
+[![version: 2.1](https://img.shields.io/badge/version-2.1-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
 [![platform: linux](https://img.shields.io/badge/platform-linux-orange)](#requirements)
 [![safety: read--only](https://img.shields.io/badge/safety-read--only-green)](#how-it-works)
 
@@ -55,6 +55,7 @@ It's **read-only and local**. It watches Claude's `~/.claude/projects/*.jsonl` l
 - **Python 3.10+**
 - **`wmctrl` and `xdotool`** for terminal focus and `/msg-check` injection
   - Both optional — without them, the focus and 📬 buttons just no-op
+- **Native App Edition only:** system WebKitGTK (`python3-gi`, `gir1.2-webkit2-4.0`, `libwebkit2gtk-4.0-37`) — see [Native App Edition](#native-app-edition-ubuntu). The Web Browser Edition needs none of this.
 
 ---
 
@@ -291,7 +292,7 @@ For the curious:
 
 1. **SessionScanner** enumerates Claude Code processes via `psutil`, resolves `/proc/<pid>/cwd`, and walks `~/.claude/projects/<encoded>/` to find each session's `*.jsonl`.
 2. **ActivityWatcher** uses `watchdog` (inotify on Linux) to react to jsonl writes without polling.
-3. A **WebSocket hub** at `/ws` pushes diffs to the browser at most once every 250 ms.
+3. A **WebSocket hub** at `/ws` fans updates out to the browser: a full session + bus snapshot every `scanner.interval_seconds` (3 s by default), plus an immediate per-session push whenever a jsonl write fires (inotify), and a bus event as each message arrives.
 4. The **frontend** renders one tile per session — plain JS, no build step.
 5. **BusAdapter** tails the message-bus log; the Bus tile shows recent traffic and SVG lines fan out to sessions on the bus.
 6. **WindowMapper** uses `wmctrl`/`xdotool` to raise the right terminal window on click and to type `/msg-check` into a session when you click its 📬.
