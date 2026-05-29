@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="Conductor">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1f2937"/>
+      <stop offset="1" stop-color="#0f172a"/>
+    </linearGradient>
+    <radialGradient id="hub" cx="0.5" cy="0.4" r="0.7">
+      <stop offset="0" stop-color="#67e8f9"/>
+      <stop offset="1" stop-color="#0891b2"/>
+    </radialGradient>
+  </defs>
+
+  <!-- rounded-square app tile -->
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#bg)"/>
+
+  <!-- connection lines from the central hub to four session nodes -->
+  <g stroke="#38bdf8" stroke-width="6" stroke-linecap="round" fill="none" opacity="0.85">
+    <line x1="128" y1="128" x2="64"  y2="64"/>
+    <line x1="128" y1="128" x2="192" y2="64"/>
+    <line x1="128" y1="128" x2="64"  y2="192"/>
+    <line x1="128" y1="128" x2="192" y2="192"/>
+  </g>
+
+  <!-- session nodes -->
+  <g fill="#e2e8f0">
+    <circle cx="64"  cy="64"  r="18"/>
+    <circle cx="192" cy="64"  r="18"/>
+    <circle cx="64"  cy="192" r="18"/>
+    <circle cx="192" cy="192" r="18"/>
+  </g>
+
+  <!-- the conductor hub -->
+  <circle cx="128" cy="128" r="34" fill="url(#hub)" stroke="#0f172a" stroke-width="6"/>
+  <circle cx="128" cy="128" r="12" fill="#0f172a"/>
+</svg>
