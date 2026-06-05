@@ -63,8 +63,11 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   stops it, and it attaches to an already-running instance instead of spawning
   a duplicate. Makefile `install-native` (separate `.venv-native` with
   `--system-site-packages`) / `native` / `install-desktop`; `.desktop` template
-  + SVG icon. Dual-edition release scheme: web = bare tags (`vX.Y.Z`), native =
-  `vX.Y.Z-native`, both cut from one `main`.
+  + SVG icon. Release scheme (as of v2.1.2): a **single release per version**
+  from the bare tag (`vX.Y.Z`), covering both editions — it's one commit, the
+  edition is just `make run` vs `make native`. The old `-native` split-release
+  scheme is retired; legacy `-native` tags/releases (≤ v2.1.0-native) stay as
+  history.
 - ✅ v2.0: Web Browser Edition milestone — clean baseline for the dual-edition
   era (functionally same as v1.5.3).
 - ✅ v1.5: Durable layout. Tiles keyed by project dir (not the ephemeral

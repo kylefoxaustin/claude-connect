@@ -93,13 +93,14 @@ make test    # run the pytest suite
 
 Conductor ships in two editions from the same codebase:
 
-| Edition | What it is | Run | Releases |
-|---|---|---|---|
-| **Web Browser** | The dashboard served at `http://127.0.0.1:8765`, opened in any browser. | `make dev` / `make run` | `vX.Y.Z` |
-| **Native App** | The *same* dashboard wrapped in a native desktop window (pywebview → WebKitGTK), with its own app-menu launcher and dock icon. | `make native` | `vX.Y.Z-native` |
+| Edition | What it is | Run |
+|---|---|---|
+| **Web Browser** | The dashboard served at `http://127.0.0.1:8765`, opened in any browser. | `make dev` / `make run` |
+| **Native App** | The *same* dashboard wrapped in a native desktop window (pywebview → WebKitGTK), with its own app-menu launcher and dock icon. | `make native` |
 
-Same version number = same features; the `-native` suffix is just packaging. New
-features land once and both editions get them.
+Both editions ship in a **single release per version** (`vX.Y.Z`) — it's one
+codebase at one commit, the edition is just how you run it. New features land
+once and both editions get them.
 
 ### Native App Edition (Ubuntu)
 
