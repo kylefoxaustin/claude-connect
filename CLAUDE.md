@@ -36,6 +36,20 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.1.2: Tilix-exact tile focus. `focus_session`/`send_keys_to_session`
+  now resolve a session's tilix tile by `TILIX_ID` (read from
+  `/proc/<pid>/environ`) and call the `activate-terminal` gaction over the
+  `com.gexperts.Tilix` D-Bus name — raising the window *and* selecting the exact
+  tile. This runs before the old wmctrl title matching and falls back to it for
+  non-tilix terminals / when `gdbus` or `TILIX_ID` is absent. Fixes the
+  combined-window corner case: title matching only sees the *active* tile's
+  title, so a backgrounded tile lost focus to a stray same-named terminal (e.g.
+  a shell `cd`'d into the project dir); the exact PID→tile handle sidesteps X11
+  titles entirely. Backend only, ships in both editions. **Scope: tilix only.**
+  Tested exclusively with tilix; other multi-window terminals (terminator,
+  kitty, gnome-terminal tabs, …) are out of scope and untested — they simply
+  fall through to the wmctrl title path, no regression. No plans to support
+  other tiling terminals.
 - ✅ v2.1.1: Stop the multi-session tile blink. `renderGrid` now reconciles
   tiles (reuse the outer node per key + refresh content in place) instead of
   `innerHTML=""` teardown every WS update. Preserving node identity means an

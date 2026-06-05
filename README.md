@@ -55,6 +55,7 @@ It's **read-only and local**. It watches Claude's `~/.claude/projects/*.jsonl` l
 - **Python 3.10+**
 - **`wmctrl` and `xdotool`** for terminal focus and `/msg-check` injection
   - Both optional — without them, the focus and 📬 buttons just no-op
+  - **Tilix users** also get exact-tile focus via `gdbus` (ships with GLib, already present on any GTK desktop) — see [Reliable Terminal Focus](#reliable-terminal-focus)
 - **Native App Edition only:** system WebKitGTK (`python3-gi`, `gir1.2-webkit2-4.0`, `libwebkit2gtk-4.0-37`) — see [Native App Edition](#native-app-edition-ubuntu). The Web Browser Edition needs none of this.
 
 ---
@@ -239,16 +240,20 @@ This is actually useful — if you wire up some sessions and leave others out, t
 
 ## Reliable Terminal Focus
 
-A single terminal server (Tilix, `gnome-terminal-server`) owns all its windows, so they share one PID. Claude Connect matches on **window title** to tell them apart.
+A single terminal server (Tilix, `gnome-terminal-server`) owns all its windows, so they share one PID — and a tiled window shows only the *active* tile's title at a time. So matching purely on **window title** is ambiguous: a backgrounded tile has no title of its own on the window, and a stray same-named terminal (e.g. a shell `cd`'d into the project dir) can win the match.
 
-The optional `claude-tracked` wrapper in [`scripts/`](scripts/) gives each Claude its own Tilix window with a unique X11 title, so focus and 📬 injection target precisely:
+**Tilix gets an exact path.** Each tilix tile stamps its shell with a `TILIX_ID` env var, so Claude Connect reads that UUID from the Claude process and tells tilix (over its `com.gexperts.Tilix` D-Bus interface) to focus that precise tile — **raising the window *and* switching to the exact tile**, even inside a combined/tiled window where several Claudes share one window. No wrapper, no setup; it just works if you run Claude inside tilix.
+
+> Scope: this exact-tile path is **tilix-only** and only tested on tilix. Other terminals fall through to the title-matching path below — no regression, just less precise.
+
+For non-tilix terminals, focus falls back to **window-title matching**, and the optional `claude-tracked` wrapper in [`scripts/`](scripts/) gives each Claude its own window with a unique X11 title so focus and 📬 injection target precisely:
 
 ```bash
 sudo install -m755 scripts/claude-tracked /usr/local/bin/
 claude-tracked api-server --resume
 ```
 
-Without the wrapper, focus is best-effort: Claude Connect raises the terminal window owning the Claude PID, but can't switch between tabs packed into one window.
+Without either the tilix path or the wrapper, focus is best-effort: Claude Connect raises the terminal window owning the Claude PID, but can't switch between tabs packed into one window.
 
 ---
 
@@ -295,7 +300,7 @@ For the curious:
 3. A **WebSocket hub** at `/ws` fans updates out to the browser: a full session + bus snapshot every `scanner.interval_seconds` (3 s by default), plus an immediate per-session push whenever a jsonl write fires (inotify), and a bus event as each message arrives.
 4. The **frontend** renders one tile per session — plain JS, no build step.
 5. **BusAdapter** tails the message-bus log; the Bus tile shows recent traffic and SVG lines fan out to sessions on the bus.
-6. **WindowMapper** uses `wmctrl`/`xdotool` to raise the right terminal window on click and to type `/msg-check` into a session when you click its 📬.
+6. **WindowMapper** raises the right terminal window on click and types `/msg-check` into a session when you click its 📬 — focusing the exact tilix tile via `gdbus` + `TILIX_ID` when available, else falling back to `wmctrl`/`xdotool` title matching.
 
 Full design doc: [`CONDUCTOR_SPEC.md`](CONDUCTOR_SPEC.md)
 
@@ -315,7 +320,7 @@ Full design doc: [`CONDUCTOR_SPEC.md`](CONDUCTOR_SPEC.md)
 Check that `claude` is actually running and that `~/.claude/projects/` has recent jsonl files. Drop `scanner.interval_seconds` to `1` temporarily to confirm discovery is happening.
 
 **Clicking a tile doesn't focus the terminal.**
-Make sure `wmctrl` is installed. If you're using Tilix or another tabbed terminal, install the `claude-tracked` wrapper so each session gets a unique window title.
+On **Tilix**, focus is exact out of the box (via `gdbus` + `TILIX_ID`) — make sure `gdbus` is on PATH (it ships with GLib). On other terminals, make sure `wmctrl` is installed; for tabbed/tiled non-tilix terminals, install the `claude-tracked` wrapper so each session gets a unique window title. See [Reliable Terminal Focus](#reliable-terminal-focus).
 
 **📬 bubbles never appear.**
 The bus isn't wired up. See [Cross-Session Bus](#cross-session-bus). Sessions work fine without it — they just won't have bubbles or connection lines.

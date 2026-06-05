@@ -34,6 +34,78 @@ def xdotool_available() -> bool:
     return shutil.which("xdotool") is not None
 
 
+def gdbus_available() -> bool:
+    return shutil.which("gdbus") is not None
+
+
+# A tilix terminal UUID, as stamped into TILIX_ID — eight-four-four-four-twelve
+# lowercase hex. We validate before interpolating it into the gdbus parameter so
+# a malformed environ value can't confuse the D-Bus argument parser.
+_TILIX_UUID_RE = re.compile(r"\A[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\Z")
+
+
+def _parse_tilix_id(environ: bytes) -> str | None:
+    """Extract the ``TILIX_ID`` UUID from a process's NUL-separated environ.
+
+    Tilix stamps every tile's child shell with ``TILIX_ID=<terminal-uuid>``, so
+    a Claude process started in a tilix tile carries the exact handle of the tile
+    it lives in. Returns the UUID if present and well-formed, else None."""
+    for entry in environ.split(b"\0"):
+        if entry.startswith(b"TILIX_ID="):
+            val = entry[len(b"TILIX_ID="):].decode("utf-8", "replace")
+            return val if _TILIX_UUID_RE.match(val) else None
+    return None
+
+
+def tilix_id_for_pid(pid: int | None) -> str | None:
+    """Read ``TILIX_ID`` from ``/proc/<pid>/environ`` (the tilix tile UUID)."""
+    if pid is None:
+        return None
+    try:
+        with open(f"/proc/{pid}/environ", "rb") as f:
+            return _parse_tilix_id(f.read())
+    except OSError:
+        return None
+
+
+def tilix_activate_terminal(uuid: str) -> bool:
+    """Focus a tilix tile by UUID via the ``activate-terminal`` gaction.
+
+    Tilix raises the hosting window *and* switches to the exact tile — an exact
+    PID→tile focus that sidesteps X11-title matching. Title matching is ambiguous
+    for combined/tiled tilix windows (only the active tile's title is on the
+    window) and lets a stray same-named terminal hijack focus; this avoids both.
+    Returns True if the action dispatched."""
+    if not gdbus_available() or not _TILIX_UUID_RE.match(uuid):
+        return False
+    try:
+        r = subprocess.run(
+            [
+                "gdbus", "call", "--session",
+                "--dest", "com.gexperts.Tilix",
+                "--object-path", "/com/gexperts/Tilix",
+                "--method", "org.gtk.Actions.Activate",
+                "activate-terminal", f"[<'{uuid}'>]", "{}",
+            ],
+            capture_output=True, timeout=3.0,
+        )
+        return r.returncode == 0
+    except (subprocess.TimeoutExpired, OSError) as e:
+        log.debug("tilix activate-terminal failed: %s", e)
+        return False
+
+
+def _active_window_id() -> int | None:
+    """X11 id of the currently-focused window, via ``xdotool getactivewindow``."""
+    try:
+        out = subprocess.run(
+            ["xdotool", "getactivewindow"], capture_output=True, text=True, timeout=2.0,
+        )
+        return int(out.stdout.strip()) if out.returncode == 0 else None
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return None
+
+
 def list_windows() -> list[tuple[int, int, str]]:
     """Return [(window_id_int, pid, title)] from `wmctrl -lp`. Empty list if unavailable."""
     if not wmctrl_available():
@@ -165,11 +237,22 @@ def _resolve_window(
 
 def focus_session(
     *,
+    pid: int | None = None,
     terminal_pid: int | None,
     title: str | None = None,
     window_title: str | None = None,
 ) -> bool:
-    """Focus a session's terminal window. Returns True on success."""
+    """Focus a session's terminal window. Returns True on success.
+
+    Exact path first: if the session lives in a tilix tile, focus that tile by
+    its ``TILIX_ID`` — this raises the right window and selects the right tile,
+    even in a combined/tiled window where X11-title matching can't (the tile's
+    title isn't on the window unless it's already the active one). Falls back to
+    wmctrl title matching for non-tilix terminals or when tilix D-Bus is absent.
+    """
+    tilix_id = tilix_id_for_pid(pid)
+    if tilix_id and tilix_activate_terminal(tilix_id):
+        return True
     if not wmctrl_available():
         return False
     wid = _resolve_window(
@@ -181,6 +264,7 @@ def focus_session(
 def send_keys_to_session(
     *,
     text: str,
+    pid: int | None = None,
     terminal_pid: int | None,
     title: str | None = None,
     window_title: str | None = None,
@@ -196,13 +280,24 @@ def send_keys_to_session(
     Returns True if the keystrokes were dispatched. Best-effort: a False return
     means we couldn't locate/activate the window or a tool was missing.
     """
-    if not (wmctrl_available() and xdotool_available()):
+    if not xdotool_available():
         return False
-    wid = _resolve_window(
-        terminal_pid=terminal_pid, title=title, window_title=window_title,
-    )
-    if wid is None or not _raise_window(wid):
-        return False
+    # Exact path: focus the precise tilix tile by TILIX_ID, then type into the
+    # window it just raised — so the keystrokes can't land in a stray same-named
+    # terminal the way title matching might. Falls back to wmctrl resolution.
+    wid: int | None = None
+    tilix_id = tilix_id_for_pid(pid)
+    if tilix_id and tilix_activate_terminal(tilix_id):
+        time.sleep(_FOCUS_SETTLE_S)  # let the tile take focus before we read it
+        wid = _active_window_id()
+    if wid is None:
+        if not wmctrl_available():
+            return False
+        wid = _resolve_window(
+            terminal_pid=terminal_pid, title=title, window_title=window_title,
+        )
+        if wid is None or not _raise_window(wid):
+            return False
     try:
         # windowactivate --sync blocks until the WM reports the window focused;
         # the settle pause then lets the terminal widget actually start accepting

@@ -314,6 +314,7 @@ async def focus(session_id: str, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="session not found")
     ok = await asyncio.to_thread(
         focus_session,
+        pid=rec.pid,
         terminal_pid=rec.terminal_pid,
         title=rec.title,
         window_title=rec.window_title,
@@ -338,6 +339,7 @@ async def check_bus(session_id: str, request: Request) -> dict[str, Any]:
     injected = await asyncio.to_thread(
         send_keys_to_session,
         text="/msg-check",
+        pid=rec.pid,
         terminal_pid=rec.terminal_pid,
         title=rec.title,
         window_title=rec.window_title,
@@ -399,6 +401,7 @@ async def send_bus_message(payload: BusMessage, request: Request) -> dict[str, A
                 ok = await asyncio.to_thread(
                     send_keys_to_session,
                     text="/msg-check",
+                    pid=rec.pid,
                     terminal_pid=rec.terminal_pid,
                     title=rec.title,
                     window_title=rec.window_title,
