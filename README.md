@@ -1,6 +1,6 @@
 # Claude Connect
 
-**A local browser dashboard for watching all your Claude Code sessions at once — plus an optional message bus that lets them talk to each other.**
+**A local dashboard for watching all your Claude Code sessions at once — in your browser or as a standalone desktop app — plus an optional message bus that lets them talk to each other.**
 
 [![version: 2.1](https://img.shields.io/badge/version-2.1-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
 [![platform: linux](https://img.shields.io/badge/platform-linux-orange)](#requirements)
