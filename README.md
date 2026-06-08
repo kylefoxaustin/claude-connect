@@ -2,7 +2,7 @@
 
 **A local dashboard for watching all your Claude Code sessions at once — in your browser or as a standalone desktop app — plus an optional message bus that lets them talk to each other.**
 
-[![version: 2.1](https://img.shields.io/badge/version-2.1-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
+[![version: 2.2](https://img.shields.io/badge/version-2.2-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
 [![platform: linux](https://img.shields.io/badge/platform-linux-orange)](#requirements)
 [![safety: read--only](https://img.shields.io/badge/safety-read--only-green)](#how-it-works)
 
@@ -17,6 +17,21 @@
 ```
 
 > 💡 **Heads up on names:** the repo is `claude-connect`; the dashboard binary is `conductor`. Same project — you'll see both names throughout.
+
+![The 2D dashboard — one tile per Claude session, a central Bus tile, and animated wires showing cross-session traffic (solid = active, dashed = passive).](assets/screenshot-2d.png)
+
+<sub>The classic 2D board: live tiles, status dots, the orange **backend** group, the central **Bus** tile, and connection wires (solid = active, dashed = passive). *Sample data shown.*</sub>
+
+### …or flip to 3D
+
+New in **2.2**: a **🧊 3D** button swaps the board into a WebGL scene where your sessions float around a glowing bus core, grouped sessions cluster together, and you orbit/zoom the whole thing. Three layouts — pick by feel:
+
+| Carousel *(default)* | Orbital | Gallery |
+| :---: | :---: | :---: |
+| ![3D carousel layout](assets/screenshot-3d-carousel.png) | ![3D orbital layout](assets/screenshot-3d-orbital.png) | ![3D gallery layout](assets/screenshot-3d-gallery.png) |
+| Spin through sessions; the front card is focused and fully readable. | Sessions orbit the bus core on a sphere; groups share an arc. | Your saved 2D positions, lifted into depth; groups clump together. |
+
+<sub>Cards always face the camera, so text stays readable at any angle. 2D stays the default — 3D is one click away. *Sample data shown.*</sub>
 
 ---
 
@@ -43,6 +58,7 @@ It's **read-only and local**. It watches Claude's `~/.claude/projects/*.jsonl` l
 - 💾 **Persistent layout** — drag tiles to rearrange and **resize** them (corner grip); both stick
 - 🗕 **Minimize to dock** — tuck rarely-touched sessions into a bottom dock (still live), restore with a click
 - ▦ **Groups** — color-code sessions into named groups; minimize a whole group to one dock chip with a rollup badge
+- 🧊 **3D view** *(new in 2.2)* — flip the whole board into a WebGL scene (Carousel / Orbital / Gallery); grouped sessions cluster in space, cards stay readable, 2D remains the default
 - 🔀 **Active/Passive bus control** — click a tile's tag chip to toggle whether it's auto-notified of bus traffic
 - 🎨 **Themeable** — dark/light, animations, connection-line styling
 - 🔒 **Local only** — `127.0.0.1`, in-memory, restart-clean
@@ -161,6 +177,20 @@ For a crowded board, organize sessions into **named, color-coded groups**. Each 
 - The **▦ Groups** panel (top bar) lists every group to rename, recolor, minimize/restore, or ungroup.
 
 Groups are *logical* (members keep their own positions — they aren't auto-arranged) and persist across restarts.
+
+### 🧊 3D view
+
+Click **🧊 3D** in the top bar to lift the board into a 3D scene; click **🗔 2D** to come back. **2D is the default** and stays untouched — 3D is an optional view, and your choice (plus the last layout) is remembered.
+
+- **Navigate** — *drag* to orbit the camera, *scroll* to zoom. Click a card's **▶** to focus its terminal, or its tag chip to toggle Active/Passive, just like 2D.
+- **Cards always face you.** No matter how you orbit, every card is billboarded toward the camera so the text stays readable — depth and motion live in the *space between* sessions, never in the angle of the content.
+- **Groups become places.** Cards carry their group color (border + glow), and group members physically **cluster together** in the scene. The glowing **bus core** sits at the center with wires fanning out (solid = active, dashed = passive), pulsing on each message.
+- **Three layouts** (switcher floats at the bottom):
+  - **Carousel** *(default)* — sessions on a ring you spin through; the front card is enlarged and in focus.
+  - **Orbital** — sessions orbit the bus core on a sphere; each group shares an arc.
+  - **Gallery** — your saved 2D positions lifted into depth (active sessions float forward, idle recede), with groups pulled into tight clumps.
+
+> The 3D view loads Three.js from a CDN the first time you open it (no build step). Offline or CDN blocked? It cleanly falls back to 2D with a notice — the 2D board never depends on it. Assign/rename/recolor groups from the 2D **▦** menu; 3D visualizes whatever's set.
 
 ### Click a tile
 

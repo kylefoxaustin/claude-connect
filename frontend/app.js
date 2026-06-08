@@ -26,6 +26,9 @@ window.conductorState = state; // for ad-hoc debugging from devtools
 const PREFS_KEY = "conductor.prefs.v1";
 const DEFAULT_PREFS = {
   theme: "dark", lines: true, animation: true, showEnded: true,
+  // 3D view (fork ②): whether it's active, and which layout is selected.
+  // Default view is 2D; when 3D is opened, it defaults to the carousel layout.
+  view3d: false, layout3d: "carousel",
   // Draw the bus lines behind the tiles instead of on top (declutter).
   linesBehind: false,
   // How a 📬 bubble click behaves: "confirm-busy" | "always" | "block-busy" | "always-confirm".
@@ -41,6 +44,43 @@ function savePrefs() {
 }
 const prefs = loadPrefs();
 window.conductorPrefs = prefs; // read by tiles.js (showEnded) and lines.js (animation)
+window.saveConductorPrefs = savePrefs; // scene3d.js persists its layout choice
+
+// --- 3D view (fork ②) -------------------------------------------------------
+// scene3d.js is imported lazily so a CDN miss on Three.js can never break 2D.
+let view3dMod = null;
+let view3dLoading = false;
+const view3dBtn = document.getElementById("view3d-btn");
+
+function setView3dBtn(on, loading) {
+  view3dBtn.classList.toggle("on", !!on);
+  view3dBtn.textContent = loading ? "🧊 …" : on ? "🗔 2D" : "🧊 3D";
+  view3dBtn.title = on ? "Back to the 2D board" : "Toggle the experimental 3D view";
+}
+
+async function enter3D() {
+  if (view3dMod) { view3dMod.activate(state, prefs.layout3d); setView3dBtn(true); return; }
+  if (view3dLoading) return;
+  view3dLoading = true;
+  setView3dBtn(true, true);
+  try {
+    view3dMod = await import("/static/scene3d.js");
+    view3dMod.activate(state, prefs.layout3d);
+    setView3dBtn(true);
+  } catch (e) {
+    console.error("3D view failed to load", e);
+    prefs.view3d = false; savePrefs();
+    setView3dBtn(false);
+    alert("Couldn't load the 3D view (Three.js may be unreachable). Staying in 2D.");
+  } finally {
+    view3dLoading = false;
+  }
+}
+function exit3D() { if (view3dMod) view3dMod.deactivate(); setView3dBtn(false); }
+function setView3d(on) { prefs.view3d = on; savePrefs(); if (on) enter3D(); else exit3D(); }
+function refresh3D() { if (prefs.view3d && view3dMod) view3dMod.update(state); }
+
+view3dBtn.addEventListener("click", () => setView3d(!prefs.view3d));
 
 function applyTheme() {
   document.documentElement.dataset.theme = prefs.theme;
@@ -103,6 +143,7 @@ function handleMessage({ kind, payload }) {
       sessionCountEl.textContent = `${state.sessions.length} session${state.sessions.length === 1 ? "" : "s"}`;
       renderGrid(state);
       requestAnimationFrame(() => redrawLines(state));
+      refresh3D();
       break;
     case "session": {
       const idx = state.sessions.findIndex((s) => s.session_id === payload.session_id);
@@ -111,6 +152,7 @@ function handleMessage({ kind, payload }) {
       renderGrid(state);
       flashTilePreview(payload.session_id);
       requestAnimationFrame(() => redrawLines(state));
+      refresh3D();
       break;
     }
     case "bus": {
@@ -122,6 +164,7 @@ function handleMessage({ kind, payload }) {
       state.busAdapter = payload.adapter || state.busAdapter;
       renderGrid(state);
       requestAnimationFrame(() => redrawLines(state));
+      refresh3D();
       break;
     }
     case "bus_event": {
@@ -132,6 +175,7 @@ function handleMessage({ kind, payload }) {
       if (payload.topology) state.busTopology = payload.topology;
       state.busUnseen += 1;
       renderGrid(state);
+      refresh3D();
       requestAnimationFrame(() => {
         redrawLines(state);
         // Directed messages from the dashboard carry a leading "@to [tag]…" line;
@@ -159,6 +203,7 @@ function animateLineForTag(tag) {
   if (!tag) return;
   const match = state.sessions.find((s) => s.tag === tag);
   if (match) animateLineFor(match.session_id);
+  if (prefs.view3d && view3dMod) view3dMod.animateForTag(tag);
 }
 
 document.getElementById("reset-layout-btn").addEventListener("click", () => {
@@ -513,3 +558,8 @@ setInterval(() => {
 }, 1000);
 
 connect();
+
+// Restore the 3D view if it was active last session (guarded import, so a CDN
+// miss just falls back to 2D with a notice).
+setView3dBtn(false);
+if (prefs.view3d) enter3D();

@@ -36,6 +36,29 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.2.0: 3D view (fork ②). A `🧊 3D` topbar toggle swaps the 2D board for
+  a WebGL scene rendered with Three.js + `CSS3DRenderer` (loaded via import map,
+  no build step). `frontend/scene3d.js` is **dynamically imported only on first
+  toggle**, so a CDN miss can never break the 2D default. Session cards are real
+  DOM (crisp text, reusing the `requestFocus`/`toggleBusActive`/`requestCheck`
+  globals), **billboarded** to always face the camera — the lesson from the
+  rejected CSS-tilt prototype (never angle the content you read; depth lives in
+  the space between tiles). OrbitControls (drag-orbit / scroll-zoom), a glowing
+  bus core, and bus wires drawn on an SVG overlay by projecting each card's 3D
+  position to screen (flow animation on message). Three layouts via a floating
+  switcher — **carousel** (default; ring you spin, front card enlarged),
+  **orbital** (fibonacci sphere around the core), **gallery** (reuses the v1.5
+  saved positions, depth by status). **Groups** carry into 3D: group color
+  (border+glow) + spatial clustering (contiguous ordering → adjacent placement
+  for orbital/carousel; centroid-pull for gallery), reading the same
+  `conductor.groups.v2` store (assignment still happens via the 2D ▦ menu).
+  Prefs `view3d` (default false → 2D) + `layout3d` (default "carousel") persist
+  in localStorage. Two bugs caught during the build, both verified via headless
+  screenshots: (1) cards inherited `.tile` which forced `position:absolute` w/o
+  `top/left` → mis-anchored in the CSS3D transform; fixed with a self-contained
+  `.card3d`. (2) A `.scene3d > div` rule also matched the controls bar, blowing
+  it to a full-screen opaque panel that hid everything; removed (the renderer
+  sizes its own host). Frontend only, ships in both editions.
 - ✅ v2.1.2: Tilix-exact tile focus. `focus_session`/`send_keys_to_session`
   now resolve a session's tilix tile by `TILIX_ID` (read from
   `/proc/<pid>/environ`) and call the `activate-terminal` gaction over the

@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Conductor</title>
     <link rel="stylesheet" href="/static/style.css" />
+    <!-- Three.js for the 3D view (fork ②). Loaded via import map so there's no
+         build step; scene3d.js is itself dynamically imported only when 3D is
+         toggled on, so a CDN miss can never break the 2D default. -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
   </head>
   <body>
     <header class="topbar">
@@ -12,6 +23,7 @@
       <div class="topbar-meta">
         <span id="conn-state" class="conn-state conn-down">disconnected</span>
         <span id="session-count">0 sessions</span>
+        <button id="view3d-btn" title="Toggle the experimental 3D view">🧊 3D</button>
         <button id="compose-btn" title="Send a message on the bus">✉ Compose</button>
         <button id="groups-btn" title="Manage groups">▦ Groups</button>
         <button id="reset-layout-btn" title="Clear stored tile positions and re-cascade">Reset layout</button>
