@@ -82,6 +82,20 @@ function refresh3D() { if (prefs.view3d && view3dMod) view3dMod.update(state); }
 
 view3dBtn.addEventListener("click", () => setView3d(!prefs.view3d));
 
+// 🕸 History time-lapse. Lazily imported like scene3d.js — a throw or CDN-less
+// failure in heatmap.js can never affect the board. It's a transient overlay
+// (no persisted pref): open it, watch, close it.
+let heatmapMod = null;
+const heatmapBtn = document.getElementById("heatmap-btn");
+heatmapBtn.addEventListener("click", async () => {
+  try {
+    if (!heatmapMod) heatmapMod = await import("/static/heatmap.js");
+    heatmapMod.activate();
+  } catch (err) {
+    console.error("heatmap failed to load", err);
+  }
+});
+
 function applyTheme() {
   document.documentElement.dataset.theme = prefs.theme;
 }

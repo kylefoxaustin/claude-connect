@@ -36,6 +36,30 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.3.0: 🕸 History time-lapse. A `🕸 History` topbar button replays the
+  **entire** bus (live `messages.md` + every `messages-*.md` archive) as an
+  animated graph. Backend `GET /api/bus/heatmap` (`build_mention_history` in
+  `bus.py`) sweeps all logs and returns `{nodes, events}` time-ordered; since
+  the bus is broadcast-only (0 `@to` in practice), edges are **inferred from
+  mentions** — a message naming another session — using a longest-first regex
+  alternation so `pai-sizer` ≠ `sizer`. `[system]` rotation notices are
+  excluded. Each event carries `size` (body length). Frontend `heatmap.js` is
+  **lazily imported** like `scene3d.js` (pure SVG, no deps — a failure can't
+  touch the 2D board): a full-screen overlay where nodes fade in as each session
+  first speaks (and persist dimmed when quiet), undirected mention-lines thicken
+  with cumulative traffic, and a pulse-dot flies each wire on use, **sized by
+  message length** (fat report vs. speck hello). Everything is a pure function
+  of one progress scalar `f∈[0,1]` (glow/pulse recency = `f - lastTouch`, no
+  timers), so scrubbing back is just a cheap replay. Play/pause + scrubber +
+  0.25×–5× speeds, idle-gap-clamped virtual timeline. **Three layouts** via a
+  switcher (persisted to `localStorage` `conductor.heatmapLayout`): **clusters**
+  (default; live force-directed sim — mention-edges are springs, frequent
+  partners drift together as weights grow during playback), **ring** (arrival
+  order), **orbit** (radial by volume, loudest centered). Modes morph smoothly
+  (everything seeds as a ring, then eases/springs into place). Force constants
+  tuned by a stability stress-test (3000 steps, worst-case dense graph: no
+  NaN/explosion, converges, no overlap) since the sandbox can't run a live
+  browser. Frontend + one backend field; ships in both editions.
 - ✅ v2.2.0: 3D view (fork ②). A `🧊 3D` topbar toggle swaps the 2D board for
   a WebGL scene rendered with Three.js + `CSS3DRenderer` (loaded via import map,
   no build step). `frontend/scene3d.js` is **dynamically imported only on first

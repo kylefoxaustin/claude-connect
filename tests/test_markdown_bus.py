@@ -12,6 +12,7 @@ from conductor.bus import (
     MarkdownBusAdapter,
     active_tags_configured,
     append_message,
+    build_mention_history,
     compute_pending,
     list_known_tags,
     list_sender_tags,
@@ -306,3 +307,94 @@ async def test_markdown_bus_adapter_tails_appended_blocks(tmp_path: Path):
         assert sources == {"[backend]", "[frontend]"}
     finally:
         await adapter.stop()
+
+
+# --- build_mention_history (🕸 History time-lapse) -------------------------
+
+def test_build_mention_history_basic(tmp_path):
+    log = tmp_path / "messages.md"
+    log.write_text(textwrap.dedent("""\
+        ## 2025-05-01 09:00 [backend]
+
+        hey sizer, the API is ready for you
+
+        ## 2025-05-01 09:05 [sizer]
+
+        thanks backend — pinging docs too
+
+        ## 2025-05-01 09:10 [docs]
+
+        nothing to report
+    """))
+    out = build_mention_history(log)
+    tags = [n["tag"] for n in out["nodes"]]
+    # First-appearance order, and message counts per sender.
+    assert tags == ["[backend]", "[sizer]", "[docs]"]
+    counts = {n["tag"]: n["count"] for n in out["nodes"]}
+    assert counts == {"[backend]": 1, "[sizer]": 1, "[docs]": 1}
+
+    events = out["events"]
+    assert [e["source"] for e in events] == ["[backend]", "[sizer]", "[docs]"]
+    assert events[0]["mentions"] == ["[sizer]"]
+    # sizer names both backend and docs (sorted); self-mention excluded.
+    assert events[1]["mentions"] == ["[backend]", "[docs]"]
+    assert events[2]["mentions"] == []
+    # Chronological by timestamp.
+    assert events[0]["ts"] <= events[1]["ts"] <= events[2]["ts"]
+    # Each event carries its body length (drives the pulse size in the UI).
+    assert events[0]["size"] == len("hey sizer, the API is ready for you")
+    assert all("size" in e for e in events)
+
+
+def test_build_mention_history_sweeps_archives_and_excludes_system(tmp_path):
+    # Archive holds older messages; live log holds newer ones + a [system] notice.
+    (tmp_path / "messages-2025-04.md").write_text(textwrap.dedent("""\
+        ## 2025-04-02 12:00 [backend]
+
+        early note, no mentions
+    """))
+    (tmp_path / "messages.md").write_text(textwrap.dedent("""\
+        ## 2025-05-01 09:00 [system]
+
+        Bus rotated.
+
+        ## 2025-05-01 09:01 [sizer]
+
+        backend, did you see my message?
+    """))
+    out = build_mention_history(tmp_path / "messages.md")
+    tags = [n["tag"] for n in out["nodes"]]
+    # Archive merged + chronological (backend before sizer); [system] is not a node.
+    assert tags == ["[backend]", "[sizer]"]
+    assert "[system]" not in tags
+    # No [system] event leaks into the timeline.
+    assert all(e["source"] != "[system]" for e in out["events"])
+    sizer_ev = next(e for e in out["events"] if e["source"] == "[sizer]")
+    assert sizer_ev["mentions"] == ["[backend]"]
+
+
+def test_build_mention_history_disambiguates_overlapping_names(tmp_path):
+    # "pai-sizer" contains "sizer"; longest-first matching must not double-count.
+    log = tmp_path / "messages.md"
+    log.write_text(textwrap.dedent("""\
+        ## 2025-05-01 09:00 [sizer]
+
+        seed
+
+        ## 2025-05-01 09:01 [pai-sizer]
+
+        seed
+
+        ## 2025-05-01 09:02 [docs]
+
+        ping pai-sizer about the build
+    """))
+    out = build_mention_history(log)
+    docs_ev = next(e for e in out["events"] if e["source"] == "[docs]")
+    # Only pai-sizer, NOT a stray [sizer] from the substring.
+    assert docs_ev["mentions"] == ["[pai-sizer]"]
+
+
+def test_build_mention_history_empty(tmp_path):
+    out = build_mention_history(tmp_path / "messages.md")
+    assert out == {"nodes": [], "events": []}

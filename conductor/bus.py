@@ -212,6 +212,125 @@ def parse_markdown_blocks(text: str) -> list[BusEvent]:
     return out
 
 
+def _bare_name(tag: str) -> str:
+    """Reduce a bracketed tag to the bare name people type when mentioning it.
+
+    ``[backend]`` -> ``backend``; ``[other:95emulator]`` -> ``95emulator``.
+    The ``other:`` prefix is Conductor/bus.sh bookkeeping (any cwd outside the
+    hardcoded whitelist), but in prose a session refers to itself by its plain
+    name, so that's what we match on.
+    """
+    t = tag.strip().strip("[]")
+    if t.startswith("other:"):
+        t = t[len("other:"):]
+    return t
+
+
+def _iter_full_blocks(text: str):
+    """Yield ``(ts_float, bracketed_tag, full_body)`` for each header block.
+
+    Like ``parse_markdown_blocks`` but keeps the *entire* body (not truncated to
+    80 chars) because mention detection has to scan the whole message.
+    """
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        m = _HEADER_RE.match(lines[i])
+        if not m:
+            i += 1
+            continue
+        date, hm, tag = m.group(1), m.group(2), m.group(3)
+        body_lines: list[str] = []
+        i += 1
+        while i < len(lines) and not _HEADER_RE.match(lines[i]):
+            body_lines.append(lines[i])
+            i += 1
+        try:
+            ts = datetime.strptime(f"{date} {hm}", "%Y-%m-%d %H:%M").timestamp()
+        except ValueError:
+            continue
+        yield ts, f"[{tag}]", "\n".join(body_lines).strip()
+
+
+def build_mention_history(messages_path: Path) -> dict:
+    """Sweep the live bus + every monthly archive and build a mention graph over time.
+
+    The bus is broadcast-only (no ``@to`` addressing in practice), so a "who
+    talks to whom" edge is *inferred*: an edge ``A -> B`` exists for a message
+    sent by A whose body names session B. We count each message once per distinct
+    mentioned session (a message that says "sizer" five times is one act of
+    addressing sizer).
+
+    Returns ``{"nodes": [...], "events": [...]}`` ordered by time:
+      * ``nodes``  — ``{"tag", "first_seen", "count"}`` (count = messages sent)
+      * ``events`` — ``{"ts", "source", "mentions": [tags]}`` in chronological
+        order. The frontend replays these to grow the graph over time; a message
+        with no mentions still reveals its source node (the session "came online").
+    """
+    bus_dir = messages_path.parent
+    try:
+        files = sorted(bus_dir.glob("messages*.md"))
+    except OSError:
+        files = []
+    if messages_path.exists() and messages_path not in files:
+        files.append(messages_path)
+
+    raw: list[tuple[float, str, str]] = []
+    for f in files:
+        try:
+            text = f.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        raw.extend(_iter_full_blocks(text))
+    raw.sort(key=lambda r: r[0])
+
+    # Distinct sessions, in first-appearance order. [system] is bus bookkeeping
+    # (rotation notices), not a participant — exclude it as a node and a mention.
+    tags: list[str] = []
+    seen: set[str] = set()
+    for _ts, tag, _body in raw:
+        if tag == "[system]" or tag in seen:
+            continue
+        seen.add(tag)
+        tags.append(tag)
+
+    name_map: dict[str, str] = {_bare_name(t).lower(): t for t in tags}
+    names = sorted((n for n in name_map if n), key=len, reverse=True)
+    pat = (
+        re.compile(r"\b(" + "|".join(re.escape(n) for n in names) + r")\b", re.IGNORECASE)
+        if names
+        else None
+    )
+
+    events: list[dict] = []
+    first_seen: dict[str, float] = {}
+    counts: dict[str, int] = {}
+    for ts, tag, body in raw:
+        if tag == "[system]":
+            continue
+        mentions: list[str] = []
+        if pat:
+            found: set[str] = set()
+            for m in pat.finditer(body):
+                canon = name_map.get(m.group(1).lower())
+                if canon and canon != tag:
+                    found.add(canon)
+            mentions = sorted(found)
+        first_seen.setdefault(tag, ts)
+        counts[tag] = counts.get(tag, 0) + 1
+        for mt in mentions:
+            first_seen.setdefault(mt, ts)
+        # ``size`` (body char length) lets the frontend tell a terse "hello"
+        # from a multi-KB bulk report and scale the pulse accordingly.
+        events.append({"ts": ts, "source": tag, "mentions": mentions, "size": len(body)})
+
+    nodes = [
+        {"tag": t, "first_seen": first_seen.get(t, raw[0][0] if raw else 0.0), "count": counts.get(t, 0)}
+        for t in tags
+    ]
+    return {"nodes": nodes, "events": events}
+
+
 def read_pending(state_dir: Path, tag: str) -> int:
     """Read ``<tag>.pending`` from the bus-state dir for a given tag.
 

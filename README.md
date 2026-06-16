@@ -59,6 +59,7 @@ It's **read-only and local**. It watches Claude's `~/.claude/projects/*.jsonl` l
 - 🗕 **Minimize to dock** — tuck rarely-touched sessions into a bottom dock (still live), restore with a click
 - ▦ **Groups** — color-code sessions into named groups; minimize a whole group to one dock chip with a rollup badge
 - 🧊 **3D view** *(new in 2.2)* — flip the whole board into a WebGL scene (Carousel / Orbital / Gallery); grouped sessions cluster in space, cards stay readable, 2D remains the default
+- 🕸 **History time-lapse** *(new in 2.3)* — replay your **entire** bus history (live log + every archive) as an animated graph: sessions appear as they first speak, mention-lines thicken with traffic, pulse size shows each message's length, and a live **force layout** drifts frequent partners together. Play/pause, scrub, 0.25×–5× speeds
 - 🔀 **Active/Passive bus control** — click a tile's tag chip to toggle whether it's auto-notified of bus traffic
 - 🎨 **Themeable** — dark/light, animations, connection-line styling
 - 🔒 **Local only** — `127.0.0.1`, in-memory, restart-clean
@@ -191,6 +192,20 @@ Click **🧊 3D** in the top bar to lift the board into a 3D scene; click **🗔
   - **Gallery** — your saved 2D positions lifted into depth (active sessions float forward, idle recede), with groups pulled into tight clumps.
 
 > The 3D view loads Three.js from a CDN the first time you open it (no build step). Offline or CDN blocked? It cleanly falls back to 2D with a notice — the 2D board never depends on it. Assign/rename/recolor groups from the 2D **▦** menu; 3D visualizes whatever's set.
+
+### 🕸 History (time-lapse)
+
+Click **🕸 History** in the top bar to replay your whole cross-session bus as an animated graph — *who talked to whom, and when*. It sweeps the live log **and every monthly archive**, so it's the full story, not just what's on screen now.
+
+- **Sessions are nodes** that fade in the moment each one first speaks, and stay (dimmed) once they go quiet — so you watch the network *populate* over weeks.
+- **Lines are mentions.** The bus is broadcast-only, so an edge means *one session named another* in its message — the real "who's addressing whom" signal. Line thickness = how *often* that pair talks; a **pulse-dot** flies the wire on each message, sized by the message's **length** (a fat packet for a multi-KB status report, a speck for a quick "hi").
+- **Three layouts** (switcher at the bottom-left):
+  - **Clusters** *(default)* — a live force layout. Mention-edges act like springs, so **frequent partners drift together** and clusters tighten as traffic accumulates during playback.
+  - **Ring** — every session on a circle in arrival order; stable and fully labeled.
+  - **Orbit** — radial by volume: the loudest sessions pulled to the center, quiet ones on the rim.
+- **Drive it** — play/pause, drag the **scrubber** anywhere, and pick a speed (**0.25× / 0.5× / 1× / 2× / 5×**). A live clock shows the date as history unspools.
+
+> Pure SVG, no dependencies — lazily loaded on first open, so (like 3D) it can never affect the 2D board. Read-only: it just visualizes the bus log you already have.
 
 ### Click a tile
 

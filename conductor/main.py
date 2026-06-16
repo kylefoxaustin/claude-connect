@@ -28,6 +28,7 @@ from .bus import (
     MarkdownBusAdapter,
     active_tags_configured,
     append_message,
+    build_mention_history,
     compute_pending,
     list_known_tags,
     list_sender_tags,
@@ -355,6 +356,19 @@ async def check_bus(session_id: str, request: Request) -> dict[str, Any]:
 async def get_bus(request: Request) -> dict[str, Any]:
     state: AppState = request.app.state.cond
     return state._bus_payload()
+
+
+@app.get("/api/bus/heatmap")
+async def get_bus_heatmap(request: Request) -> dict[str, Any]:
+    """Mention graph over the entire bus history (live log + monthly archives).
+
+    Feeds the 🕸 History time-lapse: nodes are sessions, events are timestamped
+    messages with the list of other sessions each one named. Parsed off-thread
+    since it reads every archive file. See ``build_mention_history``.
+    """
+    state: AppState = request.app.state.cond
+    path = state.settings.bus.markdown_path_resolved
+    return await asyncio.to_thread(build_mention_history, path)
 
 
 class BusMessage(BaseModel):
