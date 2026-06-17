@@ -124,6 +124,9 @@ function run() {
   // ---- playback state (survives a rebuild) ------------------------------
   let played = 0, f = 0, playing = true, lastTs = 0, speed = 1, dragging = false;
 
+  // ---- drill-down (🔬 one prompt → its tool/file/agent fan-out) ----------
+  let drillMod = null, drillHandle = null, drillOpen = false;
+
   // ---- geometry ---------------------------------------------------------
   let W = 0, H = 0, cx = 0, cy = 0, R = 0, innerR = 0;
 
@@ -228,6 +231,8 @@ function run() {
     t.textContent = nd.label || (nd.isYou ? "You" : bare(nd.tag));
     gNodes.appendChild(t);
     nd.circle = c; nd.label = t;
+    c.style.cursor = "pointer";
+    c.addEventListener("click", () => openSessionDrill(nd));
   }
 
   function edgeKey(s, d) { return s < d ? `${s}|${d}` : `${d}|${s}`; }
@@ -282,7 +287,7 @@ function run() {
   function edgeWidth(w) { return 0.6 + Math.log2(1 + w) * 1.15; }
 
   function render() {
-    if (!events.length) return;
+    if (drillOpen || !events.length) return; // drill-down overlays the timeline
     stepPositions();
     nodes.forEach((nd) => {
       if (!nd.circle) return;
@@ -397,11 +402,32 @@ function run() {
     }
   }
 
+  // ---- drill-down: click a session → its whole working relationship ------
+  async function openSessionDrill(nd) {
+    if (!humanOn || nd.isYou || drillOpen) return; // drill-down is a human-layer feature; [you] is the hub, not a session
+    // a tag's prompts all share a project dir — grab it to locate the transcripts
+    const pe = events.find((e) => e.kind === "prompt" && e.mentions[0] === nd.tag && e.project);
+    if (!pe) return;
+    playing = false; playBtn.textContent = "▶";
+    statsEl.textContent = `loading ${bare(nd.tag)}…`;
+    try {
+      const res = await fetch(`/api/session-detail?project=${encodeURIComponent(pe.project)}`);
+      if (!res.ok || !root) return;
+      const data = await res.json();
+      if (!root) return;
+      if (!drillMod) drillMod = await import("/static/drilldown.js");
+      drillOpen = true;
+      drillHandle = drillMod.open(root, data, { tag: nd.tag }, () => { drillOpen = false; drillHandle = null; });
+    } catch (err) {
+      console.error("drilldown failed to load", err);
+    }
+  }
+
   async function reload() {
     statsEl.textContent = "loading…";
     humanBtn.classList.toggle("on", humanOn);
     legendEl.textContent = humanOn
-      ? "line = how often · pulse = length · gold = you ↔ Claude"
+      ? "gold = you ↔ Claude · 🔬 click a session to drill into a prompt"
       : "line = how often · pulse size = message length";
     try { localStorage.setItem(LS_HUMAN, humanOn ? "1" : "0"); } catch (_) {}
     let data;

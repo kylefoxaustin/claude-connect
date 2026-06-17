@@ -2,7 +2,7 @@
 
 **A local dashboard for watching all your Claude Code sessions at once — in your browser or as a standalone desktop app — plus an optional message bus that lets them talk to each other.**
 
-[![version: 2.2](https://img.shields.io/badge/version-2.2-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
+[![version: 2.5](https://img.shields.io/badge/version-2.5-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
 [![platform: linux](https://img.shields.io/badge/platform-linux-orange)](#requirements)
 [![safety: read--only](https://img.shields.io/badge/safety-read--only-green)](#how-it-works)
 
@@ -33,6 +33,19 @@ New in **2.2**: a **🧊 3D** button swaps the board into a WebGL scene where yo
 
 <sub>Cards always face the camera, so text stays readable at any angle. 2D stays the default — 3D is one click away. *Sample data shown.*</sub>
 
+### …or replay the whole story
+
+New in **2.3–2.5**: a **🕸 History** button replays your entire cross-session history as an animated, scrubbable graph — sessions light up as they first speak, mention-lines thicken with traffic, and a live force layout drifts frequent collaborators together. Toggle **👤 Human turns** to weave in *your* prompts and each Claude's replies (a node for **you** at the hub), then **🔬 click a session** to watch its whole working relationship with you replay — each prompt fires in and the session *explodes outward* into the files it touched, the commands it ran, and the sub-agents it spawned.
+
+```
+   you ──prompt──▶ ( 95emulator ) ──▶ ◍ ◍ ◍ files (read/edited)
+        ──prompt──▶              ──▶ ⚙ Explore  ⚙ Plan   (agents)
+                                 ──▶ Bash ×119 · Grep ×4  (tools)
+   scrub the whole relationship · 0.25×–5× · 🔍 focus one exchange
+```
+
+<sub>Pure SVG, lazily loaded, read-only — it just visualizes the bus log + transcripts you already have. Works even without the message bus.</sub>
+
 ---
 
 ## Why?
@@ -59,7 +72,7 @@ It's **read-only and local**. It watches Claude's `~/.claude/projects/*.jsonl` l
 - 🗕 **Minimize to dock** — tuck rarely-touched sessions into a bottom dock (still live), restore with a click
 - ▦ **Groups** — color-code sessions into named groups; minimize a whole group to one dock chip with a rollup badge
 - 🧊 **3D view** *(new in 2.2)* — flip the whole board into a WebGL scene (Carousel / Orbital / Gallery); grouped sessions cluster in space, cards stay readable, 2D remains the default
-- 🕸 **History time-lapse** *(new in 2.3)* — replay your **entire** bus history (live log + every archive) as an animated graph: sessions appear as they first speak, mention-lines thicken with traffic, pulse size shows each message's length, and a live **force layout** drifts frequent partners together. Play/pause, scrub, 0.25×–5× speeds. **2.4** adds a **👤 Human turns** layer — weave in *your* prompts + each Claude's replies (read from the transcripts) onto the same timeline, with a node for **you** at the hub
+- 🕸 **History time-lapse** *(new in 2.3)* — replay your **entire** bus history (live log + every archive) as an animated graph: sessions appear as they first speak, mention-lines thicken with traffic, pulse size shows each message's length, and a live **force layout** drifts frequent partners together. Play/pause, scrub, 0.25×–5× speeds. **2.4** adds a **👤 Human turns** layer — weave in *your* prompts + each Claude's replies (read from the transcripts) onto the same timeline, with a node for **you** at the hub. **2.5** adds a **🔬 drill-down** — click a session and watch its *whole working relationship with you* replay: each prompt fires in, and the session **explodes outward** into the files it touched, the commands it ran, and the sub-agents it spawned (or focus a single exchange at a time)
 - 🔀 **Active/Passive bus control** — click a tile's tag chip to toggle whether it's auto-notified of bus traffic
 - 🎨 **Themeable** — dark/light, animations, connection-line styling
 - 🔒 **Local only** — `127.0.0.1`, in-memory, restart-clean
@@ -203,10 +216,11 @@ Click **🕸 History** in the top bar to replay your whole cross-session bus as 
   - **Clusters** *(default)* — a live force layout. Mention-edges act like springs, so **frequent partners drift together** and clusters tighten as traffic accumulates during playback.
   - **Ring** — every session on a circle in arrival order; stable and fully labeled.
   - **Orbit** — radial by volume: the loudest sessions pulled to the center, quiet ones on the rim.
-- **👤 Human turns** *(2.4)* — toggle this to weave in the **human↔Claude** layer: a **you** node (labeled with your username) plus *your* prompts and each session's replies, read turn-by-turn from the `~/.claude/projects` transcripts and merged onto the same timeline. Human edges are **gold/dashed** to set them apart from the inter-Claude mention lines, so you can watch a day of work flow — *a prompt fires to a session, it posts to the bus, another replies*. In **Clusters** layout the sessions you talk to most drift in toward you. (Turn-level: each exchange is one prompt + one reply, not every streaming chunk.)
+- **👤 Human turns** *(2.4)* — toggle this to weave in the **human↔Claude** layer: a **you** node (labeled with your username) plus *your* prompts and each session's replies, read turn-by-turn from the `~/.claude/projects` transcripts and merged onto the same timeline. Human edges are **gold/dashed** to set them apart from the inter-Claude mention lines, so you can watch a day of work flow — *a prompt fires to a session, it posts to the bus, another replies*. In **Clusters** layout the sessions you talk to most drift in toward you. (Turn-level: each exchange is one prompt + one reply, not every streaming chunk. Only *genuine* typed prompts count — harness injections like system-reminders, slash-commands, and auto-compact summaries are filtered out.)
+- **🔬 Drill-down** *(2.5)* — with Human turns on, **click a session node** and watch the whole **you↔session working relationship** replay: a **you** node fires each of your prompts into the central session node, which **explodes outward** into the work it did — the **files** it touched (a deduped halo, read = blue / edited = orange, growing with each touch), the **sub-agents** it spawned (Agent/Task, labeled by type), and every **tool call** firing a pulse + ticking a live counter (`Bash ×N · Grep ×N · …`). `tool_result` failures tint red. Hit **🔍 Focus prompt** to isolate a single exchange at a time (the `● focused ✕` chip returns you to the whole relationship). Its own play/scrub/speed controls; **← Back** to the timeline.
 - **Drive it** — play/pause, drag the **scrubber** anywhere, and pick a speed (**0.25× / 0.5× / 1× / 2× / 5×**). A live clock shows the date as history unspools.
 
-> Pure SVG, no dependencies — lazily loaded on first open, so (like 3D) it can never affect the 2D board. Read-only: it just visualizes the bus log + transcripts you already have. The human layer reads the same `*.jsonl` Conductor already tails for live previews; older turns past a cap are trimmed (the count is shown, never silently dropped).
+> Pure SVG, no dependencies — `heatmap.js` (and `drilldown.js`) are lazily loaded on first open, so (like 3D) they can never affect the 2D board. Read-only: it just visualizes the bus log + transcripts you already have. The human layer reads the same `*.jsonl` Conductor already tails for live previews; older turns past a cap are trimmed (the count is shown, never silently dropped).
 
 ### Click a tile
 
@@ -315,6 +329,8 @@ Edit `settings.toml` (copied from `settings.example.toml`). Key knobs:
 | `bus.markdown_path`           | Path to the bus log                                           | —       |
 | `bus.state_dir`               | Where unread state lives                                      | —       |
 | `bus.script_path`             | Path to `bus.sh`                                              | —       |
+| `bus.sender_tag`              | Your tag when you **Compose** a message (e.g. your name)      | `operator` |
+| `[bus.tags]`                  | Map a project dir → bus tag, mirroring your `bus.sh` (labels tiles **and** keys the 🕸 History human layer to the right node) | — |
 | `ui.end_fadeout_seconds`      | How long ended-session tiles linger after exit                | `30`    |
 
 ---
@@ -331,6 +347,8 @@ Conductor keeps **no central database** — state lives in two clearly separated
 | `conductor.positions.v2` | tile positions **and sizes** |
 | `conductor.minimized.v2` | which tiles are minimized to the dock |
 | `conductor.groups.v2` | your groups (names, colors, members, collapsed state) |
+| `conductor.heatmapLayout` | 🕸 History layout (clusters / ring / orbit) |
+| `conductor.heatmapHuman` | 🕸 History — whether the 👤 Human layer is on |
 
 Layout/minimize/group state is keyed by **project directory**, so a session re-attaches to its saved spot, size, and group whenever it runs in the same directory — across reboots and even fresh (non-resumed) sessions. Conductor doesn't prune offline tiles' layout, so it waits for them to return. Clear it with **Reset layout**, **Ungroup**, or your browser's site-data tools.
 
@@ -348,6 +366,7 @@ For the curious:
 4. The **frontend** renders one tile per session — plain JS, no build step.
 5. **BusAdapter** tails the message-bus log; the Bus tile shows recent traffic and SVG lines fan out to sessions on the bus.
 6. **WindowMapper** raises the right terminal window on click and types `/msg-check` into a session when you click its 📬 — focusing the exact tilix tile via `gdbus` + `TILIX_ID` when available, else falling back to `wmctrl`/`xdotool` title matching.
+7. **🕸 History** is served on demand: `GET /api/bus/heatmap` parses the bus log + archives into a time-ordered mention graph; `?human=1` merges in turn-level prompt/reply events from the transcripts; `GET /api/exchange` extracts one prompt's tool/file/agent fan-out for the 🔬 drill-down. All read-only, parsed off-thread.
 
 Full design doc: [`CONDUCTOR_SPEC.md`](CONDUCTOR_SPEC.md)
 

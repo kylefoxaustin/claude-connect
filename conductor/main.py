@@ -44,7 +44,9 @@ from .scanner import (
     SessionScanner,
     collect_human_events,
     encode_cwd,
+    extract_exchange,
     extract_preview,
+    extract_session_detail,
     newest_jsonl,
 )
 from .settings import DEFAULT_SETTINGS_PATH, Settings, dump_settings, load_settings
@@ -431,6 +433,47 @@ async def get_bus_heatmap(request: Request, human: bool = False) -> dict[str, An
         for t in order
     ]
     return {"nodes": nodes, "events": merged, "dropped": hres["dropped"]}
+
+
+@app.get("/api/session-detail")
+async def get_session_detail(request: Request, project: str) -> dict[str, Any]:
+    """Drill-down: the WHOLE working relationship for one session tag.
+
+    Reads every transcript in ``<projects>/<project>/`` and returns the
+    time-ordered prompt list + tool/file/agent events (each tagged with its
+    prompt index ``ex``), so the frontend can replay the whole relationship or
+    focus one exchange. Path validated to stay within the projects root.
+    """
+    state: AppState = request.app.state.cond
+    projects_root = (state.settings.scanner.claude_home_path / "projects").resolve()
+    pdir = (projects_root / project).resolve()
+    if not str(pdir).startswith(str(projects_root) + "/"):
+        raise HTTPException(status_code=400, detail="path outside projects root")
+    if not pdir.is_dir():
+        raise HTTPException(status_code=404, detail="project not found")
+    paths = sorted(pdir.glob("*.jsonl"))
+    return await asyncio.to_thread(extract_session_detail, paths)
+
+
+@app.get("/api/exchange")
+async def get_exchange(request: Request, project: str, session: str, uuid: str) -> dict[str, Any]:
+    """Drill-down: one human prompt → the tool/file/agent fan-out it triggered.
+
+    Reads the specific session transcript (``<projects>/<project>/<session>.jsonl``)
+    and extracts that single exchange via ``extract_exchange``. Path is validated
+    to stay within the projects root (no traversal). Backs the 🔬 drill-down view.
+    """
+    state: AppState = request.app.state.cond
+    projects_root = (state.settings.scanner.claude_home_path / "projects").resolve()
+    jsonl = (projects_root / project / f"{session}.jsonl").resolve()
+    if not str(jsonl).startswith(str(projects_root) + "/"):
+        raise HTTPException(status_code=400, detail="path outside projects root")
+    if not jsonl.exists():
+        raise HTTPException(status_code=404, detail="session transcript not found")
+    out = await asyncio.to_thread(extract_exchange, jsonl, uuid)
+    if out is None:
+        raise HTTPException(status_code=404, detail="prompt not found in transcript")
+    return out
 
 
 class BusMessage(BaseModel):

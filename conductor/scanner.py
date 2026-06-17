@@ -269,6 +269,20 @@ def extract_preview(jsonl_path: Path, max_chars: int = 200) -> str:
 
 YOU_TAG = "[you]"
 
+# Harness-injected wrappers that ride along inside a user record but aren't part
+# of what the human typed: the UserPromptSubmit/SessionStart system-reminders and
+# the slash-command echo blocks. Stripped before measuring a prompt so (a) pure
+# injections (nothing left) are dropped, and (b) a genuine prompt that merely has
+# a reminder prepended keeps its real text + real length.
+_HARNESS_WRAP_RE = re.compile(
+    r"<system-reminder>.*?</system-reminder>"
+    r"|<command-[a-z]+>.*?</command-[a-z]+>"          # command-name/message/args echo
+    r"|<local-command-[a-z]+>.*?</local-command-[a-z]+>",  # local-command-stdout/caveat
+    re.DOTALL,
+)
+_BARE_SLASH_RE = re.compile(r"^/\S+$")
+_CONTINUATION_PREFIX = "This session is being continued from a previous conversation"
+
 
 def _iso_to_epoch(s: object) -> float | None:
     """Parse Claude's ISO-8601 record timestamp (``...Z``) to a float epoch."""
@@ -280,38 +294,52 @@ def _iso_to_epoch(s: object) -> float | None:
         return None
 
 
-def _user_text_len(msg: object) -> int:
-    """Length of genuine human-typed text in a ``user`` record's message, or
-    ``-1`` if it isn't a real prompt (a tool_result payload, empty, etc.).
+def _human_prompt_text(msg: object) -> str | None:
+    """The genuine human-typed text in a ``user`` record, or ``None`` if it isn't
+    a real prompt.
 
-    ``type:user`` records cover BOTH human prompts and the synthetic user
-    messages that carry tool results back to the model; only the former is a
-    human turn. The discriminator: real prompts are plain text (string content,
-    or ``text`` blocks) with no ``tool_result`` block.
+    ``type:user`` records cover far more than what the human typed: tool-results
+    fed back to the model, harness ``<system-reminder>`` / slash-command echo
+    blocks, and the auto-compact "session is being continued…" summary. We keep
+    only genuine prompts and return the *typed* text (wrappers stripped, so a
+    prompt that merely has a reminder prepended keeps its real text + length).
+
+    Dropped (→ ``None``): tool_result payloads; records that are nothing but
+    harness wrappers; context-continuation summaries; bare slash-commands.
     """
     if not isinstance(msg, dict):
-        return -1
+        return None
     content = msg.get("content")
     if isinstance(content, str):
-        t = content.strip()
-        return len(t) if t else -1
-    if isinstance(content, list):
-        has_text = False
-        has_tool_result = False
-        total = 0
+        text = content
+    elif isinstance(content, list):
+        parts = []
         for block in content:
             if not isinstance(block, dict):
                 continue
             bt = block.get("type")
             if bt == "tool_result":
-                has_tool_result = True
-            elif bt == "text":
-                txt = str(block.get("text", ""))
-                if txt.strip():
-                    has_text = True
-                    total += len(txt)
-        return total if (has_text and not has_tool_result) else -1
-    return -1
+                return None  # synthetic user message carrying a tool result
+            if bt == "text":
+                parts.append(str(block.get("text", "")))
+        text = "\n".join(parts)
+    else:
+        return None
+
+    stripped = _HARNESS_WRAP_RE.sub("", text).strip()
+    if not stripped:
+        return None  # pure harness injection — no human text
+    if stripped.startswith(_CONTINUATION_PREFIX):
+        return None  # auto-compact continuation summary, not a typed prompt
+    if _BARE_SLASH_RE.match(stripped):
+        return None  # bare slash-command (/rc, /msg-check, …)
+    return stripped
+
+
+def _human_prompt_len(msg: object) -> int:
+    """Length of the genuine human prompt text, or ``-1`` if not a real prompt."""
+    t = _human_prompt_text(msg)
+    return len(t) if t is not None else -1
 
 
 def _assistant_text_len(msg: object) -> int:
@@ -329,16 +357,18 @@ def _assistant_text_len(msg: object) -> int:
     return total
 
 
-def extract_turn_events(jsonl_path: Path) -> list[tuple[float, str, int]]:
+def extract_turn_events(jsonl_path: Path) -> list[tuple[float, str, int, str | None, str]]:
     """Turn-level human↔Claude events from one transcript.
 
-    Returns ``[(ts, kind, size), ...]`` where kind is ``"prompt"`` (a genuine
-    human message) or ``"reply"`` (the assistant's response, collapsed to ONE
-    event at the moment it *starts* replying — so a whole exchange is one prompt
-    + one reply, not the thousands of streaming / tool sub-records). Skips
-    sidechain (subagent) and meta records.
+    Returns ``[(ts, kind, size, uuid, snippet), ...]`` where kind is ``"prompt"``
+    (a genuine human message; ``uuid`` locates the record for drill-down,
+    ``snippet`` is the first ~80 chars for the picker) or ``"reply"`` (the
+    assistant's response, collapsed to ONE event at the moment it *starts*
+    replying — a whole exchange is one prompt + one reply, not the thousands of
+    streaming / tool sub-records; uuid None, snippet ""). Skips sidechain
+    (subagent) and meta records.
     """
-    out: list[tuple[float, str, int]] = []
+    out: list[tuple[float, str, int, str | None, str]] = []
     awaiting = False
     try:
         fh = jsonl_path.open("r", encoding="utf-8", errors="replace")
@@ -357,17 +387,17 @@ def extract_turn_events(jsonl_path: Path) -> list[tuple[float, str, int]]:
                 continue
             rt = rec.get("type")
             if rt == "user":
-                n = _user_text_len(rec.get("message"))
-                if n < 0:
-                    continue  # tool_result or empty — not a human turn
+                text = _human_prompt_text(rec.get("message"))
+                if text is None:
+                    continue  # tool_result / harness injection — not a human turn
                 ts = _iso_to_epoch(rec.get("timestamp"))
                 if ts is not None:
-                    out.append((ts, "prompt", n))
+                    out.append((ts, "prompt", len(text), rec.get("uuid"), _short(text, 80)))
                     awaiting = True
             elif rt == "assistant" and awaiting:
                 ts = _iso_to_epoch(rec.get("timestamp"))
                 if ts is not None:
-                    out.append((ts, "reply", _assistant_text_len(rec.get("message"))))
+                    out.append((ts, "reply", _assistant_text_len(rec.get("message")), None, ""))
                     awaiting = False
     return out
 
@@ -413,15 +443,229 @@ def collect_human_events(
             seen_tag.add(tag)
             tags_seen.append(tag)
         for jp in jsonls:
-            for ts, kind, size in extract_turn_events(jp):
-                src, dst = (YOU_TAG, tag) if kind == "prompt" else (tag, YOU_TAG)
-                events.append({"ts": ts, "source": src, "mentions": [dst], "size": size, "kind": kind})
+            for ts, kind, size, uuid, snippet in extract_turn_events(jp):
+                if kind == "prompt":
+                    # carry the locator + snippet so the frontend can list and drill in
+                    events.append({
+                        "ts": ts, "source": YOU_TAG, "mentions": [tag], "size": size, "kind": kind,
+                        "session": jp.stem, "project": d.name, "uuid": uuid, "text": snippet,
+                    })
+                else:
+                    events.append({"ts": ts, "source": tag, "mentions": [YOU_TAG], "size": size, "kind": kind})
     events.sort(key=lambda e: e["ts"])
     dropped = 0
     if len(events) > cap:
         dropped = len(events) - cap
         events = events[-cap:]  # keep the most recent
     return {"events": events, "tags": tags_seen, "dropped": dropped}
+
+
+def _short(s: object, n: int = 70) -> str:
+    return " ".join(str(s or "").split())[:n]
+
+
+def _classify_tool(name: str, inp: object) -> dict:
+    """Map an assistant ``tool_use`` block to a drill-down node.
+
+    kind: ``file`` (Read/Edit/Write… — carries a path), ``agent`` (Agent/Task
+    sub-agent spawn), or ``tool`` (everything else). label is a short human cue.
+    """
+    inp = inp if isinstance(inp, dict) else {}
+    if name == "Bash":
+        return {"kind": "tool", "tool": "Bash", "label": _short(inp.get("command"))}
+    if name == "Read":
+        path = inp.get("file_path", "")
+        return {"kind": "file", "tool": name, "mode": "read", "path": path, "label": os.path.basename(path) or path}
+    if name in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
+        path = inp.get("file_path", "") or inp.get("notebook_path", "")
+        return {"kind": "file", "tool": name, "mode": "write", "path": path, "label": os.path.basename(path) or path}
+    if name in ("Grep", "Glob", "LS"):
+        return {"kind": "tool", "tool": name, "label": _short(inp.get("pattern") or inp.get("query") or inp.get("path") or name)}
+    if name in ("Agent", "Task"):
+        label = inp.get("subagent_type") or inp.get("description") or "agent"
+        return {"kind": "agent", "tool": name, "label": _short(label, 40), "desc": _short(inp.get("description"), 110)}
+    return {"kind": "tool", "tool": name, "label": name}
+
+
+def extract_exchange(jsonl_path: Path, uuid: str) -> dict | None:
+    """Fine-grained drill-down of ONE human prompt → its tool/file/agent fan-out.
+
+    Locates the prompt record by ``uuid`` and walks its exchange (forward until
+    the next genuine human prompt, main thread only — sidechain sub-agent
+    internals are out of scope for now), extracting every assistant ``tool_use``
+    block as a timestamped event and tagging it with the matching ``tool_result``
+    status. Returns ``{prompt, events, summary, duration_s}`` or ``None`` if the
+    uuid isn't found.
+    """
+    try:
+        lines = jsonl_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+    recs: list[dict] = []
+    for ln in lines:
+        ln = ln.strip()
+        if not ln:
+            continue
+        try:
+            r = json.loads(ln)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(r, dict):
+            recs.append(r)
+
+    start = next((i for i, r in enumerate(recs) if r.get("uuid") == uuid), None)
+    if start is None:
+        return None
+    prompt_rec = recs[start]
+    prompt_text = _human_prompt_text(prompt_rec.get("message")) or ""
+    prompt_ts = _iso_to_epoch(prompt_rec.get("timestamp"))
+
+    events: list[dict] = []
+    results: dict[str, bool] = {}  # tool_use_id -> is_error
+    for r in recs[start + 1:]:
+        if r.get("isSidechain"):
+            continue
+        if r.get("type") == "user" and _human_prompt_text(r.get("message")) is not None:
+            break  # next human prompt — end of this exchange
+        msg = r.get("message")
+        if not isinstance(msg, dict):
+            continue
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        ts = _iso_to_epoch(r.get("timestamp")) or prompt_ts
+        for b in content:
+            if not isinstance(b, dict):
+                continue
+            if b.get("type") == "tool_use":
+                ev = _classify_tool(str(b.get("name", "")), b.get("input"))
+                ev["id"] = b.get("id")
+                ev["ts"] = ts
+                events.append(ev)
+            elif b.get("type") == "tool_result":
+                results[b.get("tool_use_id")] = bool(b.get("is_error"))
+
+    for ev in events:
+        if ev.get("id") in results:
+            ev["status"] = "error" if results[ev["id"]] else "ok"
+
+    files = {e["path"] for e in events if e["kind"] == "file" and e.get("path")}
+    summary = {
+        "total": len(events),
+        "tools": sum(1 for e in events if e["kind"] == "tool"),
+        "files": len(files),
+        "edits": sum(1 for e in events if e["kind"] == "file" and e.get("mode") == "write"),
+        "agents": sum(1 for e in events if e["kind"] == "agent"),
+    }
+    duration = round(events[-1]["ts"] - prompt_ts, 1) if events and prompt_ts else 0.0
+    return {
+        "prompt": {"text": prompt_text[:240], "ts": prompt_ts},
+        "events": events,
+        "summary": summary,
+        "duration_s": duration,
+    }
+
+
+def _walk_exchanges(jsonl_path: Path) -> list[dict]:
+    """Every human prompt in a transcript + the tool/file/agent fan-out it
+    triggered, in order. ``[{prompt:{text,ts,uuid}, events:[...]}, ...]``."""
+    try:
+        lines = jsonl_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    exchanges: list[dict] = []
+    cur: dict | None = None
+    results: dict[str, bool] = {}
+    for ln in lines:
+        ln = ln.strip()
+        if not ln:
+            continue
+        try:
+            r = json.loads(ln)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(r, dict) or r.get("isSidechain"):
+            continue
+        rt = r.get("type")
+        if rt == "user":
+            text = _human_prompt_text(r.get("message"))
+            if text is not None:
+                cur = {"prompt": {"text": _short(text, 120), "ts": _iso_to_epoch(r.get("timestamp")),
+                                  "uuid": r.get("uuid")}, "events": []}
+                exchanges.append(cur)
+                continue
+            msg = r.get("message")
+            if isinstance(msg, dict) and isinstance(msg.get("content"), list):
+                for b in msg["content"]:
+                    if isinstance(b, dict) and b.get("type") == "tool_result":
+                        results[b.get("tool_use_id")] = bool(b.get("is_error"))
+            continue
+        if rt == "assistant" and cur is not None:
+            msg = r.get("message")
+            if not isinstance(msg, dict) or not isinstance(msg.get("content"), list):
+                continue
+            ts = _iso_to_epoch(r.get("timestamp")) or cur["prompt"]["ts"]
+            for b in msg["content"]:
+                if isinstance(b, dict) and b.get("type") == "tool_use":
+                    ev = _classify_tool(str(b.get("name", "")), b.get("input"))
+                    ev["id"] = b.get("id")
+                    ev["ts"] = ts
+                    cur["events"].append(ev)
+    for ex in exchanges:
+        for ev in ex["events"]:
+            if ev.get("id") in results:
+                ev["status"] = "error" if results[ev["id"]] else "ok"
+    return exchanges
+
+
+def extract_session_detail(jsonl_paths: list[Path], cap: int = 12000) -> dict:
+    """The WHOLE working relationship for a session tag: every prompt across all
+    its transcripts + the tool/file/agent events each triggered, time-ordered.
+
+    Feeds the 🔬 drill-down's "watch a session explode outward in work" view.
+    Each event is tagged with ``ex`` (its prompt's index) so the frontend can
+    either replay the whole relationship or focus one exchange at a time. Capped
+    at the most-recent ``cap`` events with a surfaced ``dropped`` count — and when
+    trimming happens, prompts whose work fell off the front are dropped too, so
+    the timeline doesn't open with a long stretch of prompts before any work.
+    """
+    all_ex: list[dict] = []
+    for p in jsonl_paths:
+        all_ex.extend(_walk_exchanges(p))
+    all_ex.sort(key=lambda e: e["prompt"]["ts"] or 0.0)
+
+    prompts: list[dict] = []
+    events: list[dict] = []
+    for i, ex in enumerate(all_ex):
+        prompts.append({"i": i, "ts": ex["prompt"]["ts"], "text": ex["prompt"]["text"], "uuid": ex["prompt"]["uuid"]})
+        for ev in ex["events"]:
+            events.append({**ev, "ex": i})
+    events.sort(key=lambda e: e["ts"] or 0.0)
+    dropped = 0
+    if len(events) > cap:
+        dropped = len(events) - cap
+        events = events[-cap:]
+        # work was trimmed off the front — drop the now-orphaned prompts (whose
+        # events are gone) so the replay doesn't start with a dead prompts-only
+        # run. Keep a prompt if it still owns retained events, or is an in-window
+        # no-work prompt (ts at/after the first surviving event).
+        earliest = events[0]["ts"]
+        retained_ex = {e["ex"] for e in events}
+        prompts = [
+            p for p in prompts
+            if p["i"] in retained_ex or (earliest is not None and p["ts"] is not None and p["ts"] >= earliest)
+        ]
+
+    files = {e["path"] for e in events if e["kind"] == "file" and e.get("path")}
+    summary = {
+        "prompts": len(prompts),
+        "total": len(events),
+        "tools": sum(1 for e in events if e["kind"] == "tool"),
+        "files": len(files),
+        "edits": sum(1 for e in events if e["kind"] == "file" and e.get("mode") == "write"),
+        "agents": sum(1 for e in events if e["kind"] == "agent"),
+    }
+    return {"prompts": prompts, "events": events, "summary": summary, "dropped": dropped}
 
 
 def classify_status(mtime_age: float, *, alive: bool, low_cpu: bool) -> Status:

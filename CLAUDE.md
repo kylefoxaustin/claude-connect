@@ -36,6 +36,30 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.5.0: 🔬 Drill-down — watch a session explode outward in work. In the
+  History human layer, **clicking a session node** opens the whole **you↔session
+  working relationship** replayed on a playhead: a `[you]` node fires each prompt
+  into the central session node, which detonates outward into the **files** it
+  touched (deduped halo, read=blue/edit=orange, grow with touches), **sub-agents**
+  spawned (Agent/Task), and every **tool call** (pulse + live counter tape). A
+  **🔍 Focus prompt** selector isolates one exchange at a time (✕ returns to the
+  whole relationship). Backend: `extract_session_detail(jsonl_paths)` in
+  `scanner.py` walks every transcript in the project dir via `_walk_exchanges`,
+  returns time-ordered `{prompts, events, summary, dropped}` with each event
+  tagged by its prompt index `ex` (so focus-one is a client-side filter);
+  `_classify_tool` maps tool_use → file/agent/tool nodes; tool_result `is_error`
+  tints failures. `GET /api/session-detail?project=` (path-validated, off-thread).
+  Cap 12000 events; when trimmed, orphaned prompts are dropped so the replay has
+  no dead prompts-only prefix (keep prompts that own retained events or are
+  in-window — the bug Kyle caught where 95 showed prompts for half the run before
+  work appeared). Also a single-exchange `extract_exchange` + `/api/exchange`
+  exist. Frontend `drilldown.js` (lazy-imported, pure SVG, deterministic-`f`).
+  **Folds in v2.4.1**: the human layer now counts only GENUINE typed prompts —
+  `_human_prompt_text` strips `<system-reminder>` / `<command-*>` /
+  `<local-command-*>` wrappers and rejects pure injections, auto-compact
+  continuations, and bare slash-commands (~5% of prior "prompts" were harness
+  noise). Idea + event-schema collaboration came from 95emulator via the bus.
+  Both editions.
 - ✅ v2.4.0: 🕸 History — human↔Claude layer. A `👤 Human` toggle in the
   History overlay weaves the human turns into the same time-lapse. Backend:
   `/api/bus/heatmap?human=1` merges `build_mention_history` (bus) with
