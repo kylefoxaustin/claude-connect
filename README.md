@@ -59,7 +59,7 @@ It's **read-only and local**. It watches Claude's `~/.claude/projects/*.jsonl` l
 - 🗕 **Minimize to dock** — tuck rarely-touched sessions into a bottom dock (still live), restore with a click
 - ▦ **Groups** — color-code sessions into named groups; minimize a whole group to one dock chip with a rollup badge
 - 🧊 **3D view** *(new in 2.2)* — flip the whole board into a WebGL scene (Carousel / Orbital / Gallery); grouped sessions cluster in space, cards stay readable, 2D remains the default
-- 🕸 **History time-lapse** *(new in 2.3)* — replay your **entire** bus history (live log + every archive) as an animated graph: sessions appear as they first speak, mention-lines thicken with traffic, pulse size shows each message's length, and a live **force layout** drifts frequent partners together. Play/pause, scrub, 0.25×–5× speeds
+- 🕸 **History time-lapse** *(new in 2.3)* — replay your **entire** bus history (live log + every archive) as an animated graph: sessions appear as they first speak, mention-lines thicken with traffic, pulse size shows each message's length, and a live **force layout** drifts frequent partners together. Play/pause, scrub, 0.25×–5× speeds. **2.4** adds a **👤 Human turns** layer — weave in *your* prompts + each Claude's replies (read from the transcripts) onto the same timeline, with a node for **you** at the hub
 - 🔀 **Active/Passive bus control** — click a tile's tag chip to toggle whether it's auto-notified of bus traffic
 - 🎨 **Themeable** — dark/light, animations, connection-line styling
 - 🔒 **Local only** — `127.0.0.1`, in-memory, restart-clean
@@ -203,9 +203,10 @@ Click **🕸 History** in the top bar to replay your whole cross-session bus as 
   - **Clusters** *(default)* — a live force layout. Mention-edges act like springs, so **frequent partners drift together** and clusters tighten as traffic accumulates during playback.
   - **Ring** — every session on a circle in arrival order; stable and fully labeled.
   - **Orbit** — radial by volume: the loudest sessions pulled to the center, quiet ones on the rim.
+- **👤 Human turns** *(2.4)* — toggle this to weave in the **human↔Claude** layer: a **you** node (labeled with your username) plus *your* prompts and each session's replies, read turn-by-turn from the `~/.claude/projects` transcripts and merged onto the same timeline. Human edges are **gold/dashed** to set them apart from the inter-Claude mention lines, so you can watch a day of work flow — *a prompt fires to a session, it posts to the bus, another replies*. In **Clusters** layout the sessions you talk to most drift in toward you. (Turn-level: each exchange is one prompt + one reply, not every streaming chunk.)
 - **Drive it** — play/pause, drag the **scrubber** anywhere, and pick a speed (**0.25× / 0.5× / 1× / 2× / 5×**). A live clock shows the date as history unspools.
 
-> Pure SVG, no dependencies — lazily loaded on first open, so (like 3D) it can never affect the 2D board. Read-only: it just visualizes the bus log you already have.
+> Pure SVG, no dependencies — lazily loaded on first open, so (like 3D) it can never affect the 2D board. Read-only: it just visualizes the bus log + transcripts you already have. The human layer reads the same `*.jsonl` Conductor already tails for live previews; older turns past a cap are trimmed (the count is shown, never silently dropped).
 
 ### Click a tile
 

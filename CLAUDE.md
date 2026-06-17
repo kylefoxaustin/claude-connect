@@ -36,6 +36,28 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.4.0: 🕸 History — human↔Claude layer. A `👤 Human` toggle in the
+  History overlay weaves the human turns into the same time-lapse. Backend:
+  `/api/bus/heatmap?human=1` merges `build_mention_history` (bus) with
+  `collect_human_events` (`scanner.py`), which walks `~/.claude/projects/*/*.jsonl`
+  and emits **turn-level** events — one `prompt` (`[you]`→session) + one collapsed
+  `reply` (session→`[you]`) per exchange, NOT every streaming/tool sub-record.
+  Real human prompts are told apart from tool-result user-messages by content
+  shape (`_user_text_len`: text blocks, no `tool_result`); sidechain/meta records
+  skipped; ISO timestamps → epoch. Sessions key to the **same bus tags** via
+  `derive_tag(recorded_cwd, settings.bus.tags)`, so human edges land on the bus
+  nodes. Each event carries `kind` (bus|prompt|reply); merged stream re-sorted by
+  ts; nodes recomputed (adds `[you]` with `is_you`, `first_seen`, source-count).
+  Capped at 8000 most-recent events with a surfaced `dropped` count (no silent
+  truncation; ~1.7s parse, off-thread, on-demand). `human=off` is byte-for-byte
+  the old bus-only graph. Frontend: `heatmap.js` restructured so controls + the
+  rAF loop wire once and `rebuild(data)` swaps graph state — the toggle just
+  re-fetches and rebuilds in place (preserving layout/speed). `[you]` renders
+  gold, labeled with the OS username (`_human_label`, capitalized; "You" if
+  unavailable — NOT hardcoded); human edges gold + dashed (`hm-edge-human`, keyed off either
+  endpoint being `[you]`). Toggle persists (`localStorage` `conductor.heatmapHuman`).
+  Aligns to 95emulator's proposed `{ts,src,dst,kind,sessionId}` schema (the idea
+  came in via the bus). Frontend + backend, both editions.
 - ✅ v2.3.0: 🕸 History time-lapse. A `🕸 History` topbar button replays the
   **entire** bus (live `messages.md` + every `messages-*.md` archive) as an
   animated graph. Backend `GET /api/bus/heatmap` (`build_mention_history` in

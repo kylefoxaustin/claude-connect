@@ -8,6 +8,7 @@ import os
 import re
 import time
 from collections.abc import Iterable
+from datetime import datetime
 from pathlib import Path
 
 import psutil
@@ -262,6 +263,165 @@ def extract_preview(jsonl_path: Path, max_chars: int = 200) -> str:
         if text:
             return text[-max_chars:]
     return ""
+
+
+# --- human<->Claude turn extraction (🕸 History "human turns" layer) --------
+
+YOU_TAG = "[you]"
+
+
+def _iso_to_epoch(s: object) -> float | None:
+    """Parse Claude's ISO-8601 record timestamp (``...Z``) to a float epoch."""
+    if not isinstance(s, str) or not s:
+        return None
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def _user_text_len(msg: object) -> int:
+    """Length of genuine human-typed text in a ``user`` record's message, or
+    ``-1`` if it isn't a real prompt (a tool_result payload, empty, etc.).
+
+    ``type:user`` records cover BOTH human prompts and the synthetic user
+    messages that carry tool results back to the model; only the former is a
+    human turn. The discriminator: real prompts are plain text (string content,
+    or ``text`` blocks) with no ``tool_result`` block.
+    """
+    if not isinstance(msg, dict):
+        return -1
+    content = msg.get("content")
+    if isinstance(content, str):
+        t = content.strip()
+        return len(t) if t else -1
+    if isinstance(content, list):
+        has_text = False
+        has_tool_result = False
+        total = 0
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            bt = block.get("type")
+            if bt == "tool_result":
+                has_tool_result = True
+            elif bt == "text":
+                txt = str(block.get("text", ""))
+                if txt.strip():
+                    has_text = True
+                    total += len(txt)
+        return total if (has_text and not has_tool_result) else -1
+    return -1
+
+
+def _assistant_text_len(msg: object) -> int:
+    """Length of the assistant's visible text (drives reply pulse size)."""
+    if not isinstance(msg, dict):
+        return 0
+    content = msg.get("content")
+    if isinstance(content, str):
+        return len(content)
+    total = 0
+    if isinstance(content, list):
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                total += len(str(block.get("text", "")))
+    return total
+
+
+def extract_turn_events(jsonl_path: Path) -> list[tuple[float, str, int]]:
+    """Turn-level human↔Claude events from one transcript.
+
+    Returns ``[(ts, kind, size), ...]`` where kind is ``"prompt"`` (a genuine
+    human message) or ``"reply"`` (the assistant's response, collapsed to ONE
+    event at the moment it *starts* replying — so a whole exchange is one prompt
+    + one reply, not the thousands of streaming / tool sub-records). Skips
+    sidechain (subagent) and meta records.
+    """
+    out: list[tuple[float, str, int]] = []
+    awaiting = False
+    try:
+        fh = jsonl_path.open("r", encoding="utf-8", errors="replace")
+    except OSError:
+        return out
+    with fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if not isinstance(rec, dict) or rec.get("isSidechain") or rec.get("isMeta"):
+                continue
+            rt = rec.get("type")
+            if rt == "user":
+                n = _user_text_len(rec.get("message"))
+                if n < 0:
+                    continue  # tool_result or empty — not a human turn
+                ts = _iso_to_epoch(rec.get("timestamp"))
+                if ts is not None:
+                    out.append((ts, "prompt", n))
+                    awaiting = True
+            elif rt == "assistant" and awaiting:
+                ts = _iso_to_epoch(rec.get("timestamp"))
+                if ts is not None:
+                    out.append((ts, "reply", _assistant_text_len(rec.get("message"))))
+                    awaiting = False
+    return out
+
+
+def collect_human_events(
+    projects_root: Path,
+    tag_map: dict[str, str] | None = None,
+    cap: int = 8000,
+) -> dict:
+    """Merge human↔Claude turns across every transcript under ``projects_root``.
+
+    Each event has the SAME shape as a bus event so the frontend renders it with
+    no special path: a prompt is ``[you] → session``, a reply is
+    ``session → [you]``. Sessions are keyed to their bus tag (via
+    :func:`derive_tag` on the recorded cwd) so human edges land on the same nodes
+    as the bus mention graph.
+
+    Returns ``{"events": [...], "tags": [bracketed...], "dropped": int}`` —
+    ``dropped`` counts oldest events trimmed past ``cap`` (surfaced so the UI can
+    be honest about truncation rather than silently capping).
+    """
+    events: list[dict] = []
+    tags_seen: list[str] = []
+    seen_tag: set[str] = set()
+    try:
+        dirs = [d for d in projects_root.iterdir() if d.is_dir()]
+    except OSError:
+        dirs = []
+    for d in dirs:
+        try:
+            jsonls = list(d.glob("*.jsonl"))
+        except OSError:
+            continue
+        if not jsonls:
+            continue
+        cwd = None
+        for jp in sorted(jsonls, key=lambda p: p.stat().st_mtime, reverse=True):
+            cwd = last_recorded_cwd(jp)
+            if cwd:
+                break
+        tag = derive_tag(cwd, tag_map) if cwd else f"[other:{d.name.rsplit('-', 1)[-1]}]"
+        if tag not in seen_tag:
+            seen_tag.add(tag)
+            tags_seen.append(tag)
+        for jp in jsonls:
+            for ts, kind, size in extract_turn_events(jp):
+                src, dst = (YOU_TAG, tag) if kind == "prompt" else (tag, YOU_TAG)
+                events.append({"ts": ts, "source": src, "mentions": [dst], "size": size, "kind": kind})
+    events.sort(key=lambda e: e["ts"])
+    dropped = 0
+    if len(events) > cap:
+        dropped = len(events) - cap
+        events = events[-cap:]  # keep the most recent
+    return {"events": events, "tags": tags_seen, "dropped": dropped}
 
 
 def classify_status(mtime_age: float, *, alive: bool, low_cpu: bool) -> Status:

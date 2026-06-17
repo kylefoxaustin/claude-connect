@@ -3,20 +3,27 @@
 // Self-contained, lazily imported (mirrors scene3d.js): a CDN miss or a throw
 // in here can never touch the 2D board. No external deps — pure SVG.
 //
-// Fetches /api/bus/heatmap (the whole bus, live log + monthly archives) and
-// replays it: sessions are nodes on a ring that fade in as each one first
-// speaks, undirected mention-lines thicken with cumulative traffic, and a
-// pulse-dot flies along an edge each time it's freshly used.
+// Fetches /api/bus/heatmap and replays it: sessions are nodes (on a ring, in a
+// live force-cluster, or radial-by-volume) that fade in as each first speaks,
+// mention-lines thicken with traffic, and a pulse-dot flies each wire on use,
+// sized by message length.
 //
-// Everything visible is a pure function of one scalar — `f`, progress in
-// [0,1]. Glow/pulse "recency" is `f - lastTouch`, not a timer, so dragging the
-// scrubber backward is just a cheap replay from 0. No setTimeout anywhere.
+// With the 👤 toggle it re-fetches ?human=1 and weaves in the HUMAN↔Claude
+// layer — a [you] node plus prompt/reply turns from the transcripts, on the
+// same scrubbable timeline (gold edges to distinguish them from the bus).
+//
+// Everything visible is a pure function of one scalar — `f`, progress in [0,1].
+// Glow/pulse "recency" is `f - lastTouch`, not a timer, so scrubbing backward
+// is a cheap replay from 0. No setTimeout anywhere.
 
 const BASE_SECONDS = 45;   // wall-clock seconds for 1x to play the whole history
 const GLOW_WINDOW = 0.045; // how long (in f-units) a node/edge stays "hot"
 const SPEEDS = [0.25, 0.5, 1, 2, 5];
+const LAYOUTS = [["clusters", "Clusters"], ["ring", "Ring"], ["orbit", "Orbit"]];
+const LS_LAYOUT = "conductor.heatmapLayout";
+const LS_HUMAN = "conductor.heatmapHuman";
 
-let root = null;          // overlay element
+let root = null;
 let raf = 0;
 let onResize = null;
 
@@ -42,9 +49,9 @@ export async function activate() {
   root.className = "heatmap-overlay";
   root.innerHTML = `
     <div class="hm-header">
-      <span class="hm-title">🕸 Bus history · who mentions whom</span>
+      <span class="hm-title">🕸 Bus history</span>
       <span class="hm-stats" id="hm-stats">loading…</span>
-      <span class="hm-legend">line = how often · pulse size = message length</span>
+      <span class="hm-legend" id="hm-legend">line = how often · pulse size = message length</span>
       <button class="hm-close" title="Close (Esc)">×</button>
     </div>
     <svg class="hm-svg" id="hm-svg" aria-hidden="true">
@@ -60,6 +67,7 @@ export async function activate() {
     </svg>
     <div class="hm-controls">
       <div class="hm-layouts" id="hm-layouts" title="Arrange the sessions"></div>
+      <button class="hm-human" id="hm-human" title="Weave in human ↔ Claude turns (your prompts + replies)">👤 Human</button>
       <button class="hm-play" id="hm-play" title="Play / pause">⏸</button>
       <input type="range" class="hm-scrub" id="hm-scrub" min="0" max="1000" value="0" />
       <span class="hm-clock" id="hm-clock">—</span>
@@ -72,104 +80,55 @@ export async function activate() {
   document.addEventListener("keydown", escClose);
   root._escClose = escClose;
 
-  let data;
-  try {
-    const res = await fetch("/api/bus/heatmap");
-    data = await res.json();
-  } catch (err) {
-    root.querySelector("#hm-stats").textContent = "failed to load bus history";
-    return;
-  }
-  if (!root) return; // closed while fetching
-  build(data);
+  run();
 }
 
 export function deactivate() {
   if (!root) return;
   cancelAnimationFrame(raf);
   raf = 0;
-  if (onResize) window.removeEventListener("resize", onResize), (onResize = null);
+  if (onResize) { window.removeEventListener("resize", onResize); onResize = null; }
   if (root._escClose) document.removeEventListener("keydown", root._escClose);
   root.remove();
   root = null;
 }
 
-function build(data) {
+// One closure holds all controls, the rAF loop, and the swappable graph state.
+function run() {
   const svg = root.querySelector("#hm-svg");
   const gEdges = root.querySelector("#hm-edges");
   const gPulses = root.querySelector("#hm-pulses");
   const gNodes = root.querySelector("#hm-nodes");
   const statsEl = root.querySelector("#hm-stats");
+  const legendEl = root.querySelector("#hm-legend");
   const clockEl = root.querySelector("#hm-clock");
   const playBtn = root.querySelector("#hm-play");
   const scrub = root.querySelector("#hm-scrub");
+  const layoutsEl = root.querySelector("#hm-layouts");
+  const humanBtn = root.querySelector("#hm-human");
 
-  const events = data.events || [];
-  const nodeList = data.nodes || [];
-  if (!events.length || !nodeList.length) {
-    statsEl.textContent = "no bus history yet";
-    return;
-  }
+  // ---- persistent prefs -------------------------------------------------
+  let mode = "clusters";
+  try { const m = localStorage.getItem(LS_LAYOUT); if (m && LAYOUTS.some((l) => l[0] === m)) mode = m; } catch (_) {}
+  let humanOn = false;
+  try { humanOn = localStorage.getItem(LS_HUMAN) === "1"; } catch (_) {}
 
-  // --- precompute virtual timeline (clamp idle gaps so lulls don't stall) ---
-  const t0 = events[0].ts;
-  const t1 = events[events.length - 1].ts;
-  const span = Math.max(1, t1 - t0);
-  const maxGap = span / 120;
-  const pos = new Array(events.length);
-  let v = 0;
-  for (let i = 0; i < events.length; i++) {
-    if (i > 0) v += Math.min(events[i].ts - events[i - 1].ts, maxGap);
-    pos[i] = v;
-  }
-  const vTotal = v || 1;
-  for (let i = 0; i < events.length; i++) pos[i] /= vTotal;
+  // ---- swappable graph state (reassigned by rebuild) --------------------
+  let nodes = new Map();
+  let edges = new Map();
+  let events = [];
+  let pos = [];
+  let t0 = 0, t1 = 0, dropped = 0;
+  let logMin = 0, logRange = 1, maxCount = 1, N = 0;
 
-  // --- message-size normalization (log scale) -> 0..1 "bulk" -------------
-  // Drives transient pulse size: a one-line hello barely registers, a multi-KB
-  // status report sends a fat dot down the wire and thumps its sender.
-  let logMin = Infinity, logMax = -Infinity;
-  for (const ev of events) {
-    const l = Math.log(1 + (ev.size || 0));
-    if (l < logMin) logMin = l;
-    if (l > logMax) logMax = l;
-  }
-  const logRange = Math.max(1e-6, logMax - logMin);
+  // ---- playback state (survives a rebuild) ------------------------------
+  let played = 0, f = 0, playing = true, lastTs = 0, speed = 1, dragging = false;
+
+  // ---- geometry ---------------------------------------------------------
+  let W = 0, H = 0, cx = 0, cy = 0, R = 0, innerR = 0;
+
   const bulkOf = (size) =>
     Math.min(1, Math.max(0, (Math.log(1 + (size || 0)) - logMin) / logRange));
-
-  // --- node model + ring layout ------------------------------------------
-  const nodes = new Map();
-  nodeList.forEach((n, i) => {
-    nodes.set(n.tag, {
-      tag: n.tag, count: n.count, idx: i, hue: hueFor(n.tag),
-      revealed: false, lastActive: -1, lastSize: 0,
-      x: 0, y: 0, vx: 0, vy: 0, fx: 0, fy: 0,   // current pos + force-sim state
-      tx: 0, ty: 0,                             // eased target (ring / orbit modes)
-      ldx: 0, ldy: 0, lanchor: "middle",        // label offset relative to node
-      circle: null, label: null,
-    });
-  });
-  const N = nodeList.length;
-
-  // --- layout engine -----------------------------------------------------
-  // Three modes. Ring/Orbit ease each node toward a computed target; Clusters
-  // runs a live force sim (springs = mention edges) so dots migrate together as
-  // partners rack up traffic. Switching modes morphs smoothly (eased / sprung
-  // from wherever the nodes currently are).
-  const LAYOUTS = [
-    ["clusters", "Clusters"],
-    ["ring", "Ring"],
-    ["orbit", "Orbit"],
-  ];
-  const LS_KEY = "conductor.heatmapLayout";
-  let layoutsEl = null; // switcher button row (built in the controls section)
-  let mode = "clusters";
-  try { const m = localStorage.getItem(LS_KEY); if (m && LAYOUTS.some((l) => l[0] === m)) mode = m; } catch (_) {}
-
-  let W = 0, H = 0, cx = 0, cy = 0, R = 0, innerR = 0;
-  let maxCount = 1;
-  nodes.forEach((nd) => { if (nd.count > maxCount) maxCount = nd.count; });
 
   function measure() {
     const rect = svg.getBoundingClientRect();
@@ -185,7 +144,6 @@ function build(data) {
       const a = (-90 + (360 * nd.idx) / N) * (Math.PI / 180);
       let rad = R;
       if (mode === "orbit") {
-        // Loudest sessions pulled toward the center; quiet ones to the rim.
         const loud = Math.log(1 + nd.count) / Math.log(1 + maxCount);
         rad = innerR + (R - innerR) * (1 - loud);
       }
@@ -208,7 +166,7 @@ function build(data) {
     });
   }
 
-  // Live force-directed step (Clusters mode). ~30 nodes → trivially cheap.
+  // Live force-directed step (Clusters mode). ~30-40 nodes → trivially cheap.
   function forceStep() {
     const REP = 7000, SPRING = 0.0012, GRAV = 0.006, DAMP = 0.80, REST = 78, MAXV = 22;
     const live = [];
@@ -248,60 +206,48 @@ function build(data) {
 
   function setMode(next) {
     mode = next;
-    try { localStorage.setItem(LS_KEY, mode); } catch (_) {}
+    try { localStorage.setItem(LS_LAYOUT, mode); } catch (_) {}
     computeTargets();
-    nodes.forEach((nd) => { nd.vx = 0; nd.vy = 0; }); // hand off cleanly to springs/easing
-    if (layoutsEl) layoutsEl.querySelectorAll(".hm-layout").forEach((b) =>
-      b.classList.toggle("on", b.dataset.mode === mode));
+    nodes.forEach((nd) => { nd.vx = 0; nd.vy = 0; });
+    layoutsEl.querySelectorAll(".hm-layout").forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
   }
 
   function ensureNodeDom(nd) {
     if (nd.circle) return;
     const c = svgEl("circle");
-    c.setAttribute("class", "hm-node");
+    c.setAttribute("class", nd.isYou ? "hm-node hm-you" : "hm-node");
     c.setAttribute("r", 5);
     c.setAttribute("cx", nd.x); c.setAttribute("cy", nd.y);
-    c.setAttribute("fill", `hsl(${nd.hue} 80% 60%)`);
+    c.setAttribute("fill", nd.isYou ? "#ffd54a" : `hsl(${nd.hue} 80% 60%)`);
     c.setAttribute("filter", "url(#hm-glow)");
     gNodes.appendChild(c);
     const t = svgEl("text");
-    t.setAttribute("class", "hm-label");
+    t.setAttribute("class", nd.isYou ? "hm-label hm-label-you" : "hm-label");
     t.setAttribute("x", nd.x); t.setAttribute("y", nd.y);
     t.setAttribute("text-anchor", nd.lanchor);
-    t.textContent = bare(nd.tag);
+    t.textContent = nd.label || (nd.isYou ? "You" : bare(nd.tag));
     gNodes.appendChild(t);
     nd.circle = c; nd.label = t;
   }
 
-  // --- edge model (undirected, lazily created) ---------------------------
-  const edges = new Map(); // "a|b" -> {a,b,weight,ab,ba,lastTouch,line}
   function edgeKey(s, d) { return s < d ? `${s}|${d}` : `${d}|${s}`; }
   function ensureEdge(s, d) {
     const key = edgeKey(s, d);
     let e = edges.get(key);
     if (!e) {
       const a = nodes.get(s), b = nodes.get(d);
-      e = { a, b, weight: 0, ab: 0, ba: 0, lastTouch: -1, lastSize: 0, line: null };
+      const human = a.isYou || b.isYou;
+      e = { a, b, weight: 0, ab: 0, ba: 0, lastTouch: -1, lastSize: 0, human, line: null };
       const ln = svgEl("line");
-      ln.setAttribute("class", "hm-edge");
-      ln.setAttribute("x1", a.x); ln.setAttribute("y1", a.y);
-      ln.setAttribute("x2", b.x); ln.setAttribute("y2", b.y);
-      const hue = Math.round((a.hue + b.hue) / 2);
-      ln.setAttribute("stroke", `hsl(${hue} 70% 60%)`);
-      e.line = ln; e.hue = hue;
+      ln.setAttribute("class", human ? "hm-edge hm-edge-human" : "hm-edge");
+      const hue = human ? 45 : Math.round((a.hue + b.hue) / 2);
+      ln.setAttribute("stroke", human ? "#ffcf4a" : `hsl(${hue} 70% 60%)`);
+      e.line = ln; e.hue = human ? 45 : hue;
       gEdges.appendChild(ln);
       edges.set(key, e);
     }
     return e;
   }
-
-  // --- timeline state machine --------------------------------------------
-  let played = 0;     // events applied so far
-  let f = 0;          // progress in [0,1]
-  let playing = true;
-  let lastTs = 0;
-  let speed = 1;
-  let dragging = false;
 
   function resetGraph() {
     nodes.forEach((nd) => { nd.revealed = false; nd.lastActive = -1; nd.lastSize = 0; });
@@ -315,17 +261,15 @@ function build(data) {
     const bulk = bulkOf(ev.size);
     const src = nodes.get(ev.source);
     if (src) { src.revealed = true; src.lastActive = p; src.lastSize = bulk; ensureNodeDom(src); }
-    for (const m of ev.mentions) {
+    for (const m of ev.mentions || []) {
       const dst = nodes.get(m);
       if (!dst || !src) continue;
       dst.revealed = true; ensureNodeDom(dst);
       const e = ensureEdge(ev.source, m);
       e.weight += 1;
       if (ev.source < m) e.ab += 1; else e.ba += 1;
-      e.lastTouch = p;
-      e.lastSize = bulk;
-      src.lastActive = p;
-      src.lastSize = bulk;
+      e.lastTouch = p; e.lastSize = bulk;
+      src.lastActive = p; src.lastSize = bulk;
     }
   }
 
@@ -335,20 +279,19 @@ function build(data) {
     while (played < events.length && pos[played] <= f) applyEvent(played++);
   }
 
-  // --- render (pure function of f) ---------------------------------------
   function edgeWidth(w) { return 0.6 + Math.log2(1 + w) * 1.15; }
 
   function render() {
+    if (!events.length) return;
     stepPositions();
     nodes.forEach((nd) => {
       if (!nd.circle) return;
       const hot = nd.lastActive >= 0 ? Math.max(0, 1 - (f - nd.lastActive) / GLOW_WINDOW) : 0;
-      // Flash size scales with the last message's bulk: a hello barely twitches,
-      // a big report thumps.
+      const baseR = nd.isYou ? 8 : 4 + Math.log2(1 + nd.count) * 0.9;
       const bump = hot * (2.5 + nd.lastSize * 8);
       nd.circle.setAttribute("cx", nd.x.toFixed(1));
       nd.circle.setAttribute("cy", nd.y.toFixed(1));
-      nd.circle.setAttribute("r", (4 + Math.log2(1 + nd.count) * 0.9 + bump).toFixed(2));
+      nd.circle.setAttribute("r", (baseR + bump).toFixed(2));
       nd.circle.style.opacity = nd.revealed ? (0.55 + 0.45 * hot).toFixed(3) : 0;
       nd.label.setAttribute("x", (nd.x + nd.ldx).toFixed(1));
       nd.label.setAttribute("y", (nd.y + nd.ldy).toFixed(1));
@@ -356,18 +299,12 @@ function build(data) {
       nd.label.style.opacity = nd.revealed ? (0.4 + 0.6 * hot).toFixed(3) : 0;
     });
 
-    // clear last frame's pulse dots
     gPulses.textContent = "";
     let activeNodes = 0;
     nodes.forEach((nd) => { if (nd.revealed) activeNodes++; });
 
     edges.forEach((e) => {
-      if (e.weight <= 0) {
-        // Reset/scrub-to-start zeroed this edge — hide the stale line instead
-        // of leaving it drawn at its last thickness.
-        e.line.setAttribute("stroke-opacity", 0);
-        return;
-      }
+      if (e.weight <= 0) { e.line.setAttribute("stroke-opacity", 0); return; }
       const hot = e.lastTouch >= 0 ? Math.max(0, 1 - (f - e.lastTouch) / GLOW_WINDOW) : 0;
       e.line.setAttribute("x1", e.a.x.toFixed(1)); e.line.setAttribute("y1", e.a.y.toFixed(1));
       e.line.setAttribute("x2", e.b.x.toFixed(1)); e.line.setAttribute("y2", e.b.y.toFixed(1));
@@ -375,13 +312,11 @@ function build(data) {
       const base = 0.1 + Math.min(0.42, Math.log2(1 + e.weight) / 14);
       e.line.setAttribute("stroke-opacity", (base + 0.5 * hot).toFixed(3));
       if (hot > 0) {
-        // pulse dot flies a→b (or b→a) depending on which direction just fired
-        const p = 1 - hot; // 0 at touch → 1 a GLOW_WINDOW later
+        const p = 1 - hot;
         const fwd = e.ab >= e.ba;
         const from = fwd ? e.a : e.b, to = fwd ? e.b : e.a;
         const dot = svgEl("circle");
         dot.setAttribute("class", "hm-pulse");
-        // Dot size = message length: fat packet for a bulk report, speck for a hello.
         dot.setAttribute("r", (2 + e.lastSize * 7).toFixed(2));
         dot.setAttribute("cx", lerp(from.x, to.x, p));
         dot.setAttribute("cy", lerp(from.y, to.y, p));
@@ -392,16 +327,16 @@ function build(data) {
 
     const playedTs = played > 0 ? events[played - 1].ts : t0;
     clockEl.textContent = fmtClock(playedTs);
-    statsEl.textContent = `${activeNodes}/${N} sessions · ${played}/${events.length} messages`;
+    const trimmed = dropped > 0 ? ` · +${dropped} older trimmed` : "";
+    statsEl.textContent = `${activeNodes}/${N} nodes · ${played}/${events.length} events${trimmed}`;
     if (!dragging) scrub.value = Math.round(f * 1000);
   }
 
-  // --- animation loop -----------------------------------------------------
   function tick(now) {
     if (!root) return;
     const dt = lastTs ? (now - lastTs) / 1000 : 0;
     lastTs = now;
-    if (playing && !dragging) {
+    if (playing && !dragging && events.length) {
       let nf = f + (dt / BASE_SECONDS) * speed;
       if (nf >= 1) { nf = 1; playing = false; playBtn.textContent = "↻"; }
       seek(nf);
@@ -410,16 +345,84 @@ function build(data) {
     raf = requestAnimationFrame(tick);
   }
 
-  // --- controls -----------------------------------------------------------
+  // ---- (re)build graph state from fetched data --------------------------
+  function rebuild(data) {
+    gEdges.textContent = ""; gPulses.textContent = ""; gNodes.textContent = "";
+    edges = new Map();
+    events = data.events || [];
+    dropped = data.dropped || 0;
+    const nodeList = data.nodes || [];
+    N = nodeList.length;
+    nodes = new Map();
+    maxCount = 1;
+    nodeList.forEach((n, i) => {
+      if (n.count > maxCount) maxCount = n.count;
+      nodes.set(n.tag, {
+        tag: n.tag, count: n.count, idx: i, hue: hueFor(n.tag), isYou: !!n.is_you, label: n.label || null,
+        revealed: false, lastActive: -1, lastSize: 0,
+        x: 0, y: 0, vx: 0, vy: 0, fx: 0, fy: 0, tx: 0, ty: 0,
+        ldx: 0, ldy: 0, lanchor: "middle", circle: null, label: null,
+      });
+    });
+
+    if (events.length) {
+      t0 = events[0].ts; t1 = events[events.length - 1].ts;
+      const span = Math.max(1, t1 - t0), maxGap = span / 120;
+      pos = new Array(events.length);
+      let v = 0;
+      for (let i = 0; i < events.length; i++) {
+        if (i > 0) v += Math.min(events[i].ts - events[i - 1].ts, maxGap);
+        pos[i] = v;
+      }
+      const vTotal = v || 1;
+      for (let i = 0; i < events.length; i++) pos[i] /= vTotal;
+      logMin = Infinity; let logMax = -Infinity;
+      for (const ev of events) {
+        const l = Math.log(1 + (ev.size || 0));
+        if (l < logMin) logMin = l; if (l > logMax) logMax = l;
+      }
+      logRange = Math.max(1e-6, logMax - logMin);
+    } else {
+      pos = []; t0 = t1 = 0;
+    }
+
+    played = 0; f = 0;
+    measure(); computeTargets(); seedRing();
+
+    if (!events.length) {
+      clockEl.textContent = "—";
+      statsEl.textContent = humanOn
+        ? "no transcript history found"
+        : "no bus history yet — connect the message bus, or toggle 👤 Human for your prompt/reply history";
+    }
+  }
+
+  async function reload() {
+    statsEl.textContent = "loading…";
+    humanBtn.classList.toggle("on", humanOn);
+    legendEl.textContent = humanOn
+      ? "line = how often · pulse = length · gold = you ↔ Claude"
+      : "line = how often · pulse size = message length";
+    try { localStorage.setItem(LS_HUMAN, humanOn ? "1" : "0"); } catch (_) {}
+    let data;
+    try {
+      const res = await fetch("/api/bus/heatmap" + (humanOn ? "?human=1" : ""));
+      data = await res.json();
+    } catch (err) {
+      statsEl.textContent = "failed to load bus history";
+      return;
+    }
+    if (!root) return;
+    rebuild(data);
+  }
+
+  // ---- controls (wired once) --------------------------------------------
   playBtn.addEventListener("click", () => {
-    if (f >= 1) { seek(0); f = 0; } // replay from start
+    if (f >= 1) { seek(0); f = 0; }
     playing = !playing;
     playBtn.textContent = playing ? "⏸" : "▶";
   });
-  scrub.addEventListener("input", () => {
-    dragging = true;
-    seek(scrub.value / 1000);
-  });
+  scrub.addEventListener("input", () => { dragging = true; seek(scrub.value / 1000); });
   const stopDrag = () => { dragging = false; };
   scrub.addEventListener("change", stopDrag);
   scrub.addEventListener("pointerup", stopDrag);
@@ -437,7 +440,6 @@ function build(data) {
     speedsEl.appendChild(b);
   });
 
-  layoutsEl = root.querySelector("#hm-layouts");
   LAYOUTS.forEach(([key, label]) => {
     const b = document.createElement("button");
     b.className = "hm-layout" + (key === mode ? " on" : "");
@@ -447,11 +449,16 @@ function build(data) {
     layoutsEl.appendChild(b);
   });
 
+  humanBtn.addEventListener("click", () => {
+    humanOn = !humanOn;
+    playing = true; playBtn.textContent = "⏸";
+    reload();
+  });
+
   onResize = () => requestAnimationFrame(() => { measure(); computeTargets(); });
   window.addEventListener("resize", onResize);
 
   measure();
-  computeTargets();
-  seedRing();      // everything starts as a ring, then eases/springs into `mode`
+  reload();
   raf = requestAnimationFrame(tick);
 }

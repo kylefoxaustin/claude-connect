@@ -7,6 +7,7 @@ Serves the vanilla-JS frontend at `/`.
 from __future__ import annotations
 
 import asyncio
+import getpass
 import logging
 import time
 from collections import deque
@@ -38,7 +39,14 @@ from .bus import (
     snapshot_history,
 )
 from .models import BusEvent, BusTopology, SessionRecord, Status
-from .scanner import SessionScanner, encode_cwd, extract_preview, newest_jsonl
+from .scanner import (
+    YOU_TAG,
+    SessionScanner,
+    collect_human_events,
+    encode_cwd,
+    extract_preview,
+    newest_jsonl,
+)
 from .settings import DEFAULT_SETTINGS_PATH, Settings, dump_settings, load_settings
 from .windows import focus_session, send_keys_to_session, wmctrl_available
 from .ws import WSHub
@@ -358,17 +366,71 @@ async def get_bus(request: Request) -> dict[str, Any]:
     return state._bus_payload()
 
 
+def _human_label() -> str:
+    """Display name for the ``[you]`` node — the OS username (capitalized), so it
+    reads sensibly for whoever is running Conductor; ``"You"`` if unavailable."""
+    try:
+        u = getpass.getuser()
+    except Exception:
+        u = ""
+    return (u[:1].upper() + u[1:]) if u else "You"
+
+
 @app.get("/api/bus/heatmap")
-async def get_bus_heatmap(request: Request) -> dict[str, Any]:
+async def get_bus_heatmap(request: Request, human: bool = False) -> dict[str, Any]:
     """Mention graph over the entire bus history (live log + monthly archives).
 
     Feeds the 🕸 History time-lapse: nodes are sessions, events are timestamped
     messages with the list of other sessions each one named. Parsed off-thread
     since it reads every archive file. See ``build_mention_history``.
+
+    With ``?human=1`` it also weaves in the **human↔Claude** layer: a ``[you]``
+    node plus turn-level prompt/reply events read from ``~/.claude/projects``
+    transcripts (``collect_human_events``), keyed to the same bus tags. Each
+    event carries ``kind`` (``bus`` | ``prompt`` | ``reply``) so the frontend can
+    style the human edges distinctly. Default (no param) is byte-for-byte the
+    bus-only graph.
     """
     state: AppState = request.app.state.cond
     path = state.settings.bus.markdown_path_resolved
-    return await asyncio.to_thread(build_mention_history, path)
+    base = await asyncio.to_thread(build_mention_history, path)
+    if not human:
+        return base
+
+    projects_root = state.settings.scanner.claude_home_path / "projects"
+    tag_map = state.settings.bus.tags
+    hres = await asyncio.to_thread(collect_human_events, projects_root, tag_map)
+
+    for e in base["events"]:
+        e["kind"] = "bus"
+    merged = base["events"] + hres["events"]
+    merged.sort(key=lambda e: e["ts"])
+
+    # Recompute nodes from the merged stream: a tag's first_seen = its earliest
+    # appearance, count = times it's a source (bus sends + human turns). Preserve
+    # the bus's first-appearance ordering, then append new tags by first_seen.
+    first_seen: dict[str, float] = {}
+    count: dict[str, int] = {}
+    for e in merged:
+        s = e["source"]
+        first_seen.setdefault(s, e["ts"])
+        count[s] = count.get(s, 0) + 1
+        for m in e["mentions"]:
+            first_seen.setdefault(m, e["ts"])
+    order = [n["tag"] for n in base["nodes"]]
+    for t in sorted(first_seen, key=lambda t: first_seen[t]):
+        if t not in order:
+            order.append(t)
+    you_label = _human_label()
+    nodes = [
+        {
+            "tag": t, "first_seen": first_seen.get(t, 0.0), "count": count.get(t, 0),
+            "is_you": t == YOU_TAG,
+            **({"label": you_label} if t == YOU_TAG else {}),
+        }
+        for t in order
+    ]
+    return {"nodes": nodes, "events": merged, "dropped": hres["dropped"]}
 
 
 class BusMessage(BaseModel):

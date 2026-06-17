@@ -9,10 +9,13 @@ from pathlib import Path
 import pytest
 
 from conductor.scanner import (
+    YOU_TAG,
     build_cwd_index,
     classify_status,
+    collect_human_events,
     encode_cwd,
     extract_preview,
+    extract_turn_events,
     last_recorded_cwd,
     newest_jsonl,
     parse_custom_title,
@@ -209,3 +212,93 @@ def test_extract_preview_empty(tmp_path: Path):
     p = tmp_path / "empty.jsonl"
     p.write_text("")
     assert extract_preview(p) == ""
+
+
+# --- human↔Claude turn extraction (🕸 History "human turns" layer) ---------
+
+def _rec(**kw) -> str:
+    return json.dumps(kw)
+
+
+def test_extract_turn_events_prompt_reply_collapse(tmp_path: Path):
+    """One exchange = one prompt + one reply, even with many assistant chunks."""
+    p = tmp_path / "s.jsonl"
+    p.write_text("\n".join([
+        _rec(type="user", timestamp="2026-06-01T10:00:00.000Z",
+             message={"role": "user", "content": "hello claude"}),
+        _rec(type="assistant", timestamp="2026-06-01T10:00:01.000Z",
+             message={"role": "assistant", "content": [{"type": "text", "text": "hi there"}]}),
+        # extra assistant chunks (streaming / tool use) must NOT add more replies
+        _rec(type="assistant", timestamp="2026-06-01T10:00:02.000Z",
+             message={"role": "assistant", "content": [{"type": "tool_use", "name": "x"}]}),
+        _rec(type="assistant", timestamp="2026-06-01T10:00:03.000Z",
+             message={"role": "assistant", "content": [{"type": "text", "text": "done"}]}),
+        _rec(type="user", timestamp="2026-06-01T10:01:00.000Z",
+             message={"role": "user", "content": "thanks"}),
+    ]) + "\n")
+    turns = extract_turn_events(p)
+    kinds = [k for _ts, k, _sz in turns]
+    assert kinds == ["prompt", "reply", "prompt"]
+    # prompt size = human text length
+    assert turns[0][2] == len("hello claude")
+    # timestamps parsed and ascending
+    assert turns[0][0] < turns[1][0] < turns[2][0]
+
+
+def test_extract_turn_events_skips_tool_results_and_sidechains(tmp_path: Path):
+    p = tmp_path / "s.jsonl"
+    p.write_text("\n".join([
+        # a tool_result carried as a user message — NOT a human turn
+        _rec(type="user", timestamp="2026-06-01T10:00:00.000Z",
+             message={"role": "user", "content": [{"type": "tool_result", "content": "42"}]}),
+        # a subagent (sidechain) prompt — not Kyle
+        _rec(type="user", isSidechain=True, timestamp="2026-06-01T10:00:01.000Z",
+             message={"role": "user", "content": "subagent task"}),
+        # a real human prompt
+        _rec(type="user", timestamp="2026-06-01T10:00:02.000Z",
+             message={"role": "user", "content": "real prompt"}),
+        _rec(type="assistant", timestamp="2026-06-01T10:00:03.000Z",
+             message={"role": "assistant", "content": "ok"}),
+    ]) + "\n")
+    turns = extract_turn_events(p)
+    assert [k for _ts, k, _sz in turns] == ["prompt", "reply"]
+    assert turns[0][2] == len("real prompt")
+
+
+def test_collect_human_events_maps_tags_and_shapes(tmp_path: Path):
+    projects = tmp_path / "projects"
+    proj = projects / "-home-kyle-code-myapp"
+    proj.mkdir(parents=True)
+    cwd = str(tmp_path / "code" / "myapp")
+    (tmp_path / "code" / "myapp").mkdir(parents=True)
+    (proj / "sess.jsonl").write_text("\n".join([
+        _rec(type="user", timestamp="2026-06-01T10:00:00.000Z", cwd=cwd,
+             message={"role": "user", "content": "hi"}),
+        _rec(type="assistant", timestamp="2026-06-01T10:00:01.000Z", cwd=cwd,
+             message={"role": "assistant", "content": "yo"}),
+    ]) + "\n")
+    out = collect_human_events(projects, tag_map={cwd: "myapp"})
+    evs = out["events"]
+    assert out["dropped"] == 0
+    assert [e["kind"] for e in evs] == ["prompt", "reply"]
+    # prompt: you -> session ; reply: session -> you, on the mapped bus tag
+    assert evs[0]["source"] == YOU_TAG and evs[0]["mentions"] == ["[myapp]"]
+    assert evs[1]["source"] == "[myapp]" and evs[1]["mentions"] == [YOU_TAG]
+    assert out["tags"] == ["[myapp]"]
+
+
+def test_collect_human_events_cap_reports_dropped(tmp_path: Path):
+    projects = tmp_path / "projects"
+    proj = projects / "-x"
+    proj.mkdir(parents=True)
+    lines = []
+    for i in range(10):
+        hh = f"{i:02d}"
+        lines.append(_rec(type="user", timestamp=f"2026-06-01T{hh}:00:00.000Z",
+                          message={"role": "user", "content": f"p{i}"}))
+    proj.joinpath("s.jsonl").write_text("\n".join(lines) + "\n")
+    out = collect_human_events(projects, tag_map={}, cap=4)
+    assert len(out["events"]) == 4
+    assert out["dropped"] == 6
+    # cap keeps the most RECENT events
+    assert out["events"][-1]["size"] == len("p9")
