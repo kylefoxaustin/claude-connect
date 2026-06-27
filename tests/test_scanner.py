@@ -13,6 +13,7 @@ from conductor.scanner import (
     build_cwd_index,
     classify_status,
     collect_human_events,
+    discover_parked_projects,
     encode_cwd,
     extract_exchange,
     extract_preview,
@@ -445,3 +446,84 @@ def test_collect_human_events_cap_reports_dropped(tmp_path: Path):
     assert out["dropped"] == 6
     # cap keeps the most RECENT events
     assert out["events"][-1]["size"] == len("p9")
+
+
+# --- discover_parked_projects (dormant dock) -------------------------------
+
+def _mk_project(projects_root: Path, encoded: str, cwd: Path, *, when: float,
+                title: str | None = None) -> Path:
+    """Create a fake project dir whose newest jsonl records ``cwd`` (and an
+    optional /rename title), stamped at mtime ``when``. Returns the cwd path."""
+    pdir = projects_root / encoded
+    pdir.mkdir(parents=True, exist_ok=True)
+    j = pdir / "session-x.jsonl"
+    lines = [json.dumps({"type": "user", "cwd": str(cwd)})]
+    if title:
+        lines.append(json.dumps({"type": "summary", "summary": title}))
+    j.write_text("\n".join(lines) + "\n")
+    import os as _os
+    _os.utime(j, (when, when))
+    return cwd
+
+
+def test_discover_parked_lists_offline_projects(tmp_path: Path):
+    projects = tmp_path / "projects"
+    cwd_a = tmp_path / "code-a"; cwd_a.mkdir()
+    cwd_b = tmp_path / "code-b"; cwd_b.mkdir()
+    _mk_project(projects, "-code-a", cwd_a, when=100.0, title="Alpha")
+    _mk_project(projects, "-code-b", cwd_b, when=200.0, title="Beta")
+
+    parked = discover_parked_projects(projects, tag_map={}, live_cwds=set())
+    # Newest first (Beta @200 before Alpha @100).
+    assert [p.title for p in parked] == ["Beta", "Alpha"]
+    assert parked[0].project_dir == str(cwd_b)
+    assert parked[0].project == "-code-b"
+
+
+def test_discover_parked_excludes_live_cwds(tmp_path: Path):
+    projects = tmp_path / "projects"
+    cwd_a = tmp_path / "code-a"; cwd_a.mkdir()
+    cwd_b = tmp_path / "code-b"; cwd_b.mkdir()
+    _mk_project(projects, "-code-a", cwd_a, when=100.0)
+    _mk_project(projects, "-code-b", cwd_b, when=200.0)
+
+    # code-b currently has a live session → only code-a is parked.
+    parked = discover_parked_projects(projects, tag_map={}, live_cwds={str(cwd_b)})
+    assert [p.project_dir for p in parked] == [str(cwd_a)]
+
+
+def test_discover_parked_skips_deleted_folders(tmp_path: Path):
+    projects = tmp_path / "projects"
+    gone = tmp_path / "deleted-dir"   # never created on disk
+    _mk_project(projects, "-deleted-dir", gone, when=100.0)
+
+    # Can't `claude --continue` into a folder that no longer exists.
+    assert discover_parked_projects(projects, tag_map={}, live_cwds=set()) == []
+
+
+def test_discover_parked_dedupes_same_cwd_keeps_newest(tmp_path: Path):
+    projects = tmp_path / "projects"
+    cwd = tmp_path / "code"; cwd.mkdir()
+    # Two encoded dirs (e.g. re-encoded across Claude versions) → same cwd.
+    _mk_project(projects, "-code-old", cwd, when=100.0, title="Old")
+    _mk_project(projects, "-code-new", cwd, when=300.0, title="New")
+
+    parked = discover_parked_projects(projects, tag_map={}, live_cwds=set())
+    assert len(parked) == 1
+    assert parked[0].title == "New"
+    assert parked[0].last_activity_at == 300.0
+
+
+def test_discover_parked_respects_limit(tmp_path: Path):
+    projects = tmp_path / "projects"
+    for i in range(5):
+        c = tmp_path / f"code-{i}"; c.mkdir()
+        _mk_project(projects, f"-code-{i}", c, when=float(i))
+    parked = discover_parked_projects(projects, tag_map={}, live_cwds=set(), limit=3)
+    assert len(parked) == 3
+    # Newest (highest mtime) retained.
+    assert [p.project for p in parked] == ["-code-4", "-code-3", "-code-2"]
+
+
+def test_discover_parked_empty_when_no_projects_root(tmp_path: Path):
+    assert discover_parked_projects(tmp_path / "nope", tag_map={}, live_cwds=set()) == []

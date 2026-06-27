@@ -36,6 +36,40 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.6.0: 💤 Dormant dock — relaunch a closed session in one click. Sessions
+  Kyle closes don't vanish: every project dir with on-disk history but no live
+  process now surfaces as a chip in the bottom dock (a "💤 Dormant" group after
+  the minimized tiles). **Clicking it relaunches that session** — opens
+  `claude --continue` in its original folder in a tracked Tilix window, then,
+  once the new session appears and its TUI settles, **injects `/rc`** (and
+  optionally `/rename`) so it comes back remote-controlled with its identity
+  intact. Backend: `discover_parked_projects(projects_root, tag_map, live_cwds)`
+  (`scanner.py`) walks each project dir, resolves the cwd its newest transcript
+  last ran in, and skips cwds that are currently live, folders deleted off disk,
+  or unreadable transcripts (dedups multiple encoded dirs → same cwd, newest
+  wins, capped 40). Surfaced as `ParkedSession` on the `sessions` payload.
+  `POST /api/relaunch {project}` (path-validated to the projects root, refuses if
+  a session is already live there) → `AppState.relaunch_parked` spawns
+  `claude-tracked <name> --dir <cwd> --continue` detached, then schedules
+  `_bootstrap_relaunched`, which **polls the scanner for the new live session**
+  before injecting (the flaky part — keystrokes only land once the TUI is up;
+  timing knobs in `[relaunch]` settings: `settle_seconds`, `between_seconds`,
+  `appear_timeout_seconds`, `rename`). `scripts/claude-tracked` gained `--dir`
+  (cd's first so `--continue` resolves to the right folder; legacy callers
+  unaffected) and — caught during Kyle's live test — switched its tilix launch
+  from `-- <cmd>` to `-e <cmd>`: when a tilix server is already running (always,
+  if you have other windows open) the single-instance invocation **silently
+  drops** a `--`-style command and opens a bare shell, so claude never launched
+  and there was nothing to inject `/rc` into; `-e` is honored by the running
+  server. Frontend: `parkedChip` in `tiles.js` (dashed dock chip, 💤 + name
+  + tag + last-active age, click→relaunch with optimistic "launching…", trailing
+  ✕ to dismiss); dismissals persist (`conductor.parkedDismissed.v1`) and
+  **auto-clear when that folder goes live again** ("auto + dismiss"). New live
+  session removes the chip on the next scan. **Note:** spawn + keystroke
+  injection are X11/terminal-level and can't run in the sandbox — pure logic
+  (`discover_parked_projects`, dedup, limit, exclusions) is unit-tested; the live
+  click path is hand-verified. Backend + frontend, both editions. **Scope: tilix
+  only** (same as v2.1.2 focus).
 - ✅ v2.5.1: 📬 Honest unread badge for never-checked sessions.
   `compute_pending` (`bus.py`) returned 0 for any tag with no `<tag>.last-seen`
   file, so a prolific sender that had never run `prompt-check` (never

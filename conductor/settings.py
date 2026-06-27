@@ -70,11 +70,28 @@ class UISettings:
 
 
 @dataclass
+class RelaunchSettings:
+    """Click-to-relaunch a parked (dormant) session from the dock.
+
+    Spawns ``claude-tracked <name> --dir <cwd> --continue`` then, once the new
+    session appears and settles, types ``/rc`` into it (and ``/rename`` when
+    ``rename`` is on — usually unneeded since ``--continue`` keeps the prior
+    name). The settle/gap knobs cover the flaky part: keystrokes only land once
+    Claude's TUI is up at a prompt.
+    """
+    rename: bool = False               # also inject `/rename <name>` after `/rc`
+    appear_timeout_seconds: float = 40.0   # how long to wait for the new session
+    settle_seconds: float = 2.5            # TUI draw delay before first keystroke
+    between_seconds: float = 1.0           # gap between /rc and /rename
+
+
+@dataclass
 class Settings:
     server: ServerSettings = field(default_factory=ServerSettings)
     scanner: ScannerSettings = field(default_factory=ScannerSettings)
     bus: BusSettings = field(default_factory=BusSettings)
     ui: UISettings = field(default_factory=UISettings)
+    relaunch: RelaunchSettings = field(default_factory=RelaunchSettings)
 
 
 DEFAULT_SETTINGS_PATH = Path("settings.toml")
@@ -91,6 +108,7 @@ def load_settings(path: Path | str | None = None) -> Settings:
         scanner=ScannerSettings(**data.get("scanner", {})),
         bus=BusSettings(**data.get("bus", {})),
         ui=UISettings(**data.get("ui", {})),
+        relaunch=RelaunchSettings(**data.get("relaunch", {})),
     )
 
 
@@ -124,6 +142,12 @@ def dump_settings(settings: Settings, path: Path | str | None = None) -> None:
             "sender_tag": settings.bus.sender_tag,
         },
         "ui": {"end_fadeout_seconds": settings.ui.end_fadeout_seconds},
+        "relaunch": {
+            "rename": settings.relaunch.rename,
+            "appear_timeout_seconds": settings.relaunch.appear_timeout_seconds,
+            "settle_seconds": settings.relaunch.settle_seconds,
+            "between_seconds": settings.relaunch.between_seconds,
+        },
     }
     out: list[str] = []
     for section, kv in sections.items():
