@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""bus-backlog — print the real unread backlog for every bus participant.
+
+A diagnostic for the case Kyle hit: a session tile shows no 📬 badge even though
+it has unread messages. Conductor's badge is ``compute_pending`` — for each tag
+it counts log headers newer than that tag's ``<tag>.last-seen`` baseline. Two
+distinct reasons a badge can read 0:
+
+  * read    — the session ran prompt-check (self-checked or got pinged), so
+              last-seen advanced and the backlog genuinely cleared.
+  * inferred — no last-seen file exists; the badge falls back to the tag's own
+              latest sent message as an implicit baseline (fix A).
+  * NEVER   — no last-seen AND never sent: nothing to anchor "unread" to.
+
+Run it any time a tile looks suspiciously quiet:
+
+    python3 scripts/bus-backlog
+
+Reads the same settings.toml as the running app, so it reflects exactly what the
+dashboard would compute. Read-only; touches no bus state.
+"""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from conductor.bus import (  # noqa: E402
+    compute_pending,
+    _read_last_seen,
+    _read_log_headers,
+    list_sender_tags,
+)
+from conductor.settings import load_settings  # noqa: E402
+
+
+def main() -> int:
+    s = load_settings()
+    msgs = s.bus.markdown_path_resolved
+    state = s.bus.state_dir_resolved
+
+    headers = _read_log_headers(msgs)
+    tags = sorted(t for t in list_sender_tags(msgs) if t != "[system]")
+
+    print(f"bus log : {msgs}  ({len(headers)} headers)")
+    print(f"state   : {state}")
+    print()
+    print(f"{'TAG':<28} {'baseline':<10} {'BADGE':>6}   note")
+    print("-" * 70)
+    for tag in tags:
+        badge = compute_pending(msgs, state, tag)
+        ls = _read_last_seen(state, tag)
+        sent = any(ttag == tag for _, ttag in headers)
+        if ls:
+            kind, note = "read", ""
+        elif sent:
+            kind = "inferred"
+            note = "no last-seen — badge inferred from own last post"
+        else:
+            kind = "NEVER"
+            note = "no last-seen, never sent — badge always 0"
+        print(f"{tag:<28} {kind:<10} {badge:>6}   {note}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
