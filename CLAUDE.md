@@ -36,6 +36,21 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.5.1: 📬 Honest unread badge for never-checked sessions.
+  `compute_pending` (`bus.py`) returned 0 for any tag with no `<tag>.last-seen`
+  file, so a prolific sender that had never run `prompt-check` (never
+  self-checked, never pinged) showed an empty 📬 badge while real messages piled
+  up — the `95emulator` blind spot Kyle caught (chatty on the bus, badge stuck
+  at 0). **Fix A**: when no `last-seen` exists, infer the baseline from the tag's
+  own *latest sent message* — a session that just posted has demonstrably caught
+  up to that moment, so only later messages from others count as unread. A tag
+  that never sent AND never read still yields 0 (no basis for "unread"; don't
+  dump all bus history on a brand-new session's first contact). A real
+  `last-seen`, once written by that session's first check, supersedes the
+  estimate. Also adds `scripts/bus-backlog` — a read-only diagnostic that prints
+  the real backlog per tag and *why* each badge reads what it does
+  (`read` / `inferred` / `NEVER`), for when a tile looks suspiciously quiet.
+  Backend-only computation shared by both editions, so no frontend change.
 - ✅ v2.5.0: 🔬 Drill-down — watch a session explode outward in work. In the
   History human layer, **clicking a session node** opens the whole **you↔session
   working relationship** replayed on a playhead: a `[you]` node fires each prompt
