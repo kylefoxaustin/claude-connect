@@ -398,15 +398,28 @@ def compute_pending(messages_path: Path, state_dir: Path, tag: str) -> int:
     session's ``bus.sh prompt-check`` to run.
 
     Mirrors ``bus.sh prompt-check``: counts headers with ``ts > <tag>.last-seen``
-    and ``header_tag != [tag]``. If no ``<tag>.last-seen`` exists yet, returns
-    0 (the destination's first ``check`` will write the baseline; we don't
-    want to surface every historical message as "pending" on first contact).
+    and ``header_tag != [tag]``.
+
+    When no ``<tag>.last-seen`` exists yet, we don't have a real read-baseline.
+    Rather than return 0 — which silently hides a genuine backlog for a session
+    that has never run ``prompt-check`` (never self-checked, never been pinged),
+    the blind spot Kyle hit where prolific senders like ``95emulator`` showed no
+    badge — we *infer* a baseline from the tag's own most recent SENT message: a
+    session that just posted has demonstrably caught up to that moment, so only
+    messages after it are genuinely unread. This gives an honest badge without
+    dumping all historical traffic as "pending" on a brand-new session's first
+    contact (a never-seen, never-sent tag still yields 0). The real ``last-seen``
+    written by that session's first ``check`` supersedes this estimate.
     """
-    last_seen = _read_last_seen(state_dir, tag)
-    if not last_seen:
-        return 0
     me = tag if tag.startswith("[") else f"[{tag}]"
     headers = _read_log_headers(messages_path)
+    last_seen = _read_last_seen(state_dir, tag)
+    if not last_seen:
+        # Implicit baseline = the tag's own latest sent-message timestamp.
+        own = [ts for ts, ttag in headers if ttag == me]
+        if not own:
+            return 0  # never read, never sent — no basis to call anything unread
+        last_seen = max(own)
     return sum(1 for ts, ttag in headers if ts > last_seen and ttag != me)
 
 

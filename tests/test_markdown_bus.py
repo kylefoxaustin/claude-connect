@@ -232,11 +232,26 @@ def test_compute_pending_excludes_own_messages(tmp_path: Path):
     assert compute_pending(log, tmp_path, "[sizer]") == 1
 
 
-def test_compute_pending_no_last_seen_returns_zero(tmp_path: Path):
+def test_compute_pending_no_last_seen_never_sent_returns_zero(tmp_path: Path):
     log = tmp_path / "messages.md"
     _write_log(log, [("2026-05-19 11:00", "backend", "hi")])
-    # No last-seen baseline → don't flood with historical messages.
+    # No last-seen AND [pai-sizer] never posted → no basis for "unread", stay 0
+    # (don't flood a brand-new session with all historical traffic).
     assert compute_pending(log, tmp_path, "[pai-sizer]") == 0
+
+
+def test_compute_pending_no_last_seen_infers_baseline_from_own_post(tmp_path: Path):
+    log = tmp_path / "messages.md"
+    _write_log(log, [
+        ("2026-05-19 10:00", "backend", "before sizer spoke"),
+        ("2026-05-19 11:00", "sizer", "sizer's own post"),
+        ("2026-05-19 12:00", "backend", "after — genuinely unread"),
+        ("2026-05-19 13:00", "holobench", "after — also unread"),
+    ])
+    # No sizer.last-seen file, but sizer DID post at 11:00. Fix A: infer the
+    # baseline from its own latest post, so only the two 12:00/13:00 messages
+    # count — the 10:00 one (before it spoke) and its own post are not unread.
+    assert compute_pending(log, tmp_path, "[sizer]") == 2
 
 
 def test_compute_pending_accepts_bracketed_last_seen(tmp_path: Path):
