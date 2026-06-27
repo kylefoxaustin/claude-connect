@@ -9,6 +9,9 @@ from __future__ import annotations
 import asyncio
 import getpass
 import logging
+import os
+import shutil
+import subprocess
 import time
 from collections import deque
 from contextlib import asynccontextmanager
@@ -38,16 +41,20 @@ from .bus import (
     set_active_tag,
     snapshot_history,
 )
-from .models import BusEvent, BusTopology, SessionRecord, Status
+from .models import BusEvent, BusTopology, ParkedSession, SessionRecord, Status
 from .scanner import (
     YOU_TAG,
     SessionScanner,
     collect_human_events,
+    derive_tag,
+    discover_parked_projects,
     encode_cwd,
     extract_exchange,
     extract_preview,
     extract_session_detail,
+    last_recorded_cwd,
     newest_jsonl,
+    tag_to_state_basename,
 )
 from .settings import DEFAULT_SETTINGS_PATH, Settings, dump_settings, load_settings
 from .windows import focus_session, send_keys_to_session, wmctrl_available
@@ -81,6 +88,7 @@ class AppState:
         self.hub = WSHub()
 
         self.sessions: dict[str, SessionRecord] = {}        # keyed by project_dir
+        self.parked: list[ParkedSession] = []               # relaunchable offline sessions
         self._scan_misses: dict[str, int] = {}              # consecutive scans a session was absent
         self.recent_events: deque[BusEvent] = deque(maxlen=RECENT_EVENTS_MAX)
         self.bus_total = 0
@@ -181,8 +189,20 @@ class AppState:
             subs: dict[str, list[str]] = {tag: [] for tag in tags}
             self.bus.set_topology(BusTopology(subscribers=subs))
 
-        # Sync inotify watch set.
+        # Discover parked (offline) sessions for the dormant dock: project dirs
+        # with on-disk history but no live process right now. Excludes cwds where
+        # a session is currently running. Off-thread (walks every project dir).
         projects_root = self.settings.scanner.claude_home_path / "projects"
+        live_cwds = {
+            os.path.realpath(r.project_dir)
+            for r in self.sessions.values()
+            if r.status != Status.ENDED
+        }
+        self.parked = await asyncio.to_thread(
+            discover_parked_projects, projects_root, self.settings.bus.tags, live_cwds
+        )
+
+        # Sync inotify watch set.
         watch_dirs = []
         for r in self.sessions.values():
             if r.status == Status.ENDED:
@@ -255,11 +275,95 @@ class AppState:
             )
         return read_pending(self.settings.bus.state_dir_resolved, tag)
 
+    # --- relaunch ------------------------------------------------------------
+
+    def _claude_tracked_cmd(self) -> list[str] | None:
+        """Locate the ``claude-tracked`` launcher: prefer one on PATH (installed
+        to /usr/local/bin), else the repo's ``scripts/claude-tracked``. None if
+        neither is usable."""
+        exe = shutil.which("claude-tracked")
+        if exe:
+            return [exe]
+        repo = Path(__file__).resolve().parent.parent / "scripts" / "claude-tracked"
+        if repo.exists() and os.access(repo, os.X_OK):
+            return [str(repo)]
+        return None
+
+    def relaunch_parked(self, cwd: str, name: str, rename: bool) -> tuple[bool, str]:
+        """Spawn ``claude-tracked <name> --dir <cwd> --continue`` in a new tracked
+        terminal, then schedule the post-launch ``/rc`` (+ optional ``/rename``)
+        injection once the session appears. Returns ``(ok, detail)``."""
+        base = self._claude_tracked_cmd()
+        if base is None:
+            return False, "claude-tracked not found (install scripts/claude-tracked to PATH)"
+        cmd = [*base, name, "--dir", cwd, "--continue"]
+        try:
+            # Detached: its own session/pgid so it outlives the request and isn't
+            # killed when Conductor exits. No pipes — it owns a terminal window.
+            subprocess.Popen(
+                cmd, stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception as e:  # noqa: BLE001
+            log.exception("relaunch spawn failed: %s", e)
+            return False, f"spawn failed: {e}"
+        asyncio.create_task(self._bootstrap_relaunched(cwd, name, rename))
+        return True, "launched"
+
+    async def _bootstrap_relaunched(self, cwd: str, name: str, rename: bool) -> None:
+        """Wait for the relaunched Claude to come up, then type ``/rc`` (and
+        ``/rename <name>`` when enabled) into it.
+
+        This is the flaky part of the feature: keystrokes only land once the TUI
+        is drawn and at a prompt. We poll the scanner for the new live session in
+        that cwd (with a terminal window), then give it a settle delay before the
+        first keystroke. Injection steals focus by design (see windows.py)."""
+        cfg = self.settings.relaunch
+        target = os.path.realpath(cwd)
+        deadline = time.time() + cfg.appear_timeout_seconds
+
+        def _find() -> SessionRecord | None:
+            return next(
+                (r for r in self.sessions.values()
+                 if r.status != Status.ENDED
+                 and r.terminal_pid
+                 and os.path.realpath(r.project_dir) == target),
+                None,
+            )
+
+        rec = None
+        while time.time() < deadline:
+            await asyncio.sleep(0.5)
+            rec = _find()
+            if rec is not None:
+                break
+        if rec is None:
+            log.warning("relaunch: session for %s never appeared within %.0fs",
+                        cwd, cfg.appear_timeout_seconds)
+            return
+
+        # Let the TUI finish drawing its prompt before typing.
+        await asyncio.sleep(cfg.settle_seconds)
+        cmds = ["/rc"] + ([f"/rename {name}"] if rename else [])
+        for i, text in enumerate(cmds):
+            if i:
+                await asyncio.sleep(cfg.between_seconds)
+            rec = _find() or rec      # refresh pid/window in case the scan replaced it
+            ok = await asyncio.to_thread(
+                send_keys_to_session,
+                text=text, pid=rec.pid, terminal_pid=rec.terminal_pid,
+                title=rec.title, window_title=rec.window_title,
+            )
+            if not ok:
+                log.warning("relaunch: failed to inject %r into %s", text, cwd)
+
     # --- payloads ------------------------------------------------------------
 
     def _sessions_payload(self) -> dict[str, Any]:
         return {
             "sessions": [r.to_dict() for r in self.sessions.values()],
+            "parked": [p.to_dict() for p in self.parked],
             "fadeout_seconds": self.settings.ui.end_fadeout_seconds,
             "wmctrl_available": wmctrl_available(),
         }
@@ -474,6 +578,50 @@ async def get_exchange(request: Request, project: str, session: str, uuid: str) 
     if out is None:
         raise HTTPException(status_code=404, detail="prompt not found in transcript")
     return out
+
+
+class RelaunchRequest(BaseModel):
+    project: str                 # encoded project-dir name (from the parked list)
+    rename: bool | None = None   # override settings.relaunch.rename for this click
+
+
+@app.post("/api/relaunch")
+async def relaunch(payload: RelaunchRequest, request: Request) -> dict[str, Any]:
+    """Relaunch a parked (offline) session: open ``claude --continue`` in its
+    folder in a tracked terminal, then inject ``/rc`` (the dormant-dock action).
+
+    Resolves the encoded project dir → its newest transcript → the cwd that
+    session last ran in, validates the dir is inside the projects root and still
+    exists, and refuses if a session is already live there. Path-validated, no
+    traversal. The actual spawn + post-launch keystroke injection is handled by
+    ``AppState.relaunch_parked`` / ``_bootstrap_relaunched``.
+    """
+    state: AppState = request.app.state.cond
+    projects_root = (state.settings.scanner.claude_home_path / "projects").resolve()
+    pdir = (projects_root / payload.project).resolve()
+    if not str(pdir).startswith(str(projects_root) + "/"):
+        raise HTTPException(status_code=400, detail="path outside projects root")
+    if not pdir.is_dir():
+        raise HTTPException(status_code=404, detail="project not found")
+    jsonl = newest_jsonl(pdir)
+    if jsonl is None:
+        raise HTTPException(status_code=404, detail="no transcript for project")
+    cwd = last_recorded_cwd(jsonl)
+    real = os.path.realpath(cwd) if cwd else None
+    if not real or not os.path.isdir(real):
+        raise HTTPException(status_code=409, detail="session folder no longer exists")
+    if any(
+        r.status != Status.ENDED and os.path.realpath(r.project_dir) == real
+        for r in state.sessions.values()
+    ):
+        raise HTTPException(status_code=409, detail="a session is already running in that folder")
+
+    name = tag_to_state_basename(derive_tag(real, state.settings.bus.tags))
+    rename = state.settings.relaunch.rename if payload.rename is None else payload.rename
+    ok, detail = state.relaunch_parked(real, name, rename)
+    if not ok:
+        raise HTTPException(status_code=500, detail=detail)
+    return {"launched": True, "name": name, "cwd": real, "rename": rename, "detail": detail}
 
 
 class BusMessage(BaseModel):

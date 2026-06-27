@@ -6,30 +6,56 @@
 #   sudo install -m755 scripts/claude-tracked /usr/local/bin/
 #
 # Usage:
-#   claude-tracked <name> [claude args...]
+#   claude-tracked <name> [--dir <path>] [claude args...]
 #
 # Example:
 #   claude-tracked api-server --resume
+#   claude-tracked api-server --dir ~/code/api --continue   # Conductor relaunch
 #
 # Notes:
 #   - The window title becomes "claude:<name>". Conductor matches by exactly
 #     this prefix in `wmctrl -lp` output.
+#   - --dir <path> cd's into <path> before launching claude, so a relaunch with
+#     `--continue` resolves to that folder's most-recent session. It is consumed
+#     here (not passed to claude, which has no --dir flag); all other args pass
+#     straight through.
 #   - Falls back to gnome-terminal then xterm if tilix isn't installed.
 set -euo pipefail
 
-NAME="${1:?usage: claude-tracked <name> [claude args...]}"
+NAME="${1:?usage: claude-tracked <name> [--dir <path>] [claude args...]}"
 shift || true
+
+# Pull an optional `--dir <path>` out of the argument list; everything else is
+# forwarded to claude verbatim.
+DIR=""
+ARGS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dir) DIR="${2:?--dir needs a path}"; shift 2 ;;
+    *) ARGS+=("$1"); shift ;;
+  esac
+done
 
 TITLE="claude:${NAME}"
 
+# Build the in-terminal command: optionally cd first (quoted), then claude, then
+# drop to an interactive shell so the window stays open after claude exits.
+CMD="claude ${ARGS[*]:-}"
+[ -n "$DIR" ] && CMD="cd $(printf %q "$DIR") && ${CMD}"
+CMD="${CMD}; exec bash"
+
 if command -v tilix >/dev/null 2>&1; then
-  exec tilix --title "${TITLE}" -- bash -c "claude $*; exec bash"
+  # Use `-e <cmd>`, NOT `-- <cmd>`: when a tilix server is already running (the
+  # common case — you have other tilix windows open), the single-instance
+  # invocation SILENTLY IGNORES a `--`-style command and just opens a bare
+  # shell. `-e` is honored by the running server, so claude actually launches.
+  exec tilix --title "${TITLE}" -e bash -c "${CMD}"
 elif command -v gnome-terminal >/dev/null 2>&1; then
   # gnome-terminal sets the title via -t; some versions ignore it once a shell
   # rewrites PS1. Best-effort.
-  exec gnome-terminal --title="${TITLE}" -- bash -c "claude $*; exec bash"
+  exec gnome-terminal --title="${TITLE}" -- bash -c "${CMD}"
 elif command -v xterm >/dev/null 2>&1; then
-  exec xterm -T "${TITLE}" -e bash -c "claude $*; exec bash"
+  exec xterm -T "${TITLE}" -e bash -c "${CMD}"
 else
   echo "claude-tracked: no supported terminal emulator found (tilix, gnome-terminal, xterm)" >&2
   exit 127

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import psutil
 
-from .models import SessionRecord, Status
+from .models import ParkedSession, SessionRecord, Status
 from .settings import ScannerSettings
 
 log = logging.getLogger(__name__)
@@ -151,6 +151,63 @@ def last_recorded_cwd(jsonl_path: Path) -> str | None:
         if isinstance(obj, dict) and isinstance(obj.get("cwd"), str):
             cwd = obj["cwd"]
     return cwd
+
+
+def discover_parked_projects(
+    projects_root: Path,
+    tag_map: dict[str, str] | None,
+    live_cwds: set[str],
+    *,
+    limit: int = 40,
+) -> list[ParkedSession]:
+    """Project dirs with on-disk transcripts but no live Claude process — the
+    relaunch candidates for the dormant dock.
+
+    For each project dir we read its newest transcript, resolve the cwd the
+    session last ran in, and skip it when (a) a session is currently live in
+    that cwd, (b) the folder no longer exists (can't ``claude --continue`` into
+    a deleted dir), or (c) the transcript is missing/unreadable. Multiple
+    project dirs can resolve to the same cwd (re-encoded over Claude versions);
+    we keep only the most-recent per cwd. Newest first, capped at ``limit``.
+    """
+    by_cwd: dict[str, ParkedSession] = {}
+    try:
+        dirs = list(projects_root.iterdir())
+    except OSError:
+        return []
+    for d in dirs:
+        if not d.is_dir():
+            continue
+        jsonl = newest_jsonl(d)
+        if jsonl is None:
+            continue
+        cwd = last_recorded_cwd(jsonl)
+        if not cwd:
+            continue
+        real = os.path.realpath(cwd)
+        if real in live_cwds:
+            continue                      # a session is already running there
+        if not os.path.isdir(real):
+            continue                      # folder gone — nothing to relaunch into
+        try:
+            mtime = jsonl.stat().st_mtime
+        except OSError:
+            mtime = 0.0
+        prev = by_cwd.get(real)
+        if prev is not None and prev.last_activity_at >= mtime:
+            continue                      # keep the most-recent transcript per cwd
+        session_id, title, msg_count = parse_session_meta(jsonl)
+        by_cwd[real] = ParkedSession(
+            project=d.name,
+            project_dir=real,
+            title=title or os.path.basename(real.rstrip("/")) or real,
+            tag=derive_tag(real, tag_map),
+            session_id=session_id,
+            last_activity_at=mtime,
+            message_count=msg_count,
+        )
+    parked = sorted(by_cwd.values(), key=lambda p: p.last_activity_at, reverse=True)
+    return parked[:limit]
 
 
 def build_cwd_index(projects_root: Path) -> dict[str, Path]:

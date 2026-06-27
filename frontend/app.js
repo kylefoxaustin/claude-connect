@@ -8,6 +8,7 @@ import { redrawLines, animateLineFor } from "/static/lines.js";
 
 const state = {
   sessions: [],     // SessionRecord[]
+  parked: [],       // ParkedSession[] — offline, relaunchable (dormant dock)
   fadeoutSeconds: 30,
   wmctrlAvailable: false,
 
@@ -152,6 +153,7 @@ function handleMessage({ kind, payload }) {
   switch (kind) {
     case "sessions":
       state.sessions = payload.sessions || [];
+      state.parked = payload.parked || [];
       state.fadeoutSeconds = payload.fadeout_seconds ?? 30;
       state.wmctrlAvailable = !!payload.wmctrl_available;
       sessionCountEl.textContent = `${state.sessions.length} session${state.sessions.length === 1 ? "" : "s"}`;
@@ -549,6 +551,31 @@ window.requestCheck = async function requestCheck(sessionId, status) {
     }
   } catch (e) {
     console.warn("check error", e);
+  }
+};
+
+// Relaunch a parked (offline) session: open `claude --continue` in its folder in
+// a tracked terminal, then the backend injects /rc once it's up. The chip shows
+// "launching…" optimistically; it disappears on its own when the now-live
+// session arrives on the next scan. On error we surface why and let renderGrid
+// restore the chip to its normal state.
+window.requestRelaunch = async function requestRelaunch(project, projectDir) {
+  try {
+    const r = await fetch("/api/relaunch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project }),
+    });
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}));
+      console.warn("relaunch failed", r.status, body.detail || "");
+      window.alert(`Couldn't relaunch: ${body.detail || r.status}`);
+      renderGrid(state); // clear the optimistic "launching…" chip state
+    }
+  } catch (e) {
+    console.warn("relaunch error", e);
+    window.alert("Relaunch request failed — is Conductor still running?");
+    renderGrid(state);
   }
 };
 

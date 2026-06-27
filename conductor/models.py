@@ -41,6 +41,26 @@ class SessionRecord:
 
 
 @dataclass
+class ParkedSession:
+    """A previously-run session with on-disk history but no live process — a
+    candidate the dormant dock can relaunch (``claude --continue``) in its folder.
+
+    ``project`` is the encoded ``~/.claude/projects`` dir name (the path segment
+    the relaunch API takes); ``project_dir`` is the real cwd to launch into.
+    """
+    project: str                 # encoded project-dir name (API path segment)
+    project_dir: str             # real cwd to relaunch into
+    title: str
+    tag: str
+    session_id: str
+    last_activity_at: float      # unix seconds (newest transcript mtime)
+    message_count: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class BusEvent:
     timestamp: float
     source_session: str

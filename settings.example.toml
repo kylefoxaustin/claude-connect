@@ -39,3 +39,17 @@ sender_tag = "operator"
 [ui]
 # Seconds an ended session tile fades out before removal.
 end_fadeout_seconds = 30.0
+
+[relaunch]
+# Click-to-relaunch a parked (dormant) session from the bottom dock: opens
+# `claude --continue` in its folder (via scripts/claude-tracked) in a tracked
+# terminal, then types /rc into it once it's up.
+# Also inject `/rename <name>` after /rc (usually unneeded — --continue keeps the
+# prior session name):
+rename = false
+# How long to wait for the relaunched session to appear before giving up:
+appear_timeout_seconds = 40.0
+# Delay after the session appears before the first keystroke (lets the TUI draw):
+settle_seconds = 2.5
+# Gap between the /rc and /rename keystrokes:
+between_seconds = 1.0
