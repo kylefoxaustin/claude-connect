@@ -2,7 +2,7 @@
 
 **A local dashboard for watching all your Claude Code sessions at once — in your browser or as a standalone desktop app — plus an optional message bus that lets them talk to each other.**
 
-[![version: 2.5](https://img.shields.io/badge/version-2.5-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
+[![version: 2.6](https://img.shields.io/badge/version-2.6-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
 [![platform: linux](https://img.shields.io/badge/platform-linux-orange)](#requirements)
 [![safety: read--only](https://img.shields.io/badge/safety-read--only-green)](#how-it-works)
 
@@ -70,6 +70,7 @@ It's **read-only and local**. It watches Claude's `~/.claude/projects/*.jsonl` l
 - 🟢 **Status indicators** — `active` / `warm` / `idle` / `dormant` / `waiting` / `ended`
 - 💾 **Persistent layout** — drag tiles to rearrange and **resize** them (corner grip); both stick
 - 🗕 **Minimize to dock** — tuck rarely-touched sessions into a bottom dock (still live), restore with a click
+- 💤 **Dormant dock — relaunch a closed session** *(new in 2.6)* — sessions you've closed don't disappear; they wait as chips in a **💤 Dormant** shelf. **Click one to relaunch it** — reopens `claude --continue` in its original folder and auto-types `/rc`, so it comes back *resumed and remote-controlled* in a single click (✕ to dismiss)
 - ▦ **Groups** — color-code sessions into named groups; minimize a whole group to one dock chip with a rollup badge
 - 🧊 **3D view** *(new in 2.2)* — flip the whole board into a WebGL scene (Carousel / Orbital / Gallery); grouped sessions cluster in space, cards stay readable, 2D remains the default
 - 🕸 **History time-lapse** *(new in 2.3)* — replay your **entire** bus history (live log + every archive) as an animated graph: sessions appear as they first speak, mention-lines thicken with traffic, pulse size shows each message's length, and a live **force layout** drifts frequent partners together. Play/pause, scrub, 0.25×–5× speeds. **2.4** adds a **👤 Human turns** layer — weave in *your* prompts + each Claude's replies (read from the transcripts) onto the same timeline, with a node for **you** at the hub. **2.5** adds a **🔬 drill-down** — click a session and watch its *whole working relationship with you* replay: each prompt fires in, and the session **explodes outward** into the files it touched, the commands it ran, and the sub-agents it spawned (or focus a single exchange at a time)
@@ -181,6 +182,24 @@ Each tile is one live Claude session. It shows:
 ### Minimize / dock
 
 Click a tile's **`–`** to tuck it into a thin **dock** along the bottom — a tiny chip with its status dot, name, and 📬 badge. It's still monitored (the dot keeps updating; a new message still lights the badge), just out of the way. Hover for the full name; **click the chip to restore** it to its previous position and size. Minimized tiles' bus wires are hidden to keep the board clean.
+
+### 💤 Dormant dock
+
+Closing a Claude session doesn't erase it from the board. Any project folder Conductor has seen — one with transcript history but **no live process right now** — waits as a chip in a **💤 Dormant** group at the end of the bottom dock. Think of it as the *recently-closed-sessions shelf*: the work you'll come back to.
+
+```
+ ─ minimized ─┊─ 💤 DORMANT ──────────────────────────────────────────
+   ● web-app  ┊  💤 orb_slam  [other:orb_slam] ✕   💤 reshirt  ✕   …
+              ┊      └─ click ▸ claude --continue in its folder + /rc
+```
+
+**Click a dormant chip to relaunch that session.** Conductor opens **`claude --continue` in the session's original folder** (in a tracked terminal window), and once it comes up, **types `/rc` for you** — so it returns *resumed and remote-controlled*, ready to drive from the dashboard again, in one click. The chip shows "launching…", then disappears as the now-live session takes its place as a normal tile.
+
+- **Auto-discovered** — no list to maintain. It's every folder with history that isn't currently live (a session already running there is never offered), capped at the 40 most-recently-active. The **✕** on a chip dismisses it; a dismissed folder reappears on its own the next time you actually run a session there.
+- **Resumes, doesn't restart.** `claude --continue` picks up that folder's most recent conversation, so you land back where you left off — not a blank session.
+- **Timing knobs** live in the `[relaunch]` block of `settings.toml`: `settle_seconds` (how long to wait for the TUI to be ready before typing `/rc`), `rename` (also re-issue `/rename` after `/rc`), plus `appear_timeout_seconds` / `between_seconds`.
+
+> **Best on tilix** (like [click-to-focus](#reliable-terminal-focus)). Relaunch spawns through `scripts/claude-tracked` — found on your `PATH` or used straight from the repo — which uses `tilix -e` so the command runs even when a tilix server is already open. Other terminals still get the window, but the auto-`/rc` keystroke is best-effort. The `/rc` step needs `xdotool`; injection briefly **steals focus** while it types.
 
 ### Groups
 
@@ -332,6 +351,7 @@ Edit `settings.toml` (copied from `settings.example.toml`). Key knobs:
 | `bus.sender_tag`              | Your tag when you **Compose** a message (e.g. your name)      | `operator` |
 | `[bus.tags]`                  | Map a project dir → bus tag, mirroring your `bus.sh` (labels tiles **and** keys the 🕸 History human layer to the right node) | — |
 | `ui.end_fadeout_seconds`      | How long ended-session tiles linger after exit                | `30`    |
+| `[relaunch]`                  | 💤 Dormant-dock relaunch: `rename` (also issue `/rename`), `settle_seconds` (wait before typing `/rc`), `appear_timeout_seconds`, `between_seconds` | `false` / `2.5` |
 
 ---
 
@@ -346,6 +366,7 @@ Conductor keeps **no central database** — state lives in two clearly separated
 | `conductor.prefs.v1` | theme, connection-line visibility, lines-behind, flow animation, bus-bubble click policy |
 | `conductor.positions.v2` | tile positions **and sizes** |
 | `conductor.minimized.v2` | which tiles are minimized to the dock |
+| `conductor.parkedDismissed.v1` | dormant-dock chips you've dismissed (auto-cleared when that folder runs live again) |
 | `conductor.groups.v2` | your groups (names, colors, members, collapsed state) |
 | `conductor.heatmapLayout` | 🕸 History layout (clusters / ring / orbit) |
 | `conductor.heatmapHuman` | 🕸 History — whether the 👤 Human layer is on |
@@ -366,7 +387,8 @@ For the curious:
 4. The **frontend** renders one tile per session — plain JS, no build step.
 5. **BusAdapter** tails the message-bus log; the Bus tile shows recent traffic and SVG lines fan out to sessions on the bus.
 6. **WindowMapper** raises the right terminal window on click and types `/msg-check` into a session when you click its 📬 — focusing the exact tilix tile via `gdbus` + `TILIX_ID` when available, else falling back to `wmctrl`/`xdotool` title matching.
-7. **🕸 History** is served on demand: `GET /api/bus/heatmap` parses the bus log + archives into a time-ordered mention graph; `?human=1` merges in turn-level prompt/reply events from the transcripts; `GET /api/exchange` extracts one prompt's tool/file/agent fan-out for the 🔬 drill-down. All read-only, parsed off-thread.
+7. **Relaunch** (💤 dormant dock) discovers closed-but-known folders (`discover_parked_projects` — history on disk, no live process), and `POST /api/relaunch` spawns `claude --continue` there via `claude-tracked`, then polls the scanner for the new session and types `/rc` into it once its terminal is up.
+8. **🕸 History** is served on demand: `GET /api/bus/heatmap` parses the bus log + archives into a time-ordered mention graph; `?human=1` merges in turn-level prompt/reply events from the transcripts; `GET /api/exchange` extracts one prompt's tool/file/agent fan-out for the 🔬 drill-down. All read-only, parsed off-thread.
 
 Full design doc: [`CONDUCTOR_SPEC.md`](CONDUCTOR_SPEC.md)
 
