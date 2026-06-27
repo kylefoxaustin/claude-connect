@@ -369,7 +369,11 @@ body.lines-behind .lines-overlay { z-index: 0; }
 /* When the dock is visible, lift the legend above it. */
 body.has-dock .line-legend { bottom: 56px; }
 
-/* Dock for minimized tiles — a thin bar along the bottom, shown when non-empty. */
+/* Dock for minimized + dormant tiles — a bar along the bottom, shown when
+   non-empty. The chip row sits in its own band ABOVE a reserved scrollbar gutter
+   so the horizontal scrollbar (when parked chips overflow) never lands on top of
+   the chips' ✕ buttons — the "scrollbar fights the cursor" bug on WebKitGTK,
+   where the fade-in overlay scrollbar materialized right under the ✕. */
 .dock {
   position: fixed;
   left: 0;
@@ -379,12 +383,26 @@ body.has-dock .line-legend { bottom: 56px; }
   display: none;
   gap: 6px;
   align-items: center;
-  padding: 6px 12px;
+  /* Extra bottom padding lifts the chips clear of the scroll gutter. */
+  padding: 8px 12px 14px;
   background: var(--bg-panel);
   border-top: 1px solid var(--border);
   overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;                       /* Firefox / standards */
+  scrollbar-color: var(--border) transparent;
 }
 body.has-dock .dock { display: flex; }
+/* Force a thin, always-present horizontal scrollbar in a reserved gutter
+   (WebKit / the native edition's WebKitGTK) instead of the fade-in overlay that
+   overlapped the chips. Styling ::-webkit-scrollbar opts out of the overlay. */
+.dock::-webkit-scrollbar { height: 8px; }
+.dock::-webkit-scrollbar-track { background: transparent; }
+.dock::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+.dock::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
 .dock-chip {
   display: inline-flex;
   align-items: center;
@@ -431,11 +449,14 @@ body.has-dock .dock { display: flex; }
   color: var(--text-dim);
   opacity: 0.5;
   cursor: pointer;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1;
-  padding: 0 0 0 2px;
+  /* Bigger, taller hit area so the ✕ is easy to land even near the dock edge. */
+  padding: 4px 4px 4px 6px;
+  margin: -4px -2px -4px 0;
+  border-radius: 4px;
 }
-.parked-dismiss:hover { opacity: 1; color: var(--accent); }
+.parked-dismiss:hover { opacity: 1; color: var(--accent); background: var(--inset-bg); }
 .parked-chip.launching {
   cursor: default;
   border-color: var(--accent);

@@ -36,6 +36,16 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.6.1: Dormant-dock drawer no longer fights the cursor. When parked chips
+  overflowed, the bottom dock's `overflow-x: auto` drew a **fade-in overlay
+  scrollbar** (WebKitGTK native edition) right on top of the chips' ✕ buttons —
+  so reaching for a dismiss ✕ summoned the scroll thumb under the cursor (Kyle
+  caught it live). Fix in `style.css`: styled `::-webkit-scrollbar` (thin, 8px,
+  always-present in a reserved gutter — opting out of the overlay), added bottom
+  padding (`8px 12px 14px`) to lift the chip row clear of that gutter, and gave
+  `.parked-dismiss` a bigger/taller hit area + hover highlight. CSS-only, both
+  editions. Verified by Kyle in the live native window (sandbox can't render
+  WebKitGTK — see the no-live-HTTP constraint).
 - ✅ v2.6.0: 💤 Dormant dock — relaunch a closed session in one click. Sessions
   Kyle closes don't vanish: every project dir with on-disk history but no live
   process now surfaces as a chip in the bottom dock (a "💤 Dormant" group after
