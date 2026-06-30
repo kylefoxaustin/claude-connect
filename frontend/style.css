@@ -682,6 +682,12 @@ button.compose-send:disabled { opacity: 0.5; cursor: default; }
   padding: 0 4px;
   border-radius: 3px;
 }
+.settings-version {
+  font-size: 12px;
+  font-weight: normal;
+  color: var(--text-dim);
+  letter-spacing: 0.02em;
+}
 .settings-row {
   display: flex;
   align-items: center;
@@ -700,6 +706,20 @@ button.compose-send:disabled { opacity: 0.5; cursor: default; }
   padding: 3px 6px;
   font-size: 13px;
 }
+/* Drop the native control rendering so the *selected* value uses our bright
+   --text color (WebKitGTK draws native <select> text in a dim system color,
+   which made the current choice look like greyed-out placeholder). Custom caret
+   since appearance:none removes the native one. */
+.settings-row select {
+  appearance: none;
+  -webkit-appearance: none;
+  min-width: 150px;
+  padding-right: 26px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath fill='%23a9b1c2' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+}
+.settings-row select option { color: var(--text); background: var(--inset-bg); }
 .settings-row input[type="number"] { width: 64px; text-align: right; }
 .settings-row input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
 .settings-status {

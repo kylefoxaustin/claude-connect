@@ -163,6 +163,35 @@ make install-desktop
 > Tested against WebKit2 **4.0** (Ubuntu 22.04). The SVG connection-line overlays
 > and tile drag render correctly under WebKitGTK.
 
+#### Two ways to “install” it
+
+`make native` and `make install-desktop` both run the app **out of this cloned
+repo** — keep the clone around. If you'd rather treat Conductor like a normal
+installed app you can delete the clone afterward, use the staged install:
+
+| Goal | Command | Where the code lives |
+|---|---|---|
+| Run from the clone (dev) | `make native` | this repo (foreground; closing the terminal stops it) |
+| App-menu launcher, code in the clone | `make install-desktop` | this repo (don't delete it) |
+| **Installed app, clone disposable** | **`make install-app`** | `~/.local/share/conductor/` (clone can be deleted) |
+
+```bash
+# One-time, self-contained install (after the apt deps above):
+make install-app      # copies the app + builds its venv into ~/.local/share/conductor,
+                      # then adds the app-menu launcher pointing there
+# → launch "Conductor" from your app menu / dock; it runs detached (no terminal).
+# → the cloned repo is now disposable. Re-run to update; `make uninstall-app` to remove.
+```
+
+`make install-app` stages the app (code, served frontend, icon, and the
+`claude-tracked` relaunch helper) into `~/.local/share/conductor/`, builds the
+WebKitGTK venv **there**, and points the `.desktop` launcher at that copy — so it
+keeps full host access (it still spawns terminals, focuses windows, and reads
+`~/.claude`) and survives deleting the clone. It is **not** a sandboxed package
+(Flatpak/Snap would hide the host's processes from `psutil` and break session
+discovery) nor a single-file binary — it's a self-contained local install that
+behaves like an installed app.
+
 ---
 
 ## Using the Dashboard

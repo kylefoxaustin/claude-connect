@@ -258,6 +258,13 @@ function flashSettingsStatus(text) {
   setTimeout(() => { settingsStatus.style.opacity = "0"; }, 1500);
 }
 
+// Show the running version (matches the release tag) in the settings header —
+// fetched once at load from /api/health.
+fetch("/api/health").then((r) => (r.ok ? r.json() : null)).then((h) => {
+  const el = document.getElementById("settings-version");
+  if (el && h && h.version) el.textContent = `v${h.version}`;
+}).catch(() => {});
+
 document.getElementById("settings-btn").addEventListener("click", async () => {
   // Appearance from local prefs.
   setTheme.value = prefs.theme;
