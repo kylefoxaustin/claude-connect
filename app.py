@@ -13,9 +13,18 @@ Run:  python app.py     (use the system-site-packages venv; see README)
 
 from __future__ import annotations
 
+import os
 import socket
+import sys
 import threading
 import time
+
+# Make this script's own directory win on sys.path BEFORE importing conductor, so
+# a staged install (`make install-app`, which copies the app into
+# ~/.local/share/conductor/) imports its co-located conductor/ and serves its own
+# frontend/ regardless of the launch cwd — keeping the staged copy independent of
+# the original cloned repo (so the clone is safe to delete).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import uvicorn
 import webview

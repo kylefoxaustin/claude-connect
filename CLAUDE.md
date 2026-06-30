@@ -36,6 +36,28 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.7.0: `make install-app` (staged desktop install) + settings polish.
+  **Staged install**: `make install-app` copies the app (entry, backend, served
+  frontend, icon, and the `claude-tracked` relaunch helper) into
+  `~/.local/share/conductor/`, builds the WebKitGTK venv THERE, and points the
+  `.desktop` launcher at that copy — so the **cloned repo becomes disposable**
+  (the prior `install-desktop` runs out of the clone). `app.py` now
+  `sys.path.insert(0, <its dir>)` before importing `conductor`, so the staged
+  copy imports its co-located package + serves its own `frontend/` regardless of
+  launch cwd or a stray clone editable — verified clone-independent (resolves to
+  the staged home from a foreign cwd). Overridable `APP_HOME` / `APPLICATIONS_DIR`
+  (tested against a scratch dir end-to-end: copy → `--system-site-packages` venv
+  → editable `pip install` → `.desktop` gen). `make uninstall-app` removes it.
+  NOT a sandboxed package (Flatpak/Snap would hide host processes from `psutil`
+  and break session discovery — Conductor is a host-automation tool) nor a
+  single-file binary; it's a self-contained local install. Design fork chosen by
+  Kyle over AppImage (staged = 90% of the benefit, ~zero new tooling). README
+  "Two ways to install it" table added. **Settings polish**: the settings
+  dropdowns showed their value in WebKitGTK's dim native-control color (looked
+  like unset placeholder) — `appearance: none` + custom caret so the current
+  choice renders in bright `--text`; and a **version label** in the settings
+  header (`#settings-version`, fetched from `/api/health`, matches the release
+  tag). Backend untouched for settings; both editions.
 - ✅ v2.6.1: Dormant-dock drawer no longer fights the cursor. When parked chips
   overflowed, the bottom dock's `overflow-x: auto` drew a **fade-in overlay
   scrollbar** (WebKitGTK native edition) right on top of the chips' ✕ buttons —
