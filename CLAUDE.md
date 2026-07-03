@@ -36,6 +36,21 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.7.1: `/rc` on relaunch is now opt-in (default off) + README fresh-eyes
+  pass. The dormant-dock relaunch auto-injected `/rc` on every session — but
+  that's Claude Code's `/remote-control` (drive the session from a browser/phone;
+  needs a qualifying plan + `/login`), an opinionated side effect Kyle had
+  forgotten was there (it came from his original spec: "enter /rc so its remote
+  controlled"). Now `[relaunch].rc` (default `false`) gates it, alongside the
+  existing `rename` — with both off (the default) relaunch is a clean
+  `claude --continue` with **zero keystroke injection** (`_bootstrap_relaunched`
+  short-circuits when `not cmds`, and `relaunch_parked` doesn't even schedule it).
+  `rc`/`rename` are settings + per-request `/api/relaunch` overrides. **README
+  fresh-eyes pass** (read as a dev new to the ecosystem): version badge → 2.7,
+  defined `/rc` (was undefined jargon), fixed the "read-only" contradiction
+  (→ "read-only *toward Claude*"; the few actions are external + user-triggered),
+  glossed "tilix", "binary"→"app", added the `install-app` feature bullet,
+  "on the tunnel"→"on the bus". Backend + docs, both editions.
 - ✅ v2.7.0: `make install-app` (staged desktop install) + settings polish.
   **Staged install**: `make install-app` copies the app (entry, backend, served
   frontend, icon, and the `claude-tracked` relaunch helper) into

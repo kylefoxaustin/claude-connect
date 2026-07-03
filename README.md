@@ -2,7 +2,7 @@
 
 **A local dashboard for watching all your Claude Code sessions at once — in your browser or as a standalone desktop app — plus an optional message bus that lets them talk to each other.**
 
-[![version: 2.6](https://img.shields.io/badge/version-2.6-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
+[![version: 2.7](https://img.shields.io/badge/version-2.7-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
 [![platform: linux](https://img.shields.io/badge/platform-linux-orange)](#requirements)
 [![safety: read--only](https://img.shields.io/badge/safety-read--only-green)](#how-it-works)
 
@@ -16,7 +16,7 @@
 └────────────────────────────────┘  └────────────────────────────────┘
 ```
 
-> 💡 **Heads up on names:** the repo is `claude-connect`; the dashboard binary is `conductor`. Same project — you'll see both names throughout.
+> 💡 **Heads up on names:** the repo is `claude-connect`; the app (and its Python package) is `conductor`. Same project — you'll see both names throughout.
 
 ![The 2D dashboard — one tile per Claude session, a central Bus tile, and animated wires showing cross-session traffic (solid = active, dashed = passive).](assets/screenshot-2d.png)
 
@@ -57,7 +57,7 @@ If you're like us, you're running 3, 4, or 8 Claude Code sessions at once across
 - **See everything at a glance.** One tile per live Claude session — status dot, live preview of what it's saying, time since last activity. Click a tile to jump to that terminal.
 - **Let your Claudes talk.** Wire up the optional message bus and your sessions can `/msg-send` each other across projects. The dashboard shows the traffic with animated connection lines.
 
-It's **read-only and local**. It watches Claude's `~/.claude/projects/*.jsonl` logs and process state — it never modifies Claude itself, and it only binds to `127.0.0.1`.
+It's **local, and read-only toward Claude**. It watches Claude's `~/.claude/projects/*.jsonl` logs and process state — it never edits your files or conversations, and it binds only to `127.0.0.1`. The few *actions* it can take are **external and user-triggered**: raise a terminal window, type `/msg-check` into a session, append to the separate bus log, or relaunch a closed session — never a silent write to Claude's own state.
 
 ---
 
@@ -70,8 +70,9 @@ It's **read-only and local**. It watches Claude's `~/.claude/projects/*.jsonl` l
 - 🟢 **Status indicators** — `active` / `warm` / `idle` / `dormant` / `waiting` / `ended`
 - 💾 **Persistent layout** — drag tiles to rearrange and **resize** them (corner grip); both stick
 - 🗕 **Minimize to dock** — tuck rarely-touched sessions into a bottom dock (still live), restore with a click
-- 💤 **Dormant dock — relaunch a closed session** *(new in 2.6)* — sessions you've closed don't disappear; they wait as chips in a **💤 Dormant** shelf. **Click one to relaunch it** — reopens `claude --continue` in its original folder and auto-types `/rc`, so it comes back *resumed and remote-controlled* in a single click (✕ to dismiss)
+- 💤 **Dormant dock — relaunch a closed session** *(new in 2.6)* — sessions you've closed don't disappear; they wait as chips in a **💤 Dormant** shelf. **Click one to relaunch it** — reopens `claude --continue` in its original folder, a clean resume in a single click (✕ to dismiss). Optional opt-ins can also auto-run `/rc` (Claude Code's `/remote-control`) or `/rename` afterwards
 - ▦ **Groups** — color-code sessions into named groups; minimize a whole group to one dock chip with a rollup badge
+- 🖥️ **Install as a desktop app** *(new in 2.7)* — `make install-app` stages a self-contained install into `~/.local/share/conductor/` with an app-menu launcher, so it runs like a normal installed app and the cloned repo becomes disposable
 - 🧊 **3D view** *(new in 2.2)* — flip the whole board into a WebGL scene (Carousel / Orbital / Gallery); grouped sessions cluster in space, cards stay readable, 2D remains the default
 - 🕸 **History time-lapse** *(new in 2.3)* — replay your **entire** bus history (live log + every archive) as an animated graph: sessions appear as they first speak, mention-lines thicken with traffic, pulse size shows each message's length, and a live **force layout** drifts frequent partners together. Play/pause, scrub, 0.25×–5× speeds. **2.4** adds a **👤 Human turns** layer — weave in *your* prompts + each Claude's replies (read from the transcripts) onto the same timeline, with a node for **you** at the hub. **2.5** adds a **🔬 drill-down** — click a session and watch its *whole working relationship with you* replay: each prompt fires in, and the session **explodes outward** into the files it touched, the commands it ran, and the sub-agents it spawned (or focus a single exchange at a time)
 - 🔀 **Active/Passive bus control** — click a tile's tag chip to toggle whether it's auto-notified of bus traffic
@@ -86,7 +87,7 @@ It's **read-only and local**. It watches Claude's `~/.claude/projects/*.jsonl` l
 - **Python 3.10+**
 - **`wmctrl` and `xdotool`** for terminal focus and `/msg-check` injection
   - Both optional — without them, the focus and 📬 buttons just no-op
-  - **Tilix users** also get exact-tile focus via `gdbus` (ships with GLib, already present on any GTK desktop) — see [Reliable Terminal Focus](#reliable-terminal-focus)
+  - **[Tilix](https://gnunn1.github.io/tilix-web/) users** (Tilix is a tiling terminal emulator) also get exact-tile focus via `gdbus` (ships with GLib, already present on any GTK desktop) — see [Reliable Terminal Focus](#reliable-terminal-focus)
 - **Native App Edition only:** system WebKitGTK (`python3-gi`, `gir1.2-webkit2-4.0`, `libwebkit2gtk-4.0-37`) — see [Native App Edition](#native-app-edition-ubuntu). The Web Browser Edition needs none of this.
 
 ---
@@ -219,16 +220,16 @@ Closing a Claude session doesn't erase it from the board. Any project folder Con
 ```
  ─ minimized ─┊─ 💤 DORMANT ──────────────────────────────────────────
    ● web-app  ┊  💤 orb_slam  [other:orb_slam] ✕   💤 reshirt  ✕   …
-              ┊      └─ click ▸ claude --continue in its folder + /rc
+              ┊      └─ click ▸ claude --continue in its folder
 ```
 
-**Click a dormant chip to relaunch that session.** Conductor opens **`claude --continue` in the session's original folder** (in a tracked terminal window), and once it comes up, **types `/rc` for you** — so it returns *resumed and remote-controlled*, ready to drive from the dashboard again, in one click. The chip shows "launching…", then disappears as the now-live session takes its place as a normal tile.
+**Click a dormant chip to relaunch that session.** Conductor opens **`claude --continue` in the session's original folder** (in a tracked terminal window) — a clean resume that picks up right where you left off. The chip shows "launching…", then disappears as the now-live session takes its place as a normal tile.
 
 - **Auto-discovered** — no list to maintain. It's every folder with history that isn't currently live (a session already running there is never offered), capped at the 40 most-recently-active. The **✕** on a chip dismisses it; a dismissed folder reappears on its own the next time you actually run a session there.
 - **Resumes, doesn't restart.** `claude --continue` picks up that folder's most recent conversation, so you land back where you left off — not a blank session.
-- **Timing knobs** live in the `[relaunch]` block of `settings.toml`: `settle_seconds` (how long to wait for the TUI to be ready before typing `/rc`), `rename` (also re-issue `/rename` after `/rc`), plus `appear_timeout_seconds` / `between_seconds`.
+- **Optional keystrokes after relaunch** (both **off by default**, in the `[relaunch]` block of `settings.toml`): `rc` auto-runs **`/rc`** — Claude Code's `/remote-control`, which makes the resumed session drivable from a browser/phone (needs a qualifying plan + `/login`); `rename` re-issues `/rename` (usually unneeded — `--continue` keeps the prior name). With both off, relaunch types nothing. Timing knobs: `settle_seconds` (wait for the TUI before typing), `appear_timeout_seconds`, `between_seconds`.
 
-> **Best on tilix** (like [click-to-focus](#reliable-terminal-focus)). Relaunch spawns through `scripts/claude-tracked` — found on your `PATH` or used straight from the repo — which uses `tilix -e` so the command runs even when a tilix server is already open. Other terminals still get the window, but the auto-`/rc` keystroke is best-effort. The `/rc` step needs `xdotool`; injection briefly **steals focus** while it types.
+> When `rc`/`rename` are enabled, keystroke injection is **best on tilix** (like [click-to-focus](#reliable-terminal-focus)) and needs `xdotool` — it briefly **steals focus** while typing. Relaunch itself (the spawn) works anywhere: it goes through `scripts/claude-tracked` — found on your `PATH` or used straight from the repo — which uses `tilix -e` so the command runs even when a tilix server is already open.
 
 ### Groups
 
@@ -343,7 +344,7 @@ Claude Connect works fully without it. Session discovery comes from OS process s
 - ✅ An un-wired Claude still appears as a normal tile — status, preview, message count, click-to-focus all work
 - ❌ It just won't show a 📬 badge or a connection line to the Bus tile
 
-This is actually useful — if you wire up some sessions and leave others out, the dashboard shows at a glance which ones are on the tunnel and which are silent.
+This is actually useful — if you wire up some sessions and leave others out, the dashboard shows at a glance which ones are on the bus and which are silent.
 
 ---
 
@@ -380,7 +381,7 @@ Edit `settings.toml` (copied from `settings.example.toml`). Key knobs:
 | `bus.sender_tag`              | Your tag when you **Compose** a message (e.g. your name)      | `operator` |
 | `[bus.tags]`                  | Map a project dir → bus tag, mirroring your `bus.sh` (labels tiles **and** keys the 🕸 History human layer to the right node) | — |
 | `ui.end_fadeout_seconds`      | How long ended-session tiles linger after exit                | `30`    |
-| `[relaunch]`                  | 💤 Dormant-dock relaunch: `rename` (also issue `/rename`), `settle_seconds` (wait before typing `/rc`), `appear_timeout_seconds`, `between_seconds` | `false` / `2.5` |
+| `[relaunch]`                  | 💤 Dormant-dock relaunch (all opt-in): `rc` (auto-run `/rc` remote-control), `rename` (auto-`/rename`), `settle_seconds` (wait before typing), `appear_timeout_seconds`, `between_seconds` | `false` / `2.5` |
 
 ---
 
