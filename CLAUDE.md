@@ -36,6 +36,25 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.8.0: 🧊 Rotate the History graph in 3D. A `🧊 3D` toggle in the History
+  overlay spins the whole mention graph in space (Kyle's idea — "fun to rotate
+  the ring to see how the clusters are set up"). Deliberately **not** the
+  rejected whole-board *tilt* and **not** Three.js: a hand-rolled **SVG 3D
+  projection** keeps `heatmap.js` pure-SVG/dependency-free. Each node gains a real
+  `z`; a `project()` applies yaw (spin) + pitch (tilt) + weak perspective
+  (`CAM_D`) and returns screen `sx,sy,scale,depth`. **project() is identity when
+  3D is off AND at rest with a flat layout**, so the 2D graph is byte-for-byte
+  unchanged (verified). Per-layout depth: **ring** stays flat (spin/tilt reveals
+  crossings), **orbit** lifts into a **dome** (`tz = √(R²−rad²)`, loud=centered=
+  high), **clusters** gains a 3rd force axis in `forceStep` (3D repulsion/spring +
+  z-gravity toward the z=0 slab). Drag-to-orbit (window pointer handlers, pitch
+  clamped so it never flips edge-on; a moved-drag suppresses the node-click so
+  orbiting doesn't drill in) + a gentle idle **auto-spin** (`SPIN_RATE`, paused
+  while dragging). Depth cues: near=big/bright, far=small/dim (`depthFade`);
+  radius/edge-width/pulse scale by perspective. No depth-sorting of the DOM (small
+  translucent nodes read fine; a known v1 tradeoff). Toggle persists (`LS_3D`);
+  2D stays the default. Frontend only, lazily-imported overlay (a throw can't
+  touch the 2D board), both editions.
 - ✅ v2.7.1: `/rc` on relaunch is now opt-in (default off) + README fresh-eyes
   pass. The dormant-dock relaunch auto-injected `/rc` on every session — but
   that's Claude Code's `/remote-control` (drive the session from a browser/phone;
