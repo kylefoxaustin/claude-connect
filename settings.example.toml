@@ -43,9 +43,15 @@ end_fadeout_seconds = 30.0
 [relaunch]
 # Click-to-relaunch a parked (dormant) session from the bottom dock: opens
 # `claude --continue` in its folder (via scripts/claude-tracked) in a tracked
-# terminal, then types /rc into it once it's up.
-# Also inject `/rename <name>` after /rc (usually unneeded — --continue keeps the
-# prior session name):
+# terminal. By default that's the whole action — a clean resume, no keystrokes.
+#
+# Optionally, once the session is up, inject:
+#   rc     — `/rc` = Claude Code's /remote-control (makes the session drivable
+#            from a browser/phone; needs a qualifying plan + /login). Off by
+#            default; turn on if you want relaunched sessions remote-controllable.
+#   rename — `/rename <name>` after /rc (usually unneeded — --continue keeps the
+#            prior session name).
+rc = false
 rename = false
 # How long to wait for the relaunched session to appear before giving up:
 appear_timeout_seconds = 40.0

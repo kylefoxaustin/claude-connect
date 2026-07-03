@@ -289,10 +289,12 @@ class AppState:
             return [str(repo)]
         return None
 
-    def relaunch_parked(self, cwd: str, name: str, rename: bool) -> tuple[bool, str]:
+    def relaunch_parked(self, cwd: str, name: str, rc: bool, rename: bool) -> tuple[bool, str]:
         """Spawn ``claude-tracked <name> --dir <cwd> --continue`` in a new tracked
-        terminal, then schedule the post-launch ``/rc`` (+ optional ``/rename``)
-        injection once the session appears. Returns ``(ok, detail)``."""
+        terminal. If any post-launch keystrokes are enabled (``rc`` → ``/rc``,
+        ``rename`` → ``/rename``), schedule them to inject once the session
+        appears; otherwise it's a clean resume with no injection. Returns
+        ``(ok, detail)``."""
         base = self._claude_tracked_cmd()
         if base is None:
             return False, "claude-tracked not found (install scripts/claude-tracked to PATH)"
@@ -308,17 +310,22 @@ class AppState:
         except Exception as e:  # noqa: BLE001
             log.exception("relaunch spawn failed: %s", e)
             return False, f"spawn failed: {e}"
-        asyncio.create_task(self._bootstrap_relaunched(cwd, name, rename))
+        if rc or rename:
+            asyncio.create_task(self._bootstrap_relaunched(cwd, name, rc, rename))
         return True, "launched"
 
-    async def _bootstrap_relaunched(self, cwd: str, name: str, rename: bool) -> None:
-        """Wait for the relaunched Claude to come up, then type ``/rc`` (and
-        ``/rename <name>`` when enabled) into it.
+    async def _bootstrap_relaunched(self, cwd: str, name: str, rc: bool, rename: bool) -> None:
+        """Wait for the relaunched Claude to come up, then inject the enabled
+        keystrokes — ``/rc`` (remote-control) when ``rc`` is on and/or
+        ``/rename <name>`` when ``rename`` is on.
 
         This is the flaky part of the feature: keystrokes only land once the TUI
         is drawn and at a prompt. We poll the scanner for the new live session in
         that cwd (with a terminal window), then give it a settle delay before the
         first keystroke. Injection steals focus by design (see windows.py)."""
+        cmds = (["/rc"] if rc else []) + ([f"/rename {name}"] if rename else [])
+        if not cmds:
+            return
         cfg = self.settings.relaunch
         target = os.path.realpath(cwd)
         deadline = time.time() + cfg.appear_timeout_seconds
@@ -345,7 +352,6 @@ class AppState:
 
         # Let the TUI finish drawing its prompt before typing.
         await asyncio.sleep(cfg.settle_seconds)
-        cmds = ["/rc"] + ([f"/rename {name}"] if rename else [])
         for i, text in enumerate(cmds):
             if i:
                 await asyncio.sleep(cfg.between_seconds)
@@ -582,13 +588,16 @@ async def get_exchange(request: Request, project: str, session: str, uuid: str) 
 
 class RelaunchRequest(BaseModel):
     project: str                 # encoded project-dir name (from the parked list)
+    rc: bool | None = None       # override settings.relaunch.rc for this click
     rename: bool | None = None   # override settings.relaunch.rename for this click
 
 
 @app.post("/api/relaunch")
 async def relaunch(payload: RelaunchRequest, request: Request) -> dict[str, Any]:
     """Relaunch a parked (offline) session: open ``claude --continue`` in its
-    folder in a tracked terminal, then inject ``/rc`` (the dormant-dock action).
+    folder in a tracked terminal. Optionally inject ``/rc`` and/or ``/rename``
+    afterwards (both opt-in via ``[relaunch]`` settings; default is a clean
+    resume with no injection).
 
     Resolves the encoded project dir → its newest transcript → the cwd that
     session last ran in, validates the dir is inside the projects root and still
@@ -617,11 +626,12 @@ async def relaunch(payload: RelaunchRequest, request: Request) -> dict[str, Any]
         raise HTTPException(status_code=409, detail="a session is already running in that folder")
 
     name = tag_to_state_basename(derive_tag(real, state.settings.bus.tags))
+    rc = state.settings.relaunch.rc if payload.rc is None else payload.rc
     rename = state.settings.relaunch.rename if payload.rename is None else payload.rename
-    ok, detail = state.relaunch_parked(real, name, rename)
+    ok, detail = state.relaunch_parked(real, name, rc, rename)
     if not ok:
         raise HTTPException(status_code=500, detail=detail)
-    return {"launched": True, "name": name, "cwd": real, "rename": rename, "detail": detail}
+    return {"launched": True, "name": name, "cwd": real, "rc": rc, "rename": rename, "detail": detail}
 
 
 class BusMessage(BaseModel):

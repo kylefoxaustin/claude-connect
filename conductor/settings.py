@@ -73,16 +73,20 @@ class UISettings:
 class RelaunchSettings:
     """Click-to-relaunch a parked (dormant) session from the dock.
 
-    Spawns ``claude-tracked <name> --dir <cwd> --continue`` then, once the new
-    session appears and settles, types ``/rc`` into it (and ``/rename`` when
-    ``rename`` is on — usually unneeded since ``--continue`` keeps the prior
-    name). The settle/gap knobs cover the flaky part: keystrokes only land once
-    Claude's TUI is up at a prompt.
+    Spawns ``claude-tracked <name> --dir <cwd> --continue``. By default that's
+    all — a clean resume. Optionally, once the new session appears and settles,
+    it injects keystrokes: ``/rc`` (Claude Code's ``/remote-control``, so the
+    session is drivable from a browser/phone — off by default) when ``rc`` is on,
+    and ``/rename <name>`` when ``rename`` is on (usually unneeded since
+    ``--continue`` keeps the prior name). With both off, nothing is typed. The
+    settle/gap knobs cover the flaky part: keystrokes only land once Claude's TUI
+    is up at a prompt.
     """
+    rc: bool = False                   # inject `/rc` (Claude Code remote-control) on relaunch
     rename: bool = False               # also inject `/rename <name>` after `/rc`
     appear_timeout_seconds: float = 40.0   # how long to wait for the new session
     settle_seconds: float = 2.5            # TUI draw delay before first keystroke
-    between_seconds: float = 1.0           # gap between /rc and /rename
+    between_seconds: float = 1.0           # gap between injected keystrokes
 
 
 @dataclass
@@ -143,6 +147,7 @@ def dump_settings(settings: Settings, path: Path | str | None = None) -> None:
         },
         "ui": {"end_fadeout_seconds": settings.ui.end_fadeout_seconds},
         "relaunch": {
+            "rc": settings.relaunch.rc,
             "rename": settings.relaunch.rename,
             "appear_timeout_seconds": settings.relaunch.appear_timeout_seconds,
             "settle_seconds": settings.relaunch.settle_seconds,
