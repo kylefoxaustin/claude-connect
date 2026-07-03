@@ -22,6 +22,12 @@ const SPEEDS = [0.25, 0.5, 1, 2, 5];
 const LAYOUTS = [["clusters", "Clusters"], ["ring", "Ring"], ["orbit", "Orbit"]];
 const LS_LAYOUT = "conductor.heatmapLayout";
 const LS_HUMAN = "conductor.heatmapHuman";
+const LS_3D = "conductor.heatmap3d";
+// 3D rotation: weak perspective (camera distance) + gentle idle auto-spin.
+const CAM_D = 1700;          // perspective distance; larger = subtler foreshortening
+const SPIN_RATE = 0.18;      // idle auto-spin, radians/sec of yaw
+const PITCH_LIMIT = 1.35;    // clamp drag pitch so the plane never flips past edge-on
+const START_PITCH = -0.5;    // initial tilt when 3D turns on (so it reads as 3D at once)
 
 let root = null;
 let raf = 0;
@@ -34,6 +40,7 @@ function hueFor(tag) {
 }
 const bare = (t) => t.replace(/^\[/, "").replace(/\]$/, "").replace(/^other:/, "");
 const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const svgEl = (n) => document.createElementNS("http://www.w3.org/2000/svg", n);
 
 function fmtClock(ts) {
@@ -67,6 +74,7 @@ export async function activate() {
     </svg>
     <div class="hm-controls">
       <div class="hm-layouts" id="hm-layouts" title="Arrange the sessions"></div>
+      <button class="hm-3d" id="hm-3d" title="Rotate the graph in 3D — drag to orbit, it idles with a slow spin">🧊 3D</button>
       <button class="hm-human" id="hm-human" title="Weave in human ↔ Claude turns (your prompts + replies)">👤 Human</button>
       <button class="hm-play" id="hm-play" title="Play / pause">⏸</button>
       <input type="range" class="hm-scrub" id="hm-scrub" min="0" max="1000" value="0" />
@@ -89,6 +97,8 @@ export function deactivate() {
   raf = 0;
   if (onResize) { window.removeEventListener("resize", onResize); onResize = null; }
   if (root._escClose) document.removeEventListener("keydown", root._escClose);
+  if (root._orbitMove) window.removeEventListener("pointermove", root._orbitMove);
+  if (root._orbitUp) window.removeEventListener("pointerup", root._orbitUp);
   root.remove();
   root = null;
 }
@@ -112,6 +122,14 @@ function run() {
   try { const m = localStorage.getItem(LS_LAYOUT); if (m && LAYOUTS.some((l) => l[0] === m)) mode = m; } catch (_) {}
   let humanOn = false;
   try { humanOn = localStorage.getItem(LS_HUMAN) === "1"; } catch (_) {}
+
+  // ---- 3D rotation state ------------------------------------------------
+  // threeD off ⇒ project() is identity ⇒ the 2D graph is byte-for-byte unchanged.
+  let threeD = false;
+  try { threeD = localStorage.getItem(LS_3D) === "1"; } catch (_) {}
+  let yaw = 0, pitch = threeD ? START_PITCH : 0;
+  let orbitDrag = false, orbitMoved = false;
+  let dragX0 = 0, dragY0 = 0, yaw0 = 0, pitch0 = 0;
 
   // ---- swappable graph state (reassigned by rebuild) --------------------
   let nodes = new Map();
@@ -152,6 +170,10 @@ function run() {
       }
       nd.tx = cx + rad * Math.cos(a);
       nd.ty = cy + rad * Math.sin(a);
+      // Depth target (used only in 3D): ring stays flat (spin/tilt reveals it);
+      // orbit lifts into a dome — loud sessions (small radius, centered) rise
+      // toward the top, quiet ones sit on the rim.
+      nd.tz = mode === "orbit" ? Math.sqrt(Math.max(0, R * R - rad * rad)) * 0.9 : 0;
       if (mode === "clusters") {
         nd.ldx = 10; nd.ldy = -2; nd.lanchor = "start";
       } else {
@@ -172,39 +194,55 @@ function run() {
   // Live force-directed step (Clusters mode). ~30-40 nodes → trivially cheap.
   function forceStep() {
     const REP = 7000, SPRING = 0.0012, GRAV = 0.006, DAMP = 0.80, REST = 78, MAXV = 22;
+    // In 3D, the sim gains a real z axis so clumps spread into depth; the z
+    // gravity pulls gently toward the z=0 plane so it stays a slab, not a sphere.
+    const D3 = threeD, ZLIM = R * 0.7, ZGRAV = 0.012;
     const live = [];
-    nodes.forEach((nd) => { nd.fx = 0; nd.fy = 0; if (nd.revealed) live.push(nd); });
+    nodes.forEach((nd) => { nd.fx = 0; nd.fy = 0; nd.fz = 0; if (nd.revealed) live.push(nd); });
     for (let i = 0; i < live.length; i++) {
       for (let j = i + 1; j < live.length; j++) {
         const A = live[i], B = live[j];
-        let dx = A.x - B.x, dy = A.y - B.y;
-        let d2 = dx * dx + dy * dy; if (d2 < 1) { d2 = 1; dx = 0.5; }
-        const d = Math.sqrt(d2), rep = REP / d2, ux = dx / d, uy = dy / d;
+        let dx = A.x - B.x, dy = A.y - B.y, dz = D3 ? A.z - B.z : 0;
+        let d2 = dx * dx + dy * dy + dz * dz; if (d2 < 1) { d2 = 1; dx = 0.5; }
+        const d = Math.sqrt(d2), rep = REP / d2, ux = dx / d, uy = dy / d, uz = dz / d;
         A.fx += ux * rep; A.fy += uy * rep; B.fx -= ux * rep; B.fy -= uy * rep;
+        if (D3) { A.fz += uz * rep; B.fz -= uz * rep; }
       }
     }
     edges.forEach((e) => {
       if (e.weight <= 0 || !e.a.revealed || !e.b.revealed) return;
-      let dx = e.b.x - e.a.x, dy = e.b.y - e.a.y;
-      const d = Math.sqrt(dx * dx + dy * dy) || 1;
+      let dx = e.b.x - e.a.x, dy = e.b.y - e.a.y, dz = D3 ? e.b.z - e.a.z : 0;
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
       const force = SPRING * Math.log(1 + e.weight) * (d - REST);
-      const ux = dx / d, uy = dy / d;
+      const ux = dx / d, uy = dy / d, uz = dz / d;
       e.a.fx += ux * force; e.a.fy += uy * force;
       e.b.fx -= ux * force; e.b.fy -= uy * force;
+      if (D3) { e.a.fz += uz * force; e.b.fz -= uz * force; }
     });
     const m = 44;
     live.forEach((nd) => {
       nd.fx += (cx - nd.x) * GRAV; nd.fy += (cy - nd.y) * GRAV;
-      nd.vx = Math.max(-MAXV, Math.min(MAXV, (nd.vx + nd.fx) * DAMP));
-      nd.vy = Math.max(-MAXV, Math.min(MAXV, (nd.vy + nd.fy) * DAMP));
-      nd.x = Math.max(m, Math.min(W - m, nd.x + nd.vx));
-      nd.y = Math.max(m, Math.min(H - m, nd.y + nd.vy));
+      nd.vx = clamp((nd.vx + nd.fx) * DAMP, -MAXV, MAXV);
+      nd.vy = clamp((nd.vy + nd.fy) * DAMP, -MAXV, MAXV);
+      nd.x = clamp(nd.x + nd.vx, m, W - m);
+      nd.y = clamp(nd.y + nd.vy, m, H - m);
+      if (D3) {
+        nd.fz += (0 - nd.z) * ZGRAV;
+        nd.vz = clamp((nd.vz + nd.fz) * DAMP, -MAXV, MAXV);
+        nd.z = clamp(nd.z + nd.vz, -ZLIM, ZLIM);
+      } else if (nd.z !== 0) {
+        nd.z += (0 - nd.z) * 0.12;  // ease back to flat when leaving 3D
+      }
     });
   }
 
   function stepPositions() {
-    if (mode === "clusters") forceStep();
-    else nodes.forEach((nd) => { nd.x += (nd.tx - nd.x) * 0.12; nd.y += (nd.ty - nd.y) * 0.12; });
+    if (mode === "clusters") { forceStep(); return; }
+    nodes.forEach((nd) => {
+      nd.x += (nd.tx - nd.x) * 0.12;
+      nd.y += (nd.ty - nd.y) * 0.12;
+      nd.z += ((threeD ? nd.tz : 0) - nd.z) * 0.12;
+    });
   }
 
   function setMode(next) {
@@ -286,22 +324,46 @@ function run() {
 
   function edgeWidth(w) { return 0.6 + Math.log2(1 + w) * 1.15; }
 
+  // Project a node's world (x,y,z) to screen (sx,sy) with a scale + depth.
+  // Identity when 3D is off, so the 2D graph is untouched. Rotation is yaw
+  // (around the vertical axis, the spin) then pitch (tilt toward the viewer),
+  // then a weak perspective divide.
+  function project(nd) {
+    if (!threeD) { nd.sx = nd.x; nd.sy = nd.y; nd.scale = 1; nd.depth = 0; return; }
+    const px = nd.x - cx, py = nd.y - cy, pz = nd.z;
+    const cyaw = Math.cos(yaw), syaw = Math.sin(yaw);
+    const x1 = px * cyaw + pz * syaw;
+    const z1 = -px * syaw + pz * cyaw;
+    const cpit = Math.cos(pitch), spit = Math.sin(pitch);
+    const y2 = py * cpit - z1 * spit;
+    const z2 = py * spit + z1 * cpit;
+    const scale = CAM_D / (CAM_D - z2);
+    nd.sx = cx + x1 * scale;
+    nd.sy = cy + y2 * scale;
+    nd.scale = scale;
+    nd.depth = z2;   // + = toward camera; used to dim far nodes/edges
+  }
+  // Far nodes dim, near nodes brighten (subtle) — the main non-perspective depth cue.
+  function depthFade(z) { return threeD ? clamp(0.62 + 0.38 * (z / (R * 0.9)), 0.32, 1) : 1; }
+
   function render() {
     if (drillOpen || !events.length) return; // drill-down overlays the timeline
     stepPositions();
+    nodes.forEach(project);
     nodes.forEach((nd) => {
       if (!nd.circle) return;
       const hot = nd.lastActive >= 0 ? Math.max(0, 1 - (f - nd.lastActive) / GLOW_WINDOW) : 0;
       const baseR = nd.isYou ? 8 : 4 + Math.log2(1 + nd.count) * 0.9;
       const bump = hot * (2.5 + nd.lastSize * 8);
-      nd.circle.setAttribute("cx", nd.x.toFixed(1));
-      nd.circle.setAttribute("cy", nd.y.toFixed(1));
-      nd.circle.setAttribute("r", (baseR + bump).toFixed(2));
-      nd.circle.style.opacity = nd.revealed ? (0.55 + 0.45 * hot).toFixed(3) : 0;
-      nd.label.setAttribute("x", (nd.x + nd.ldx).toFixed(1));
-      nd.label.setAttribute("y", (nd.y + nd.ldy).toFixed(1));
+      const fade = depthFade(nd.depth);
+      nd.circle.setAttribute("cx", nd.sx.toFixed(1));
+      nd.circle.setAttribute("cy", nd.sy.toFixed(1));
+      nd.circle.setAttribute("r", ((baseR + bump) * nd.scale).toFixed(2));
+      nd.circle.style.opacity = nd.revealed ? ((0.55 + 0.45 * hot) * fade).toFixed(3) : 0;
+      nd.label.setAttribute("x", (nd.sx + nd.ldx).toFixed(1));
+      nd.label.setAttribute("y", (nd.sy + nd.ldy).toFixed(1));
       nd.label.setAttribute("text-anchor", nd.lanchor);
-      nd.label.style.opacity = nd.revealed ? (0.4 + 0.6 * hot).toFixed(3) : 0;
+      nd.label.style.opacity = nd.revealed ? ((0.4 + 0.6 * hot) * fade).toFixed(3) : 0;
     });
 
     gPulses.textContent = "";
@@ -311,20 +373,21 @@ function run() {
     edges.forEach((e) => {
       if (e.weight <= 0) { e.line.setAttribute("stroke-opacity", 0); return; }
       const hot = e.lastTouch >= 0 ? Math.max(0, 1 - (f - e.lastTouch) / GLOW_WINDOW) : 0;
-      e.line.setAttribute("x1", e.a.x.toFixed(1)); e.line.setAttribute("y1", e.a.y.toFixed(1));
-      e.line.setAttribute("x2", e.b.x.toFixed(1)); e.line.setAttribute("y2", e.b.y.toFixed(1));
-      e.line.setAttribute("stroke-width", edgeWidth(e.weight).toFixed(2));
+      e.line.setAttribute("x1", e.a.sx.toFixed(1)); e.line.setAttribute("y1", e.a.sy.toFixed(1));
+      e.line.setAttribute("x2", e.b.sx.toFixed(1)); e.line.setAttribute("y2", e.b.sy.toFixed(1));
+      const efade = depthFade((e.a.depth + e.b.depth) / 2);
+      e.line.setAttribute("stroke-width", (edgeWidth(e.weight) * (threeD ? (e.a.scale + e.b.scale) / 2 : 1)).toFixed(2));
       const base = 0.1 + Math.min(0.42, Math.log2(1 + e.weight) / 14);
-      e.line.setAttribute("stroke-opacity", (base + 0.5 * hot).toFixed(3));
+      e.line.setAttribute("stroke-opacity", ((base + 0.5 * hot) * efade).toFixed(3));
       if (hot > 0) {
         const p = 1 - hot;
         const fwd = e.ab >= e.ba;
         const from = fwd ? e.a : e.b, to = fwd ? e.b : e.a;
         const dot = svgEl("circle");
         dot.setAttribute("class", "hm-pulse");
-        dot.setAttribute("r", (2 + e.lastSize * 7).toFixed(2));
-        dot.setAttribute("cx", lerp(from.x, to.x, p));
-        dot.setAttribute("cy", lerp(from.y, to.y, p));
+        dot.setAttribute("r", ((2 + e.lastSize * 7) * (threeD ? to.scale : 1)).toFixed(2));
+        dot.setAttribute("cx", lerp(from.sx, to.sx, p));
+        dot.setAttribute("cy", lerp(from.sy, to.sy, p));
         dot.setAttribute("fill", `hsl(${e.hue} 90% 70%)`);
         gPulses.appendChild(dot);
       }
@@ -341,6 +404,7 @@ function run() {
     if (!root) return;
     const dt = lastTs ? (now - lastTs) / 1000 : 0;
     lastTs = now;
+    if (threeD && !orbitDrag) yaw += SPIN_RATE * dt;  // gentle idle spin (drag pauses it)
     if (playing && !dragging && events.length) {
       let nf = f + (dt / BASE_SECONDS) * speed;
       if (nf >= 1) { nf = 1; playing = false; playBtn.textContent = "↻"; }
@@ -366,6 +430,8 @@ function run() {
         tag: n.tag, count: n.count, idx: i, hue: hueFor(n.tag), isYou: !!n.is_you, label: n.label || null,
         revealed: false, lastActive: -1, lastSize: 0,
         x: 0, y: 0, vx: 0, vy: 0, fx: 0, fy: 0, tx: 0, ty: 0,
+        z: 0, vz: 0, fz: 0, tz: 0,          // depth for 3D (0 ⇒ flat, as in 2D)
+        sx: 0, sy: 0, scale: 1, depth: 0,   // projected screen coords + perspective
         ldx: 0, ldy: 0, lanchor: "middle", circle: null, label: null,
       });
     });
@@ -480,6 +546,42 @@ function run() {
     playing = true; playBtn.textContent = "⏸";
     reload();
   });
+
+  // ---- 3D toggle + drag-to-orbit ----------------------------------------
+  const btn3d = root.querySelector("#hm-3d");
+  function apply3d() {
+    btn3d.classList.toggle("on", threeD);
+    svg.style.cursor = threeD ? "grab" : "";
+    if (threeD) { yaw = 0; pitch = START_PITCH; }
+    else { yaw = 0; pitch = 0; }         // flat: project() becomes identity
+    try { localStorage.setItem(LS_3D, threeD ? "1" : "0"); } catch (_) {}
+  }
+  btn3d.addEventListener("click", () => { threeD = !threeD; apply3d(); });
+  apply3d();
+
+  svg.addEventListener("pointerdown", (e) => {
+    if (!threeD) return;
+    orbitDrag = true; orbitMoved = false;
+    dragX0 = e.clientX; dragY0 = e.clientY; yaw0 = yaw; pitch0 = pitch;
+    svg.style.cursor = "grabbing";
+  });
+  window.addEventListener("pointermove", onOrbitMove);
+  window.addEventListener("pointerup", onOrbitUp);
+  root._orbitMove = onOrbitMove; root._orbitUp = onOrbitUp;  // for cleanup
+  function onOrbitMove(e) {
+    if (!orbitDrag) return;
+    const dx = e.clientX - dragX0, dy = e.clientY - dragY0;
+    if (Math.abs(dx) + Math.abs(dy) > 3) orbitMoved = true;
+    yaw = yaw0 + dx * 0.008;
+    pitch = clamp(pitch0 + dy * 0.008, -PITCH_LIMIT, PITCH_LIMIT);
+  }
+  function onOrbitUp() {
+    if (!orbitDrag) return;
+    orbitDrag = false;
+    svg.style.cursor = threeD ? "grab" : "";
+    // Suppress the click that follows a real drag (so orbiting doesn't drill in).
+    if (orbitMoved) { const g = (ev) => { ev.stopPropagation(); }; svg.addEventListener("click", g, { capture: true, once: true }); }
+  }
 
   onResize = () => requestAnimationFrame(() => { measure(); computeTargets(); });
   window.addEventListener("resize", onResize);

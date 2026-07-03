@@ -1,10 +1,11 @@
 # Claude Connect
 
-**A local dashboard for watching all your Claude Code sessions at once — in your browser or as a standalone desktop app — plus an optional message bus that lets them talk to each other.**
+**A local dashboard for watching all your Claude Code sessions at once — in your browser or as a standalone desktop app — plus an optional _message bus_ (a shared log your sessions post to) that lets them talk to each other.**
 
-[![version: 2.7](https://img.shields.io/badge/version-2.7-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
+[![version: 2.8](https://img.shields.io/badge/version-2.8-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
 [![platform: linux](https://img.shields.io/badge/platform-linux-orange)](#requirements)
 [![safety: read--only](https://img.shields.io/badge/safety-read--only-green)](#how-it-works)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 ```
 ┌─ ●  api-server ────────────────┐  ┌─ ●  web-app ───────────────────┐
@@ -17,6 +18,21 @@
 ```
 
 > 💡 **Heads up on names:** the repo is `claude-connect`; the app (and its Python package) is `conductor`. Same project — you'll see both names throughout.
+
+## Why?
+
+If you're like us, you're running 3, 4, or 8 Claude Code sessions at once across different projects. You forget which terminal is doing what. You miss when one finishes and goes quiet. You wish they could *coordinate* — "hey, the API change is in, you can start on the frontend."
+
+**Claude Connect solves both problems:**
+
+- **See everything at a glance.** One tile per live Claude session — status dot, live preview of what it's saying, time since last activity. Click a tile to jump to that terminal.
+- **Let your Claudes talk.** Wire up the optional message bus and your sessions can `/msg-send` each other across projects. The dashboard shows the traffic with animated connection lines.
+
+It's **local, and read-only toward Claude**. It watches Claude's `~/.claude/projects/*.jsonl` logs and process state — it never edits your files or conversations, and it binds only to `127.0.0.1`. **Nothing leaves your machine** — no telemetry, no uploads; the only outbound request is an optional Three.js CDN fetch, and only if you open the 3D view. The few *actions* it can take are **external and user-triggered**: raise a terminal window, type `/msg-check` into a session, append to the separate bus log, or relaunch a closed session — never a silent write to Claude's own state.
+
+---
+
+## What it looks like
 
 ![The 2D dashboard — one tile per Claude session, a central Bus tile, and animated wires showing cross-session traffic (solid = active, dashed = passive).](assets/screenshot-2d.png)
 
@@ -37,6 +53,12 @@ New in **2.2**: a **🧊 3D** button swaps the board into a WebGL scene where yo
 
 New in **2.3–2.5**: a **🕸 History** button replays your entire cross-session history as an animated, scrubbable graph — sessions light up as they first speak, mention-lines thicken with traffic, and a live force layout drifts frequent collaborators together. Toggle **👤 Human turns** to weave in *your* prompts and each Claude's replies (a node for **you** at the hub), then **🔬 click a session** to watch its whole working relationship with you replay — each prompt fires in and the session *explodes outward* into the files it touched, the commands it ran, and the sub-agents it spawned.
 
+**New in 2.8: 🧊 rotate the graph in 3D.** Drag to orbit the whole web (it idles with a gentle spin) — the *Ring* tilts and spins, *Orbit* lifts into a dome, *Clusters* spreads into a 3D cloud — so you can read a tangle of links from any angle. Still pure SVG (a hand-rolled projection, no WebGL).
+
+![The 🕸 History graph rotated in 3D — the Ring layout tilted into space, with colored mention-lines webbing between every session node.](assets/screenshot-3d-history.png)
+
+<sub>The Ring layout tilted in **🧊 3D**: each dot is a session, each line a mention, thickness = how often that pair talks. Real cross-session traffic — node names only, no message content.</sub>
+
 ```
    you ──prompt──▶ ( 95emulator ) ──▶ ◍ ◍ ◍ files (read/edited)
         ──prompt──▶              ──▶ ⚙ Explore  ⚙ Plan   (agents)
@@ -44,20 +66,7 @@ New in **2.3–2.5**: a **🕸 History** button replays your entire cross-sessio
    scrub the whole relationship · 0.25×–5× · 🔍 focus one exchange
 ```
 
-<sub>Pure SVG, lazily loaded, read-only — it just visualizes the bus log + transcripts you already have. Works even without the message bus.</sub>
-
----
-
-## Why?
-
-If you're like us, you're running 3, 4, or 8 Claude Code sessions at once across different projects. You forget which terminal is doing what. You miss when one finishes and goes quiet. You wish they could *coordinate* — "hey, the API change is in, you can start on the frontend."
-
-**Claude Connect solves both problems:**
-
-- **See everything at a glance.** One tile per live Claude session — status dot, live preview of what it's saying, time since last activity. Click a tile to jump to that terminal.
-- **Let your Claudes talk.** Wire up the optional message bus and your sessions can `/msg-send` each other across projects. The dashboard shows the traffic with animated connection lines.
-
-It's **local, and read-only toward Claude**. It watches Claude's `~/.claude/projects/*.jsonl` logs and process state — it never edits your files or conversations, and it binds only to `127.0.0.1`. The few *actions* it can take are **external and user-triggered**: raise a terminal window, type `/msg-check` into a session, append to the separate bus log, or relaunch a closed session — never a silent write to Claude's own state.
+<sub>Pure SVG, lazily loaded, read-only — it just visualizes the bus log + transcripts you already have. Works even without the message bus. (`95emulator`, `Explore`, etc. are just sample session/agent names.)</sub>
 
 ---
 
@@ -215,7 +224,7 @@ Click a tile's **`–`** to tuck it into a thin **dock** along the bottom — a 
 
 ### 💤 Dormant dock
 
-Closing a Claude session doesn't erase it from the board. Any project folder Conductor has seen — one with transcript history but **no live process right now** — waits as a chip in a **💤 Dormant** group at the end of the bottom dock. Think of it as the *recently-closed-sessions shelf*: the work you'll come back to.
+Closing a Claude session doesn't erase it from the board. Any project folder Conductor has seen — one with transcript history but **no live process right now** — waits as a chip in a **💤 Dormant** group at the end of the bottom dock. Think of it as the *recently-closed-sessions shelf*: the work you'll come back to. *(Distinct from the `dormant` **status dot**, which marks a session that's still running but has been quiet a while — the shelf is for sessions that have fully closed.)*
 
 ```
  ─ minimized ─┊─ 💤 DORMANT ──────────────────────────────────────────
@@ -267,6 +276,7 @@ Click **🕸 History** in the top bar to replay your whole cross-session bus as 
   - **Orbit** — radial by volume: the loudest sessions pulled to the center, quiet ones on the rim.
 - **👤 Human turns** *(2.4)* — toggle this to weave in the **human↔Claude** layer: a **you** node (labeled with your username) plus *your* prompts and each session's replies, read turn-by-turn from the `~/.claude/projects` transcripts and merged onto the same timeline. Human edges are **gold/dashed** to set them apart from the inter-Claude mention lines, so you can watch a day of work flow — *a prompt fires to a session, it posts to the bus, another replies*. In **Clusters** layout the sessions you talk to most drift in toward you. (Turn-level: each exchange is one prompt + one reply, not every streaming chunk. Only *genuine* typed prompts count — harness injections like system-reminders, slash-commands, and auto-compact summaries are filtered out.)
 - **🔬 Drill-down** *(2.5)* — with Human turns on, **click a session node** and watch the whole **you↔session working relationship** replay: a **you** node fires each of your prompts into the central session node, which **explodes outward** into the work it did — the **files** it touched (a deduped halo, read = blue / edited = orange, growing with each touch), the **sub-agents** it spawned (Agent/Task, labeled by type), and every **tool call** firing a pulse + ticking a live counter (`Bash ×N · Grep ×N · …`). `tool_result` failures tint red. Hit **🔍 Focus prompt** to isolate a single exchange at a time (the `● focused ✕` chip returns you to the whole relationship). Its own play/scrub/speed controls; **← Back** to the timeline.
+- **🧊 3D** *(2.8)* — toggle to **rotate the whole graph in space**: drag to orbit, and it idles with a gentle spin. Each layout gains real depth — **ring** tilts and spins, **orbit** lifts into a **dome** (loud sessions centered/high), **clusters** spreads into a 3D cloud — so you can see a tangle of links from any angle. Still pure SVG (a hand-rolled projection, no WebGL); 2D stays the default.
 - **Drive it** — play/pause, drag the **scrubber** anywhere, and pick a speed (**0.25× / 0.5× / 1× / 2× / 5×**). A live clock shows the date as history unspools.
 
 > Pure SVG, no dependencies — `heatmap.js` (and `drilldown.js`) are lazily loaded on first open, so (like 3D) they can never affect the 2D board. Read-only: it just visualizes the bus log + transcripts you already have. The human layer reads the same `*.jsonl` Conductor already tails for live previews; older turns past a cap are trimmed (the count is shown, never silently dropped).
@@ -375,7 +385,7 @@ Edit `settings.toml` (copied from `settings.example.toml`). Key knobs:
 | ----------------------------- | ------------------------------------------------------------- | ------- |
 | `scanner.interval_seconds`    | Full rescan cadence                                           | `3`     |
 | `bus.adapter`                 | `markdown` (the reference bus), `jsonl` (generic), or `fake`  | —       |
-| `bus.markdown_path`           | Path to the bus log                                           | —       |
+| `bus.markdown_path`           | Path to the bus log                                           | `~/Documents/claude-bus/messages.md` |
 | `bus.state_dir`               | Where unread state lives                                      | —       |
 | `bus.script_path`             | Path to `bus.sh`                                              | —       |
 | `bus.sender_tag`              | Your tag when you **Compose** a message (e.g. your name)      | `operator` |
@@ -457,3 +467,7 @@ Got an idea, found a bug, or want to share how you're using it? Open an [issue](
 ## Contributing
 
 Issues and PRs welcome. See [`CLAUDE.md`](CLAUDE.md) for the agent-friendly contributor guide.
+
+## License
+
+[MIT](LICENSE) © Kyle Fox. Free for any use — personal or commercial — with no warranty. Do whatever you like with it; just keep the copyright notice.

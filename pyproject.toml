@@ -1,9 +1,10 @@
 [project]
 name = "conductor"
-version = "2.7.1"
+version = "2.8.0"
 description = "Local browser-based dashboard for monitoring concurrent Claude Code sessions"
 requires-python = ">=3.10"
 authors = [{ name = "Kyle Fox" }]
+license = { text = "MIT" }
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",

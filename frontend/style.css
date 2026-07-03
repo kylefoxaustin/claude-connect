@@ -958,6 +958,18 @@ body.view-3d .dock { display: none !important; }
 }
 .hm-human:hover { color: var(--text); }
 .hm-human.on { color: #1a1a1a; background: #ffcf4a; border-color: #ffcf4a; }
+.hm-3d {
+  font-size: 12px;
+  padding: 4px 10px;
+  margin-right: 6px;
+  background: var(--bg-panel);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.hm-3d:hover { color: var(--text); }
+.hm-3d.on { color: #fff; background: var(--bus-color); border-color: var(--bus-color); }
 .hm-you { stroke: #fff8e1; stroke-width: 1.5px; }
 .hm-label-you { fill: #ffe082; font-weight: 600; }
 .hm-edge-human { stroke-dasharray: 1 3; }
