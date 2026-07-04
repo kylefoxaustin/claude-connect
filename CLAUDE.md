@@ -36,6 +36,24 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.8.1: 🎨 Visual identity — logo + hero banner. A hand-built **Radiant
+  Bus-Core** SVG logo (`assets/conductor.svg`, also `frontend/logo.svg`): a
+  glowing violet bus core (`#bc8cff`, the app's `--bus-color`), six session nodes
+  on an orbit ring in the tile/group palette, wires to each, one amber wire
+  carrying a message pulse — the app's signature view distilled to a mark. Wired
+  in everywhere: the install `.desktop` icon (already pointed at
+  `assets/conductor.svg`), the topbar `<h1>`, the Settings header, and the
+  favicon (`<link rel=icon>` — also kills the old `/favicon.ico` 404). Concept
+  picked by Kyle from three (Radiant Bus-Core / Conductor's Baton / CC
+  constellation); rendered + QC'd via librsvg (no rasterizer installed — used
+  `gi.repository.Rsvg` + cairo). **README hero banner** (`assets/hero.png`,
+  1280×640) — "mission control for AI agents," **commissioned over the bus from
+  the `imagegen` fleet node** (its local RTX 5090 + ComfyUI rig): violet bus-core
+  ringed by session panels with terminal snippets + status dots, violet cables,
+  one amber cable with a pulse mid-flight, title + tagline. Matched to the logo
+  palette; plus a 512² square crop (`assets/logo-square.png`). Fun full-circle:
+  the dashboard that *visualizes* the bus commissioned its own art *over* that
+  bus. Docs + frontend + assets, both editions.
 - ✅ v2.8.0: 🧊 Rotate the History graph in 3D. A `🧊 3D` toggle in the History
   overlay spins the whole mention graph in space (Kyle's idea — "fun to rotate
   the ring to see how the clusters are set up"). Deliberately **not** the

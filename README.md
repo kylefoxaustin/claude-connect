@@ -1,3 +1,5 @@
+<img src="assets/conductor.svg" width="104" align="right" alt="Claude Connect logo — a glowing bus core wired to session nodes" />
+
 # Claude Connect
 
 **A local dashboard for watching all your Claude Code sessions at once — in your browser or as a standalone desktop app — plus an optional _message bus_ (a shared log your sessions post to) that lets them talk to each other.**
@@ -6,6 +8,10 @@
 [![platform: linux](https://img.shields.io/badge/platform-linux-orange)](#requirements)
 [![safety: read--only](https://img.shields.io/badge/safety-read--only-green)](#how-it-works)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+<p align="center">
+  <img src="assets/hero.png" alt="Claude Connect — a glowing violet bus core wired to six session panels, one cable carrying a message pulse; title reads Claude Connect: watch every Claude Code session at once, and let them talk" width="900" />
+</p>
 
 ```
 ┌─ ●  api-server ────────────────┐  ┌─ ●  web-app ───────────────────┐
