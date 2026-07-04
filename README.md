@@ -476,4 +476,4 @@ Issues and PRs welcome. See [`CLAUDE.md`](CLAUDE.md) for the agent-friendly cont
 
 ## License
 
-[MIT](LICENSE). Free for any use — personal or commercial — with no warranty. Do whatever you like with it; acknowledgements are welcome of course.
+[MIT](LICENSE) · © 2026 Kyle Fox. Free for any use — personal or commercial — with no warranty. Do whatever you like with it; acknowledgements are welcome of course.
