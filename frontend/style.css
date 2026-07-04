@@ -67,7 +67,18 @@ html, body {
   margin: 0;
   letter-spacing: 0.04em;
   color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 9px;
 }
+/* Radiant Bus-Core logo mark, used in the topbar + Settings header. */
+.app-logo {
+  display: inline-block;
+  vertical-align: middle;
+  border-radius: 6px;
+  flex: none;
+}
+.modal-card h2 { display: flex; align-items: center; gap: 9px; }
 .topbar-meta {
   display: flex;
   align-items: center;
