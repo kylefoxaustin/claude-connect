@@ -361,6 +361,7 @@ function updateGridExtent() {
 export function renderGrid(state) {
   // Defer rebuilds during an active drag or resize; the gesture flushes it after.
   if (isDragging || isResizing) { renderPending = true; return; }
+  updateTokenTotal(state);   // global token line by the title
   const grid = document.getElementById("grid");
 
   // Always render the Bus tile; session tiles go to the grid unless minimized
@@ -582,6 +583,20 @@ function tokenTooltip(t) {
     + `  cache reads: ${c(t.cache_read)}  (context re-read each turn — cheap)\n`
     + `  ── total processed: ${c(t.total)}`;
 }
+// Global token total across every session on the board, shown by the title.
+function updateTokenTotal(state) {
+  const elm = document.getElementById("token-total");
+  if (!elm) return;
+  let out = 0, total = 0, turns = 0, any = false;
+  for (const s of state.sessions || []) {
+    if (s.tokens && s.tokens.turns) {
+      out += s.tokens.output || 0; total += s.tokens.total || 0; turns += s.tokens.turns; any = true;
+    }
+  }
+  elm.textContent = any ? `tokens: ${humanTok(out)} out · ${humanTok(total)} total` : "";
+  if (any) elm.title = `All ${(state.sessions || []).filter((s) => s.tokens && s.tokens.turns).length} sessions on the board, ${turns.toLocaleString()} turns\n`
+    + `output generated: ${out.toLocaleString()}\ntotal processed: ${total.toLocaleString()} (mostly cheap cache re-reads)`;
+}
 
 function el(tag, props = {}, ...children) {
   const e = document.createElement(tag);
@@ -709,7 +724,7 @@ function fillSessionTile(tile, s, state) {
     el("div", { class: "tile-preview" }, s.preview || ""),
     (s.tokens && s.tokens.turns)
       ? el("div", { class: "tile-tokens", title: tokenTooltip(s.tokens) },
-          `🪙 ${humanTok(s.tokens.output)} out · ${humanTok(s.tokens.total)} total`)
+          `tokens: ${humanTok(s.tokens.output)} out · ${humanTok(s.tokens.total)} total`)
       : null,
     el("div", { class: "tile-footer" },
       el("span", {}, `msgs: ${s.message_count}`),

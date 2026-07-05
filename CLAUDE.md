@@ -36,6 +36,14 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.12.1: Token usage polish. Tile badge now literal `tokens: X out · Y total`
+  (dropped the 🪙 coin — read as money; no universal token glyph). Added a
+  **global token sum next to the "Conductor" title** (topbar-left group): sums
+  every session's output + total (`tokens: 41.7M out · 12.5B total`), hover for
+  turns + breakdown (`updateTokenTotal` in `tiles.js`, called from `renderGrid`).
+  The out↔total delta is all input-side (new input + cache creation + cache
+  reads), ~entirely cache reads (whole context re-read each turn — cheap), which
+  is why total dwarfs out.
 - ✅ v2.12.0: 🪙 Per-session token usage on each tile. Every session tile shows
   a badge (`🪙 617.3K out · 102.6M total`, humanized K/M/B) read from that
   session's transcript `usage` blocks; hover for the full breakdown (output /
