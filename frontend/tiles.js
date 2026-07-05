@@ -565,6 +565,24 @@ function ago(ts) {
   return `${Math.floor(sec / 86400)}d ago`;
 }
 
+// Compact token count: 1_530_879 -> "1.5M", 482_000_000 -> "482M".
+function humanTok(n) {
+  n = n || 0;
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
+  return String(n);
+}
+function tokenTooltip(t) {
+  const c = (n) => (n || 0).toLocaleString();
+  return `Tokens over ${c(t.turns)} turns:\n`
+    + `  output generated: ${c(t.output)}\n`
+    + `  new input: ${c(t.input)}\n`
+    + `  cache creation: ${c(t.cache_creation)}\n`
+    + `  cache reads: ${c(t.cache_read)}  (context re-read each turn — cheap)\n`
+    + `  ── total processed: ${c(t.total)}`;
+}
+
 function el(tag, props = {}, ...children) {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(props)) {
@@ -689,6 +707,10 @@ function fillSessionTile(tile, s, state) {
       tagChip, tagChip ? " " : null, s.project_dir,
     ),
     el("div", { class: "tile-preview" }, s.preview || ""),
+    (s.tokens && s.tokens.turns)
+      ? el("div", { class: "tile-tokens", title: tokenTooltip(s.tokens) },
+          `🪙 ${humanTok(s.tokens.output)} out · ${humanTok(s.tokens.total)} total`)
+      : null,
     el("div", { class: "tile-footer" },
       el("span", {}, `msgs: ${s.message_count}`),
       el("span", {}, `⏱ ${ago(s.last_activity_at)}`),
