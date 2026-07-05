@@ -81,6 +81,7 @@ New in **2.3–2.5**: a **🕸 History** button replays your entire cross-sessio
 - 🪟 **Live tiles** for every running Claude session — auto-discovered, no config
 - 🎯 **Click-to-focus** — clicking a tile raises the actual terminal window
 - 📬 **Cross-session messaging** with an animated bus tile showing live traffic
+- 🎛️ **Shared-GPU reservation** *(new in 2.9)* — sessions self-coordinate one GPU over the bus: `/gpu-reserve <dur> <soft|hard>`, `/gpu-status`, `/gpu-release`. Each session sees who holds it in its own context (no asking); **soft** holds yield on request, **hard** holds run to completion; leases auto-expire so nothing gets stuck
 - ✉️ **Compose from the dashboard** — send your own bus message to all sessions or a chosen few, with an optional "ping" that makes them read it now
 - 🟢 **Status indicators** — `active` / `warm` / `idle` / `dormant` / `waiting` / `ended`
 - 💾 **Persistent layout** — drag tiles to rearrange and **resize** them (corner grip); both stick
@@ -350,8 +351,12 @@ cp bus/commands/*.md ~/.claude/commands/
 
 Point Claude Connect at the log in the `[bus]` section of `settings.toml`. Full setup docs and format spec:
 
-- 📖 [`bus/README.md`](bus/README.md) — install + slash commands
+- 📖 [`bus/README.md`](bus/README.md) — install + slash commands + the **🎛️ GPU reservation** system
 - 📖 [`docs/claude-bus.md`](docs/claude-bus.md) — message format spec
+
+Beyond messaging, the bus can also **arbitrate a shared GPU** so sessions
+self-coordinate access (reserve/release with soft/hard holds, auto-expiry, and
+per-prompt awareness of who holds it) — see the [GPU reservation](bus/README.md#gpu-reservation-shared-resource-coordination) docs.
 
 ### What if a session isn't on the bus?
 

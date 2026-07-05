@@ -36,6 +36,26 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.9.0: 🎛️ GPU reservation — sessions self-coordinate a shared GPU without
+  Kyle arbitrating (MVP; his ask). The bus grows from message-passing to
+  shared-*resource* coordination: a cooperative **lease** in
+  `~/.claude/bus-state/gpu/lease` (flat key=value; owner/mode/acquired/expires/
+  job/requested_by), acquire/release **atomic via `flock`** (stress-tested: 8-way
+  race → exactly 1 winner). New `bus.sh gpu {reserve|release|keep|request|status|
+  line}` subcommands + `/gpu-*` slash-commands (`bus/commands/`). **soft** =
+  "I'll drop it if you need it" (preemptible); **hard** = "mine until my job's
+  done or the user stops me". Duration + **lazy auto-expiry** (checked on access;
+  a forgotten hold frees itself — no daemon needed). **Auto-awareness**: the
+  existing per-prompt `prompt-check` hook appends a GPU line (`GPU: held by
+  [95emulator] (hard · ~18m left)` / `YOU hold it — ⚠ [orb_slam] REQUESTED it`)
+  **only when held** — silent when free, so zero added noise; nobody has to ask
+  anyone. `/gpu-request` flags the owner (surfaced via their hook, no message
+  needed). Added to the **live** `~/.claude/bin/bus.sh` + the sanitized repo
+  `bus/bus.sh` (additively — `send`/`check`/etc. untouched, verified no
+  regression) + `bus/README.md`. **Phase 2** (planned): a standalone `nvidia-smi`
+  watchdog that auto-nudges idle holders (models loaded, ~0% util for a long
+  time). **Phase 3**: a Conductor GPU tile. Bus-layer feature (works with or
+  without the dashboard).
 - ✅ v2.8.1: 🎨 Visual identity — logo + hero banner. A hand-built **Radiant
   Bus-Core** SVG logo (`assets/conductor.svg`, also `frontend/logo.svg`): a
   glowing violet bus core (`#bc8cff`, the app's `--bus-color`), six session nodes

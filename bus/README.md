@@ -86,3 +86,35 @@ message count, click-to-focus). It just has no bus state, so:
 
 That's intentional: wired sessions are visually on the tunnel; un-wired ones are
 monitored but silent.
+
+## GPU reservation (shared-resource coordination)
+
+If your sessions share one GPU, the bus can arbitrate it so they **self-coordinate
+without you in the middle**. It's a cooperative lease: state lives in
+`~/.claude/bus-state/gpu/lease`, acquire/release are atomic (`flock`), and the
+current status is auto-injected into every session's per-prompt context — so a
+session *knows* who holds the GPU without asking anyone.
+
+Slash-commands (each just calls `bus.sh gpu …`):
+
+| Command | What it does |
+| --- | --- |
+| `/gpu-status` | Who holds it, mode, time left, any pending request. **Read-only** — sends no message. |
+| `/gpu-reserve <dur> <soft\|hard> ["job"]` | Claim it if free (e.g. `30m`, `2h`). Rejected (with guidance) if held. |
+| `/gpu-release` | Free your reservation. |
+| `/gpu-keep <dur>` | Extend your reservation before it expires. |
+| `/gpu-request` | Flag the current holder that you want it (they see it next turn). |
+
+**Two hold modes** — the honest signal that makes coordination work:
+
+- **soft** — *"I have it + code loaded, but I'll drop it if you need it."* Preemptible; a `/gpu-request` nudges the holder.
+- **hard** — *"Mine until my job finishes or the user says stop."* Not preemptible; requesters wait/queue.
+
+Reservations carry a **duration** and **auto-expire** on next access (a forgotten
+hold frees itself), so the GPU can't get stuck. The per-prompt awareness line is
+silent when the GPU is free — zero noise until there's contention.
+
+> **Roadmap:** a standalone watchdog (Phase 2) will poll `nvidia-smi` and, when a
+> lease sits idle (models loaded but ~0% util for a long time), auto-nudge the
+> owner to release — still without the human coordinating. Conductor will grow a
+> live GPU tile (Phase 3).
