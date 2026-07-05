@@ -287,6 +287,7 @@ const tileResizeObserver = new ResizeObserver((entries) => {
 // (the scanner already enforces one session per project dir).
 function tileKeyForSession(s) { return `proj:${s.project_dir}`; }
 const BUS_KEY = "bus:bus";
+const GPU_KEY = "gpu:gpu";
 
 export function resetLayout() {
   positions = {};
@@ -404,6 +405,7 @@ export function renderGrid(state) {
   // non-collapsed session tiles. (Tiles are absolutely positioned, so DOM order
   // is cosmetic — new nodes just append.)
   const items = [{ key: BUS_KEY, kind: "bus" }];
+  if (state.gpu && state.gpu.available) items.push({ key: GPU_KEY, kind: "gpu" });
   const dockSessions = [];
   for (const key of allSessionKeys) {
     if (collapsedMembers.has(key)) continue;
@@ -426,11 +428,14 @@ export function renderGrid(state) {
     let node = tileNodes.get(it.key);
     const isNew = !node;
     if (isNew) {
-      node = it.kind === "bus" ? createBusShell() : createSessionShell();
+      node = it.kind === "bus" ? createBusShell()
+           : it.kind === "gpu" ? createGpuShell()
+           : createSessionShell();
       node.dataset.tileKey = it.key;
       tileNodes.set(it.key, node);
     }
     if (it.kind === "bus") fillBusTile(node, state);
+    else if (it.kind === "gpu") fillGpuTile(node, state);
     else fillSessionTile(node, it.s, state);
     if (isNew) {
       grid.appendChild(node);
@@ -759,6 +764,84 @@ function fillBusTile(tile, state) {
   );
   return tile;
 }
+
+// --- GPU tile (Phase 3: shared-GPU reservation + live nvidia-smi telemetry) --
+const GPU_BARE = (t) => String(t || "").replace(/^\[/, "").replace(/\]$/, "").replace(/^other:/, "");
+function gpuHuman(sec) {
+  sec = Math.max(0, Math.round(sec));
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  if (h) return `${h}h ${m}m`;
+  if (m) return `${m}m`;
+  return `${s}s`;
+}
+function createGpuShell() {
+  return el("div", { class: "tile gpu-tile", dataset: { gpuTile: "1" } });
+}
+function fillGpuTile(tile, state) {
+  const g = state.gpu || {};
+  const smi = g.smi || {};
+  const lease = g.lease || null;
+  const util = Math.max(0, Math.min(100, smi.util ?? 0));
+  const memUsed = smi.mem_used ?? 0, memTotal = smi.mem_total ?? 0;
+  const memPct = memTotal ? Math.round((memUsed / memTotal) * 100) : 0;
+  const name = smi.name || "GPU";
+
+  const held = !!lease;
+  const mode = held ? (lease.mode === "hard" ? "hard" : "soft") : null;
+  const dotClass = !held ? "gpu-free" : (mode === "hard" ? "gpu-hard" : "gpu-soft");
+
+  let leaseEl;
+  if (held) {
+    const idle = lease.idle || 0;
+    const children = [
+      el("span", { class: `gpu-mode ${mode}` }, mode.toUpperCase()),
+      el("span", { class: "gpu-owner" }, GPU_BARE(lease.owner)),
+      el("span", { class: "gpu-remaining", dataset: { expires: String(lease.expires_epoch || 0) } },
+        "~" + gpuHuman(lease.remaining ?? 0) + " left"),
+    ];
+    if (idle >= 300) children.push(el("span", { class: "gpu-idle", title: "GPU quiet — the watchdog may nudge/reclaim it" }, `⚠ idle ${gpuHuman(idle)}`));
+    if (lease.requested_by) children.push(el("span", { class: "gpu-req", title: "another session requested this GPU" }, `⏳ ${GPU_BARE(lease.requested_by)} waiting`));
+    leaseEl = el("div", { class: "gpu-lease" }, ...children);
+  } else {
+    leaseEl = el("div", { class: "gpu-lease gpu-lease-free" }, "● FREE — reserve with /gpu-reserve");
+  }
+
+  const utilClass = util >= 70 ? "hot" : util >= 25 ? "warm" : "cool";
+
+  tile.replaceChildren(
+    el("div", { class: "tile-header" },
+      el("div", { class: "tile-title-wrap" },
+        el("span", { class: `status-dot ${dotClass}` }),
+        el("span", { class: "tile-title" }, "GPU",
+          el("span", { class: "gpu-util-badge", title: "live GPU utilization" }, `${util}%`),
+        ),
+      ),
+    ),
+    el("div", { class: "tile-projectdir gpu-name" }, name),
+    el("div", { class: "gpu-bar", title: `utilization ${util}%` },
+      el("div", { class: `gpu-bar-fill ${utilClass}`, style: `width:${util}%` }),
+    ),
+    leaseEl,
+    el("div", { class: "tile-footer" },
+      el("span", { title: "GPU memory used / total" },
+        `mem ${(memUsed / 1024).toFixed(1)}/${(memTotal / 1024).toFixed(0)} GB · ${memPct}%`),
+      el("span", {}, held && lease.job ? `job: ${lease.job}` : ""),
+    ),
+  );
+  return tile;
+}
+
+// Smoothly tick the "~Nm left" countdown between the ~3s server updates.
+function updateGpuCountdowns() {
+  const now = Date.now() / 1000;
+  document.querySelectorAll(".gpu-remaining[data-expires]").forEach((elm) => {
+    const exp = Number(elm.dataset.expires || 0);
+    if (!exp) return;
+    const rem = exp - now;
+    elm.textContent = rem > 0 ? "~" + gpuHuman(rem) + " left" : "expiring…";
+  });
+}
+setInterval(updateGpuCountdowns, 1000);
 
 // --- Pointer-based drag -----------------------------------------------------
 // Uses pointer events with a small movement threshold so simple clicks (and
