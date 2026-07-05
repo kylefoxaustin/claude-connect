@@ -81,7 +81,7 @@ New in **2.3–2.5**: a **🕸 History** button replays your entire cross-sessio
 - 🪟 **Live tiles** for every running Claude session — auto-discovered, no config
 - 🎯 **Click-to-focus** — clicking a tile raises the actual terminal window
 - 📬 **Cross-session messaging** with an animated bus tile showing live traffic
-- 🎛️ **Shared-GPU reservation** *(new in 2.9)* — sessions self-coordinate one GPU over the bus: `/gpu-reserve <dur> <soft|hard>`, `/gpu-status`, `/gpu-release`. Each session sees who holds it in its own context (no asking); **soft** holds yield on request, **hard** holds run to completion; leases auto-expire so nothing gets stuck
+- 🎛️ **Shared-GPU reservation** *(new in 2.9)* — sessions self-coordinate one GPU over the bus: `/gpu-reserve <dur> <soft|hard>`, `/gpu-status`, `/gpu-release`. Each session sees who holds it in its own context (no asking); **soft** holds yield on request, **hard** holds run to completion; leases auto-expire so nothing gets stuck. A 🐕 **idle watchdog** *(2.10)* polls `nvidia-smi` and auto-nudges (or reclaims soft) leases whose GPU has gone quiet — all without you coordinating
 - ✉️ **Compose from the dashboard** — send your own bus message to all sessions or a chosen few, with an optional "ping" that makes them read it now
 - 🟢 **Status indicators** — `active` / `warm` / `idle` / `dormant` / `waiting` / `ended`
 - 💾 **Persistent layout** — drag tiles to rearrange and **resize** them (corner grip); both stick
