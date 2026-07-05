@@ -53,6 +53,133 @@ mark_seen_if_bus_tag() {
   fi
 }
 
+# ---- GPU reservation (single shared GPU; lease lives in bus-state) ----------
+# A cooperative lease so sessions self-coordinate GPU access without asking
+# each other. State is a flat key=value file; acquire/release are atomic via
+# flock. Expiry is lazy (checked on access) — no daemon needed for the basics.
+GPU_DIR="${GPU_STATE_DIR:-$HOME/.claude/bus-state/gpu}"
+GPU_LEASE="$GPU_DIR/lease"
+GPU_LOCK="$GPU_DIR/.lock"
+
+_gpu_now() { date +%s; }
+_gpu_dur_secs() {  # 30m | 2h | 45s | bare number = minutes
+  case "$1" in
+    *h) echo $(( ${1%h} * 3600 )) ;;
+    *m) echo $(( ${1%m} * 60 )) ;;
+    *s) echo $(( ${1%s} )) ;;
+    ''|*[!0-9]*) echo 0 ;;
+    *)  echo $(( $1 * 60 )) ;;
+  esac
+}
+_gpu_human() {  # seconds -> "1h 20m" / "18m" / "40s"
+  local s=$1 h m; [ "$s" -lt 0 ] && s=0
+  h=$(( s/3600 )); m=$(( (s%3600)/60 ))
+  if [ "$h" -gt 0 ]; then echo "${h}h ${m}m"; elif [ "$m" -gt 0 ]; then echo "${m}m"; else echo "${s}s"; fi
+}
+_gpu_field() { grep -E "^$1=" "$GPU_LEASE" 2>/dev/null | head -1 | cut -d= -f2- ; }
+_gpu_active() {  # lease exists and not expired
+  [ -f "$GPU_LEASE" ] || return 1
+  local exp; exp="$(_gpu_field expires_epoch)"
+  [ -n "$exp" ] && [ "$(_gpu_now)" -lt "$exp" ]
+}
+_gpu_remaining() { local exp; exp="$(_gpu_field expires_epoch)"; echo $(( ${exp:-0} - $(_gpu_now) )); }
+_gpu_write() {  # owner mode secs job
+  local now exp; now="$(_gpu_now)"; exp=$(( now + $3 ))
+  { echo "owner=$1"; echo "mode=$2"; echo "acquired_epoch=$now"; echo "expires_epoch=$exp"
+    echo "last_active_epoch=$now"; echo "job=$4"; echo "requested_by="; } > "$GPU_LEASE"
+}
+_gpu_held_line() {  # assumes _gpu_active; the one-liner every awareness surface uses
+  local owner mode job req rem
+  owner="$(_gpu_field owner)"; mode="$(_gpu_field mode)"; job="$(_gpu_field job)"
+  req="$(_gpu_field requested_by)"; rem="$(_gpu_human "$(_gpu_remaining)")"
+  if [ "$owner" = "$TAG" ]; then
+    local msg="GPU: YOU hold it ($mode · ~$rem left)."
+    [ -n "$req" ] && msg="$msg  ⚠ [$req] has REQUESTED it — /gpu-release to yield, or keep it if you still need it."
+    echo "$msg"
+  else
+    echo "GPU: held by [$owner] ($mode · ~$rem left${job:+ · $job})."
+  fi
+}
+gpu_reserve() {
+  local dur="${1:-}" mode="${2:-}"; shift 2 2>/dev/null || true; local job="${*:-}"
+  case "$mode" in soft|hard) ;; *) echo "usage: /gpu-reserve <duration> <soft|hard> [\"job\"]"; return 2 ;; esac
+  local secs; secs="$(_gpu_dur_secs "$dur")"
+  [ "$secs" -gt 0 ] || { echo "bad duration '$dur' (use 30m, 2h, 45s, or a number of minutes)"; return 2; }
+  mkdir -p "$GPU_DIR"
+  ( flock 9
+    if _gpu_active; then
+      local owner; owner="$(_gpu_field owner)"
+      if [ "$owner" = "$TAG" ]; then
+        _gpu_write "$TAG" "$mode" "$secs" "$job"
+        echo "Updated your GPU lease: $mode for $(_gpu_human "$secs")."
+      else
+        echo "GPU is HELD by [$owner] ($(_gpu_field mode), ~$(_gpu_human "$(_gpu_remaining)") left) — NOT reserved."
+        echo "→ /gpu-request to ask them to yield, or wait for it to free."
+        return 1
+      fi
+    else
+      _gpu_write "$TAG" "$mode" "$secs" "$job"
+      echo "Reserved the GPU: $mode for $(_gpu_human "$secs"). Job: ${job:-(none)}."
+    fi
+  ) 9>"$GPU_LOCK"
+}
+gpu_release() {
+  mkdir -p "$GPU_DIR"
+  ( flock 9
+    if _gpu_active && [ "$(_gpu_field owner)" = "$TAG" ]; then
+      rm -f "$GPU_LEASE"; echo "Released the GPU."
+    elif _gpu_active; then
+      echo "You don't hold the GPU ([$(_gpu_field owner)] does) — not released."; return 1
+    else
+      rm -f "$GPU_LEASE"; echo "GPU is already free."
+    fi
+  ) 9>"$GPU_LOCK"
+}
+gpu_keep() {  # extend your own lease from now
+  local dur="${1:-}"; local secs; secs="$(_gpu_dur_secs "$dur")"
+  [ "$secs" -gt 0 ] || { echo "usage: /gpu-keep <duration>"; return 2; }
+  mkdir -p "$GPU_DIR"
+  ( flock 9
+    if _gpu_active && [ "$(_gpu_field owner)" = "$TAG" ]; then
+      _gpu_write "$TAG" "$(_gpu_field mode)" "$secs" "$(_gpu_field job)"
+      echo "Extended your GPU lease: $(_gpu_human "$secs") from now."
+    else
+      echo "You don't hold the GPU — nothing to extend."; return 1
+    fi
+  ) 9>"$GPU_LOCK"
+}
+gpu_request() {  # flag the current owner that you want it (they see it on their next turn)
+  mkdir -p "$GPU_DIR"
+  ( flock 9
+    if ! _gpu_active; then echo "GPU is FREE — just /gpu-reserve it."; return 0; fi
+    local owner; owner="$(_gpu_field owner)"
+    [ "$owner" = "$TAG" ] && { echo "You already hold the GPU."; return 0; }
+    sed -i "s/^requested_by=.*/requested_by=$TAG/" "$GPU_LEASE"
+    echo "Flagged [$owner] that you want the GPU ($(_gpu_field mode) hold). They'll see it on their next turn."
+  ) 9>"$GPU_LOCK"
+}
+gpu_status() {  # verbose, for /gpu-status
+  if _gpu_active; then
+    _gpu_held_line
+    echo "  (acquired $(date -d "@$(_gpu_field acquired_epoch)" '+%H:%M' 2>/dev/null), expires $(date -d "@$(_gpu_field expires_epoch)" '+%H:%M' 2>/dev/null))"
+  else
+    echo "GPU: FREE — /gpu-reserve <duration> <soft|hard> [\"job\"] to claim it."
+  fi
+}
+gpu_hook_line() { _gpu_active && _gpu_held_line || true; }  # silent when free
+gpu_dispatch() {
+  set +e   # gpu subcommands manage their own exit codes / booleans
+  case "${1:-status}" in
+    reserve) shift; gpu_reserve "$@" ;;
+    release) gpu_release ;;
+    keep)    shift; gpu_keep "$@" ;;
+    request) gpu_request ;;
+    status)  gpu_status ;;
+    line)    gpu_hook_line ;;
+    *) echo "usage: bus.sh gpu {reserve <dur> <soft|hard> [job]|release|keep <dur>|request|status}"; return 2 ;;
+  esac
+}
+
 cmd="${1:-help}"
 shift || true
 
@@ -86,6 +213,11 @@ case "$cmd" in
     wc -l "$BUS_FILE"
     echo
     cat "$BUS_FILE"
+    ;;
+
+  gpu)
+    gpu_dispatch "$@"
+    exit $?
     ;;
 
   session-start)
@@ -149,17 +281,28 @@ EOF
 
     if [ -z "$NEW_MSGS" ]; then
       echo "0" > "$PENDING_FILE"
+      NOTE=""
+    else
+      COUNT="$(printf '%s\n' "$NEW_MSGS" | wc -l | tr -d ' ')"
+      echo "$COUNT" > "$PENDING_FILE"
+      SENDERS="$(printf '%s\n' "$NEW_MSGS" | awk '{print $3}' | sort -u | tr '\n' ' ' | sed 's/ *$//')"
+      NEWEST="$(printf '%s\n' "$NEW_MSGS" | tail -1 | awk '{print $1 " " $2}')"
+      NOTE="Claude Bus — $COUNT pending message(s) from $SENDERS on the cross-session log since you last checked (newest: $NEWEST). Content NOT shown. At a natural pause in your current work, mention to the user that pending messages exist and ask whether to check them now; run /msg-check once approved."
+    fi
+
+    # GPU reservation awareness: one line, only while the GPU is held (silent when free).
+    GPU_LINE="$(gpu_hook_line 2>/dev/null || true)"
+
+    # Nothing pending and GPU free -> stay silent (preserves prior behavior).
+    if [ -z "$NOTE" ] && [ -z "$GPU_LINE" ]; then
       exit 0
     fi
 
-    COUNT="$(printf '%s\n' "$NEW_MSGS" | wc -l | tr -d ' ')"
-    echo "$COUNT" > "$PENDING_FILE"
-
-    SENDERS="$(printf '%s\n' "$NEW_MSGS" | awk '{print $3}' | sort -u | tr '\n' ' ' | sed 's/ *$//')"
-    NEWEST="$(printf '%s\n' "$NEW_MSGS" | tail -1 | awk '{print $1 " " $2}')"
-
-    NOTE="Claude Bus — $COUNT pending message(s) from $SENDERS on the cross-session log since you last checked (newest: $NEWEST). Content NOT shown. At a natural pause in your current work, mention to the user that pending messages exist and ask whether to check them now; run /msg-check once approved."
-    ESCAPED="$(printf '%s' "$NOTE" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"
+    FULL="$NOTE"
+    if [ -n "$GPU_LINE" ]; then
+      if [ -n "$FULL" ]; then FULL="$FULL"$'\n'"$GPU_LINE"; else FULL="$GPU_LINE"; fi
+    fi
+    ESCAPED="$(printf '%s' "$FULL" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"
 
     cat <<EOF
 {
