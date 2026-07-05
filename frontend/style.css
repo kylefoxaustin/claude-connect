@@ -238,6 +238,17 @@ html, body {
   font-size: 11px;
   color: var(--text-dim);
 }
+/* Per-session token usage (from the transcript). Subtle, hover for the breakdown. */
+.tile-tokens {
+  font-size: 10px;
+  color: var(--text-dim);
+  opacity: 0.72;
+  margin: 3px 0 1px;
+  cursor: help;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* Bus tile distinct visual treatment. */
 .tile.bus-tile {

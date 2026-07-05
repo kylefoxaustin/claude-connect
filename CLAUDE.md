@@ -36,6 +36,22 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.12.0: 🪙 Per-session token usage on each tile. Every session tile shows
+  a badge (`🪙 617.3K out · 102.6M total`, humanized K/M/B) read from that
+  session's transcript `usage` blocks; hover for the full breakdown (output /
+  new-input / cache-creation / cache-read / turns / total). Kyle's ask ("record
+  how many tokens a Claude has used"). `conductor/tokens.py` `TokenAccountant` is
+  **incremental** — transcripts are append-only, so each poll seeks past bytes
+  already counted and parses only new *complete* lines (a half-written trailing
+  record is deferred, not lost/double-counted), making the per-scan cost O(new
+  bytes) even for multi-MB, thousand-turn transcripts. Wired via
+  `AppState.token_accountant`; `_sessions_payload` attaches `tokens` per record
+  (uses `jsonl_path` before `to_dict` drops it). Frontend: `humanTok` +
+  `tokenTooltip` + a `.tile-tokens` line in `fillSessionTile`. Note the honest
+  framing — `cache_read` dominates the "total" (the whole context is re-read each
+  turn; cheap, ~10% rate) so the tile shows **output** (real work) alongside
+  **total** (raw processed). Verified: incremental == full-parse, partial-line
+  safe, live screenshot. Frontend + backend, both editions.
 - ✅ v2.11.0: 🎮 GPU tile (Phase 3 — Conductor now *visualizes* the GPU system).
   A live tile: GPU name + `nvidia-smi` utilization bar (cool/warm/hot), the
   current lease (soft=amber / hard=red dot, owner, **client-side ticking

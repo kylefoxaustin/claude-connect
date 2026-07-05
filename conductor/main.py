@@ -43,6 +43,7 @@ from .bus import (
 )
 from .gpu import gpu_state
 from .models import BusEvent, BusTopology, ParkedSession, SessionRecord, Status
+from .tokens import TokenAccountant
 from .scanner import (
     YOU_TAG,
     SessionScanner,
@@ -92,6 +93,7 @@ class AppState:
         self.parked: list[ParkedSession] = []               # relaunchable offline sessions
         self.gpu_dir = settings.bus.state_dir_resolved / "gpu"   # GPU reservation lease dir
         self.gpu: dict[str, Any] = {"available": False, "smi": None, "lease": None}
+        self.token_accountant = TokenAccountant()             # per-session token tally
         self._scan_misses: dict[str, int] = {}              # consecutive scans a session was absent
         self.recent_events: deque[BusEvent] = deque(maxlen=RECENT_EVENTS_MAX)
         self.bus_total = 0
@@ -373,8 +375,14 @@ class AppState:
     # --- payloads ------------------------------------------------------------
 
     def _sessions_payload(self) -> dict[str, Any]:
+        sessions = []
+        for r in self.sessions.values():
+            d = r.to_dict()
+            if r.jsonl_path:  # tally tokens from the transcript (incremental → cheap)
+                d["tokens"] = self.token_accountant.usage_for(r.jsonl_path)
+            sessions.append(d)
         return {
-            "sessions": [r.to_dict() for r in self.sessions.values()],
+            "sessions": sessions,
             "parked": [p.to_dict() for p in self.parked],
             "fadeout_seconds": self.settings.ui.end_fadeout_seconds,
             "wmctrl_available": wmctrl_available(),
