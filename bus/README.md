@@ -114,7 +114,34 @@ Reservations carry a **duration** and **auto-expire** on next access (a forgotte
 hold frees itself), so the GPU can't get stuck. The per-prompt awareness line is
 silent when the GPU is free — zero noise until there's contention.
 
-> **Roadmap:** a standalone watchdog (Phase 2) will poll `nvidia-smi` and, when a
-> lease sits idle (models loaded but ~0% util for a long time), auto-nudge the
-> owner to release — still without the human coordinating. Conductor will grow a
-> live GPU tile (Phase 3).
+### Idle watchdog (auto-nudge / auto-reclaim)
+
+A standalone daemon, [`gpu-watchdog.sh`](gpu-watchdog.sh), polls `nvidia-smi` and
+watches the held lease. When the GPU sits **idle** (utilization ≤ threshold —
+i.e. models loaded but not computing) past a limit, it acts **without the human
+coordinating**:
+
+- **Nudges the owner** on the bus (a `[gpu-watchdog]` message their per-prompt
+  hook surfaces): *"your HARD GPU lease has shown no activity for 40m — /gpu-release if done, or /gpu-keep."* It re-nudges on a cadence while still idle, and names anyone who's `/gpu-request`ed it.
+- **Auto-releases a `soft` lease** once it's idle past a longer grace (a soft
+  hold yields by definition) and posts a `to:all` heads-up. **`hard` leases are
+  never auto-released** — the owner or the user decides; the watchdog only checks in.
+- Real GPU activity **resets** the idle clock (and the idle time shows up in the
+  awareness line: `GPU: YOU hold it (hard · ~18m left · idle 40m ⚠)`).
+
+Run it headless (once):
+
+```bash
+# systemd --user (recommended: auto-restart, starts on login)
+install -m755 bus/gpu-watchdog.sh ~/.claude/bin/gpu-watchdog.sh
+cp bus/gpu-watchdog.service ~/.config/systemd/user/
+systemctl --user enable --now gpu-watchdog.service
+#   …or simply:  nohup ~/.claude/bin/gpu-watchdog.sh run &
+```
+
+Tunables via env (in the service file or your shell): `GPU_POLL_SEC` (60),
+`GPU_IDLE_UTIL_PCT` (5), `GPU_IDLE_NUDGE_MIN` (30), `GPU_IDLE_RENUDGE_MIN` (20),
+`GPU_SOFT_RELEASE_MIN` (60).
+
+> **Roadmap:** Conductor will grow a live GPU tile (who holds it, countdown,
+> idle bar) — Phase 3.

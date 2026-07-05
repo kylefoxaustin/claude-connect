@@ -36,6 +36,23 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.10.0: 🐕 GPU idle watchdog (Phase 2 of the GPU-reservation system). A
+  standalone daemon `bus/gpu-watchdog.sh` polls `nvidia-smi` and, when the held
+  lease sits idle (utilization ≤ `GPU_IDLE_UTIL_PCT`, default 5% — "models loaded
+  but not computing"), acts without the human: **nudges the owner** on the bus
+  (a `[gpu-watchdog]` message their prompt-hook surfaces; re-nudges on a cadence,
+  names any `/gpu-request`er) after `GPU_IDLE_NUDGE_MIN` (30m); **auto-releases a
+  `soft` lease** past `GPU_SOFT_RELEASE_MIN` (60m) with a `to:all` heads-up; a
+  **`hard` lease is never auto-released** (owner/user decides — watchdog only
+  checks in). Real activity resets the idle clock (writes `last_active_epoch`);
+  idle is surfaced in the awareness line too (`… · idle 40m ⚠`) via a
+  `_gpu_held_line` update (both bus.sh copies). Shares the lease `flock`, so it
+  never races reserve/release. Ships headless via a `systemd --user` unit
+  (`bus/gpu-watchdog.service`, `%h`-relative, auto-restart, starts on login) —
+  installed + enabled live. Tick logic verified with a mock `nvidia-smi`:
+  active-reset, nudge, re-nudge cadence, soft auto-release, hard-preserve all
+  correct. **Phase 3** (planned): a Conductor GPU tile. Bus-layer; no dashboard
+  needed.
 - ✅ v2.9.0: 🎛️ GPU reservation — sessions self-coordinate a shared GPU without
   Kyle arbitrating (MVP; his ask). The bus grows from message-passing to
   shared-*resource* coordination: a cooperative **lease** in

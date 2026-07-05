@@ -89,15 +89,21 @@ _gpu_write() {  # owner mode secs job
     echo "last_active_epoch=$now"; echo "job=$4"; echo "requested_by="; } > "$GPU_LEASE"
 }
 _gpu_held_line() {  # assumes _gpu_active; the one-liner every awareness surface uses
-  local owner mode job req rem
+  local owner mode job req rem idle_since idletxt
   owner="$(_gpu_field owner)"; mode="$(_gpu_field mode)"; job="$(_gpu_field job)"
   req="$(_gpu_field requested_by)"; rem="$(_gpu_human "$(_gpu_remaining)")"
+  idle_since="$(_gpu_field idle_since_epoch)"; idletxt=""   # set by the idle watchdog
+  if [ -n "$idle_since" ]; then
+    local idle=$(( $(_gpu_now) - idle_since ))
+    [ "$idle" -ge 300 ] && idletxt=" · idle $(_gpu_human "$idle")"
+  fi
   if [ "$owner" = "$TAG" ]; then
-    local msg="GPU: YOU hold it ($mode · ~$rem left)."
+    local msg="GPU: YOU hold it ($mode · ~$rem left$idletxt)."
     [ -n "$req" ] && msg="$msg  ⚠ [$req] has REQUESTED it — /gpu-release to yield, or keep it if you still need it."
+    [ -n "$idletxt" ] && [ -z "$req" ] && msg="$msg  ⚠ idle — the watchdog may nudge/reclaim it; /gpu-release if your job's done."
     echo "$msg"
   else
-    echo "GPU: held by [$owner] ($mode · ~$rem left${job:+ · $job})."
+    echo "GPU: held by [$owner] ($mode · ~$rem left${job:+ · $job}$idletxt)."
   fi
 }
 gpu_reserve() {
