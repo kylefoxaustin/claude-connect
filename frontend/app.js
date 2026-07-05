@@ -9,6 +9,7 @@ import { redrawLines, animateLineFor } from "/static/lines.js";
 const state = {
   sessions: [],     // SessionRecord[]
   parked: [],       // ParkedSession[] — offline, relaunchable (dormant dock)
+  gpu: { available: false, smi: null, lease: null },  // GPU tile state
   fadeoutSeconds: 30,
   wmctrlAvailable: false,
 
@@ -181,6 +182,12 @@ function handleMessage({ kind, payload }) {
       renderGrid(state);
       requestAnimationFrame(() => redrawLines(state));
       refresh3D();
+      break;
+    }
+    case "gpu": {
+      state.gpu = payload || { available: false };
+      renderGrid(state);
+      requestAnimationFrame(() => redrawLines(state));
       break;
     }
     case "bus_event": {

@@ -143,5 +143,6 @@ Tunables via env (in the service file or your shell): `GPU_POLL_SEC` (60),
 `GPU_IDLE_UTIL_PCT` (5), `GPU_IDLE_NUDGE_MIN` (30), `GPU_IDLE_RENUDGE_MIN` (20),
 `GPU_SOFT_RELEASE_MIN` (60).
 
-> **Roadmap:** Conductor will grow a live GPU tile (who holds it, countdown,
-> idle bar) — Phase 3.
+Conductor visualizes all of this in a live **GPU tile** (Phase 3): the RTX/GPU
+name + live `nvidia-smi` utilization bar, who holds the lease (soft/hard), a
+ticking countdown, the watchdog's idle warning, and any pending request.

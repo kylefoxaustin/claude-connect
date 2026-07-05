@@ -41,6 +41,7 @@ from .bus import (
     set_active_tag,
     snapshot_history,
 )
+from .gpu import gpu_state
 from .models import BusEvent, BusTopology, ParkedSession, SessionRecord, Status
 from .scanner import (
     YOU_TAG,
@@ -89,6 +90,8 @@ class AppState:
 
         self.sessions: dict[str, SessionRecord] = {}        # keyed by project_dir
         self.parked: list[ParkedSession] = []               # relaunchable offline sessions
+        self.gpu_dir = settings.bus.state_dir_resolved / "gpu"   # GPU reservation lease dir
+        self.gpu: dict[str, Any] = {"available": False, "smi": None, "lease": None}
         self._scan_misses: dict[str, int] = {}              # consecutive scans a session was absent
         self.recent_events: deque[BusEvent] = deque(maxlen=RECENT_EVENTS_MAX)
         self.bus_total = 0
@@ -219,6 +222,9 @@ class AppState:
         # Refresh the Bus tile too (topology + per-tag pending) so it stays live
         # between bus events, not just on WS reconnect.
         await self.hub.broadcast("bus", self._bus_payload())
+        # GPU tile: live nvidia-smi telemetry + the current reservation lease.
+        self.gpu = await asyncio.to_thread(gpu_state, self.gpu_dir)
+        await self.hub.broadcast("gpu", self.gpu)
 
     async def _activity_loop(self) -> None:
         queue = await self.activity.events()
@@ -476,6 +482,13 @@ async def check_bus(session_id: str, request: Request) -> dict[str, Any]:
 async def get_bus(request: Request) -> dict[str, Any]:
     state: AppState = request.app.state.cond
     return state._bus_payload()
+
+
+@app.get("/api/gpu")
+async def get_gpu(request: Request) -> dict[str, Any]:
+    """Live GPU telemetry (nvidia-smi) + the current reservation lease, for the GPU tile."""
+    state: AppState = request.app.state.cond
+    return await asyncio.to_thread(gpu_state, state.gpu_dir)
 
 
 def _human_label() -> str:
@@ -763,6 +776,7 @@ async def websocket(ws: WebSocket) -> None:
         import json
         await ws.send_text(json.dumps({"kind": "sessions", "payload": state._sessions_payload()}))
         await ws.send_text(json.dumps({"kind": "bus", "payload": state._bus_payload()}))
+        await ws.send_text(json.dumps({"kind": "gpu", "payload": state.gpu}))
         while True:
             # We don't expect messages from the client right now; await any to detect close.
             await ws.receive_text()

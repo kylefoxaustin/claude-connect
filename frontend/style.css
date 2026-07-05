@@ -252,6 +252,36 @@ html, body {
   -webkit-line-clamp: 5;
 }
 
+/* --- GPU tile (shared-GPU reservation + live nvidia-smi) --- */
+.tile.gpu-tile { border-color: rgba(86, 182, 194, 0.45); border-style: dashed; }
+.tile.gpu-tile .tile-title { color: #56b6c2; }
+.status-dot.gpu-free { background: var(--status-active); }                                  /* green = available */
+.status-dot.gpu-soft { background: #e5c07b; }                                              /* amber = soft hold */
+.status-dot.gpu-hard { background: #e06c75; animation: pulse 1.6s ease-in-out infinite; }  /* red = hard hold */
+.gpu-util-badge {
+  display: inline-block; font-size: 10px; font-weight: 700;
+  margin-left: 6px; padding: 1px 7px; border-radius: 999px;
+  background: rgba(86, 182, 194, 0.16); color: #56b6c2; border: 1px solid rgba(86, 182, 194, 0.35);
+}
+.gpu-name { opacity: 0.75; }
+.gpu-bar {
+  height: 6px; border-radius: 3px; margin: 6px 0 8px;
+  background: var(--inset-bg); overflow: hidden; border: 1px solid var(--border);
+}
+.gpu-bar-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+.gpu-bar-fill.cool { background: #56b6c2; }
+.gpu-bar-fill.warm { background: #e5c07b; }
+.gpu-bar-fill.hot  { background: #e06c75; }
+.gpu-lease { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 11px; margin-bottom: 2px; }
+.gpu-lease-free { color: var(--status-active); font-weight: 600; }
+.gpu-mode { font-size: 9px; font-weight: 700; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 4px; }
+.gpu-mode.soft { background: rgba(229, 192, 123, 0.18); color: #e5c07b; border: 1px solid rgba(229, 192, 123, 0.4); }
+.gpu-mode.hard { background: rgba(224, 108, 117, 0.18); color: #e06c75; border: 1px solid rgba(224, 108, 117, 0.4); }
+.gpu-owner { font-weight: 600; color: var(--text); }
+.gpu-remaining { color: var(--text-dim); }
+.gpu-idle { color: #e5c07b; }
+.gpu-req { color: var(--text-dim); }
+
 .bus-badge {
   display: inline-block;
   font-size: 10px;

@@ -36,6 +36,21 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.11.0: 🎮 GPU tile (Phase 3 — Conductor now *visualizes* the GPU system).
+  A live tile: GPU name + `nvidia-smi` utilization bar (cool/warm/hot), the
+  current lease (soft=amber / hard=red dot, owner, **client-side ticking
+  countdown** from `expires_epoch`), the watchdog's idle warning (`⚠ idle 40m`),
+  and any pending request (`⏳ [orb_slam] waiting`) + the job note + mem
+  used/total. Backend `conductor/gpu.py` (`query_nvidia_smi` + `read_lease` with
+  the same lazy-expiry as bus.sh) → `AppState.gpu` polled each scan off-thread,
+  broadcast as a `"gpu"` WS message (+ sent on connect) + `GET /api/gpu`. Tile
+  only appears when `nvidia-smi` is present (`available`); renders like the Bus
+  tile (`GPU_KEY`, `createGpuShell`/`fillGpuTile` in `tiles.js`, a 1s
+  `updateGpuCountdowns` ticker). Live-verified via ffmpeg screenshot with a demo
+  lease (util%, RTX 5090, HARD/95emulator/~24m, idle-40m, orb_slam-waiting all
+  render). Completes the GPU arc: reserve (v2.9) → watchdog (v2.10) → visualize
+  (v2.11). Frontend + backend, both editions. (Minor: on a very crowded board
+  the tile cascades to a low slot — draggable, persists.)
 - ✅ v2.10.0: 🐕 GPU idle watchdog (Phase 2 of the GPU-reservation system). A
   standalone daemon `bus/gpu-watchdog.sh` polls `nvidia-smi` and, when the held
   lease sits idle (utilization ≤ `GPU_IDLE_UTIL_PCT`, default 5% — "models loaded
