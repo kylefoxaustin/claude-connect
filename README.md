@@ -4,7 +4,7 @@
 
 **A local dashboard for watching all your Claude Code sessions at once — in your browser or as a standalone desktop app — plus an optional _message bus_ (a shared log your sessions post to) that lets them talk to each other.**
 
-[![version: 2.8](https://img.shields.io/badge/version-2.8-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
+[![version: 2.13](https://img.shields.io/badge/version-2.13-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
 [![platform: linux](https://img.shields.io/badge/platform-linux-orange)](#requirements)
 [![safety: read--only](https://img.shields.io/badge/safety-read--only-green)](#how-it-works)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -81,10 +81,10 @@ New in **2.3–2.5**: a **🕸 History** button replays your entire cross-sessio
 - 🪟 **Live tiles** for every running Claude session — auto-discovered, no config
 - 🎯 **Click-to-focus** — clicking a tile raises the actual terminal window
 - 📬 **Cross-session messaging** with an animated bus tile showing live traffic
-- 🎛️ **Shared-GPU reservation** *(new in 2.9)* — sessions self-coordinate one GPU over the bus: `/gpu-reserve <dur> <soft|hard>`, `/gpu-status`, `/gpu-release`. Each session sees who holds it in its own context (no asking); **soft** holds yield on request, **hard** holds run to completion; leases auto-expire so nothing gets stuck. A 🐕 **idle watchdog** *(2.10)* polls `nvidia-smi` and auto-nudges (or reclaims soft) leases whose GPU has gone quiet — all without you coordinating. A live **🎮 GPU tile** *(2.11)* shows it all on the board: utilization bar, who holds it, a ticking countdown, idle/request warnings
+- 🎛️ **Shared-GPU coordination** *(new in 2.9–2.11)* — sessions self-reserve one GPU over the bus (soft/hard holds), an idle 🐕 watchdog nudges/reclaims quiet leases, and a live 🎮 GPU tile shows it all — no more arbitrating who gets the GPU. See [Shared-GPU coordination](#-shared-gpu-coordination)
 - ✉️ **Compose from the dashboard** — send your own bus message to all sessions or a chosen few, with an optional "ping" that makes them read it now
 - 🟢 **Status indicators** — `active` / `warm` / `idle` / `dormant` / `waiting` / `ended`
-- 🪙 **Per-session token usage** *(new in 2.12)* — each tile shows tokens used (`🪙 617K out · 103M total`), read from that session's transcript; hover for the full breakdown
+- 🪙 **Token usage** *(new in 2.12)* — each tile shows its tokens used (`tokens: 617K out · 103M total`, from the transcript), a **global sum** sits by the title, and a `scripts/token-usage.py` CLI reports any session/project. See [Token usage](#-token-usage)
 - 💾 **Persistent layout** — drag tiles to rearrange and **resize** them (corner grip); both stick
 - 🗕 **Minimize to dock** — tuck rarely-touched sessions into a bottom dock (still live), restore with a click
 - 💤 **Dormant dock — relaunch a closed session** *(new in 2.6)* — sessions you've closed don't disappear; they wait as chips in a **💤 Dormant** shelf. **Click one to relaunch it** — reopens `claude --continue` in its original folder, a clean resume in a single click (✕ to dismiss). Optional opt-ins can also auto-run `/rc` (Claude Code's `/remote-control`) or `/rename` afterwards
@@ -106,6 +106,7 @@ New in **2.3–2.5**: a **🕸 History** button replays your entire cross-sessio
   - Both optional — without them, the focus and 📬 buttons just no-op
   - **[Tilix](https://gnunn1.github.io/tilix-web/) users** (Tilix is a tiling terminal emulator) also get exact-tile focus via `gdbus` (ships with GLib, already present on any GTK desktop) — see [Reliable Terminal Focus](#reliable-terminal-focus)
 - **Native App Edition only:** system WebKitGTK (`python3-gi`, `gir1.2-webkit2-4.0`, `libwebkit2gtk-4.0-37`) — see [Native App Edition](#native-app-edition-ubuntu). The Web Browser Edition needs none of this.
+- **GPU features only** (optional): an **NVIDIA GPU with `nvidia-smi`** on `PATH` — for the GPU tile's live utilization and the idle watchdog. Everything else works without a GPU; the 🎮 GPU tile simply doesn't appear when `nvidia-smi` is absent.
 
 ---
 
@@ -223,12 +224,35 @@ Each tile is one live Claude session. It shows:
 - **Message count + time since last activity**
 - **📬 bubble** — appears when this session has unread bus messages (only if the [bus](#cross-session-bus) is wired up)
 - **Tag chip** (e.g. `[backend]`) — its bus identity, and a click-toggle for [Active/Passive](#active--passive) membership
+- **Token line** (`tokens: 617K out · 103M total`) — this session's usage from its transcript; hover for the breakdown (see [Token usage](#-token-usage))
 
 **Drag** a tile to move it; **drag the bottom-right corner** to resize it; the **`–`** button minimizes it to the bottom dock. Hover a truncated title to see it in full. Position, size, and minimized state persist across restarts.
 
 ### Minimize / dock
 
 Click a tile's **`–`** to tuck it into a thin **dock** along the bottom — a tiny chip with its status dot, name, and 📬 badge. It's still monitored (the dot keeps updating; a new message still lights the badge), just out of the way. Hover for the full name; **click the chip to restore** it to its previous position and size. Minimized tiles' bus wires are hidden to keep the board clean.
+
+### 🪙 Token usage
+
+Every session tile shows its token usage, read straight from that session's transcript (the same numbers Claude Code shows per command):
+
+```
+tokens: 617K out · 103M total
+```
+
+- **`out`** = tokens the model *generated* (the real "work done").
+- **`total`** = everything *processed* = `out` + all input. The gap is almost entirely **cache reads** — the whole conversation is re-read as input every turn (cheap: cached input bills at ~10% of fresh), which is why `total` dwarfs `out`.
+- **Hover** the line for the full breakdown (output / new input / cache creation / cache reads / turn count).
+- A **global sum sits next to the "Conductor" title** in the top bar — every session added up (`tokens: 41.7M out · 12.5B total`).
+
+Prefer the terminal? [`scripts/token-usage.py`](scripts/token-usage.py) reports the same, for any scope:
+
+```bash
+python scripts/token-usage.py                    # every project under ~/.claude/projects
+python scripts/token-usage.py <project-dir>      # one project's sessions
+python scripts/token-usage.py <session.jsonl>    # a single session
+python scripts/token-usage.py --json             # machine-readable
+```
 
 ### 💤 Dormant dock
 
@@ -309,6 +333,32 @@ A central tile shows recent cross-session traffic. SVG lines fan out to every se
 Click a tile's **tag chip** to toggle that session between **Active** (auto-notified) and **Passive** (manual only) right from the dashboard. Conductor writes the membership to `~/.claude/bus-state/active-tags`, and `bus.sh` reads it — so the change takes effect on that session's **next prompt** (promote a throwaway session into the team, or stop pestering one). The list seeds from your existing active set on first toggle, so nothing changes until you click.
 
 > Requires the data-file-aware `bus.sh` (the shipped [`bus/bus.sh`](bus/bus.sh) reads `active-tags`, falling back to its built-in `BUS_WHITELIST` when the file is absent). If you wired up the bus before this, re-copy `bus/bus.sh`.
+
+### 🎛️ Shared-GPU coordination
+
+If several of your Claudes share one GPU, the bus can arbitrate it so they
+**coordinate themselves — you never have to be the middleman.** It's a
+cooperative *lease* (state in `~/.claude/bus-state/gpu/`, atomic via `flock`),
+and it has three parts:
+
+1. **Reserve / release, from any session** — slash-commands the Claudes run:
+   `/gpu-reserve <dur> <soft|hard> ["job"]`, `/gpu-status` (read-only — no
+   message sent), `/gpu-release`, `/gpu-keep`, `/gpu-request`. A session that
+   wants the GPU just checks and claims it; nobody has to ask anyone, because the
+   current holder is **injected into every session's per-prompt context**
+   automatically.
+2. **Two honest hold modes** — the signal that makes it work:
+   - **soft** — *"I've got it + code loaded, but I'll drop it if you need it."* Preemptible; `/gpu-request` nudges the holder.
+   - **hard** — *"mine until my job's done or you stop me."* Not preemptible; requesters queue. Leases carry a duration and **auto-expire**, so a forgotten hold frees itself.
+3. **An idle watchdog** — a small headless daemon ([`bus/gpu-watchdog.sh`](bus/gpu-watchdog.sh), run via `systemd --user`) polls `nvidia-smi`. When the held GPU sits idle (models loaded but ~0% utilization) past a threshold, it **auto-nudges the owner** to release (re-nudging on a cadence, naming anyone waiting) and **auto-reclaims an idle `soft` lease** after a longer grace — a `hard` lease is only ever checked in on, never force-released.
+
+Conductor **visualizes** all of it in a live **🎮 GPU tile** on the board: the
+GPU name + `nvidia-smi` utilization bar, who holds the lease (soft = amber /
+hard = red), a ticking countdown, the watchdog's idle warning, any pending
+request, and the job note. The tile appears only when `nvidia-smi` is present.
+
+> Full command reference + install (the daemon, the slash-commands, thresholds)
+> is in the bus docs: [**GPU reservation**](bus/README.md#gpu-reservation-shared-resource-coordination).
 
 ### ✉ Compose
 

@@ -36,6 +36,21 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.13.0: `scripts/token-usage.py` CLI + README fresh-eyes pass. **CLI**: a
+  standalone one-shot analyzer (self-contained, no `conductor` import) that sums
+  transcript `usage` blocks per session/project/all — `python
+  scripts/token-usage.py [path]`, `--json`, clean exit codes. Tested across a
+  single session, a project dir, all-projects (Kyle's fleet: 67 sessions / 89K
+  turns / 40.1B total), JSON, and bad-path. **README fresh-eyes pass** (cold
+  newcomer agent read): version badge 2.8→2.13 (was 4 minors stale); gave the
+  GPU system its **own "🎛️ Shared-GPU coordination" section** in Using-the-Dashboard
+  (was one dense run-on bullet + an external link — the agent's #2 issue);
+  documented the previously-unmentioned **global topbar token sum** + added the
+  token line to the "what a tile shows" list + a "🪙 Token usage" section (with
+  the out-vs-total explanation + the CLI); added the **NVIDIA/`nvidia-smi`**
+  requirement (optional, GPU features only); tightened the swollen GPU/token
+  Features bullets to one-liners pointing at the sections; unified 🎛️ (system) vs
+  🎮 (tile). Docs + one script; no app-code change.
 - ✅ v2.12.1: Token usage polish. Tile badge now literal `tokens: X out · Y total`
   (dropped the 🪙 coin — read as money; no universal token glyph). Added a
   **global token sum next to the "Conductor" title** (topbar-left group): sums
