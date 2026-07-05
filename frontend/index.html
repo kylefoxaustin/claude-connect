@@ -20,7 +20,10 @@
   </head>
   <body>
     <header class="topbar">
-      <h1><img class="app-logo" src="/static/logo.svg" alt="" width="26" height="26" />Conductor</h1>
+      <div class="topbar-left">
+        <h1><img class="app-logo" src="/static/logo.svg" alt="" width="26" height="26" />Conductor</h1>
+        <span class="token-total" id="token-total" title="Total tokens across all sessions on the board (output generated · total processed)"></span>
+      </div>
       <div class="topbar-meta">
         <span id="conn-state" class="conn-state conn-down">disconnected</span>
         <span id="session-count">0 sessions</span>
