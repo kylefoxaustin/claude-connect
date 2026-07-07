@@ -1,0 +1,12 @@
+[Unit]
+Description=Claude Bus — resource idle watchdog (nudges/reclaims idle GPU + board leases)
+After=default.target
+
+[Service]
+Type=simple
+ExecStart=%h/.claude/bin/resource-watchdog.sh run
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
