@@ -87,62 +87,71 @@ message count, click-to-focus). It just has no bus state, so:
 That's intentional: wired sessions are visually on the tunnel; un-wired ones are
 monitored but silent.
 
-## GPU reservation (shared-resource coordination)
+## Resource reservation (shared GPU, boards, any single-holder rig)
 
-If your sessions share one GPU, the bus can arbitrate it so they **self-coordinate
-without you in the middle**. It's a cooperative lease: state lives in
-`~/.claude/bus-state/gpu/lease`, acquire/release are atomic (`flock`), and the
-current status is auto-injected into every session's per-prompt context — so a
-session *knows* who holds the GPU without asking anyone.
+If your sessions share a scarce resource — one GPU, a dev board (an IQ9 EVK, …),
+any single-holder rig — the bus can arbitrate it so they **self-coordinate
+without you in the middle**. Each resource is a **named** cooperative lease: state
+lives in `~/.claude/bus-state/resources/<name>/lease`, acquire/release are atomic
+(`flock`), and the current status of *every* resource is auto-injected into each
+session's per-prompt context — so a session *knows* who holds what without asking.
 
-Slash-commands (each just calls `bus.sh gpu …`):
+Slash-commands (each just calls `bus.sh res …`), with the resource named:
 
 | Command | What it does |
 | --- | --- |
-| `/gpu-status` | Who holds it, mode, time left, any pending request. **Read-only** — sends no message. |
-| `/gpu-reserve <dur> <soft\|hard> ["job"]` | Claim it if free (e.g. `30m`, `2h`). Rejected (with guidance) if held. |
-| `/gpu-release` | Free your reservation. |
-| `/gpu-keep <dur>` | Extend your reservation before it expires. |
-| `/gpu-request` | Flag the current holder that you want it (they see it next turn). |
+| `/res-status [name]` | Who holds each resource, mode, time left, any pending request. **Read-only** — sends no message. Omit the name for all resources. |
+| `/reserve <name> <dur> <soft\|hard> ["job"]` | Claim it if free (e.g. `iq9-evk 2h hard`). Rejected (with guidance) if held. |
+| `/release <name>` | Free your reservation. |
+| `/keep <name> <dur>` | Extend your reservation before it expires — **also the heartbeat** for non-GPU resources (see the watchdog). |
+| `/res-request <name>` | Flag the current holder that you want it (they see it next turn). |
+
+The GPU keeps its `/gpu-*` commands as **aliases** for the `gpu` resource
+(`/gpu-reserve 30m soft` == `/reserve gpu 30m soft`), so nothing that already
+uses them changes.
 
 **Two hold modes** — the honest signal that makes coordination work:
 
-- **soft** — *"I have it + code loaded, but I'll drop it if you need it."* Preemptible; a `/gpu-request` nudges the holder.
+- **soft** — *"I have it + code/board set up, but I'll drop it if you need it."* Preemptible; a `/res-request` nudges the holder.
 - **hard** — *"Mine until my job finishes or the user says stop."* Not preemptible; requesters wait/queue.
 
 Reservations carry a **duration** and **auto-expire** on next access (a forgotten
-hold frees itself), so the GPU can't get stuck. The per-prompt awareness line is
-silent when the GPU is free — zero noise until there's contention.
+hold frees itself), so a resource can't get stuck. The per-prompt awareness line
+is silent when everything is free — zero noise until there's contention.
 
 ### Idle watchdog (auto-nudge / auto-reclaim)
 
-A standalone daemon, [`gpu-watchdog.sh`](gpu-watchdog.sh), polls `nvidia-smi` and
-watches the held lease. When the GPU sits **idle** (utilization ≤ threshold —
-i.e. models loaded but not computing) past a limit, it acts **without the human
-coordinating**:
+A standalone daemon, [`resource-watchdog.sh`](resource-watchdog.sh), watches every
+held lease and judges *idle* per resource type:
 
-- **Nudges the owner** on the bus (a `[gpu-watchdog]` message their per-prompt
-  hook surfaces): *"your HARD GPU lease has shown no activity for 40m — /gpu-release if done, or /gpu-keep."* It re-nudges on a cadence while still idle, and names anyone who's `/gpu-request`ed it.
+- **GPU** — by `nvidia-smi` **utilization** (≤ threshold = models loaded but not computing).
+- **Other resources** — by the **`/keep` heartbeat**: run `/keep <name> <dur>` while you're actively using a board; if no heartbeat arrives for a while, it counts as idle. (No board-specific probe needed.)
+
+When a lease sits idle past a limit, it acts **without the human coordinating**:
+
+- **Nudges the owner** on the bus (a `[resource-watchdog]` message their per-prompt
+  hook surfaces): *"your HARD iq9-evk lease has shown no activity for 40m — /release if done, or /keep."* It re-nudges on a cadence while still idle, and names anyone who's `/res-request`ed it.
 - **Auto-releases a `soft` lease** once it's idle past a longer grace (a soft
   hold yields by definition) and posts a `to:all` heads-up. **`hard` leases are
   never auto-released** — the owner or the user decides; the watchdog only checks in.
-- Real GPU activity **resets** the idle clock (and the idle time shows up in the
-  awareness line: `GPU: YOU hold it (hard · ~18m left · idle 40m ⚠)`).
+- Activity (GPU compute, or a fresh `/keep`) **resets** the idle clock (and the idle
+  time shows up in the awareness line: `iq9-evk: YOU hold it (hard · ~18m left · idle 40m ⚠)`).
 
 Run it headless (once):
 
 ```bash
 # systemd --user (recommended: auto-restart, starts on login)
-install -m755 bus/gpu-watchdog.sh ~/.claude/bin/gpu-watchdog.sh
-cp bus/gpu-watchdog.service ~/.config/systemd/user/
-systemctl --user enable --now gpu-watchdog.service
-#   …or simply:  nohup ~/.claude/bin/gpu-watchdog.sh run &
+install -m755 bus/resource-watchdog.sh ~/.claude/bin/resource-watchdog.sh
+cp bus/resource-watchdog.service ~/.config/systemd/user/
+systemctl --user enable --now resource-watchdog.service
+#   …or simply:  nohup ~/.claude/bin/resource-watchdog.sh run &
 ```
 
-Tunables via env (in the service file or your shell): `GPU_POLL_SEC` (60),
-`GPU_IDLE_UTIL_PCT` (5), `GPU_IDLE_NUDGE_MIN` (30), `GPU_IDLE_RENUDGE_MIN` (20),
-`GPU_SOFT_RELEASE_MIN` (60).
+Tunables via env (in the service file or your shell): `RES_POLL_SEC` (60),
+`RES_IDLE_UTIL_PCT` (5, GPU only), `RES_IDLE_NUDGE_MIN` (30), `RES_IDLE_RENUDGE_MIN` (20),
+`RES_SOFT_RELEASE_MIN` (60).
 
-Conductor visualizes all of this in a live **GPU tile** (Phase 3): the RTX/GPU
-name + live `nvidia-smi` utilization bar, who holds the lease (soft/hard), a
-ticking countdown, the watchdog's idle warning, and any pending request.
+Conductor visualizes each resource as a live tile: the holder (soft/hard), a
+ticking countdown, the watchdog's idle warning, and any pending request. The
+**GPU tile** additionally shows the GPU name + live `nvidia-smi` utilization bar +
+memory; other resources show a plain lease.

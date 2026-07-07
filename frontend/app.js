@@ -9,7 +9,7 @@ import { redrawLines, animateLineFor } from "/static/lines.js";
 const state = {
   sessions: [],     // SessionRecord[]
   parked: [],       // ParkedSession[] — offline, relaunchable (dormant dock)
-  gpu: { available: false, smi: null, lease: null },  // GPU tile state
+  resources: { resources: [] },  // shared-resource tiles (GPU, boards, …)
   fadeoutSeconds: 30,
   wmctrlAvailable: false,
 
@@ -184,8 +184,8 @@ function handleMessage({ kind, payload }) {
       refresh3D();
       break;
     }
-    case "gpu": {
-      state.gpu = payload || { available: false };
+    case "resources": {
+      state.resources = payload || { resources: [] };
       renderGrid(state);
       requestAnimationFrame(() => redrawLines(state));
       break;

@@ -36,6 +36,30 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.14.0: 🎛️ Named-resource reservation — generalized the whole GPU
+  reservation system to **any shared resource** (the GPU + dev boards like the
+  Qualcomm IQ9 EVK). Driven by Kyle: "the IQ9 EVK is owned by qualcomm-claude but
+  others want it." Design (AskUserQuestion): **generalize + add EVK** (not a
+  one-off) + **heartbeat** idle-detection for non-GPU resources. **bus.sh**: the
+  `gpu_*` block became generic `res_*` (lease at `bus-state/resources/<name>/`,
+  parameterized by name via `_res_setup`); new `res)` case + `gpu)` kept as a
+  back-compat alias (`/gpu-*` → resource `gpu`); the per-prompt hook now shows a
+  line **per held resource** (`res_hook_lines`). Spliced into live + repo bus.sh
+  via a tested migration (the generic core was scratch-tested first: multi-
+  resource lifecycle, correct labels, 8-way race → 1 winner, heartbeat). New
+  slash-commands `/reserve /release /keep /res-request /res-status` (+ kept
+  `/gpu-*`). **Watchdog**: `gpu-watchdog.sh` → `resource-watchdog.sh` — loops all
+  resources, idle = nvidia-smi util (gpu) OR time-since-`/keep` (others); soft
+  auto-release, hard check-in only; systemd unit swapped
+  (`gpu-watchdog.service` → `resource-watchdog.service`). **Conductor**:
+  `conductor/resources.py` (`resources_state` reads all leases + nvidia-smi for
+  gpu) replaces the single-GPU `gpu_state`; `"gpu"` WS msg → `"resources"`;
+  `/api/gpu` → `/api/resources`; frontend renders a **tile per resource**
+  (`fillResourceTile` generalizes `fillGpuTile` — util bar/mem only for the GPU;
+  boards get a plain 🔧 lease tile). Path migrated `bus-state/gpu` →
+  `bus-state/resources/gpu` (was free, clean). Live-verified: both tiles render
+  (GPU free + iq9-evk hard/qualcomm/drone-sizer-waiting via a demo lease). 89
+  tests pass. Backend + frontend + bus infra + live services; both editions.
 - ✅ v2.13.0: `scripts/token-usage.py` CLI + README fresh-eyes pass. **CLI**: a
   standalone one-shot analyzer (self-contained, no `conductor` import) that sums
   transcript `usage` blocks per session/project/all — `python

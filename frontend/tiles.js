@@ -287,7 +287,6 @@ const tileResizeObserver = new ResizeObserver((entries) => {
 // (the scanner already enforces one session per project dir).
 function tileKeyForSession(s) { return `proj:${s.project_dir}`; }
 const BUS_KEY = "bus:bus";
-const GPU_KEY = "gpu:gpu";
 
 export function resetLayout() {
   positions = {};
@@ -406,7 +405,8 @@ export function renderGrid(state) {
   // non-collapsed session tiles. (Tiles are absolutely positioned, so DOM order
   // is cosmetic — new nodes just append.)
   const items = [{ key: BUS_KEY, kind: "bus" }];
-  if (state.gpu && state.gpu.available) items.push({ key: GPU_KEY, kind: "gpu" });
+  for (const res of (state.resources && state.resources.resources) || [])
+    items.push({ key: "res:" + res.name, kind: "resource", res });
   const dockSessions = [];
   for (const key of allSessionKeys) {
     if (collapsedMembers.has(key)) continue;
@@ -430,13 +430,13 @@ export function renderGrid(state) {
     const isNew = !node;
     if (isNew) {
       node = it.kind === "bus" ? createBusShell()
-           : it.kind === "gpu" ? createGpuShell()
+           : it.kind === "resource" ? createResShell()
            : createSessionShell();
       node.dataset.tileKey = it.key;
       tileNodes.set(it.key, node);
     }
     if (it.kind === "bus") fillBusTile(node, state);
-    else if (it.kind === "gpu") fillGpuTile(node, state);
+    else if (it.kind === "resource") fillResourceTile(node, it.res);
     else fillSessionTile(node, it.s, state);
     if (isNew) {
       grid.appendChild(node);
@@ -803,25 +803,24 @@ function fillBusTile(tile, state) {
 }
 
 // --- GPU tile (Phase 3: shared-GPU reservation + live nvidia-smi telemetry) --
-const GPU_BARE = (t) => String(t || "").replace(/^\[/, "").replace(/\]$/, "").replace(/^other:/, "");
-function gpuHuman(sec) {
+const RES_BARE = (t) => String(t || "").replace(/^\[/, "").replace(/\]$/, "").replace(/^other:/, "");
+function resHuman(sec) {
   sec = Math.max(0, Math.round(sec));
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
   if (h) return `${h}h ${m}m`;
   if (m) return `${m}m`;
   return `${s}s`;
 }
-function createGpuShell() {
-  return el("div", { class: "tile gpu-tile", dataset: { gpuTile: "1" } });
+function createResShell() {
+  return el("div", { class: "tile gpu-tile", dataset: { resTile: "1" } });
 }
-function fillGpuTile(tile, state) {
-  const g = state.gpu || {};
-  const smi = g.smi || {};
-  const lease = g.lease || null;
-  const util = Math.max(0, Math.min(100, smi.util ?? 0));
-  const memUsed = smi.mem_used ?? 0, memTotal = smi.mem_total ?? 0;
-  const memPct = memTotal ? Math.round((memUsed / memTotal) * 100) : 0;
-  const name = smi.name || "GPU";
+// One tile per shared resource. The GPU (smi present) gets a utilization bar +
+// memory footer; other resources (a board, …) are a plain lease with a hardware icon.
+function fillResourceTile(tile, res) {
+  const smi = res.smi || null;
+  const lease = res.lease || null;
+  const isGpu = !!smi;
+  const label = res.label || res.name;
 
   const held = !!lease;
   const mode = held ? (lease.mode === "hard" ? "hard" : "soft") : null;
@@ -832,53 +831,75 @@ function fillGpuTile(tile, state) {
     const idle = lease.idle || 0;
     const children = [
       el("span", { class: `gpu-mode ${mode}` }, mode.toUpperCase()),
-      el("span", { class: "gpu-owner" }, GPU_BARE(lease.owner)),
+      el("span", { class: "gpu-owner" }, RES_BARE(lease.owner)),
       el("span", { class: "gpu-remaining", dataset: { expires: String(lease.expires_epoch || 0) } },
-        "~" + gpuHuman(lease.remaining ?? 0) + " left"),
+        "~" + resHuman(lease.remaining ?? 0) + " left"),
     ];
-    if (idle >= 300) children.push(el("span", { class: "gpu-idle", title: "GPU quiet — the watchdog may nudge/reclaim it" }, `⚠ idle ${gpuHuman(idle)}`));
-    if (lease.requested_by) children.push(el("span", { class: "gpu-req", title: "another session requested this GPU" }, `⏳ ${GPU_BARE(lease.requested_by)} waiting`));
+    if (idle >= 300) children.push(el("span", { class: "gpu-idle", title: "idle — the watchdog may nudge/reclaim it" }, `⚠ idle ${resHuman(idle)}`));
+    if (lease.requested_by) children.push(el("span", { class: "gpu-req", title: "another session requested this resource" }, `⏳ ${RES_BARE(lease.requested_by)} waiting`));
     leaseEl = el("div", { class: "gpu-lease" }, ...children);
   } else {
-    leaseEl = el("div", { class: "gpu-lease gpu-lease-free" }, "● FREE — reserve with /gpu-reserve");
+    const cmd = isGpu ? "/gpu-reserve" : `/reserve ${res.name}`;
+    leaseEl = el("div", { class: "gpu-lease gpu-lease-free" }, `● FREE — reserve with ${cmd}`);
   }
 
-  const utilClass = util >= 70 ? "hot" : util >= 25 ? "warm" : "cool";
+  const titleKids = [label];
+  if (isGpu) {
+    const util = Math.max(0, Math.min(100, smi.util ?? 0));
+    titleKids.push(el("span", { class: "gpu-util-badge", title: "live GPU utilization" }, `${util}%`));
+  }
 
-  tile.replaceChildren(
+  const children = [
     el("div", { class: "tile-header" },
       el("div", { class: "tile-title-wrap" },
         el("span", { class: `status-dot ${dotClass}` }),
-        el("span", { class: "tile-title" }, "GPU",
-          el("span", { class: "gpu-util-badge", title: "live GPU utilization" }, `${util}%`),
-        ),
+        el("span", { class: "tile-title" }, ...titleKids),
       ),
     ),
-    el("div", { class: "tile-projectdir gpu-name" }, name),
-    el("div", { class: "gpu-bar", title: `utilization ${util}%` },
-      el("div", { class: `gpu-bar-fill ${utilClass}`, style: `width:${util}%` }),
-    ),
-    leaseEl,
-    el("div", { class: "tile-footer" },
-      el("span", { title: "GPU memory used / total" },
-        `mem ${(memUsed / 1024).toFixed(1)}/${(memTotal / 1024).toFixed(0)} GB · ${memPct}%`),
-      el("span", {}, held && lease.job ? `job: ${lease.job}` : ""),
-    ),
-  );
+  ];
+
+  if (isGpu) {
+    const util = Math.max(0, Math.min(100, smi.util ?? 0));
+    const utilClass = util >= 70 ? "hot" : util >= 25 ? "warm" : "cool";
+    const memUsed = smi.mem_used ?? 0, memTotal = smi.mem_total ?? 0;
+    const memPct = memTotal ? Math.round((memUsed / memTotal) * 100) : 0;
+    children.push(
+      el("div", { class: "tile-projectdir gpu-name" }, smi.name || "GPU"),
+      el("div", { class: "gpu-bar", title: `utilization ${util}%` },
+        el("div", { class: `gpu-bar-fill ${utilClass}`, style: `width:${util}%` })),
+      leaseEl,
+      el("div", { class: "tile-footer" },
+        el("span", { title: "GPU memory used / total" },
+          `mem ${(memUsed / 1024).toFixed(1)}/${(memTotal / 1024).toFixed(0)} GB · ${memPct}%`),
+        el("span", {}, held && lease.job ? `job: ${lease.job}` : ""),
+      ),
+    );
+  } else {
+    children.push(
+      el("div", { class: "tile-projectdir gpu-name", title: "shared hardware resource" }, `🔧 ${res.name}`),
+      leaseEl,
+      el("div", { class: "tile-footer" },
+        el("span", {}, held ? "reserved" : "available"),
+        el("span", {}, held && lease.job ? `job: ${lease.job}` : ""),
+      ),
+    );
+  }
+
+  tile.replaceChildren(...children);
   return tile;
 }
 
 // Smoothly tick the "~Nm left" countdown between the ~3s server updates.
-function updateGpuCountdowns() {
+function updateResCountdowns() {
   const now = Date.now() / 1000;
   document.querySelectorAll(".gpu-remaining[data-expires]").forEach((elm) => {
     const exp = Number(elm.dataset.expires || 0);
     if (!exp) return;
     const rem = exp - now;
-    elm.textContent = rem > 0 ? "~" + gpuHuman(rem) + " left" : "expiring…";
+    elm.textContent = rem > 0 ? "~" + resHuman(rem) + " left" : "expiring…";
   });
 }
-setInterval(updateGpuCountdowns, 1000);
+setInterval(updateResCountdowns, 1000);
 
 // --- Pointer-based drag -----------------------------------------------------
 // Uses pointer events with a small movement threshold so simple clicks (and
