@@ -154,6 +154,13 @@ When a lease sits idle past a limit, it acts **without the human coordinating**:
 - Activity (GPU compute, or a fresh `/keep`) **resets** the idle clock (and the idle
   time shows up in the awareness line: `iq9-evk: YOU hold it (hard · ~18m left · idle 40m ⚠)`).
 
+> **A nudge has to actually reach someone.** Bus messages surface through a session's
+> *per-prompt hook* — so an idle holder (the only kind that gets nudged) never reads
+> one. If Conductor is running it closes that loop: when the watchdog nudges a live
+> holder, it injects `/msg-check` into that session so the nudge lands and the holder
+> can `/keep` or `/release`. Once per idle *episode*, never mid-task, so it can't
+> spam your focus on the re-nudge cadence.
+
 **Orphan reaping (after a reboot).** A lease is a *file* — it outlives the session
 that took it. So after a reboot you'd otherwise be left with a `hard` lease held by
 a session that no longer exists, blocking the resource until its duration expires

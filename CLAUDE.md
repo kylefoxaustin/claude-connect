@@ -36,6 +36,24 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.17.0: 🔔 Wake an idle holder when the watchdog nudges it — closes the
+  idle-detection loop. **Found live**: qualcomm held `iq9-evk` (hard) idle for
+  75m; the watchdog nudged 3× (30m/50m/1h10m) and qualcomm *never saw a single
+  one* — its session was alive but `status=idle`, and bus messages only surface
+  through a session's **per-prompt hook**, which an unprompted session never
+  fires. So the watchdog was talking into the void and the board stayed locked
+  until expiry. Same class of problem the offer-wake solved (an idle session is
+  only reachable by a keystroke, not a message) — we'd just never wired nudges to
+  it. `read_lease` now exposes `nudged_epoch` + `idle_since_epoch`;
+  `AppState._wake_nudged_owners` injects `/msg-check` into a nudged holder **once
+  per idle episode** (keyed on `idle_since_epoch`, which the watchdog clears on
+  activity — so a *new* idle spell wakes again, but the 20m re-nudge cadence does
+  not spam focus). Refactored the two wake paths onto shared `_live_session_for`
+  + `_inject_msg_check` helpers, and added a **busy guard** (`_BUSY_STATUSES` =
+  active/warm, mirroring the frontend's ping guard) to *both* — never inject
+  keystrokes into a Claude mid-task; skip without marking so it retries once
+  quiet. Dead owner → left to the v2.16 orphan path. 5 new tests (14 in
+  `test_resources.py`, 103 total). Kyle also had me wake qualcomm by hand first.
 - ✅ v2.16.0: 👻 Orphan-lease surfacing + 1-click reclaim ("tier 2" of the reboot
   finding) — **and a serious tag-matching bugfix uncovered while building it.**
   Conductor knows which sessions are live, so a lease whose owner has no live

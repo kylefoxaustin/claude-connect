@@ -66,6 +66,7 @@ def read_lease(gpu_dir: Path, now: float | None = None) -> dict[str, Any] | None
     idle_since = d.get("idle_since_epoch", "")
     idle = int(now - int(idle_since)) if idle_since.isdigit() else 0
     acq = d.get("acquired_epoch", "")
+    nudged = d.get("nudged_epoch", "")
     mode = d.get("mode", "")
     queue = [t for t in d.get("queue", "").split(",") if t]  # waiting tags, FIFO
     return {
@@ -75,6 +76,10 @@ def read_lease(gpu_dir: Path, now: float | None = None) -> dict[str, Any] | None
         "job": d.get("job", ""),
         "remaining": int(remaining),
         "idle": max(0, idle),
+        # Set by the watchdog. `idle_since_epoch` identifies one idle *episode*
+        # (cleared on activity); `nudged_epoch` marks that it has posted a nudge.
+        "idle_since_epoch": int(idle_since) if idle_since.isdigit() else None,
+        "nudged_epoch": int(nudged) if nudged.isdigit() else None,
         "queue": queue,                     # who's waiting, in order
         "requested_by": (queue[0] if queue else None),  # next in line (back-compat)
         "expires_epoch": int(exp),
