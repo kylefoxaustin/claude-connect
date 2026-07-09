@@ -15,11 +15,31 @@ touch "$BUS_FILE"
 # unmatched falls back to other:<dirname>. Keep the tags here in sync with the
 # [bus.tags] table in Conductor's settings.toml so tiles show the same tag.
 CWD="${PWD:-$(pwd)}"
+
+# Where your projects live, one directory per project. A session that cd's deep
+# inside a project (results/bench_data, a nested repo, …) must keep the SAME bus
+# identity, so the tag fallback below names the PROJECT, not the current dir.
+BUS_PROJECTS_ROOT="${BUS_PROJECTS_ROOT:-$HOME/Documents/GitHub}"
+
+_proj_root() {
+  local rel root=""
+  # 1) Directly under the projects root -> that project dir wins.
+  case "$CWD" in
+    "$BUS_PROJECTS_ROOT"/?*)
+      rel="${CWD#"$BUS_PROJECTS_ROOT"/}"; rel="${rel%%/*}"
+      if [ -n "$rel" ]; then printf '%s\n' "$BUS_PROJECTS_ROOT/$rel"; return; fi ;;
+  esac
+  # 2) Else the enclosing git repo, if any. 3) Else the cwd itself.
+  root="$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null || true)"
+  [ -n "$root" ] || root="$CWD"
+  printf '%s\n' "$root"
+}
+
 case "$CWD" in
   */my-api|*/my-api/*)       TAG="api"    ;;
   */my-web|*/my-web/*)       TAG="web"    ;;
   */my-worker|*/my-worker/*) TAG="worker" ;;
-  *)                         TAG="other:$(basename "$CWD")" ;;
+  *)                         TAG="other:$(basename "$(_proj_root)")" ;;
 esac
 
 # Tags that participate in the AUTOMATIC hooks (SessionStart context injection +
