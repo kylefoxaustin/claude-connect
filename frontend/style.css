@@ -298,6 +298,15 @@ html, body {
 .gpu-mode.hard { background: rgba(224, 108, 117, 0.18); color: #e06c75; border: 1px solid rgba(224, 108, 117, 0.4); }
 .gpu-mode.offer { background: rgba(97, 175, 239, 0.18); color: #61afef; border: 1px solid rgba(97, 175, 239, 0.45); }
 .gpu-lease-offer { color: #61afef; }
+/* Lease whose owner has no live session — surfaced, never auto-reclaimed. */
+.res-orphan { color: #e06c75; font-weight: 600; cursor: help; }
+.res-reclaim {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.03em; padding: 2px 7px;
+  border-radius: 4px; cursor: pointer; color: #e06c75;
+  background: rgba(224, 108, 117, 0.14); border: 1px solid rgba(224, 108, 117, 0.45);
+}
+.res-reclaim:hover:not(:disabled) { background: rgba(224, 108, 117, 0.28); color: #fff; }
+.res-reclaim:disabled { opacity: 0.6; cursor: default; }
 .gpu-owner { font-weight: 600; color: var(--text); }
 .gpu-remaining { color: var(--text-dim); }
 .gpu-idle { color: #e5c07b; }

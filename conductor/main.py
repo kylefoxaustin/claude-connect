@@ -63,6 +63,16 @@ from .windows import focus_session, send_keys_to_session, wmctrl_available
 from .ws import WSHub
 
 log = logging.getLogger("conductor")
+
+
+def _bare_tag(tag: str | None) -> str:
+    """Compare tags on a common form.
+
+    Conductor stores a session's tag bracketed (``"[other:api]"``) because that's
+    how it renders; ``bus.sh`` writes lease owners bare (``"other:api"``). Matching
+    the two directly never succeeds — normalize before comparing.
+    """
+    return (tag or "").strip().strip("[]")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
@@ -94,6 +104,7 @@ class AppState:
         self.res_root = settings.bus.state_dir_resolved / "resources"   # shared-resource leases
         self.resources: dict[str, Any] = {"resources": []}
         self._pinged_offers: set[str] = set()                 # offers we've already woken
+        self._owner_missing_since: dict[str, float] = {}      # lease -> when its owner went offline
         self.token_accountant = TokenAccountant()             # per-session token tally
         self._scan_misses: dict[str, int] = {}              # consecutive scans a session was absent
         self.recent_events: deque[BusEvent] = deque(maxlen=RECENT_EVENTS_MAX)
@@ -227,8 +238,42 @@ class AppState:
         await self.hub.broadcast("bus", self._bus_payload())
         # Resource tiles: named-resource leases (+ nvidia-smi telemetry for the GPU).
         self.resources = await asyncio.to_thread(resources_state, self.res_root)
+        self._annotate_orphans()
         await self.hub.broadcast("resources", self.resources)
         await self._wake_offered_sessions()
+
+    def _annotate_orphans(self) -> None:
+        """Flag leases whose owner has no live session.
+
+        Unlike the watchdog's boot-time check (a lease older than the boot has a
+        *provably* dead owner), this is only strong evidence: a session can be
+        closed and relaunched. So Conductor never reclaims on its own — after a
+        debounce it just marks the lease ``orphan_suspect`` so the user can hand
+        it on with one click. Offers are skipped; they auto-pass on their own.
+        """
+        now = time.time()
+        threshold = self.settings.bus.orphan_flag_seconds
+        live = {_bare_tag(s.tag) for s in self.sessions.values() if s.tag and s.status != Status.ENDED}
+        offline_keys: set[str] = set()
+        for r in self.resources.get("resources", []):
+            lease = r.get("lease")
+            if not lease or lease.get("offered"):
+                continue
+            owner = lease.get("owner", "")
+            if not owner:
+                continue
+            key = f"{r['name']}\x00{owner}"
+            if _bare_tag(owner) in live:
+                self._owner_missing_since.pop(key, None)
+                lease.update(owner_live=True, owner_offline_seconds=0, orphan_suspect=False)
+                continue
+            offline_keys.add(key)
+            since = self._owner_missing_since.setdefault(key, now)
+            off = int(now - since)
+            lease.update(owner_live=False, owner_offline_seconds=off, orphan_suspect=off >= threshold)
+        for k in list(self._owner_missing_since):  # forget leases that are gone
+            if k not in offline_keys:
+                self._owner_missing_since.pop(k, None)
 
     async def _wake_offered_sessions(self) -> None:
         """The moment a resource is OFFERED to the next-in-queue, inject /msg-check
@@ -246,7 +291,7 @@ class AppState:
             if key in self._pinged_offers:
                 continue
             rec = next((s for s in self.sessions.values()
-                        if s.tag == owner and s.status != Status.ENDED), None)
+                        if _bare_tag(s.tag) == _bare_tag(owner) and s.status != Status.ENDED), None)
             if rec is None:
                 continue  # untracked / not-yet-live -> bus-message fallback (retry next scan)
             try:
@@ -526,9 +571,44 @@ async def get_bus(request: Request) -> dict[str, Any]:
 
 @app.get("/api/resources")
 async def get_resources(request: Request) -> dict[str, Any]:
-    """Shared-resource leases (+ nvidia-smi for the GPU), for the resource tiles."""
+    """Shared-resource leases (+ nvidia-smi for the GPU), for the resource tiles.
+
+    Serves the same scan-cached, orphan-annotated payload the WebSocket broadcasts
+    (recomputing here would silently drop ``orphan_suspect`` — those flags need the
+    live-session list, which only the scan loop has).
+    """
     state: AppState = request.app.state.cond
-    return await asyncio.to_thread(resources_state, state.res_root)
+    return state.resources
+
+
+@app.post("/api/resources/{name}/reclaim")
+async def reclaim_resource(name: str, request: Request) -> dict[str, Any]:
+    """Hand on a lease whose owner has no live session (user-triggered only).
+
+    Refuses unless Conductor has actually flagged the lease as an orphan suspect,
+    so a live holder's reservation can never be yanked from the dashboard. The
+    hand-off itself goes through ``bus.sh res promote`` — the same race-safe path
+    the watchdog uses — so it offers the resource to the next in the queue, or
+    frees it when nobody is waiting.
+    """
+    state: AppState = request.app.state.cond
+    if not name or not all(c.isalnum() or c in "._-" for c in name):
+        raise HTTPException(status_code=400, detail="bad resource name")
+    entry = next((r for r in state.resources.get("resources", []) if r.get("name") == name), None)
+    lease = entry.get("lease") if entry else None
+    if not lease:
+        raise HTTPException(status_code=404, detail="no active lease on that resource")
+    if not lease.get("orphan_suspect"):
+        raise HTTPException(status_code=409, detail="owner's session is live (or not offline long enough)")
+    owner = lease.get("owner", "")
+    proc = await asyncio.to_thread(
+        subprocess.run,
+        [str(state.settings.bus.script_path_resolved), "res", "promote", name, owner],
+        capture_output=True, text=True, timeout=15,
+    )
+    result = (proc.stdout or "").strip()
+    log.info("reclaimed orphaned lease on %s from [%s]: %s", name, owner, result or proc.returncode)
+    return {"resource": name, "owner": owner, "result": result, "ok": proc.returncode == 0}
 
 
 def _human_label() -> str:

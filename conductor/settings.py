@@ -37,6 +37,10 @@ class BusSettings:
     script_path: str = "~/.claude/bin/bus.sh"
     jsonl_path: str = "~/.claude/bus.jsonl"
     idle_seconds: float = 30.0
+    # A resource lease whose owner has had no live session for this long is
+    # surfaced as an orphan suspect (never auto-reclaimed — a session can be
+    # closed and relaunched; the user decides). Matches RES_ORPHAN_GRACE_MIN.
+    orphan_flag_seconds: float = 600.0
     # Sender tag stamped on messages you compose from the dashboard, so they're
     # distinguishable from any session (e.g. "operator" -> "[operator]").
     sender_tag: str = "operator"

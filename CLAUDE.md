@@ -36,6 +36,31 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.16.0: 👻 Orphan-lease surfacing + 1-click reclaim ("tier 2" of the reboot
+  finding) — **and a serious tag-matching bugfix uncovered while building it.**
+  Conductor knows which sessions are live, so a lease whose owner has no live
+  session is *strong* (not certain — a session can be closed + relaunched)
+  evidence of abandonment: `AppState._annotate_orphans` debounces (owner missing
+  ≥ `bus.orphan_flag_seconds`, default **600s**, Kyle picked 10m to match
+  `RES_ORPHAN_GRACE_MIN`) then marks the lease `orphan_suspect` +
+  `owner_offline_seconds`; offers are skipped (they auto-pass). Tile shows
+  `⚠ owner offline Xm` + a **reclaim** button → `POST /api/resources/{name}/reclaim`,
+  which **refuses (409) unless the backend itself flagged the lease** (a live
+  holder's lease can never be yanked from the UI) and then shells out to the same
+  race-safe `bus.sh res promote` the watchdog uses (→ offers to the queue head,
+  else frees). Conductor never reclaims autonomously — always Kyle's click, always
+  confirmed. **THE BUG**: Conductor stores tags bracketed (`[other:qualcomm]`),
+  `bus.sh` writes lease owners bare (`other:qualcomm`), so `s.tag == owner` NEVER
+  matched. That (a) would have flagged *every* live owner as an orphan, and (b)
+  meant **v2.15.0's real-time offer wake never actually fired** — it always fell
+  through to the bus-message fallback (I'd misread the `rec is None` as "that
+  session isn't live"). Fixed with a shared `_bare_tag()` used by both
+  `_annotate_orphans` and `_wake_offered_sessions`; caught only by live-testing
+  against the real fleet. Also fixed: `GET /api/resources` recomputed fresh state
+  and so silently dropped the orphan flags — it now serves the same scan-cached,
+  annotated payload the WS broadcasts. New `tests/test_resources.py` (9 tests,
+  regression-guards the bracket/bare mismatch); 98 tests pass. Live-verified:
+  live owner NOT flagged, ghost owner flagged, tile + button render.
 - ✅ v2.15.1: ♻️ Boot-orphan lease reaping. **Found in production by a reboot**:
   a lease is a *file*, so it outlives the session that took it — after Kyle
   rebooted Skippy, qualcomm's **HARD** `iq9-evk` lease survived with ~3h left
