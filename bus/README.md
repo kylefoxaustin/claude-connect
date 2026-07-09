@@ -154,6 +154,17 @@ When a lease sits idle past a limit, it acts **without the human coordinating**:
 - Activity (GPU compute, or a fresh `/keep`) **resets** the idle clock (and the idle
   time shows up in the awareness line: `iq9-evk: YOU hold it (hard · ~18m left · idle 40m ⚠)`).
 
+**Orphan reaping (after a reboot).** A lease is a *file* — it outlives the session
+that took it. So after a reboot you'd otherwise be left with a `hard` lease held by
+a session that no longer exists, blocking the resource until its duration expires
+(and the watchdog will never force-release a hard lease, so it would just nudge a
+corpse). The watchdog therefore treats **`acquired_epoch` earlier than the kernel's
+boot time** as *provably orphaned* — no process survives a reboot — and reaps it:
+handing the resource to the next in the queue, or freeing it, and saying why on the
+bus. There's a short post-boot **grace** (`RES_ORPHAN_GRACE_MIN`, 10m) first, so an
+owner who relaunches promptly can re-anchor their lease with `/keep` and keep it.
+This is a *certain* signal, not a heuristic like idle time.
+
 Run it headless (once):
 
 ```bash
@@ -166,7 +177,7 @@ systemctl --user enable --now resource-watchdog.service
 
 Tunables via env (in the service file or your shell): `RES_POLL_SEC` (60),
 `RES_IDLE_UTIL_PCT` (5, GPU only), `RES_IDLE_NUDGE_MIN` (30), `RES_IDLE_RENUDGE_MIN` (20),
-`RES_SOFT_RELEASE_MIN` (60).
+`RES_SOFT_RELEASE_MIN` (60), `RES_ORPHAN_GRACE_MIN` (10).
 
 Conductor visualizes each resource as a live tile: the holder (soft/hard), a
 ticking countdown, the watchdog's idle warning, and any pending request. The

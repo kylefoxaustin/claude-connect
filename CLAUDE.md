@@ -36,6 +36,26 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.15.1: ♻️ Boot-orphan lease reaping. **Found in production by a reboot**:
+  a lease is a *file*, so it outlives the session that took it — after Kyle
+  rebooted Skippy, qualcomm's **HARD** `iq9-evk` lease survived with ~3h left
+  while its session was dead, and by design the watchdog *never* force-releases a
+  hard lease, so it would have nudged a corpse every 20m for three hours while
+  the board stayed blocked. Idle-time can't distinguish "owner quiet" from "owner
+  dead". Fix uses a **certain** signal, not a heuristic: `acquired_epoch` earlier
+  than the kernel's **boot time** (`/proc/stat` `btime`) ⇒ the owning process
+  provably cannot exist. `resource-watchdog.sh` gains `_reap_orphan` — promotes
+  the lease (hands it to the **next in the queue**, else frees) and posts a
+  `[resource-watchdog]` explanation naming the old owner. A post-boot grace
+  (`RES_ORPHAN_GRACE_MIN`, 10m) lets an owner who relaunches promptly re-anchor
+  with `/keep` (which rewrites `acquired_epoch`) and keep it. `_promote` now
+  echoes its outcome (`freed` / `offered:<tag>`) so the reap message states what
+  happened; existing call sites silenced. Tested: orphan+no-queue→FREE,
+  orphan+queue→offered to next, within-grace→untouched, post-boot lease→
+  untouched, `/keep`-re-anchored→untouched. Freed the real orphaned lease live.
+  (Possible follow-on "tier 2": Conductor knows which sessions are *live*, so it
+  could surface an orphan even without a reboot — but only surface, never
+  auto-reclaim a hard lease, since a session may be closed and relaunched.)
 - ✅ v2.15.0: 🎟️ Reservation QUEUE + grace-hold hand-off + real-time wake.
   Kyle: "add a queue — a claude waits, gets a ping the moment the board opens,
   decides to use it or not; don't have 20 claudes polling." Design
