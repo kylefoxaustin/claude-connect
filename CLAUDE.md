@@ -36,6 +36,28 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.17.1: 🪪 Stable session identity — `bus.sh` tags no longer drift with `cd`.
+  **Found live** while verifying v2.17.0: `imx95-frdm` was held by `other:bench_data`,
+  a tag matching no live session, so Conductor was ~10 min from flagging it as an
+  orphan and offering a **reclaim button for a board actively running a GenAI
+  benchmark**. Root cause: `bus.sh` derived TAG from the **current cwd** —
+  projects in its explicit case-table matched subdirs (`*/keyhole/*`), but anything
+  falling through to `other:$(basename "$CWD")` became a *new identity* whenever a
+  session `cd`'d (`.../qualcomm/results/bench_data` → `other:bench_data`). Conductor
+  meanwhile derives a tag from the session's stable **project dir** — so the two
+  disagreed the moment a session changed directory. This also (a) made offer/nudge
+  wakes unreachable for such leases, (b) fragmented bus identity (qualcomm's msgs
+  arrived as `[other:bench_data]`), and (c) drew one session as two nodes in the
+  History graph. Fix: new `_proj_root()` — a dir directly under `BUS_PROJECTS_ROOT`
+  (default `~/Documents/GitHub`, env-overridable) resolves to **that project dir**;
+  else the enclosing **git root**; else the cwd. Note git-root alone was NOT enough
+  (Kyle's `qualcomm/` isn't a repo) — the first patch passed for `claude-connect`
+  and failed for `bench_data`; the test caught it. Spliced into live + repo bus.sh
+  (backed up). Verified: both `qualcomm/` and `qualcomm/results/bench_data` → 
+  `other:qualcomm`; `claude-connect/conductor` → `other:claude-connect`; non-git dirs
+  unchanged; explicit table still wins; send/check no regression. Migrated the live
+  `imx95-frdm` lease owner `bench_data`→`qualcomm` under flock (otherwise qualcomm
+  could no longer `/release` its own board). False orphan confirmed cleared.
 - ✅ v2.17.0: 🔔 Wake an idle holder when the watchdog nudges it — closes the
   idle-detection loop. **Found live**: qualcomm held `iq9-evk` (hard) idle for
   75m; the watchdog nudged 3× (30m/50m/1h10m) and qualcomm *never saw a single

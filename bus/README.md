@@ -55,6 +55,15 @@ case "$CWD" in
 esac
 ```
 
+> **A session's tag must not change when it `cd`s.** Anything that falls through
+> the case-table gets `other:<project>` — and *project* means the directory one
+> level under `BUS_PROJECTS_ROOT` (default `~/Documents/GitHub`; override the env
+> var), else the enclosing git repo, else the cwd. Without that, a session working
+> in `myproject/results/data/` would post as `[other:data]` — a second identity,
+> which fragments its bus history, strands any resource lease it holds (it can no
+> longer `/release` its own reservation), and makes Conductor think the lease owner
+> has no live session.
+
 If you want a named tag to participate in the **automatic hooks** (SessionStart
 context injection + UserPromptSubmit nudges), it must be "active." Active
 membership is read from `~/.claude/bus-state/active-tags` (one bare tag per
