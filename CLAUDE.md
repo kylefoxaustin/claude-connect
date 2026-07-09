@@ -36,6 +36,33 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.15.0: 🎟️ Reservation QUEUE + grace-hold hand-off + real-time wake.
+  Kyle: "add a queue — a claude waits, gets a ping the moment the board opens,
+  decides to use it or not; don't have 20 claudes polling." Design
+  (AskUserQuestion): **grace-hold** (board is HELD for the next-in-line ~15m to
+  claim/pass, else auto-passes) + **Conductor-inject wake with bus fallback** +
+  **full build**. Key reframe pushed back to Kyle: no per-requester watchdogs —
+  the *release* is one event; hook promotion there + reuse Conductor's existing
+  /msg-check injection for the real-time wake. **bus.sh**: single `requested_by`
+  → a FIFO `queue=` field; `/res-request` now JOINS the queue (deduped, reports
+  position); on release/expiry/reclaim `_res_promote_locked` pops the head and
+  writes an **offer** lease (mode=offer, owner=head, ~15m expiry, queue=rest) +
+  posts a `[resource-broker]` "🎉 you're up" msg; new `/res-pass` declines →
+  next; `res promote <name> <owner>` is a race-safe (owner-guarded) entry the
+  watchdog calls; `_res_write` preserves the queue. Migrated into live+repo
+  bus.sh via a tested splice (queue lifecycle, dedup, offer, pass, claim,
+  promote paths, race-guard all scratch-tested first). **Watchdog**:
+  resource-watchdog.sh now DRIVES the queue — offer-timeout / lease-expiry /
+  idle-soft-reclaim all call `bus.sh res promote` (never holds a lock across the
+  call; the idle block's fd-9 redirect had to wrap the whole `( … ) 9>lock`
+  subshell, caught in test). **Conductor**: `read_lease` parses `queue`+`offered`;
+  `AppState._wake_offered_sessions` injects `/msg-check` into the offered
+  session the moment it's offered (once per offer, `_pinged_offers` set, bounded;
+  untracked/not-live session → bus fallback, no error). Frontend: resource tile
+  shows the **queue** (`⏳ N queued (X next)`) and a distinct **OFFER** state
+  (blue pulsing dot + OFFER badge + "~Xm to claim"). Live-verified: offer tile
+  renders; real fleet already using it (qualcomm reserved iq9-evk hard, watchdog
+  nudging an idle Orin lease). Both editions.
 - ✅ v2.14.0: 🎛️ Named-resource reservation — generalized the whole GPU
   reservation system to **any shared resource** (the GPU + dev boards like the
   Qualcomm IQ9 EVK). Driven by Kyle: "the IQ9 EVK is owned by qualcomm-claude but

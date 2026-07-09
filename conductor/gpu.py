@@ -66,13 +66,17 @@ def read_lease(gpu_dir: Path, now: float | None = None) -> dict[str, Any] | None
     idle_since = d.get("idle_since_epoch", "")
     idle = int(now - int(idle_since)) if idle_since.isdigit() else 0
     acq = d.get("acquired_epoch", "")
+    mode = d.get("mode", "")
+    queue = [t for t in d.get("queue", "").split(",") if t]  # waiting tags, FIFO
     return {
         "owner": d.get("owner", ""),
-        "mode": d.get("mode", ""),
+        "mode": mode,                       # "soft" | "hard" | "offer"
+        "offered": mode == "offer",         # held-for-the-next-in-line, awaiting claim
         "job": d.get("job", ""),
         "remaining": int(remaining),
         "idle": max(0, idle),
-        "requested_by": d.get("requested_by", "") or None,
+        "queue": queue,                     # who's waiting, in order
+        "requested_by": (queue[0] if queue else None),  # next in line (back-compat)
         "expires_epoch": int(exp),
         "acquired_epoch": int(acq) if acq.isdigit() else None,
     }
