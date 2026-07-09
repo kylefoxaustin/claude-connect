@@ -65,6 +65,10 @@ from .ws import WSHub
 log = logging.getLogger("conductor")
 
 
+# Mirrors the frontend's ping guard: a session mid-task shouldn't get keystrokes.
+_BUSY_STATUSES = frozenset({Status.ACTIVE, Status.WARM})
+
+
 def _bare_tag(tag: str | None) -> str:
     """Compare tags on a common form.
 
@@ -73,6 +77,8 @@ def _bare_tag(tag: str | None) -> str:
     the two directly never succeeds — normalize before comparing.
     """
     return (tag or "").strip().strip("[]")
+
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
@@ -105,6 +111,7 @@ class AppState:
         self.resources: dict[str, Any] = {"resources": []}
         self._pinged_offers: set[str] = set()                 # offers we've already woken
         self._owner_missing_since: dict[str, float] = {}      # lease -> when its owner went offline
+        self._nudge_woken: set[str] = set()                   # idle episodes we already woke
         self.token_accountant = TokenAccountant()             # per-session token tally
         self._scan_misses: dict[str, int] = {}              # consecutive scans a session was absent
         self.recent_events: deque[BusEvent] = deque(maxlen=RECENT_EVENTS_MAX)
@@ -241,6 +248,48 @@ class AppState:
         self._annotate_orphans()
         await self.hub.broadcast("resources", self.resources)
         await self._wake_offered_sessions()
+        await self._wake_nudged_owners()
+
+    def _live_session_for(self, owner: str) -> SessionRecord | None:
+        return next((s for s in self.sessions.values()
+                     if _bare_tag(s.tag) == _bare_tag(owner) and s.status != Status.ENDED), None)
+
+    async def _inject_msg_check(self, rec: SessionRecord, why: str) -> None:
+        try:
+            await asyncio.to_thread(
+                send_keys_to_session, text="/msg-check", pid=rec.pid,
+                terminal_pid=rec.terminal_pid, title=rec.title, window_title=rec.window_title,
+            )
+            log.info("woke [%s] — %s", rec.tag, why)
+        except Exception:
+            log.exception("failed to wake [%s]", rec.tag)
+
+    async def _wake_nudged_owners(self) -> None:
+        """Make the watchdog's idle nudge actually reachable.
+
+        A nudge is a bus message, and bus messages surface through a session's
+        *per-prompt* hook — so an idle holder (the only kind that gets nudged!)
+        never sees it, and the resource stays locked until expiry. Wake the owner
+        once per idle *episode* (keyed on ``idle_since_epoch``, which the watchdog
+        clears on activity) rather than on every 20-minute re-nudge, so we never
+        repeatedly steal focus. Busy sessions are left alone and retried later.
+        """
+        current: set[str] = set()
+        for r in self.resources.get("resources", []):
+            lease = r.get("lease")
+            if not lease or lease.get("offered") or not lease.get("nudged_epoch"):
+                continue
+            owner = lease.get("owner", "")
+            key = f"{r['name']}\x00{owner}\x00{lease.get('idle_since_epoch')}"
+            current.add(key)
+            if key in self._nudge_woken:
+                continue
+            rec = self._live_session_for(owner)
+            if rec is None or rec.status in _BUSY_STATUSES:
+                continue  # gone (orphan logic covers it), or mid-task — retry next scan
+            await self._inject_msg_check(rec, f"watchdog nudge on {r['name']} (idle)")
+            self._nudge_woken.add(key)
+        self._nudge_woken &= current  # a new idle episode gets a fresh wake
 
     def _annotate_orphans(self) -> None:
         """Flag leases whose owner has no live session.
@@ -290,18 +339,10 @@ class AppState:
             current.add(key)
             if key in self._pinged_offers:
                 continue
-            rec = next((s for s in self.sessions.values()
-                        if _bare_tag(s.tag) == _bare_tag(owner) and s.status != Status.ENDED), None)
-            if rec is None:
-                continue  # untracked / not-yet-live -> bus-message fallback (retry next scan)
-            try:
-                await asyncio.to_thread(
-                    send_keys_to_session, text="/msg-check", pid=rec.pid,
-                    terminal_pid=rec.terminal_pid, title=rec.title, window_title=rec.window_title,
-                )
-                log.info("resource %s offered to [%s] — woke its session", r["name"], owner)
-            except Exception:
-                log.exception("failed to wake offered session [%s]", owner)
+            rec = self._live_session_for(owner)
+            if rec is None or rec.status in _BUSY_STATUSES:
+                continue  # gone/untracked, or mid-task -> bus fallback; retry next scan
+            await self._inject_msg_check(rec, f"offered {r['name']}")
             self._pinged_offers.add(key)
         self._pinged_offers &= current  # forget offers that have resolved (bounded)
 

@@ -4,7 +4,7 @@
 
 **A local dashboard for watching all your Claude Code sessions at once — in your browser or as a standalone desktop app — plus an optional _message bus_ (a shared log your sessions post to) that lets them talk to each other.**
 
-[![version: 2.16](https://img.shields.io/badge/version-2.16-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
+[![version: 2.17](https://img.shields.io/badge/version-2.17-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
 [![platform: linux](https://img.shields.io/badge/platform-linux-orange)](#requirements)
 [![safety: read--only](https://img.shields.io/badge/safety-read--only-green)](#how-it-works)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -352,7 +352,10 @@ atomic via `flock`), and it has four parts:
    - **soft** — *"I've got it + code/board set up, but I'll drop it if you need it."* Preemptible; `/res-request` nudges the holder.
    - **hard** — *"mine until my job's done or you stop me."* Not preemptible; requesters queue. Leases carry a duration and **auto-expire**, so a forgotten hold frees itself.
 3. **A queue with a grace-hold hand-off** *(new in 2.15)* — can't have it now? `/res-request` puts you in a **FIFO queue** instead of polling. When the holder releases (or the lease expires, or an idle soft lease is reclaimed), the **next in line is automatically offered** the resource — it's *held for them* for a grace window (~15m) to `/reserve` (claim) or `/res-pass` (skip → next); if they don't respond it auto-passes. And the moment it's offered, **Conductor injects `/msg-check` into that session** so it wakes and sees "🎉 you're up" in real time (a bus message is always posted too, so an untracked session still learns on its next prompt). No polling, no you-in-the-middle.
-4. **An idle watchdog** — a small headless daemon ([`bus/resource-watchdog.sh`](bus/resource-watchdog.sh), run via `systemd --user`) watches every held lease. It judges *idle* by **`nvidia-smi` utilization** for the GPU, and by the **`/keep` heartbeat** for other resources (run `/keep` while you're actively using a board). Past a threshold it **auto-nudges the owner** (naming who's next in the queue) and **auto-reclaims an idle `soft` lease** — handing it to the next in line — while a `hard` lease is only ever checked in on, never force-released. The watchdog is also what fires the grace-hold auto-pass and expiry hand-offs above, and it **reaps orphaned leases after a reboot** — a lease is a file, so it outlives the session that took it; one acquired before the kernel's boot time has a provably dead owner, so it's handed to the next in queue (or freed) instead of blocking the resource until it expires.
+4. **An idle watchdog** — a small headless daemon ([`bus/resource-watchdog.sh`](bus/resource-watchdog.sh), run via `systemd --user`) watches every held lease. It judges *idle* by **`nvidia-smi` utilization** for the GPU, and by the **`/keep` heartbeat** for other resources (run `/keep` while you're actively using a board). Past a threshold it **auto-nudges the owner** (naming who's next in the queue) and **auto-reclaims an idle `soft` lease** — handing it to the next in line — while a `hard` lease is only ever checked in on, never force-released. And because a bus message only reaches a session through its *per-prompt hook*, an
+idle holder would never actually read the nudge aimed at it — so Conductor **wakes
+the holder** (injects `/msg-check`) when the watchdog nudges it, once per idle spell
+and never mid-task. The watchdog is also what fires the grace-hold auto-pass and expiry hand-offs above, and it **reaps orphaned leases after a reboot** — a lease is a file, so it outlives the session that took it; one acquired before the kernel's boot time has a provably dead owner, so it's handed to the next in queue (or freed) instead of blocking the resource until it expires.
 
 Conductor also **spots abandoned leases** *(new in 2.16)*: it knows which sessions
 are live, so a lease held by a session that's no longer running gets flagged on its

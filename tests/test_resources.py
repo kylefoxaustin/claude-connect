@@ -9,6 +9,7 @@ finding a session to inject into.
 
 from __future__ import annotations
 
+import asyncio
 import time
 import types
 
@@ -92,3 +93,59 @@ def test_missing_since_is_pruned_when_lease_disappears(state):
     state.resources = {"resources": []}
     state._annotate_orphans()
     assert state._owner_missing_since == {}
+
+
+# --- waking an idle holder when the watchdog nudges it ------------------------
+# The nudge is a bus message, and bus messages only surface through a session's
+# per-prompt hook — so the idle holder it's aimed at never reads it. Conductor
+# injects /msg-check to close that loop.
+
+def _wakeable_session(status=Status.IDLE):
+    return types.SimpleNamespace(
+        tag="[other:qualcomm]", status=status, pid=1, terminal_pid=2, title="t", window_title="w"
+    )
+
+
+def _nudged_lease(nudged=100, idle_since=100, offered=False):
+    return {
+        "owner": "other:qualcomm", "mode": "hard", "offered": offered,
+        "nudged_epoch": nudged, "idle_since_epoch": idle_since,
+    }
+
+
+def _run_nudge_wake(state, monkeypatch):
+    calls = []
+    monkeypatch.setattr("conductor.main.send_keys_to_session", lambda **kw: calls.append(kw) or True)
+    asyncio.run(state._wake_nudged_owners())
+    return calls
+
+
+def test_idle_owner_is_woken_once_per_idle_episode(state, monkeypatch):
+    state.sessions = {"q": _wakeable_session()}
+    state.resources = {"resources": [{"name": "iq9-evk", "lease": _nudged_lease()}]}
+    assert len(_run_nudge_wake(state, monkeypatch)) == 1
+    # same episode -> no repeat wake (never spam focus on the 20m re-nudge cadence)
+    assert len(_run_nudge_wake(state, monkeypatch)) == 0
+    # a NEW idle episode (watchdog cleared + re-set idle_since) -> wake again
+    state.resources = {"resources": [{"name": "iq9-evk", "lease": _nudged_lease(500, 500)}]}
+    assert len(_run_nudge_wake(state, monkeypatch)) == 1
+
+
+@pytest.mark.parametrize("status", [Status.ACTIVE, Status.WARM])
+def test_busy_owner_is_never_interrupted(state, monkeypatch, status):
+    state.sessions = {"q": _wakeable_session(status)}
+    state.resources = {"resources": [{"name": "iq9-evk", "lease": _nudged_lease()}]}
+    assert _run_nudge_wake(state, monkeypatch) == []
+    assert state._nudge_woken == set()  # not marked -> retried once it goes quiet
+
+
+def test_no_wake_before_the_watchdog_has_nudged(state, monkeypatch):
+    state.sessions = {"q": _wakeable_session()}
+    state.resources = {"resources": [{"name": "iq9-evk", "lease": _nudged_lease(nudged=None)}]}
+    assert _run_nudge_wake(state, monkeypatch) == []
+
+
+def test_dead_owner_is_left_to_the_orphan_path(state, monkeypatch):
+    state.sessions = {}
+    state.resources = {"resources": [{"name": "iq9-evk", "lease": _nudged_lease()}]}
+    assert _run_nudge_wake(state, monkeypatch) == []
