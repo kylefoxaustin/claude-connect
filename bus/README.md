@@ -120,6 +120,16 @@ The GPU keeps its `/gpu-*` commands as **aliases** for the `gpu` resource
 (`/gpu-reserve 30m soft` == `/reserve gpu 30m soft`), so nothing that already
 uses them changes.
 
+> **One board, one name.** A resource springs into existence the first time it's
+> reserved — lovely for adding hardware, dangerous for typos: `/reserve orin` and
+> `/reserve orin-agx` would be *two separate resources for one physical board*,
+> each with its own lease and queue. Two guards: `_res_canon()` maps known
+> spellings onto the canonical name (`orin`/`jetson` → `orin-agx`, `imx95` →
+> `imx95-frdm`, …) and says so; and reserving a name that doesn't exist yet prints
+> a loud **"this is a NEW resource"** notice listing the existing ones. Genuinely
+> different hardware (an Orin *NX* vs an Orin *AGX*) should get its own name — the
+> aliases only fold together spellings of the *same* board.
+
 ### Queue + grace-hold hand-off
 
 Can't have a resource now? `/res-request <name>` puts you in a **FIFO queue**

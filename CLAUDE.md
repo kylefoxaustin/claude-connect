@@ -36,6 +36,24 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.17.2: 🔧 Resource-name aliases + new-name warning (drift made impossible).
+  `orin` drifted back a **second** time (and `imx95-evk` nearly did): a resource
+  springs into existence on first reserve, so `/reserve orin` silently created a
+  *separate* resource for the same physical Jetson — its own lease, its own queue.
+  Found it holding a live `backend` soft lease **with 2 sessions queued** (`docs`,
+  `orb_slam`). Migrated the whole lease (owner/mode/epochs/job/queue, order
+  preserved) `orin` → `orin-agx` under both flocks, with the watchdog stopped for
+  the move, then deleted the stray. Durable fix (Kyle picked "alias + warning"):
+  `_res_canon()` maps known spellings to the canonical name (`orin|jetson|agx|
+  orin64`→`orin-agx`, `imx95|imx95-evk|frdm-imx95`→`imx95-frdm`, `iq9|iq9075`→
+  `iq9-evk`) and prints a note; `res_dispatch` canonicalizes the name arg for
+  **every** verb (so `/res-request orin` joins the *orin-agx* queue — the split is
+  now impossible); `res_reserve` warns loudly when creating a genuinely new name,
+  listing existing resources (typo protection) while keeping the zero-registration
+  property. Genuinely different hardware (Orin NX vs AGX) still gets its own name.
+  Verified: alias on reserve/keep/release/status/request/promote, `/gpu-*`
+  back-compat, no-arg status, hook lines, queue unification, send/check — all pass;
+  live lease untouched.
 - ✅ v2.17.1: 🪪 Stable session identity — `bus.sh` tags no longer drift with `cd`.
   **Found live** while verifying v2.17.0: `imx95-frdm` was held by `other:bench_data`,
   a tag matching no live session, so Conductor was ~10 min from flagging it as an
