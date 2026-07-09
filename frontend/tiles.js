@@ -849,6 +849,18 @@ function fillResourceTile(tile, res) {
     ];
     if (idle >= 300) children.push(el("span", { class: "gpu-idle", title: "idle — the watchdog may nudge/reclaim it" }, `⚠ idle ${resHuman(idle)}`));
     if (queue.length) children.push(el("span", { class: "gpu-req", title: `queue: ${queue.map(RES_BARE).join(", ")}` }, `⏳ ${queue.length} queued (${RES_BARE(queue[0])} next)`));
+    // Owner's session is gone. Conductor never reclaims on its own — offer the click.
+    if (lease.orphan_suspect) {
+      const off = resHuman(lease.owner_offline_seconds || 0);
+      children.push(el("span", { class: "res-orphan", title:
+        `No live session holds this lease — [${RES_BARE(lease.owner)}] has been offline ${off}.\n`
+        + `It will free itself at expiry; reclaim now to hand it to the next in queue (or free it).` },
+        `⚠ owner offline ${off}`));
+      children.push(el("button", { class: "res-reclaim",
+        title: "hand this resource to the next in queue (or free it) — its owner's session is gone",
+        onclick: (e) => { e.stopPropagation(); window.reclaimResource(res.name, e.currentTarget); } },
+        "reclaim"));
+    }
     leaseEl = el("div", { class: "gpu-lease" }, ...children);
   } else {
     const cmd = isGpu ? "/gpu-reserve" : `/reserve ${res.name}`;

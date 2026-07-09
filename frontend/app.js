@@ -530,6 +530,27 @@ function sessionLooksBusy(status) {
   return status === "active" || status === "warm";
 }
 
+// Hand on a lease whose owner's session is gone. Always user-initiated, always
+// confirmed — the backend refuses unless it has flagged the lease as orphaned.
+window.reclaimResource = async function reclaimResource(name, btn) {
+  if (!window.confirm(
+    `Reclaim "${name}"?\n\nIts owner's session is no longer running. This hands the resource `
+    + `to the next Claude in the queue, or frees it if nobody is waiting.`)) return;
+  if (btn) { btn.disabled = true; btn.textContent = "reclaiming…"; }
+  try {
+    const r = await fetch(`/api/resources/${encodeURIComponent(name)}/reclaim`, { method: "POST" });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+    // "offered:<tag>" | "freed" — the next scan re-renders the tile either way.
+    const msg = String(data.result || "").startsWith("offered:")
+      ? `handed to [${String(data.result).slice(8)}]` : "freed";
+    if (btn) btn.textContent = msg;
+  } catch (err) {
+    if (btn) { btn.disabled = false; btn.textContent = "reclaim"; }
+    window.alert(`Could not reclaim "${name}": ${err.message}`);
+  }
+};
+
 window.requestCheck = async function requestCheck(sessionId, status) {
   const guard = (window.conductorPrefs && window.conductorPrefs.busClickGuard) || "confirm-busy";
   const busy = sessionLooksBusy(status);

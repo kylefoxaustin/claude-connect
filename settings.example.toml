@@ -29,6 +29,13 @@ idle_seconds = 30.0
 # so they're distinct from any session. e.g. "operator" -> "[operator]".
 sender_tag = "operator"
 
+# A shared-resource lease whose owner has had no live session for this long is
+# surfaced on its tile as an orphan ("⚠ owner offline", with a reclaim button).
+# Conductor never reclaims on its own — a session can be closed and relaunched —
+# so this only decides when to *offer you the choice*. The watchdog's separate
+# after-reboot reaping is certain (a lease older than the boot) and needs no guess.
+orphan_flag_seconds = 600.0
+
 # Optional: map project directories to pretty tags, mirroring the case-table in
 # your bus.sh so tiles show the same tag the bus uses. Unmapped dirs fall back to
 # [other:<dirname>]. Use bare names (no brackets). Example:
