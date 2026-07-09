@@ -83,6 +83,19 @@ mark_seen_if_bus_tag() {
 RES_ROOT="${RESOURCE_STATE_DIR:-$HOME/.claude/bus-state/resources}"
 RES_GRACE_MIN="${RES_GRACE_MIN:-15}"    # how long a freed resource is held for the next in queue
 
+# Resource-name aliases. One physical board must have exactly ONE name, or it gets
+# two leases and two queues. Map the spellings people actually reach for onto the
+# canonical name (an Orin NX/Nano would be its OWN resource, not an alias).
+_res_canon() {
+  case "$1" in
+    orin|jetson|agx|orin64)              echo "orin-agx"   ;;
+    imx95|imx95-evk|frdm-imx95|imx95-pro) echo "imx95-frdm" ;;
+    iq9|iq9075)                          echo "iq9-evk"    ;;
+    *)                                   echo "$1"         ;;
+  esac
+}
+_res_known() { ls -1 "$RES_ROOT" 2>/dev/null | tr '\n' ' ' | sed 's/ $//'; }
+
 _res_setup() { RES_NAME="$1"; RES_DIR="$RES_ROOT/$1"; RES_LEASE="$RES_DIR/lease"; RES_LOCK="$RES_DIR/.lock"; }
 _res_label() { case "$1" in gpu) echo "GPU" ;; *) echo "$1" ;; esac; }
 _res_now() { date +%s; }
@@ -161,6 +174,10 @@ res_reserve() {  # name dur mode [job...]
   case "$mode" in soft|hard) ;; *) echo "usage: /reserve <resource> <duration> <soft|hard> [\"job\"]"; return 2 ;; esac
   local secs; secs="$(_res_dur_secs "$dur")"
   [ "$secs" -gt 0 ] || { echo "bad duration '$dur' (use 30m, 2h, 45s, or minutes)"; return 2; }
+  if [ ! -d "$RES_DIR" ]; then
+    echo "⚠ '$RES_NAME' is a NEW resource — creating it. Existing: $(_res_known)"
+    echo "  A new name gets its OWN separate lease + queue. If you meant an existing one, use that name."
+  fi
   mkdir -p "$RES_DIR"
   ( flock 9
     if _res_active; then
@@ -246,11 +263,20 @@ res_promote() {  # name [expected_owner]
 
 res_dispatch() {
   set +e
-  case "${1:-status}" in
-    reserve) shift; res_reserve "$@" ;;  release) shift; res_release "$@" ;;
-    keep)    shift; res_keep "$@" ;;      request) shift; res_request "$@" ;;
-    pass)    shift; res_pass "$@" ;;      promote) shift; res_promote "$@" ;;
-    status)  shift; res_status "$@" ;;    lines)   res_hook_lines ;;
+  local action="${1:-status}"; shift 2>/dev/null || true
+  # Canonicalize the resource name (always the first arg) and say so when remapped.
+  if [ "$action" != "lines" ] && [ -n "${1:-}" ]; then
+    local given="$1" canon; canon="$(_res_canon "$1")"
+    if [ "$canon" != "$given" ]; then
+      echo "note: '$given' is an alias — using the canonical resource '$canon'."
+      shift; set -- "$canon" "$@"
+    fi
+  fi
+  case "$action" in
+    reserve) res_reserve "$@" ;;  release) res_release "$@" ;;
+    keep)    res_keep "$@" ;;      request) res_request "$@" ;;
+    pass)    res_pass "$@" ;;      promote) res_promote "$@" ;;
+    status)  res_status "$@" ;;    lines)   res_hook_lines ;;
     *) echo "usage: bus.sh res {reserve|release|keep|request|pass|status [name]}"; return 2 ;;
   esac
 }
