@@ -27,6 +27,12 @@ IDLE_NUDGE_MIN="${RES_IDLE_NUDGE_MIN:-30}"
 IDLE_RENUDGE_MIN="${RES_IDLE_RENUDGE_MIN:-20}"
 SOFT_RELEASE_MIN="${RES_SOFT_RELEASE_MIN:-60}"
 
+# Boot time (kernel's btime). Any lease acquired BEFORE this has a provably dead
+# owner — no process survives a reboot — so it can be reaped without guessing.
+BOOT_EPOCH="${RES_BOOT_EPOCH:-$(awk '/^btime/{print $2}' /proc/stat 2>/dev/null)}"
+BOOT_EPOCH="${BOOT_EPOCH:-0}"
+ORPHAN_GRACE_MIN="${RES_ORPHAN_GRACE_MIN:-10}"   # let a promptly-relaunched owner /keep first
+
 _now() { date +%s; }
 _label() { case "$1" in gpu) echo "GPU" ;; *) echo "$1" ;; esac; }
 _field() { grep -E "^$1=" "$LEASE" 2>/dev/null | head -1 | cut -d= -f2- ; }
@@ -34,22 +40,44 @@ _set() { if grep -qE "^$1=" "$LEASE" 2>/dev/null; then sed -i "s|^$1=.*|$1=$2|" 
 _gpu_util() { "$NVIDIA_SMI" --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -dc '0-9'; }
 _human() { local s=$1 h m; [ "$s" -lt 0 ] && s=0; h=$((s/3600)); m=$(((s%3600)/60)); if [ "$h" -gt 0 ]; then echo "${h}h ${m}m"; elif [ "$m" -gt 0 ]; then echo "${m}m"; else echo "${s}s"; fi; }
 _notify() { local ts; ts="$(date '+%Y-%m-%d %H:%M')"; { echo ""; echo "## $ts [resource-watchdog]"; echo ""; echo "$1"; } >> "$BUS_FILE"; }
-_promote() { "$BUS_SH" res promote "$1" "$2" >/dev/null 2>&1 || true; }   # race-safe handoff
+_promote() { "$BUS_SH" res promote "$1" "$2" 2>/dev/null || true; }   # race-safe; echoes freed|offered:<tag>|skip…
+
+# A lease acquired before the last boot is orphaned: the session that took it died
+# with the reboot. Hand the resource to the next in queue (or free it) rather than
+# let a dead HARD lease block it until expiry — the watchdog can't nudge a corpse.
+_reap_orphan() {  # name owner mode label
+  local out why; out="$(_promote "$1" "$2")"
+  why="it was acquired before the last reboot, so the session holding it no longer exists"
+  case "$out" in
+    offered:*) _notify "to:$2 to:all — [resource-watchdog] ♻️ Reaped [$2]'s ORPHANED $3 lease on $4 — $why. Handed to [${out#offered:}] (next in the queue). @$2 if you still need it, /reserve $1 again." ;;
+    freed)     _notify "to:$2 to:all — [resource-watchdog] ♻️ Reaped [$2]'s ORPHANED $3 lease on $4 — $why. $4 is now FREE. @$2 if you still need it, /reserve $1 again." ;;
+    *) : ;;   # skip (owner changed underneath) → stay quiet
+  esac
+}
 
 tick_one() {  # name
   local name="$1" lbl; lbl="$(_label "$1")"
   LEASE="$RES_ROOT/$name/lease"; LOCK="$RES_ROOT/$name/.lock"
   [ -f "$LEASE" ] || return 0
-  local owner mode exp now; owner="$(_field owner)"; mode="$(_field mode)"; exp="$(_field expires_epoch)"; now="$(_now)"
+  local owner mode exp now acq; owner="$(_field owner)"; mode="$(_field mode)"; exp="$(_field expires_epoch)"; now="$(_now)"
   [ -n "$exp" ] || return 0
+
+  # ORPHAN: lease predates the last boot → its owning session is provably gone.
+  # (Grace window first, so an owner who relaunches promptly can re-anchor with /keep.)
+  acq="$(_field acquired_epoch)"
+  if [ -n "$acq" ] && [ "$BOOT_EPOCH" -gt 0 ] && [ "$acq" -lt "$BOOT_EPOCH" ] \
+     && [ $(( now - BOOT_EPOCH )) -ge $(( ORPHAN_GRACE_MIN * 60 )) ]; then
+    _reap_orphan "$name" "$owner" "$mode" "$lbl"
+    return 0
+  fi
 
   # An unclaimed OFFER past its grace → hand to the next in queue.
   if [ "$mode" = "offer" ]; then
-    [ "$now" -ge "$exp" ] && _promote "$name" "$owner"
+    [ "$now" -ge "$exp" ] && _promote "$name" "$owner" >/dev/null
     return 0
   fi
   # A normal lease that hit its expiry → offer to the next in queue (or free).
-  if [ "$now" -ge "$exp" ]; then _promote "$name" "$owner"; return 0; fi
+  if [ "$now" -ge "$exp" ]; then _promote "$name" "$owner" >/dev/null; return 0; fi
 
   # Otherwise: idle handling under the flock; capture a RECLAIM signal on stdout.
   local signal
@@ -82,7 +110,7 @@ tick_one() {  # name
   ) 9>"$LOCK" )"
 
   # Reclaim an idle soft lease → hand to the next in queue (its own flock).
-  [ "$signal" = RECLAIM ] && _promote "$name" "$owner"
+  [ "$signal" = RECLAIM ] && _promote "$name" "$owner" >/dev/null
   return 0
 }
 
