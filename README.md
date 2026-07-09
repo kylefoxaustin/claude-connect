@@ -4,7 +4,7 @@
 
 **A local dashboard for watching all your Claude Code sessions at once — in your browser or as a standalone desktop app — plus an optional _message bus_ (a shared log your sessions post to) that lets them talk to each other.**
 
-[![version: 2.14](https://img.shields.io/badge/version-2.14-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
+[![version: 2.15](https://img.shields.io/badge/version-2.15-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
 [![platform: linux](https://img.shields.io/badge/platform-linux-orange)](#requirements)
 [![safety: read--only](https://img.shields.io/badge/safety-read--only-green)](#how-it-works)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -81,7 +81,7 @@ New in **2.3–2.5**: a **🕸 History** button replays your entire cross-sessio
 - 🪟 **Live tiles** for every running Claude session — auto-discovered, no config
 - 🎯 **Click-to-focus** — clicking a tile raises the actual terminal window
 - 📬 **Cross-session messaging** with an animated bus tile showing live traffic
-- 🎛️ **Shared-resource coordination** *(new in 2.9–2.14)* — sessions self-reserve scarce resources over the bus — a **GPU** *or* a dev **board** (IQ9 EVK, …) — with soft/hard holds; an idle 🐕 watchdog nudges/reclaims quiet leases (GPU by utilization, boards by a `/keep` heartbeat), and a live tile shows each one — no more arbitrating who gets what. See [Shared-resource coordination](#-shared-resource-coordination)
+- 🎛️ **Shared-resource coordination** *(new in 2.9–2.15)* — sessions self-reserve scarce resources over the bus — a **GPU** *or* a dev **board** (IQ9 EVK, Orin, …) — with soft/hard holds, a **FIFO queue** (get pinged the moment it's your turn, no polling), an idle 🐕 watchdog that nudges/reclaims quiet leases, and a live tile per resource — no more arbitrating who gets what. See [Shared-resource coordination](#-shared-resource-coordination)
 - ✉️ **Compose from the dashboard** — send your own bus message to all sessions or a chosen few, with an optional "ping" that makes them read it now
 - 🟢 **Status indicators** — `active` / `warm` / `idle` / `dormant` / `waiting` / `ended`
 - 🪙 **Token usage** *(new in 2.12)* — each tile shows its tokens used (`tokens: 617K out · 103M total`, from the transcript), a **global sum** sits by the title, and a `scripts/token-usage.py` CLI reports any session/project. See [Token usage](#-token-usage)
@@ -340,22 +340,23 @@ If several of your Claudes share a scarce resource — one GPU, a dev board (an
 IQ9 EVK, …), any single-holder rig — the bus can arbitrate it so they
 **coordinate themselves and you never have to be the middleman.** Each resource
 is a named cooperative *lease* (state in `~/.claude/bus-state/resources/<name>/`,
-atomic via `flock`), and it has three parts:
+atomic via `flock`), and it has four parts:
 
 1. **Reserve / release, from any session** — slash-commands the Claudes run, with
    the resource named: `/reserve <name> <dur> <soft|hard> ["job"]`, `/res-status`
    (read-only — all resources at once), `/release <name>`, `/keep <name> <dur>`,
-   `/res-request <name>`. (`/gpu-*` still works as an alias for the `gpu`
-   resource.) Nobody has to ask anyone: the current holder of every resource is
-   **injected into each session's per-prompt context** automatically.
+   `/res-request <name>`, `/res-pass <name>`. (`/gpu-*` still works as an alias for
+   the `gpu` resource.) Nobody has to ask anyone: the current holder of every
+   resource is **injected into each session's per-prompt context** automatically.
 2. **Two honest hold modes** — the signal that makes it work:
    - **soft** — *"I've got it + code/board set up, but I'll drop it if you need it."* Preemptible; `/res-request` nudges the holder.
    - **hard** — *"mine until my job's done or you stop me."* Not preemptible; requesters queue. Leases carry a duration and **auto-expire**, so a forgotten hold frees itself.
-3. **An idle watchdog** — a small headless daemon ([`bus/resource-watchdog.sh`](bus/resource-watchdog.sh), run via `systemd --user`) watches every held lease. It judges *idle* by **`nvidia-smi` utilization** for the GPU, and by the **`/keep` heartbeat** for other resources (run `/keep` while you're actively using a board). Past a threshold it **auto-nudges the owner** (re-nudging on a cadence, naming anyone waiting) and **auto-reclaims an idle `soft` lease** after a longer grace — a `hard` lease is only ever checked in on, never force-released.
+3. **A queue with a grace-hold hand-off** *(new in 2.15)* — can't have it now? `/res-request` puts you in a **FIFO queue** instead of polling. When the holder releases (or the lease expires, or an idle soft lease is reclaimed), the **next in line is automatically offered** the resource — it's *held for them* for a grace window (~15m) to `/reserve` (claim) or `/res-pass` (skip → next); if they don't respond it auto-passes. And the moment it's offered, **Conductor injects `/msg-check` into that session** so it wakes and sees "🎉 you're up" in real time (a bus message is always posted too, so an untracked session still learns on its next prompt). No polling, no you-in-the-middle.
+4. **An idle watchdog** — a small headless daemon ([`bus/resource-watchdog.sh`](bus/resource-watchdog.sh), run via `systemd --user`) watches every held lease. It judges *idle* by **`nvidia-smi` utilization** for the GPU, and by the **`/keep` heartbeat** for other resources (run `/keep` while you're actively using a board). Past a threshold it **auto-nudges the owner** (naming who's next in the queue) and **auto-reclaims an idle `soft` lease** — handing it to the next in line — while a `hard` lease is only ever checked in on, never force-released. The watchdog is also what fires the grace-hold auto-pass and expiry hand-offs above.
 
 Conductor **visualizes** each shared resource as a live tile on the board: the
-holder (soft = amber / hard = red dot), a ticking countdown, the watchdog's idle
-warning, any pending request, and the job note. The **🎮 GPU tile** additionally
+holder (soft = amber / hard = red dot, offered = blue pulse), a ticking countdown,
+the watchdog's idle warning, the **queue** (`⏳ N queued`), and the job note. The **🎮 GPU tile** additionally
 shows the GPU name + `nvidia-smi` utilization bar + memory (it appears whenever
 `nvidia-smi` is present); board tiles appear once the resource has been reserved.
 

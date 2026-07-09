@@ -53,49 +53,86 @@ mark_seen_if_bus_tag() {
   fi
 }
 
-# ---- Named-resource reservation (GPU + boards; leases in bus-state) --------
-# Cooperative leases so sessions self-coordinate any shared resource (the GPU,
-# the IQ9 EVK, …) without asking each other. Acquire/release atomic via flock;
-# expiry is lazy. `gpu` is just one resource (with nvidia-smi telemetry + a
+# ---- Named-resource reservation + FIFO queue (GPU + boards; leases in bus-state) --
+# Cooperative leases so sessions self-coordinate any shared resource (the GPU, the
+# IQ9 EVK, an Orin, …) without asking each other. Acquire/release atomic via flock;
+# expiry lazy. A resource carries a FIFO queue: /res-request joins it, and on release
+# the head is OFFERED the resource for a grace window (claim with /reserve, decline
+# with /res-pass, or auto-pass). `gpu` = one resource (nvidia-smi telemetry + a
 # watchdog); others are plain leases with heartbeat-based idle detection.
 RES_ROOT="${RESOURCE_STATE_DIR:-$HOME/.claude/bus-state/resources}"
+RES_GRACE_MIN="${RES_GRACE_MIN:-15}"    # how long a freed resource is held for the next in queue
 
-# --- per-invocation resource context ----------------------------------------
 _res_setup() { RES_NAME="$1"; RES_DIR="$RES_ROOT/$1"; RES_LEASE="$RES_DIR/lease"; RES_LOCK="$RES_DIR/.lock"; }
 _res_label() { case "$1" in gpu) echo "GPU" ;; *) echo "$1" ;; esac; }
-
 _res_now() { date +%s; }
 _res_dur_secs() {
   case "$1" in
-    *h) echo $(( ${1%h} * 3600 )) ;;
-    *m) echo $(( ${1%m} * 60 )) ;;
-    *s) echo $(( ${1%s} )) ;;
-    ''|*[!0-9]*) echo 0 ;;
-    *)  echo $(( $1 * 60 )) ;;
+    *h) echo $(( ${1%h} * 3600 )) ;; *m) echo $(( ${1%m} * 60 )) ;; *s) echo $(( ${1%s} )) ;;
+    ''|*[!0-9]*) echo 0 ;; *) echo $(( $1 * 60 )) ;;
   esac
 }
 _res_human() { local s=$1 h m; [ "$s" -lt 0 ] && s=0; h=$((s/3600)); m=$(((s%3600)/60)); if [ "$h" -gt 0 ]; then echo "${h}h ${m}m"; elif [ "$m" -gt 0 ]; then echo "${m}m"; else echo "${s}s"; fi; }
 _res_field() { grep -E "^$1=" "$RES_LEASE" 2>/dev/null | head -1 | cut -d= -f2- ; }
 _res_active() { [ -f "$RES_LEASE" ] || return 1; local exp; exp="$(_res_field expires_epoch)"; [ -n "$exp" ] && [ "$(_res_now)" -lt "$exp" ]; }
+_res_is_offer() { [ "$(_res_field mode)" = "offer" ]; }
 _res_remaining() { local exp; exp="$(_res_field expires_epoch)"; echo $(( ${exp:-0} - $(_res_now) )); }
+
+# --- queue helpers (comma-separated FIFO in the lease's `queue=` field) --------
+_res_queue() { _res_field queue; }
+_res_q_count() { local q; q="$(_res_queue)"; [ -z "$q" ] && { echo 0; return; }; echo "$q" | tr ',' '\n' | grep -c . ; }
+_res_q_has() { local q; q="$(_res_queue)"; echo ",$q," | grep -q ",$1,"; }
+_res_q_pos() { local q; q="$(_res_queue)"; echo ",$q," | tr ',' '\n' | grep -nxF "$1" | head -1 | cut -d: -f1 | awk '{print $1-1}'; }
+
+# Write/refresh a normal hold as $TAG, PRESERVING the queue.
 _res_write() {  # mode secs job
-  local now exp; now="$(_res_now)"; exp=$(( now + $2 ))
+  local now exp q; now="$(_res_now)"; exp=$(( now + $2 )); q="$(_res_queue)"
   { echo "owner=$TAG"; echo "mode=$1"; echo "acquired_epoch=$now"; echo "expires_epoch=$exp"
-    echo "last_active_epoch=$now"; echo "job=$3"; echo "requested_by="; } > "$RES_LEASE"
+    echo "last_active_epoch=$now"; echo "job=$3"; echo "queue=$q"; } > "$RES_LEASE"
 }
-_res_held_line() {  # assumes _res_active
-  local owner mode job req rem lbl idle_since idletxt
+
+_broker_notify() {  # post a hand-off message from a neutral [resource-broker] tag
+  local ts; ts="$(date '+%Y-%m-%d %H:%M')"
+  { echo ""; echo "## $ts [resource-broker]"; echo ""; echo "$1"; } >> "$BUS_FILE"
+}
+
+# Current owner is done/gone → offer to the head of the queue, or free it.
+# Caller MUST hold the flock. Sets $RES_* via _res_setup beforehand.
+_res_promote_locked() {
+  local q head rest now exp lbl; q="$(_res_queue)"; lbl="$(_res_label "$RES_NAME")"
+  if [ -z "$q" ]; then rm -f "$RES_LEASE"; echo "freed"; return; fi
+  head="${q%%,*}"; rest=""; [ "$head" != "$q" ] && rest="${q#*,}"
+  now="$(_res_now)"; exp=$(( now + RES_GRACE_MIN * 60 ))
+  { echo "owner=$head"; echo "mode=offer"; echo "acquired_epoch=$now"; echo "expires_epoch=$exp"
+    echo "last_active_epoch=$now"; echo "job=OFFERED"; echo "queue=$rest"; } > "$RES_LEASE"
+  _broker_notify "to:$head — 🎉 [$head] you're up for $lbl! It's held for you for ${RES_GRACE_MIN}m. Run /reserve $RES_NAME <dur> <soft|hard> to claim it, or /res-pass $RES_NAME to hand it to the next in line. (No response ⇒ it auto-passes.)"
+  echo "offered:$head"
+}
+
+_res_held_line() {  # assumes a lease exists (held / offered)
+  local owner mode job rem lbl qc idle_since idletxt q qhead
   owner="$(_res_field owner)"; mode="$(_res_field mode)"; job="$(_res_field job)"
-  req="$(_res_field requested_by)"; rem="$(_res_human "$(_res_remaining)")"; lbl="$(_res_label "$RES_NAME")"
+  rem="$(_res_human "$(_res_remaining)")"; lbl="$(_res_label "$RES_NAME")"; qc="$(_res_q_count)"
+  q="$(_res_queue)"; qhead="${q%%,*}"
   idle_since="$(_res_field idle_since_epoch)"; idletxt=""
   if [ -n "$idle_since" ]; then local idle=$(( $(_res_now) - idle_since )); [ "$idle" -ge 300 ] && idletxt=" · idle $(_res_human "$idle")"; fi
+  local qtxt=""; [ "$qc" -gt 0 ] && qtxt=" · queue: $qc (${qhead}…)"
+
+  if [ "$mode" = "offer" ]; then
+    if [ "$owner" = "$TAG" ]; then
+      echo "$lbl: 🎉 OFFERED TO YOU (expires ~$rem) — /reserve $RES_NAME <dur> <soft|hard> to claim, or /res-pass $RES_NAME.$qtxt"
+    else
+      echo "$lbl: offered to [$owner] (awaiting claim, ~$rem)$qtxt"
+    fi
+    return
+  fi
   if [ "$owner" = "$TAG" ]; then
     local msg="$lbl: YOU hold it ($mode · ~$rem left$idletxt)."
-    [ -n "$req" ] && msg="$msg  ⚠ [$req] has REQUESTED it — /release $RES_NAME to yield, or keep it if you still need it."
-    [ -n "$idletxt" ] && [ -z "$req" ] && msg="$msg  ⚠ idle — the watchdog may nudge/reclaim it; /release $RES_NAME if done."
+    [ "$qc" -gt 0 ] && msg="$msg  ⚠ $qc waiting (next: [$qhead]) — /release $RES_NAME when done so they get it."
+    [ -n "$idletxt" ] && [ "$qc" -eq 0 ] && msg="$msg  ⚠ idle — watchdog may nudge/reclaim; /release $RES_NAME if done."
     echo "$msg"
   else
-    echo "$lbl: held by [$owner] ($mode · ~$rem left${job:+ · $job}$idletxt)."
+    echo "$lbl: held by [$owner] ($mode · ~$rem left${job:+ · $job}$idletxt)$qtxt."
   fi
 }
 
@@ -108,61 +145,93 @@ res_reserve() {  # name dur mode [job...]
   ( flock 9
     if _res_active; then
       local owner; owner="$(_res_field owner)"
-      if [ "$owner" = "$TAG" ]; then _res_write "$mode" "$secs" "$job"; echo "Updated your $(_res_label "$RES_NAME") lease: $mode for $(_res_human "$secs")."
-      else echo "$(_res_label "$RES_NAME") is HELD by [$owner] ($(_res_field mode), ~$(_res_human "$(_res_remaining)") left) — NOT reserved."; echo "→ /request $RES_NAME to ask them to yield, or wait."; return 1; fi
+      if [ "$owner" = "$TAG" ]; then
+        local was_offer=""; _res_is_offer && was_offer=" (claimed your offer)"
+        _res_write "$mode" "$secs" "$job"; echo "Reserved $(_res_label "$RES_NAME")$was_offer: $mode for $(_res_human "$secs")."
+      else
+        echo "$(_res_label "$RES_NAME") is HELD by [$owner] ($(_res_field mode), ~$(_res_human "$(_res_remaining)") left) — NOT reserved."
+        echo "→ /res-request $RES_NAME to join the queue (you'll be pinged when it's free)."; return 1
+      fi
     else _res_write "$mode" "$secs" "$job"; echo "Reserved $(_res_label "$RES_NAME"): $mode for $(_res_human "$secs"). Job: ${job:-(none)}."; fi
   ) 9>"$RES_LOCK"
 }
+
 res_release() {
   _res_setup "$1"; mkdir -p "$RES_DIR"
   ( flock 9
-    if _res_active && [ "$(_res_field owner)" = "$TAG" ]; then rm -f "$RES_LEASE"; echo "Released $(_res_label "$1")."
+    if _res_active && [ "$(_res_field owner)" = "$TAG" ]; then
+      local r; r="$(_res_promote_locked)"
+      case "$r" in offered:*) echo "Released $(_res_label "$1") — handed to [${r#offered:}] (next in queue)." ;; *) echo "Released $(_res_label "$1")." ;; esac
     elif _res_active; then echo "You don't hold $(_res_label "$1") ([$(_res_field owner)] does) — not released."; return 1
     else rm -f "$RES_LEASE"; echo "$(_res_label "$1") is already free."; fi
   ) 9>"$RES_LOCK"
 }
-res_keep() {  # name dur  (also the heartbeat: refreshes last_active + clears idle)
+
+res_pass() {  # decline an offer -> next in line
+  _res_setup "$1"; mkdir -p "$RES_DIR"
+  ( flock 9
+    if _res_active && _res_is_offer && [ "$(_res_field owner)" = "$TAG" ]; then
+      local r; r="$(_res_promote_locked)"
+      case "$r" in offered:*) echo "Passed $(_res_label "$1") to [${r#offered:}]." ;; *) echo "Passed — $(_res_label "$1") is now free (queue empty)." ;; esac
+    else echo "You have no active offer for $(_res_label "$1") to pass."; return 1; fi
+  ) 9>"$RES_LOCK"
+}
+
+res_keep() {  # name dur
   _res_setup "$1"; local secs; secs="$(_res_dur_secs "${2:-}")"
   [ "$secs" -gt 0 ] || { echo "usage: /keep <resource> <duration>"; return 2; }
   mkdir -p "$RES_DIR"
   ( flock 9
-    if _res_active && [ "$(_res_field owner)" = "$TAG" ]; then _res_write "$(_res_field mode)" "$secs" "$(_res_field job)"; echo "Extended your $(_res_label "$1") lease: $(_res_human "$secs") from now."
+    if _res_active && [ "$(_res_field owner)" = "$TAG" ] && ! _res_is_offer; then _res_write "$(_res_field mode)" "$secs" "$(_res_field job)"; echo "Extended your $(_res_label "$1") lease: $(_res_human "$secs") from now."
     else echo "You don't hold $(_res_label "$1") — nothing to extend."; return 1; fi
   ) 9>"$RES_LOCK"
 }
-res_request() {
+
+res_request() {  # join the queue
   _res_setup "$1"; mkdir -p "$RES_DIR"
   ( flock 9
     if ! _res_active; then echo "$(_res_label "$1") is FREE — just /reserve $1 it."; return 0; fi
-    local owner; owner="$(_res_field owner)"; [ "$owner" = "$TAG" ] && { echo "You already hold $(_res_label "$1")."; return 0; }
-    sed -i "s/^requested_by=.*/requested_by=$TAG/" "$RES_LEASE"
-    echo "Flagged [$owner] that you want $(_res_label "$1") ($(_res_field mode) hold). They'll see it on their next turn."
+    local owner; owner="$(_res_field owner)"
+    [ "$owner" = "$TAG" ] && { echo "You already hold $(_res_label "$1")."; return 0; }
+    if _res_q_has "$TAG"; then echo "You're already in the $(_res_label "$1") queue (position $(_res_q_pos "$TAG")). You'll be pinged when it's your turn."; return 0; fi
+    local q; q="$(_res_queue)"; if [ -z "$q" ]; then q="$TAG"; else q="$q,$TAG"; fi
+    sed -i "s/^queue=.*/queue=$q/" "$RES_LEASE" 2>/dev/null || echo "queue=$q" >> "$RES_LEASE"
+    echo "Added you to the $(_res_label "$1") queue (position $(_res_q_count)). You'll be pinged the moment it's your turn — no need to keep checking."
   ) 9>"$RES_LOCK"
 }
-res_status() {  # [name]  — one resource, or all
+
+res_status() {  # [name]
   if [ -n "${1:-}" ]; then _res_setup "$1"
-    if _res_active; then _res_held_line; echo "  (expires $(date -d "@$(_res_field expires_epoch)" '+%H:%M' 2>/dev/null))"
-    else echo "$(_res_label "$1"): FREE — /reserve $1 <dur> <soft|hard> to claim it."; fi
+    if _res_active; then _res_held_line; else echo "$(_res_label "$1"): FREE — /reserve $1 <dur> <soft|hard> to claim it."; fi
     return 0
   fi
   local any=""
   for d in "$RES_ROOT"/*/; do [ -d "$d" ] || continue; _res_setup "$(basename "$d")"; if _res_active; then _res_held_line; any=1; fi; done
   [ -z "$any" ] && echo "All resources FREE."
 }
-res_hook_lines() {  # every held resource, one line each (for the per-prompt hook)
-  [ -d "$RES_ROOT" ] || return 0
-  for d in "$RES_ROOT"/*/; do [ -d "$d" ] || continue; _res_setup "$(basename "$d")"; _res_active && _res_held_line; done
+res_hook_lines() { [ -d "$RES_ROOT" ] || return 0; for d in "$RES_ROOT"/*/; do [ -d "$d" ] || continue; _res_setup "$(basename "$d")"; _res_active && _res_held_line; done; }
+
+# promote: used by the watchdog (separate process) on expiry/reclaim/offer-timeout.
+# Pass the owner the watchdog decided to evict; if it changed underneath (owner
+# released, offer claimed, someone else grabbed it) this no-ops — race-safe.
+res_promote() {  # name [expected_owner]
+  _res_setup "$1"; mkdir -p "$RES_DIR"
+  ( flock 9
+    [ -f "$RES_LEASE" ] || { echo "gone"; exit 0; }
+    local cur; cur="$(_res_field owner)"
+    if [ -n "${2:-}" ] && [ "$cur" != "$2" ]; then echo "skip (owner is now [$cur], not [$2])"; exit 0; fi
+    _res_promote_locked
+  ) 9>"$RES_LOCK"
 }
+
 res_dispatch() {
   set +e
   case "${1:-status}" in
-    reserve) shift; res_reserve "$@" ;;
-    release) shift; res_release "$@" ;;
-    keep)    shift; res_keep "$@" ;;
-    request) shift; res_request "$@" ;;
-    status)  shift; res_status "$@" ;;
-    lines)   res_hook_lines ;;
-    *) echo "usage: bus.sh res {reserve <name> <dur> <soft|hard>|release <name>|keep <name> <dur>|request <name>|status [name]}"; return 2 ;;
+    reserve) shift; res_reserve "$@" ;;  release) shift; res_release "$@" ;;
+    keep)    shift; res_keep "$@" ;;      request) shift; res_request "$@" ;;
+    pass)    shift; res_pass "$@" ;;      promote) shift; res_promote "$@" ;;
+    status)  shift; res_status "$@" ;;    lines)   res_hook_lines ;;
+    *) echo "usage: bus.sh res {reserve|release|keep|request|pass|status [name]}"; return 2 ;;
   esac
 }
 

@@ -823,11 +823,23 @@ function fillResourceTile(tile, res) {
   const label = res.label || res.name;
 
   const held = !!lease;
-  const mode = held ? (lease.mode === "hard" ? "hard" : "soft") : null;
-  const dotClass = !held ? "gpu-free" : (mode === "hard" ? "gpu-hard" : "gpu-soft");
+  const offered = held && lease.offered;
+  const mode = !held ? null : (offered ? "offer" : (lease.mode === "hard" ? "hard" : "soft"));
+  const dotClass = !held ? "gpu-free" : (offered ? "res-offer" : (mode === "hard" ? "gpu-hard" : "gpu-soft"));
+  const queue = (held && lease.queue) || [];
 
   let leaseEl;
-  if (held) {
+  if (offered) {
+    // Held-for-the-next-in-line, awaiting their claim.
+    const children = [
+      el("span", { class: "gpu-mode offer" }, "OFFER"),
+      el("span", { class: "gpu-owner" }, RES_BARE(lease.owner)),
+      el("span", { class: "gpu-remaining", dataset: { expires: String(lease.expires_epoch || 0) } },
+        "~" + resHuman(lease.remaining ?? 0) + " to claim"),
+    ];
+    if (queue.length) children.push(el("span", { class: "gpu-req", title: `${queue.length} more waiting` }, `⏳ +${queue.length}`));
+    leaseEl = el("div", { class: "gpu-lease gpu-lease-offer", title: `offered to ${RES_BARE(lease.owner)} — awaiting claim or auto-pass` }, ...children);
+  } else if (held) {
     const idle = lease.idle || 0;
     const children = [
       el("span", { class: `gpu-mode ${mode}` }, mode.toUpperCase()),
@@ -836,7 +848,7 @@ function fillResourceTile(tile, res) {
         "~" + resHuman(lease.remaining ?? 0) + " left"),
     ];
     if (idle >= 300) children.push(el("span", { class: "gpu-idle", title: "idle — the watchdog may nudge/reclaim it" }, `⚠ idle ${resHuman(idle)}`));
-    if (lease.requested_by) children.push(el("span", { class: "gpu-req", title: "another session requested this resource" }, `⏳ ${RES_BARE(lease.requested_by)} waiting`));
+    if (queue.length) children.push(el("span", { class: "gpu-req", title: `queue: ${queue.map(RES_BARE).join(", ")}` }, `⏳ ${queue.length} queued (${RES_BARE(queue[0])} next)`));
     leaseEl = el("div", { class: "gpu-lease" }, ...children);
   } else {
     const cmd = isGpu ? "/gpu-reserve" : `/reserve ${res.name}`;

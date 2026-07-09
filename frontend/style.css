@@ -276,6 +276,7 @@ html, body {
 .status-dot.gpu-free { background: var(--status-active); }                                  /* green = available */
 .status-dot.gpu-soft { background: #e5c07b; }                                              /* amber = soft hold */
 .status-dot.gpu-hard { background: #e06c75; animation: pulse 1.6s ease-in-out infinite; }  /* red = hard hold */
+.status-dot.res-offer { background: #61afef; animation: pulse 1s ease-in-out infinite; }    /* blue pulse = offered, awaiting claim */
 .gpu-util-badge {
   display: inline-block; font-size: 10px; font-weight: 700;
   margin-left: 6px; padding: 1px 7px; border-radius: 999px;
@@ -295,6 +296,8 @@ html, body {
 .gpu-mode { font-size: 9px; font-weight: 700; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 4px; }
 .gpu-mode.soft { background: rgba(229, 192, 123, 0.18); color: #e5c07b; border: 1px solid rgba(229, 192, 123, 0.4); }
 .gpu-mode.hard { background: rgba(224, 108, 117, 0.18); color: #e06c75; border: 1px solid rgba(224, 108, 117, 0.4); }
+.gpu-mode.offer { background: rgba(97, 175, 239, 0.18); color: #61afef; border: 1px solid rgba(97, 175, 239, 0.45); }
+.gpu-lease-offer { color: #61afef; }
 .gpu-owner { font-weight: 600; color: var(--text); }
 .gpu-remaining { color: var(--text-dim); }
 .gpu-idle { color: #e5c07b; }

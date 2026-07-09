@@ -104,11 +104,28 @@ Slash-commands (each just calls `bus.sh res …`), with the resource named:
 | `/reserve <name> <dur> <soft\|hard> ["job"]` | Claim it if free (e.g. `iq9-evk 2h hard`). Rejected (with guidance) if held. |
 | `/release <name>` | Free your reservation. |
 | `/keep <name> <dur>` | Extend your reservation before it expires — **also the heartbeat** for non-GPU resources (see the watchdog). |
-| `/res-request <name>` | Flag the current holder that you want it (they see it next turn). |
+| `/res-request <name>` | **Join the FIFO queue** — you'll be pinged the moment it's your turn (no polling). |
+| `/res-pass <name>` | When you've been *offered* a resource, decline it → hands to the next in line. |
 
 The GPU keeps its `/gpu-*` commands as **aliases** for the `gpu` resource
 (`/gpu-reserve 30m soft` == `/reserve gpu 30m soft`), so nothing that already
 uses them changes.
+
+### Queue + grace-hold hand-off
+
+Can't have a resource now? `/res-request <name>` puts you in a **FIFO queue**
+instead of polling. When the holder `/release`s (or the lease expires, or an idle
+`soft` lease is reclaimed), the head of the queue is **offered** the resource: it's
+*held for them* for a grace window (`RES_GRACE_MIN`, 15m) with a `mode=offer` lease.
+They `/reserve <name> …` to claim it (their offer converts to a real hold, the rest
+of the queue is preserved) or `/res-pass <name>` to skip it — and if they do
+nothing, the watchdog **auto-passes** to the next in line when the grace elapses.
+
+Delivery is two-layer: a `[resource-broker]` **bus message** is always posted to
+the offered session (seen on its next prompt), and — if Conductor is running — it
+**injects `/msg-check`** into that session's terminal within ~3s so an idle waiter
+wakes and acts on the offer in real time. Nobody polls; the *release* is the only
+event, and it drives everything.
 
 **Two hold modes** — the honest signal that makes coordination work:
 

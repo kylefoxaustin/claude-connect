@@ -93,6 +93,7 @@ class AppState:
         self.parked: list[ParkedSession] = []               # relaunchable offline sessions
         self.res_root = settings.bus.state_dir_resolved / "resources"   # shared-resource leases
         self.resources: dict[str, Any] = {"resources": []}
+        self._pinged_offers: set[str] = set()                 # offers we've already woken
         self.token_accountant = TokenAccountant()             # per-session token tally
         self._scan_misses: dict[str, int] = {}              # consecutive scans a session was absent
         self.recent_events: deque[BusEvent] = deque(maxlen=RECENT_EVENTS_MAX)
@@ -227,6 +228,37 @@ class AppState:
         # Resource tiles: named-resource leases (+ nvidia-smi telemetry for the GPU).
         self.resources = await asyncio.to_thread(resources_state, self.res_root)
         await self.hub.broadcast("resources", self.resources)
+        await self._wake_offered_sessions()
+
+    async def _wake_offered_sessions(self) -> None:
+        """The moment a resource is OFFERED to the next-in-queue, inject /msg-check
+        into that session so it wakes and reads its ``you're up`` ping — the real-time
+        half of the queue (the bus message is always posted regardless). We ping once
+        per offer; a session we can't resolve falls back to seeing it on its next prompt."""
+        current: set[str] = set()
+        for r in self.resources.get("resources", []):
+            lease = r.get("lease")
+            if not lease or not lease.get("offered"):
+                continue
+            owner = lease.get("owner", "")
+            key = f"{r['name']}\x00{owner}\x00{lease.get('acquired_epoch')}"
+            current.add(key)
+            if key in self._pinged_offers:
+                continue
+            rec = next((s for s in self.sessions.values()
+                        if s.tag == owner and s.status != Status.ENDED), None)
+            if rec is None:
+                continue  # untracked / not-yet-live -> bus-message fallback (retry next scan)
+            try:
+                await asyncio.to_thread(
+                    send_keys_to_session, text="/msg-check", pid=rec.pid,
+                    terminal_pid=rec.terminal_pid, title=rec.title, window_title=rec.window_title,
+                )
+                log.info("resource %s offered to [%s] — woke its session", r["name"], owner)
+            except Exception:
+                log.exception("failed to wake offered session [%s]", owner)
+            self._pinged_offers.add(key)
+        self._pinged_offers &= current  # forget offers that have resolved (bounded)
 
     async def _activity_loop(self) -> None:
         queue = await self.activity.events()
