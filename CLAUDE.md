@@ -36,6 +36,32 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.18.0: 💓 Activity-as-heartbeat — Conductor heartbeats a shared board on
+  behalf of a *working* holder. **Found live**: `orb_slam` held `orin-agx` (hard)
+  and the watchdog nudged it **7×** over 2h with no reply. It wasn't stalled —
+  `status=warm`, actively doing its a78ae rebuild. A remote board has no telemetry,
+  so "idle" means *"no `/keep` heartbeat"*, and a Claude deep in a long build never
+  stops to run `/keep`. Worse, the loop **defeated itself**: the sessions most
+  likely to be nudged are doing long work → no heartbeat → nudged; but long work
+  also means `active`/`warm` → v2.17.0's busy guard (correctly) refuses to inject →
+  the nudge can *never* reach exactly the sessions it targets. Both decisions were
+  right; the *heartbeat model* was the weak link. Fix: `AppState._refresh_active_leases`
+  — if the lease owner's session is in `_BUSY_STATUSES`, `resources.touch_lease_activity()`
+  rewrites `last_active_epoch` (throttled `_HEARTBEAT_MIN_AGE`=60s) under the **same
+  `flock`** `bus.sh` uses (`fcntl.flock` on `<res>/.lock`), so it can't race
+  reserve/release/promote. Excluded: the **GPU** (nvidia-smi tells the truth), offers,
+  quiet owners, and **dead owners** (else an abandoned lease would look alive forever
+  — the v2.16 orphan path must still see it). The broadcast payload sets `idle=0`
+  immediately for a busy holder (the `idle` field mirrors the watchdog's `idle_since`,
+  which lags a tick). **Watchdog**: now clears `nudged_epoch` when a lease drops below
+  the nudge threshold, so a resumed heartbeat ends the idle *episode* — otherwise the
+  refreshed `idle_since` would mint a new `_nudge_woken` key every scan and Conductor
+  would re-wake the owner repeatedly. Honest caveat: a busy session might be working
+  on something unrelated to the board — still strictly better than nudging busy
+  sessions who can't hear us and never nudging anyone who can. 5 new tests (19 in
+  `test_resources.py`, 108 total). Live-verified: `[docs]` was `warm` with an 828s-stale
+  heartbeat → Conductor beat for it (`heartbeat for orin-agx on behalf of a working
+  [docs]`), nudges stopped.
 - ✅ v2.17.2: 🔧 Resource-name aliases + new-name warning (drift made impossible).
   `orin` drifted back a **second** time (and `imx95-evk` nearly did): a resource
   springs into existence on first reserve, so `/reserve orin` silently created a

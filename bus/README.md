@@ -161,7 +161,7 @@ A standalone daemon, [`resource-watchdog.sh`](resource-watchdog.sh), watches eve
 held lease and judges *idle* per resource type:
 
 - **GPU** — by `nvidia-smi` **utilization** (≤ threshold = models loaded but not computing).
-- **Other resources** — by the **`/keep` heartbeat**: run `/keep <name> <dur>` while you're actively using a board; if no heartbeat arrives for a while, it counts as idle. (No board-specific probe needed.)
+- **Other resources** — by the **`/keep` heartbeat**: run `/keep <name> <dur>` while you're actively using a board; if no heartbeat arrives for a while, it counts as idle. (No board-specific probe needed.) **If Conductor is running it heartbeats for you** whenever your session is actively working — a Claude deep in a long build never stops to `/keep`, and its board would otherwise look abandoned. A *quiet* holder still goes idle, honestly; a *dead* one is left to the orphan path.
 
 When a lease sits idle past a limit, it acts **without the human coordinating**:
 

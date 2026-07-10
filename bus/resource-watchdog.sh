@@ -95,7 +95,11 @@ tick_one() {  # name
       _set idle_since_epoch "$idle_ref"
     fi
     idle=$(( now - idle_ref ))
-    [ "$idle" -ge $(( IDLE_NUDGE_MIN * 60 )) ] || exit 0
+    # Below the nudge threshold the holder is demonstrably alive (a /keep, real GPU
+    # work, or Conductor heartbeating for a busy owner). Clear any stale nudge mark
+    # so a later idle spell counts as a FRESH episode — and so Conductor doesn't
+    # keep re-waking anyone over a nudge that no longer applies.
+    if [ "$idle" -lt $(( IDLE_NUDGE_MIN * 60 )) ]; then _set nudged_epoch ""; exit 0; fi
     if [ "$mode" = "soft" ] && [ "$idle" -ge $(( SOFT_RELEASE_MIN * 60 )) ]; then echo RECLAIM; exit 0; fi
     local nudged; nudged="$(_field nudged_epoch)"
     if [ -z "$nudged" ] || [ $(( now - nudged )) -ge $(( IDLE_RENUDGE_MIN * 60 )) ]; then
