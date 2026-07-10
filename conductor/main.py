@@ -43,7 +43,7 @@ from .bus import (
     snapshot_history,
 )
 from .bus import _read_last_seen
-from .coord import read_retractions
+from .coord import read_push_requests, read_retractions
 from .models import BusEvent, BusTopology, ParkedSession, SessionRecord, Status
 from .resources import resources_state, touch_lease_activity
 from .tokens import TokenAccountant
@@ -123,6 +123,7 @@ class AppState:
         self._directed_unread: dict[str, dict[str, Any]] = {} # tag -> unread addressed to it
         self._retraction_woken: set[str] = set()              # retraction records we already delivered
         self._retractions: list[dict[str, Any]] = []          # active retraction records
+        self._push_requests: list[dict[str, Any]] = []        # git-push approvals awaiting Kyle
         self.coord_root = settings.bus.state_dir_resolved / "coord"
         self.token_accountant = TokenAccountant()             # per-session token tally
         self._scan_misses: dict[str, int] = {}              # consecutive scans a session was absent
@@ -272,6 +273,10 @@ class AppState:
         self._annotate_orphans()
         await self.hub.broadcast("resources", self.resources)
         self._retractions = await asyncio.to_thread(read_retractions, self.coord_root)
+        push_reqs = await asyncio.to_thread(read_push_requests, self.coord_root)
+        if push_reqs != self._push_requests:
+            self._push_requests = push_reqs
+            await self.hub.broadcast("push", {"requests": push_reqs})
         await self._wake_offered_sessions()
         await self._wake_nudged_owners()
         await self._wake_unread_recipients()
@@ -764,6 +769,26 @@ async def reclaim_resource(name: str, request: Request) -> dict[str, Any]:
     return {"resource": name, "owner": owner, "result": result, "ok": proc.returncode == 0}
 
 
+@app.post("/api/push/{key}/{action}")
+async def decide_push(key: str, action: str, request: Request) -> dict[str, Any]:
+    """Approve or deny a gated ``git push`` (user-triggered). Approve writes a
+    short-lived token the PreToolUse gate consumes on the session's next push; deny
+    just dismisses the request. Both go through ``bus.sh push`` — one token path."""
+    if action not in ("approve", "deny"):
+        raise HTTPException(status_code=404, detail="unknown action")
+    if not key or not all(c.isalnum() or c in "._-" for c in key):
+        raise HTTPException(status_code=400, detail="bad request key")
+    state: AppState = request.app.state.cond
+    proc = await asyncio.to_thread(
+        subprocess.run,
+        [str(state.settings.bus.script_path_resolved), "push", action, key],
+        capture_output=True, text=True, timeout=15,
+    )
+    ok = proc.returncode == 0
+    log.info("push %s [%s]: %s", action, key, (proc.stdout or "").strip() or proc.returncode)
+    return {"key": key, "action": action, "ok": ok, "result": (proc.stdout or "").strip()}
+
+
 def _human_label() -> str:
     """Display name for the ``[you]`` node — the OS username (capitalized), so it
     reads sensibly for whoever is running Conductor; ``"You"`` if unavailable."""
@@ -1050,6 +1075,7 @@ async def websocket(ws: WebSocket) -> None:
         await ws.send_text(json.dumps({"kind": "sessions", "payload": state._sessions_payload()}))
         await ws.send_text(json.dumps({"kind": "bus", "payload": state._bus_payload()}))
         await ws.send_text(json.dumps({"kind": "resources", "payload": state.resources}))
+        await ws.send_text(json.dumps({"kind": "push", "payload": {"requests": state._push_requests}}))
         while True:
             # We don't expect messages from the client right now; await any to detect close.
             await ws.receive_text()

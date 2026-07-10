@@ -36,6 +36,29 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.21.0: 🔐 Fleet coordination III — push gate (Phase 2). Kyle's one hard
+  autonomy control: **nothing hits a repo without his click** (commits stay free —
+  reversible; only `git push` is gated). Enforced, not voluntary: a Claude Code
+  **PreToolUse(Bash) hook** `bus/push-gate.sh` — CRITICAL property: instant no-op
+  for anything not a push (first line is a single `grep push`; no python/git/IO
+  otherwise, so it never adds latency or risk to normal bash). A `git push` is
+  allowed iff a valid unexpired **approval token** exists (which it consumes — one
+  push per approval); else DENY (exit 2, reason→Claude) + a request filed to
+  `bus-state/coord/push-requests/`. Regex distinguishes real `git [opts] push` from
+  `echo git push` / `git log --grep push` (no false positives; tested). **bus.sh**
+  gains `push {list|approve <repo>|deny <repo>}` (writes/removes tokens; keyed by
+  sanitized git-toplevel path; TTL 300s); migrated into live+repo. **Conductor**:
+  `coord.read_push_requests`; broadcasts a `"push"` WS msg (on change + connect);
+  `POST /api/push/{key}/{approve|deny}` shells to `bus.sh push` (one token path);
+  frontend **approval-inbox banner** under the topbar (`renderPushInbox` in app.js,
+  Approve/Dismiss buttons → `decidePush`). Installed the hook into
+  `~/.claude/settings.json` PreToolUse(matcher Bash) — the first PreToolUse hook in
+  the fleet; fails-open on non-push/parse-error (never breaks bash), fails-closed on
+  a real push (Kyle wants control). 2 new tests (129 total). Live round-trip
+  verified: hook denies→files request (its own git-toplevel key)→Conductor approve
+  ok=true→hook allows; deny path; no-false-positive matching; no regression. Answers
+  from the coordination design (docs/FLEET_COORDINATION_PLAN.md): autonomy stays
+  blanket-auto-approve, push is the ONLY hard gate, one-human-one-workstation.
 - ✅ v2.20.0: 🛑 Fleet coordination II — retraction (Phase 1 Part B). A session can
   pull back an instruction *before* the recipient acts on it — the scary
   "A said do X, realizes it's wrong, B is about to act destructively" race. Kyle's

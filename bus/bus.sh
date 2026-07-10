@@ -328,6 +328,43 @@ retract_hook_lines() {  # myplain last_seen
   printf '%s' "$out"
 }
 
+# ---- Push gate: approve/deny git-push requests the PreToolUse hook files ------
+PUSH_TOKENS="$COORD_ROOT/push-tokens"
+PUSH_REQUESTS="$COORD_ROOT/push-requests"
+PUSH_TTL="${PUSH_TOKEN_TTL:-300}"
+_push_field() { grep -E "^$1=" "$2" 2>/dev/null | head -1 | cut -d= -f2- ; }
+
+push_list() {
+  local f any=""
+  [ -d "$PUSH_REQUESTS" ] && for f in "$PUSH_REQUESTS"/*; do [ -f "$f" ] || continue; any=1
+    echo "  $(_push_field repo_name "$f")  (requested $(_push_field created "$f"))"
+  done
+  [ -z "$any" ] && echo "No pending push approvals."
+}
+push_approve() {  # <repo-name-or-key>
+  local q="${1:-}" f name key matched=""
+  [ -n "$q" ] || { echo "usage: bus.sh push approve <repo-name>"; return 2; }
+  mkdir -p "$PUSH_TOKENS"
+  [ -d "$PUSH_REQUESTS" ] && for f in "$PUSH_REQUESTS"/*; do [ -f "$f" ] || continue
+    name="$(_push_field repo_name "$f")"; key="$(basename "$f")"
+    if [ "$name" = "$q" ] || [ "$key" = "$q" ]; then
+      echo "$(( $(date +%s) + PUSH_TTL ))" > "$PUSH_TOKENS/$key"; rm -f "$f"; matched=1
+      echo "✅ Approved a push to '$name' (valid ${PUSH_TTL}s). The session can re-run its push now."
+    fi
+  done
+  if [ -z "$matched" ]; then echo "No pending push request matching '$q'. (bus.sh push list)"; return 1; fi
+  return 0
+}
+push_deny() {  # <repo-name-or-key>
+  local q="${1:-}" f name key matched=""
+  [ -d "$PUSH_REQUESTS" ] && for f in "$PUSH_REQUESTS"/*; do [ -f "$f" ] || continue
+    name="$(_push_field repo_name "$f")"; key="$(basename "$f")"
+    if [ "$name" = "$q" ] || [ "$key" = "$q" ]; then rm -f "$f"; matched=1; echo "Dismissed the push request for '$name'."; fi
+  done
+  if [ -z "$matched" ]; then echo "No pending push request matching '$q'."; return 1; fi
+  return 0
+}
+
 cmd="${1:-help}"
 shift || true
 
@@ -375,6 +412,17 @@ case "$cmd" in
 
   supersede)
     _coord_retract CORRECTION "$@"
+    exit $?
+    ;;
+
+  push)
+    action="${1:-list}"; shift 2>/dev/null || true
+    case "$action" in
+      list)    push_list ;;
+      approve) push_approve "$@" ;;
+      deny)    push_deny "$@" ;;
+      *) echo "usage: bus.sh push {list|approve <repo>|deny <repo>}"; exit 2 ;;
+    esac
     exit $?
     ;;
 

@@ -195,3 +195,24 @@ def test_retraction_for_dead_target_is_left_to_the_hook(state, monkeypatch):
     state._retractions = [{"id": "r1", "sender": "[x]", "target_plain": "qualcomm",
                            "text": "stop", "created": "x", "epoch": 1}]
     assert _run_retraction_wake(state, monkeypatch) == []
+
+
+# --- push gate (Phase 2) -----------------------------------------------------
+from conductor.coord import read_push_requests  # noqa: E402
+
+
+def test_read_push_requests(tmp_path):
+    pdir = tmp_path / "push-requests"
+    pdir.mkdir()
+    (pdir / "_home_kyle_repo").write_text(
+        "repo=/home/kyle/repo\nrepo_name=repo\ncwd=/home/kyle/repo\n"
+        "cmd=git push origin main\ncreated=2026-07-10 17:44\nepoch=1783720000\n"
+    )
+    reqs = read_push_requests(tmp_path)
+    assert len(reqs) == 1
+    assert reqs[0]["repo_name"] == "repo"
+    assert reqs[0]["key"] == "_home_kyle_repo"
+
+
+def test_read_push_requests_empty(tmp_path):
+    assert read_push_requests(tmp_path) == []

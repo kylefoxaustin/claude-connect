@@ -209,3 +209,27 @@ Conductor visualizes each resource as a live tile: the holder (soft/hard), a
 ticking countdown, the watchdog's idle warning, and any pending request. The
 **GPU tile** additionally shows the GPU name + live `nvidia-smi` utilization bar +
 memory; other resources show a plain lease.
+
+## Push gate (approve before code hits a repo)
+
+An optional safety gate: hold every `git push` until you approve it, while leaving
+commits (and everything else) free — commits are reversible, a push to a remote
+isn't. Enforced at the tool level, not by convention.
+
+- **Hook:** [`push-gate.sh`](push-gate.sh) is a Claude Code **PreToolUse(Bash)** hook.
+  It's an *instant no-op* for any command that isn't a `git push` (its first line is
+  a single `grep push`), so it adds no latency to normal work. A real `git push` is
+  allowed only if a valid approval **token** exists (which it consumes — one push per
+  approval); otherwise it's denied and a request is filed.
+- **Approve:** in Conductor's push-inbox banner (one click), or from a terminal:
+  `bus.sh push list`, `bus.sh push approve <repo>`, `bus.sh push deny <repo>`.
+- **Install:** copy the hook and register it —
+  ```bash
+  install -m755 bus/push-gate.sh ~/.claude/bin/push-gate.sh
+  # add to ~/.claude/settings.json under "hooks":
+  #   "PreToolUse": [ { "matcher": "Bash",
+  #     "hooks": [ { "type": "command", "command": "~/.claude/bin/push-gate.sh" } ] } ]
+  ```
+- **Disable:** remove that `PreToolUse` entry from `settings.json` (or delete the
+  hook). It fails *open* on anything that isn't a push, so removing it never breaks
+  a session.
