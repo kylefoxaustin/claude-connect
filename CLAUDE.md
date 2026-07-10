@@ -36,6 +36,28 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.20.0: 🛑 Fleet coordination II — retraction (Phase 1 Part B). A session can
+  pull back an instruction *before* the recipient acts on it — the scary
+  "A said do X, realizes it's wrong, B is about to act destructively" race. Kyle's
+  design pick; it's Temporal's superseding-signal-flips-a-gated-flag, and the
+  delivery half already shipped (v2.17 wake). **bus.sh** (both copies, scratch-tested
+  then migrated): `retract <to-tag> "<why>"` + `supersede <to-tag> "<do instead>"`
+  post a loud `🛑 RETRACTION`/`CORRECTION` bus message addressed to the recipient AND
+  write a record to `bus-state/coord/retractions/<epoch>-<plain>` (2h prune);
+  `_coord_plain` normalizes tags; `retract_hook_lines` surfaces UNACKNOWLEDGED
+  retractions (created > my last-seen) **loudly and FIRST** in the per-prompt hook
+  (before pending/resource lines), so even with Conductor off it can't be missed.
+  New `/retract` `/supersede` slash-commands. **Conductor**: `conductor/coord.py`
+  `read_retractions` (TTL-filtered); `AppState._wake_retractions` injects `/msg-check`
+  into the target **overriding the busy guard** — the ONE intentional exception,
+  because a *busy* recipient is exactly the one mid-destructive-action (logged
+  "busy-guard overridden", once per record); `_active_retraction_for` attaches an
+  unacknowledged retraction to the payload → a pulsing red **🛑 RETRACTION** banner
+  on the target tile. 8 new tests (parametrized busy-override proves it wakes
+  ACTIVE/WARM/IDLE/WAITING; expiry; dead-target; read); 127 total. Live-verified the
+  wiring (no-match record → read, no spurious wake, zero scan errors) + live bus.sh
+  retract/supersede end-to-end + no regression. Completes Phase 1 (auto-delivery +
+  retraction). NEXT: push-gate. Backend + frontend + bus infra, both editions.
 - ✅ v2.19.0: 📨 Fleet coordination I — auto-delivery ("never be the courier").
   First slice of the coordination arc (design in `docs/FLEET_COORDINATION_PLAN.md`
   + `docs/PHASE1_BUILD_PLAN.md`; verdict from an OSS-landscape survey: **don't

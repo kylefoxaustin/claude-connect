@@ -42,6 +42,8 @@ from .bus import (
     set_active_tag,
     snapshot_history,
 )
+from .bus import _read_last_seen
+from .coord import read_retractions
 from .models import BusEvent, BusTopology, ParkedSession, SessionRecord, Status
 from .resources import resources_state, touch_lease_activity
 from .tokens import TokenAccountant
@@ -119,6 +121,9 @@ class AppState:
         self._nudge_woken: set[str] = set()                   # idle episodes we already woke
         self._unread_woken: set[str] = set()                  # directed-unread batches we delivered
         self._directed_unread: dict[str, dict[str, Any]] = {} # tag -> unread addressed to it
+        self._retraction_woken: set[str] = set()              # retraction records we already delivered
+        self._retractions: list[dict[str, Any]] = []          # active retraction records
+        self.coord_root = settings.bus.state_dir_resolved / "coord"
         self.token_accountant = TokenAccountant()             # per-session token tally
         self._scan_misses: dict[str, int] = {}              # consecutive scans a session was absent
         self.recent_events: deque[BusEvent] = deque(maxlen=RECENT_EVENTS_MAX)
@@ -266,9 +271,29 @@ class AppState:
         await asyncio.to_thread(self._refresh_active_leases)
         self._annotate_orphans()
         await self.hub.broadcast("resources", self.resources)
+        self._retractions = await asyncio.to_thread(read_retractions, self.coord_root)
         await self._wake_offered_sessions()
         await self._wake_nudged_owners()
         await self._wake_unread_recipients()
+        await self._wake_retractions()
+
+    async def _wake_retractions(self) -> None:
+        """A retraction is urgent: the recipient may be about to act on the very
+        instruction being pulled back. So wake it *immediately* and — unlike every
+        other wake — **override the busy guard**, because a busy recipient is exactly
+        the dangerous case. Once per record."""
+        for r in self._retractions:
+            if r["id"] in self._retraction_woken:
+                continue
+            rec = next((s for s in self.sessions.values()
+                        if _bare_tag(s.tag).split(":")[-1].lower() == r["target_plain"]
+                        and s.status != Status.ENDED), None)
+            if rec is None:
+                continue  # target not live -> the hook surfaces it on its next prompt
+            await self._inject_msg_check(rec, f"RETRACTION from [{r['sender']}] (busy-guard overridden)")
+            self._retraction_woken.add(r["id"])
+        active = {r["id"] for r in self._retractions}
+        self._retraction_woken &= active  # forget expired records
 
     async def _wake_unread_recipients(self) -> None:
         """Stop being the fleet's message courier: wake an *idle* session that has a
@@ -560,6 +585,18 @@ class AppState:
 
     # --- payloads ------------------------------------------------------------
 
+    def _active_retraction_for(self, tag: str | None) -> dict[str, Any] | None:
+        """Newest retraction targeting ``tag`` that it hasn't acknowledged yet (its
+        ``last-seen`` predates the retraction). Mirrors the recipient's hook."""
+        if not tag:
+            return None
+        plain = _bare_tag(tag).split(":")[-1].lower()
+        last_seen = _read_last_seen(self.settings.bus.state_dir_resolved, tag) or ""
+        for r in self._retractions:  # newest-first
+            if r["target_plain"] == plain and r["created"] > last_seen:
+                return r
+        return None
+
     def _sessions_payload(self) -> dict[str, Any]:
         sessions = []
         for r in self.sessions.values():
@@ -570,6 +607,9 @@ class AppState:
             if info:  # messages addressed to this session (subset of pending_count)
                 d["pending_directed"] = info.get("count", 0)
                 d["pending_directed_from"] = info.get("senders", [])
+            ret = self._active_retraction_for(r.tag)  # unacknowledged pull-back → red banner
+            if ret:
+                d["retraction"] = {"sender": ret["sender"], "text": ret["text"]}
             sessions.append(d)
         return {
             "sessions": sessions,

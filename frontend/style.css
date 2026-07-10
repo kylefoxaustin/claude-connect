@@ -364,6 +364,19 @@ html, body {
   white-space: nowrap;
   cursor: help;
 }
+/* A pulled-back instruction targeting this session — loud, until it's acknowledged. */
+.tile-retraction {
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(224, 108, 117, 0.9);
+  border: 1px solid #e06c75;
+  border-radius: 5px;
+  padding: 4px 8px;
+  margin: 4px 0;
+  cursor: help;
+  animation: pulse 1.2s ease-in-out infinite;
+}
 /* block-busy policy: Claude is working, so the badge is non-interactive. */
 .pending-badge.busy-blocked {
   cursor: not-allowed;

@@ -281,6 +281,53 @@ res_dispatch() {
   esac
 }
 
+# ---- Coordination: retraction / supersede -----------------------------------
+# Pull an instruction back before the recipient acts on it. Writes a record that
+# Conductor watches (it wakes the recipient immediately — even if busy — since the
+# recipient may be mid-action) and that the recipient's prompt-check surfaces
+# LOUDLY at the top until they've checked messages.
+COORD_ROOT="${COORD_STATE_DIR:-$HOME/.claude/bus-state/coord}"
+RETRACT_DIR="$COORD_ROOT/retractions"
+
+_coord_plain() {  # a tag or to:-token -> plain name (strip brackets + other:)
+  local t="${1#[}"; t="${t%]}"; case "$t" in other:*) t="${t#other:}" ;; esac
+  printf '%s' "$t" | tr '[:upper:]' '[:lower:]'
+}
+
+# Post a visible bus message + a machine record. kind = RETRACTION | CORRECTION.
+_coord_retract() {  # kind to-tag text...
+  local kind="$1" to="$2"; shift 2 2>/dev/null || true; local text="$*"
+  if [ -z "$to" ] || [ -z "$text" ]; then
+    echo "usage: bus.sh $( [ "$kind" = CORRECTION ] && echo supersede || echo retract ) <to-tag> \"<what was wrong / do instead>\"" >&2
+    return 2
+  fi
+  local plain now ts label; plain="$(_coord_plain "$to")"; now="$(date +%s)"; ts="$(date '+%Y-%m-%d %H:%M')"
+  case "$kind" in CORRECTION) label="🛑 CORRECTION" ;; *) label="🛑 RETRACTION" ;; esac
+  { echo ""; echo "## $ts [$TAG]"; echo ""
+    echo "to:$plain — [$TAG] $label — $text  (Do NOT act on my earlier instruction.)"; } >> "$BUS_FILE"
+  mkdir -p "$RETRACT_DIR"
+  find "$RETRACT_DIR" -type f -mmin +120 -delete 2>/dev/null || true   # prune stale (>2h)
+  { echo "sender=$TAG"; echo "target=$to"; echo "target_plain=$plain"; echo "kind=$kind"
+    echo "created=$ts"; echo "epoch=$now"; echo "text=$text"; } > "$RETRACT_DIR/${now}-${plain}"
+  echo "$label sent to [$plain] — they'll be woken to see it immediately."
+  mark_seen_if_bus_tag
+}
+
+# Loud lines for UNACKNOWLEDGED retractions targeting me (created after my last-seen).
+retract_hook_lines() {  # myplain last_seen
+  local myplain="$1" last_seen="$2" f created sender kind text out=""
+  [ -d "$RETRACT_DIR" ] || return 0
+  for f in "$RETRACT_DIR"/*-"$myplain"; do
+    [ -f "$f" ] || continue
+    created="$(grep -E '^created=' "$f" | cut -d= -f2-)"
+    [ -n "$last_seen" ] && [[ "$created" > "$last_seen" ]] || continue
+    sender="$(grep -E '^sender=' "$f" | cut -d= -f2-)"
+    text="$(grep -E '^text=' "$f" | cut -d= -f2-)"
+    out="${out}🛑🛑 RETRACTION from [$sender]: ${text} — STOP; do NOT act on their earlier instruction, re-evaluate first."$'\n'
+  done
+  printf '%s' "$out"
+}
+
 cmd="${1:-help}"
 shift || true
 
@@ -318,6 +365,16 @@ case "$cmd" in
 
   res)
     res_dispatch "$@"
+    exit $?
+    ;;
+
+  retract)
+    _coord_retract RETRACTION "$@"
+    exit $?
+    ;;
+
+  supersede)
+    _coord_retract CORRECTION "$@"
     exit $?
     ;;
 
@@ -400,16 +457,19 @@ EOF
 
     # Resource-reservation awareness: a line per held resource (silent when all free).
     RES_LINES="$(res_hook_lines 2>/dev/null || true)"
+    # Retractions aimed at me — loud, and FIRST (safety before everything else).
+    RETRACT_LINES="$(retract_hook_lines "$(_coord_plain "$TAG")" "$LAST_SEEN" 2>/dev/null || true)"
 
-    # Nothing pending and every resource free -> stay silent (preserves prior behavior).
-    if [ -z "$NOTE" ] && [ -z "$RES_LINES" ]; then
+    # Nothing pending, no retraction, and every resource free -> stay silent.
+    if [ -z "$NOTE" ] && [ -z "$RES_LINES" ] && [ -z "$RETRACT_LINES" ]; then
       exit 0
     fi
 
-    FULL="$NOTE"
-    if [ -n "$RES_LINES" ]; then
-      if [ -n "$FULL" ]; then FULL="$FULL"$'\n'"$RES_LINES"; else FULL="$RES_LINES"; fi
-    fi
+    NL=$'\n'
+    FULL=""
+    [ -n "$RETRACT_LINES" ] && FULL="$RETRACT_LINES"   # retractions lead
+    if [ -n "$NOTE" ]; then FULL="${FULL:+$FULL$NL}$NOTE"; fi
+    if [ -n "$RES_LINES" ]; then FULL="${FULL:+$FULL$NL}$RES_LINES"; fi
     ESCAPED="$(printf '%s' "$FULL" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"
 
     cat <<EOF

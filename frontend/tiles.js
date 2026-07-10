@@ -737,6 +737,11 @@ function fillSessionTile(tile, s, state) {
     el("div", { class: "tile-projectdir", title: s.project_dir },
       tagChip, tagChip ? " " : null, s.project_dir,
     ),
+    s.retraction
+      ? el("div", { class: "tile-retraction",
+          title: `[${s.retraction.sender}] retracted an instruction — this session is being woken to see it` },
+          `🛑 RETRACTION from ${RES_BARE(s.retraction.sender)}: ${s.retraction.text}`)
+      : null,
     el("div", { class: "tile-preview" }, s.preview || ""),
     (s.tokens && s.tokens.turns)
       ? el("div", { class: "tile-tokens", title: tokenTooltip(s.tokens) },

@@ -4,7 +4,7 @@
 
 **A local dashboard for watching all your Claude Code sessions at once — in your browser or as a standalone desktop app — plus an optional _message bus_ (a shared log your sessions post to) that lets them talk to each other.**
 
-[![version: 2.19](https://img.shields.io/badge/version-2.19-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
+[![version: 2.20](https://img.shields.io/badge/version-2.20-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
 [![platform: linux](https://img.shields.io/badge/platform-linux-orange)](#requirements)
 [![safety: read--only](https://img.shields.io/badge/safety-read--only-green)](#how-it-works)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -82,6 +82,7 @@ New in **2.3–2.5**: a **🕸 History** button replays your entire cross-sessio
 - 🎯 **Click-to-focus** — clicking a tile raises the actual terminal window
 - 📬 **Cross-session messaging** with an animated bus tile showing live traffic
 - 📨 **Auto-delivery** *(new in 2.19)* — when an idle session has an unread message *addressed to it* (`to:<tag>`), Conductor wakes it to go read it, so you never prod a session to check the bus. Tiles show a "📨 N for you" badge; the topbar shows how many sessions are waiting
+- 🛑 **Retraction** *(new in 2.20)* — a session that told another "do X" and realized it's wrong can `/retract` (or `/supersede`) it; the recipient is woken **immediately, even mid-task**, and sees a loud warning before it acts. For the "A said do X, B is about to act destructively" race
 - 🎛️ **Shared-resource coordination** *(new in 2.9–2.16)* — sessions self-reserve scarce resources over the bus — a **GPU** *or* a dev **board** (IQ9 EVK, Orin, …) — with soft/hard holds, a **FIFO queue** (get pinged the moment it's your turn, no polling), an idle 🐕 watchdog that nudges/reclaims quiet leases, **abandoned-lease detection** (a hold whose session died is flagged, and reaped outright after a reboot), and a live tile per resource — no more arbitrating who gets what. See [Shared-resource coordination](#-shared-resource-coordination)
 - ✉️ **Compose from the dashboard** — send your own bus message to all sessions or a chosen few, with an optional "ping" that makes them read it now
 - 🟢 **Status indicators** — `active` / `warm` / `idle` / `dormant` / `waiting` / `ended`
