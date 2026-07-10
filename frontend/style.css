@@ -350,6 +350,20 @@ html, body {
 .pending-badge:hover {
   background: rgba(188, 140, 255, 0.32);
 }
+/* Directed: this session has messages addressed TO it — amber, stands out from
+   the neutral broadcast count. Idle sessions get these auto-delivered. */
+.pending-badge.directed {
+  background: rgba(229, 192, 123, 0.20);
+  color: #e5c07b;
+  border-color: rgba(229, 192, 123, 0.5);
+}
+.pending-badge.directed:hover { background: rgba(229, 192, 123, 0.34); }
+.waiting-total {
+  font-size: 11px;
+  color: #e5c07b;
+  white-space: nowrap;
+  cursor: help;
+}
 /* block-busy policy: Claude is working, so the badge is non-interactive. */
 .pending-badge.busy-blocked {
   cursor: not-allowed;

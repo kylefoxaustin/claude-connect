@@ -34,6 +34,7 @@ from .bus import (
     append_message,
     build_mention_history,
     compute_pending,
+    directed_unread_all,
     list_known_tags,
     list_sender_tags,
     read_active_tags,
@@ -67,6 +68,10 @@ log = logging.getLogger("conductor")
 
 # Mirrors the frontend's ping guard: a session mid-task shouldn't get keystrokes.
 _BUSY_STATUSES = frozenset({Status.ACTIVE, Status.WARM})
+
+# Auto-delivery only wakes sessions that are clearly unattended and not working:
+# not ACTIVE/WARM (busy) and not WAITING (Kyle may be typing at that prompt).
+_WAKEABLE_STATUSES = frozenset({Status.IDLE, Status.DORMANT})
 
 
 def _bare_tag(tag: str | None) -> str:
@@ -112,6 +117,8 @@ class AppState:
         self._pinged_offers: set[str] = set()                 # offers we've already woken
         self._owner_missing_since: dict[str, float] = {}      # lease -> when its owner went offline
         self._nudge_woken: set[str] = set()                   # idle episodes we already woke
+        self._unread_woken: set[str] = set()                  # directed-unread batches we delivered
+        self._directed_unread: dict[str, dict[str, Any]] = {} # tag -> unread addressed to it
         self.token_accountant = TokenAccountant()             # per-session token tally
         self._scan_misses: dict[str, int] = {}              # consecutive scans a session was absent
         self.recent_events: deque[BusEvent] = deque(maxlen=RECENT_EVENTS_MAX)
@@ -195,6 +202,17 @@ class AppState:
             if r.tag:
                 r.pending_count = self._pending_for(r.tag)
 
+        # Directed-unread (messages addressed `to:<tag>` that the session hasn't
+        # read) drives auto-delivery — one log parse for all live tags.
+        live_tags = [r.tag for r in self.sessions.values()
+                     if r.tag and r.status != Status.ENDED]
+        self._directed_unread = await asyncio.to_thread(
+            directed_unread_all,
+            self.settings.bus.markdown_path_resolved,
+            self.settings.bus.state_dir_resolved,
+            live_tags,
+        )
+
         # Topology for the markdown bus = tags that are actually *wired up* to
         # the bus, i.e. have bus state (a `<tag>.last-seen` file). A session can
         # be tagged (every CWD derives one) yet never have touched the bus; such
@@ -250,6 +268,30 @@ class AppState:
         await self.hub.broadcast("resources", self.resources)
         await self._wake_offered_sessions()
         await self._wake_nudged_owners()
+        await self._wake_unread_recipients()
+
+    async def _wake_unread_recipients(self) -> None:
+        """Stop being the fleet's message courier: wake an *idle* session that has a
+        message addressed to it (``to:<tag>``) it hasn't read, so it goes and reads
+        it on its own. Only IDLE/DORMANT sessions (never busy, never one Kyle may be
+        typing at), only *directed* messages (broadcasts don't trigger this), and
+        once per unread batch (a newer message re-wakes; the same batch never nags)."""
+        if not self.settings.bus.autodeliver:
+            return
+        current: set[str] = set()
+        for r in self.sessions.values():
+            if not r.tag or r.status not in _WAKEABLE_STATUSES:
+                continue
+            info = self._directed_unread.get(r.tag)
+            if not info or not info.get("count"):
+                continue
+            key = f"{r.tag}\x00{info.get('latest_ts')}"
+            current.add(key)
+            if key in self._unread_woken:
+                continue
+            await self._inject_msg_check(r, f"{info['count']} unread addressed to it")
+            self._unread_woken.add(key)
+        self._unread_woken &= current  # forget batches that have been read
 
     # A busy holder can't run /keep, so its board looks abandoned; and our busy
     # guard (rightly) won't interrupt it to say so. Conductor knows the owner is
@@ -524,6 +566,10 @@ class AppState:
             d = r.to_dict()
             if r.jsonl_path:  # tally tokens from the transcript (incremental → cheap)
                 d["tokens"] = self.token_accountant.usage_for(r.jsonl_path)
+            info = self._directed_unread.get(r.tag or "")
+            if info:  # messages addressed to this session (subset of pending_count)
+                d["pending_directed"] = info.get("count", 0)
+                d["pending_directed_from"] = info.get("senders", [])
             sessions.append(d)
         return {
             "sessions": sessions,

@@ -41,6 +41,9 @@ class BusSettings:
     # surfaced as an orphan suspect (never auto-reclaimed — a session can be
     # closed and relaunched; the user decides). Matches RES_ORPHAN_GRACE_MIN.
     orphan_flag_seconds: float = 600.0
+    # Auto-delivery: wake an idle session that has a message addressed to it
+    # (to:<tag>) it hasn't read, so Kyle doesn't have to prod it to check the bus.
+    autodeliver: bool = True
     # Sender tag stamped on messages you compose from the dashboard, so they're
     # distinguishable from any session (e.g. "operator" -> "[operator]").
     sender_tag: str = "operator"
