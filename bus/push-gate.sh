@@ -23,22 +23,29 @@ INPUT="$(cat 2>/dev/null || true)"
 printf '%s' "$INPUT" | grep -q 'push' || exit 0
 
 # ---- parse the tool call (only for commands that mention push) -------------------
+# Extract cwd (line 1 — a path, no newlines) then the command (the rest, newlines
+# preserved). Bash can't hold NUL in a variable, so we separate on the first
+# newline rather than a NUL byte.
 read -r -d '' _PY <<'PY' || true
 import json, sys
 try:
     d = json.load(sys.stdin)
-    print((d.get("tool_input") or {}).get("command", "").replace("\n", " "))
-    print(d.get("cwd", "") or "")
+    sys.stdout.write((d.get("cwd", "") or "") + "\n")
+    sys.stdout.write((d.get("tool_input") or {}).get("command", ""))
 except Exception:
-    print(""); print("")
+    sys.stdout.write("\n")
 PY
 _parsed="$(printf '%s' "$INPUT" | python3 -c "$_PY" 2>/dev/null || printf '\n')"
-CMD="$(printf '%s\n' "$_parsed" | sed -n 1p)"
-CWD="$(printf '%s\n' "$_parsed" | sed -n 2p)"
+CWD="$(printf '%s' "$_parsed" | head -n1)"
+CMD="$(printf '%s' "$_parsed" | tail -n +2)"
 [ -n "$CWD" ] || CWD="$PWD"
 
-# Is this actually `git [opts] push` (not "echo git push", "git log ... push", …)?
-printf '%s' "$CMD" | grep -Eq '(^|[;&|]|[[:space:]])git([[:space:]]+(-[^[:space:]]+|-C[[:space:]]+[^[:space:]]+))*[[:space:]]+push([[:space:]]|$)' || exit 0
+# Gate only a real `git [opts] push` INVOCATION — i.e. `git` at a command position
+# (start of a line, or right after ; & | && || or `(`), not "git push" sitting
+# inside a quoted argument (echo "...", a commit message, this very announcement).
+# CMD keeps its newlines, and grep is line-oriented, so a push on its own line in a
+# multi-line command still matches.
+printf '%s' "$CMD" | grep -Eq '(^|[;&|(])[[:space:]]*git([[:space:]]+(-[^[:space:]]+|-C[[:space:]]+[^[:space:]]+))*[[:space:]]+push([[:space:]]|$)' || exit 0
 
 # ---- it's a git push: require a valid approval token ----------------------------
 REPO="$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$CWD")"
