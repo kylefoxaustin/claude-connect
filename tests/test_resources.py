@@ -149,3 +149,72 @@ def test_dead_owner_is_left_to_the_orphan_path(state, monkeypatch):
     state.sessions = {}
     state.resources = {"resources": [{"name": "iq9-evk", "lease": _nudged_lease()}]}
     assert _run_nudge_wake(state, monkeypatch) == []
+
+
+# --- activity-as-heartbeat ----------------------------------------------------
+# A remote board has no telemetry, so "idle" means "no /keep". But a Claude deep in
+# a long build never stops to /keep, and the busy guard rightly won't interrupt it
+# to say so — so a working holder's board looked abandoned. Conductor heartbeats for
+# a demonstrably-busy owner. A *quiet* owner is left to look idle, honestly.
+
+def _board(tmp_path, name, owner, last_active_age, smi=None):
+    d = tmp_path / name
+    d.mkdir(exist_ok=True)
+    now = int(time.time())
+    (d / "lease").write_text(
+        f"owner={owner}\nmode=hard\nexpires_epoch={now + 9000}\n"
+        f"last_active_epoch={now - last_active_age}\nqueue=\n"
+    )
+    return {"name": name, "smi": smi,
+            "lease": {"owner": owner, "mode": "hard", "offered": False,
+                      "last_active_epoch": now - last_active_age, "idle": last_active_age}}
+
+
+def _last_active(tmp_path, name):
+    for ln in (tmp_path / name / "lease").read_text().splitlines():
+        if ln.startswith("last_active_epoch="):
+            return int(ln.split("=", 1)[1])
+    return 0
+
+
+def test_busy_owner_gets_a_heartbeat(state, tmp_path):
+    state.res_root = tmp_path
+    state.sessions = {"o": _wakeable_session(Status.WARM)}
+    state.resources = {"resources": [_board(tmp_path, "orin-agx", "other:qualcomm", 9000)]}
+    state._refresh_active_leases()
+    assert int(time.time()) - _last_active(tmp_path, "orin-agx") < 5
+    assert state.resources["resources"][0]["lease"]["idle"] == 0  # broadcast payload is truthful
+
+
+def test_quiet_owner_is_left_looking_idle(state, tmp_path):
+    state.res_root = tmp_path
+    state.sessions = {"o": _wakeable_session(Status.IDLE)}
+    state.resources = {"resources": [_board(tmp_path, "iq9-evk", "other:qualcomm", 9000)]}
+    state._refresh_active_leases()
+    assert int(time.time()) - _last_active(tmp_path, "iq9-evk") > 8000
+
+
+def test_gpu_is_excluded_it_has_real_telemetry(state, tmp_path):
+    state.res_root = tmp_path
+    state.sessions = {"o": _wakeable_session(Status.ACTIVE)}
+    state.resources = {"resources": [_board(tmp_path, "gpu", "other:qualcomm", 9000, smi={"util": 3})]}
+    state._refresh_active_leases()
+    assert int(time.time()) - _last_active(tmp_path, "gpu") > 8000
+
+
+def test_heartbeat_is_throttled(state, tmp_path):
+    state.res_root = tmp_path
+    state.sessions = {"o": _wakeable_session(Status.WARM)}
+    state.resources = {"resources": [_board(tmp_path, "imx95-frdm", "other:qualcomm", 5)]}
+    before = _last_active(tmp_path, "imx95-frdm")
+    state._refresh_active_leases()
+    assert _last_active(tmp_path, "imx95-frdm") == before  # < _HEARTBEAT_MIN_AGE, no rewrite
+
+
+def test_dead_owner_gets_no_heartbeat(state, tmp_path):
+    """Otherwise Conductor would keep an abandoned lease looking alive forever."""
+    state.res_root = tmp_path
+    state.sessions = {}
+    state.resources = {"resources": [_board(tmp_path, "orin-agx", "other:ghost", 9000)]}
+    state._refresh_active_leases()
+    assert int(time.time()) - _last_active(tmp_path, "orin-agx") > 8000

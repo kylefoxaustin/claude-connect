@@ -8,10 +8,47 @@ Reads the named-resource leases that ``bus.sh res`` writes (under
 
 from __future__ import annotations
 
+import fcntl
+import time
 from pathlib import Path
 from typing import Any
 
 from .gpu import query_nvidia_smi, read_lease
+
+
+def touch_lease_activity(res_dir: Path, now: int | None = None) -> bool:
+    """Refresh a lease's ``last_active_epoch`` — an activity heartbeat.
+
+    A remote board has no telemetry, so the watchdog judges it idle by how long
+    ago the owner ran ``/keep``. But a Claude deep in a long build never stops to
+    heartbeat, so a *busy* holder's lease looks abandoned. Conductor knows the
+    owner's session is working, so it heartbeats on their behalf.
+
+    Takes the same ``flock`` on ``<res>/.lock`` that ``bus.sh`` uses, so this can
+    never race a reserve/release/promote.
+    """
+    lease = res_dir / "lease"
+    now = int(time.time()) if now is None else int(now)
+    try:
+        with open(res_dir / ".lock", "a+") as lockf:
+            fcntl.flock(lockf, fcntl.LOCK_EX)
+            try:
+                text = lease.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                return False  # released underneath us
+            out, seen = [], False
+            for ln in text.splitlines():
+                if ln.startswith("last_active_epoch="):
+                    out.append(f"last_active_epoch={now}")
+                    seen = True
+                else:
+                    out.append(ln)
+            if not seen:
+                out.append(f"last_active_epoch={now}")
+            lease.write_text("\n".join(out) + "\n", encoding="utf-8")
+            return True
+    except OSError:
+        return False
 
 
 def _label(name: str) -> str:

@@ -42,7 +42,7 @@ from .bus import (
     snapshot_history,
 )
 from .models import BusEvent, BusTopology, ParkedSession, SessionRecord, Status
-from .resources import resources_state
+from .resources import resources_state, touch_lease_activity
 from .tokens import TokenAccountant
 from .scanner import (
     YOU_TAG,
@@ -245,10 +245,36 @@ class AppState:
         await self.hub.broadcast("bus", self._bus_payload())
         # Resource tiles: named-resource leases (+ nvidia-smi telemetry for the GPU).
         self.resources = await asyncio.to_thread(resources_state, self.res_root)
+        await asyncio.to_thread(self._refresh_active_leases)
         self._annotate_orphans()
         await self.hub.broadcast("resources", self.resources)
         await self._wake_offered_sessions()
         await self._wake_nudged_owners()
+
+    # A busy holder can't run /keep, so its board looks abandoned; and our busy
+    # guard (rightly) won't interrupt it to say so. Conductor knows the owner is
+    # working, so it heartbeats for them: activity IS the heartbeat.
+    _HEARTBEAT_MIN_AGE = 60  # don't rewrite the lease on every 3s scan
+
+    def _refresh_active_leases(self) -> None:
+        now = int(time.time())
+        for r in self.resources.get("resources", []):
+            lease = r.get("lease")
+            if not lease or lease.get("offered") or r.get("smi"):
+                continue  # the GPU has nvidia-smi; it tells the truth by itself
+            rec = self._live_session_for(lease.get("owner", ""))
+            if rec is None or rec.status not in _BUSY_STATUSES:
+                continue  # holder quiet (or gone) -> let it look idle, honestly
+            # The owner is working, so the resource is not idle — say so right away.
+            # (``idle`` mirrors the watchdog's ``idle_since``, which only catches up
+            # on its next tick, and we throttle the lease write below.)
+            lease["idle"] = 0
+            last = lease.get("last_active_epoch") or 0
+            if now - last < self._HEARTBEAT_MIN_AGE:
+                continue
+            if touch_lease_activity(self.res_root / r["name"], now):
+                lease["last_active_epoch"] = now
+                log.info("heartbeat for %s on behalf of a working [%s]", r["name"], lease.get("owner"))
 
     def _live_session_for(self, owner: str) -> SessionRecord | None:
         return next((s for s in self.sessions.values()

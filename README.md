@@ -4,7 +4,7 @@
 
 **A local dashboard for watching all your Claude Code sessions at once — in your browser or as a standalone desktop app — plus an optional _message bus_ (a shared log your sessions post to) that lets them talk to each other.**
 
-[![version: 2.17](https://img.shields.io/badge/version-2.17-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
+[![version: 2.18](https://img.shields.io/badge/version-2.18-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
 [![platform: linux](https://img.shields.io/badge/platform-linux-orange)](#requirements)
 [![safety: read--only](https://img.shields.io/badge/safety-read--only-green)](#how-it-works)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
