@@ -10,6 +10,7 @@ const state = {
   sessions: [],     // SessionRecord[]
   parked: [],       // ParkedSession[] — offline, relaunchable (dormant dock)
   resources: { resources: [] },  // shared-resource tiles (GPU, boards, …)
+  push: { requests: [] },        // gated git-push approvals awaiting Kyle
   fadeoutSeconds: 30,
   wmctrlAvailable: false,
 
@@ -188,6 +189,11 @@ function handleMessage({ kind, payload }) {
       state.resources = payload || { resources: [] };
       renderGrid(state);
       requestAnimationFrame(() => redrawLines(state));
+      break;
+    }
+    case "push": {
+      state.push = payload || { requests: [] };
+      renderPushInbox(state);
       break;
     }
     case "bus_event": {
@@ -529,6 +535,50 @@ window.requestFocus = async function requestFocus(sessionId) {
 function sessionLooksBusy(status) {
   return status === "active" || status === "warm";
 }
+
+// Push-approval inbox: a banner listing gated `git push`es awaiting Kyle. One
+// click writes the token the PreToolUse gate consumes on the session's next push.
+function renderPushInbox(state) {
+  const box = document.getElementById("push-inbox");
+  if (!box) return;
+  const reqs = (state.push && state.push.requests) || [];
+  if (!reqs.length) { box.hidden = true; box.replaceChildren(); return; }
+  box.hidden = false;
+  const rows = reqs.map((r) => {
+    const meta = document.createElement("div");
+    meta.className = "push-req-meta";
+    meta.innerHTML = `<strong>🔐 ${r.repo_name}</strong> wants to push`
+      + (r.created ? ` <span class="push-when">· ${r.created}</span>` : "");
+    meta.title = r.cmd || "";
+    const approve = document.createElement("button");
+    approve.className = "push-approve"; approve.textContent = "Approve push";
+    approve.onclick = () => window.decidePush(r.key, "approve", approve);
+    const deny = document.createElement("button");
+    deny.className = "push-deny"; deny.textContent = "Dismiss";
+    deny.onclick = () => window.decidePush(r.key, "deny", deny);
+    const row = document.createElement("div");
+    row.className = "push-req";
+    row.append(meta, approve, deny);
+    return row;
+  });
+  const title = document.createElement("div");
+  title.className = "push-inbox-title";
+  title.textContent = `🔐 ${reqs.length} push${reqs.length > 1 ? "es" : ""} awaiting your approval — nothing hits a repo without your click`;
+  box.replaceChildren(title, ...rows);
+}
+window.renderPushInbox = renderPushInbox;
+
+window.decidePush = async function decidePush(key, action, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = action === "approve" ? "approving…" : "…"; }
+  try {
+    const r = await fetch(`/api/push/${encodeURIComponent(key)}/${action}`, { method: "POST" });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`);
+    // the next scan re-broadcasts the (now shorter) request list and re-renders
+  } catch (err) {
+    if (btn) { btn.disabled = false; btn.textContent = action === "approve" ? "Approve push" : "Dismiss"; }
+    window.alert(`Could not ${action} push: ${err.message}`);
+  }
+};
 
 // Hand on a lease whose owner's session is gone. Always user-initiated, always
 // confirmed — the backend refuses unless it has flagged the lease as orphaned.

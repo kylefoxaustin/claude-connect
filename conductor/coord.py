@@ -56,3 +56,31 @@ def read_retractions(coord_root: Path, now: float | None = None) -> list[dict[st
         })
     out.sort(key=lambda r: r["epoch"], reverse=True)
     return out
+
+
+def read_push_requests(coord_root: Path) -> list[dict[str, Any]]:
+    """Pending ``git push`` approvals the PreToolUse gate filed. Each: ``{key,
+    repo_name, cwd, cmd, created, epoch}``, newest first. These wait for Kyle — no
+    TTL (a push shouldn't silently expire out of the inbox)."""
+    rdir = coord_root / "push-requests"
+    if not rdir.is_dir():
+        return []
+    out: list[dict[str, Any]] = []
+    try:
+        files = list(rdir.iterdir())
+    except OSError:
+        return []
+    for f in files:
+        if not f.is_file():
+            continue
+        d = _parse(f)
+        out.append({
+            "key": f.name,
+            "repo_name": d.get("repo_name", f.name),
+            "cwd": d.get("cwd", ""),
+            "cmd": d.get("cmd", ""),
+            "created": d.get("created", ""),
+            "epoch": int(d["epoch"]) if d.get("epoch", "").isdigit() else 0,
+        })
+    out.sort(key=lambda r: r["epoch"], reverse=True)
+    return out

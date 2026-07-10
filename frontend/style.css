@@ -364,6 +364,24 @@ html, body {
   white-space: nowrap;
   cursor: help;
 }
+/* Push-approval inbox — a banner under the topbar; nothing hits a repo without a click. */
+.push-inbox {
+  background: rgba(97, 175, 239, 0.12);
+  border-bottom: 1px solid rgba(97, 175, 239, 0.4);
+  padding: 8px 20px;
+}
+.push-inbox-title { font-size: 12px; font-weight: 600; color: #61afef; margin-bottom: 6px; }
+.push-req { display: flex; align-items: center; gap: 10px; padding: 3px 0; }
+.push-req-meta { font-size: 12px; color: var(--text); flex: 1; min-width: 0; }
+.push-when { color: var(--text-dim); font-weight: 400; }
+.push-approve, .push-deny {
+  font-size: 11px; font-weight: 600; padding: 3px 12px; border-radius: 5px; cursor: pointer;
+}
+.push-approve { color: #fff; background: #61afef; border: 1px solid #61afef; }
+.push-approve:hover:not(:disabled) { background: #4b9fe0; }
+.push-deny { color: var(--text-dim); background: transparent; border: 1px solid var(--border); }
+.push-deny:hover:not(:disabled) { color: var(--text); border-color: var(--text-dim); }
+.push-approve:disabled, .push-deny:disabled { opacity: 0.6; cursor: default; }
 /* A pulled-back instruction targeting this session — loud, until it's acknowledged. */
 .tile-retraction {
   font-size: 11px;
