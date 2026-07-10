@@ -20,7 +20,7 @@ import time
 from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from .models import BusEvent, BusTopology
 
@@ -421,6 +421,108 @@ def compute_pending(messages_path: Path, state_dir: Path, tag: str) -> int:
             return 0  # never read, never sent — no basis to call anything unread
         last_seen = max(own)
     return sum(1 for ts, ttag in headers if ts > last_seen and ttag != me)
+
+
+_TO_TOKEN_RE = re.compile(r"\bto:(\S+)")
+_DIRECTED_BLOCKS_CACHE: dict[Path, tuple[float, list[tuple[str, str, frozenset[str]]]]] = {}
+
+
+def _plain_name(tag: str) -> str:
+    """Normalize a tag or a ``to:`` token to the plain name for matching.
+
+    ``[other:qualcomm]`` / ``other:qualcomm`` / ``qualcomm`` all -> ``qualcomm``;
+    ``[backend]`` -> ``backend``. So a message ``to:qualcomm`` matches the session
+    whose tag is ``[other:qualcomm]``.
+    """
+    t = tag.strip().strip("[]")
+    if t.lower().startswith("other:"):
+        t = t[6:]
+    return t.lower()
+
+
+def _address_targets(first_body_line: str) -> frozenset[str]:
+    """Plain names a message is explicitly addressed to (its leading ``to:x to:y —``
+    list). Empty for an untargeted broadcast; ``all`` is kept but never matches a
+    session name, so broadcasts don't count as *directed*."""
+    head = first_body_line.split("—", 1)[0]
+    if "to:" not in head:
+        return frozenset()
+    return frozenset(_plain_name(m) for m in _TO_TOKEN_RE.findall(head))
+
+
+def _directed_blocks(messages_path: Path) -> list[tuple[str, str, frozenset[str]]]:
+    """``[(ts_str, sender_bracket, address_targets), ...]`` for each message. mtime-cached."""
+    if not messages_path.exists():
+        return []
+    try:
+        mtime = messages_path.stat().st_mtime
+    except OSError:
+        return []
+    cached = _DIRECTED_BLOCKS_CACHE.get(messages_path)
+    if cached and cached[0] == mtime:
+        return cached[1]
+    try:
+        lines = messages_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    blocks: list[tuple[str, str, frozenset[str]]] = []
+    i = 0
+    while i < len(lines):
+        m = _HEADER_RE.match(lines[i])
+        if not m:
+            i += 1
+            continue
+        ts_str, sender = f"{m.group(1)} {m.group(2)}", f"[{m.group(3)}]"
+        i += 1
+        first_body = ""
+        while i < len(lines) and not _HEADER_RE.match(lines[i]):
+            if not first_body and lines[i].strip():
+                first_body = lines[i]
+            i += 1
+        blocks.append((ts_str, sender, _address_targets(first_body)))
+    _DIRECTED_BLOCKS_CACHE[messages_path] = (mtime, blocks)
+    return blocks
+
+
+def directed_unread_all(
+    messages_path: Path, state_dir: Path, tags: list[str]
+) -> dict[str, dict[str, Any]]:
+    """Per tag, the UNREAD messages *explicitly addressed to it* (``to:<tag>``).
+
+    Distinct from ``compute_pending`` (all unread): this is the signal for
+    auto-delivery — a message aimed at a specific session that the session hasn't
+    read. Pure broadcasts (``to:all`` / no address line) and the tag's own messages
+    are excluded, so waking on this can't spam every idle session on every broadcast.
+    Same never-checked baseline as ``compute_pending``. One log parse for all tags.
+
+    Returns ``{tag: {"count": int, "senders": [name], "latest_ts": str}}``.
+    """
+    out = {t: {"count": 0, "senders": [], "latest_ts": ""} for t in tags}
+    if not tags:
+        return out
+    blocks = _directed_blocks(messages_path)
+    if not blocks:
+        return out
+    for tag in tags:
+        me = tag if tag.startswith("[") else f"[{tag}]"
+        plain = _plain_name(tag)
+        last_seen = _read_last_seen(state_dir, tag)
+        if not last_seen:
+            own = [ts for ts, snd, _ in blocks if snd == me]
+            if not own:
+                continue  # never read, never sent — no unread basis
+            last_seen = max(own)
+        count, latest, senders = 0, "", set()
+        for ts, snd, targets in blocks:
+            if ts <= last_seen or snd == me:
+                continue
+            if plain in targets:
+                count += 1
+                senders.add(_bare_name(snd))
+                if ts > latest:
+                    latest = ts
+        out[tag] = {"count": count, "senders": sorted(senders), "latest_ts": latest}
+    return out
 
 
 def snapshot_history(messages_path: Path) -> tuple[list[BusEvent], int]:

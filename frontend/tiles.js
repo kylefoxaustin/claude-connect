@@ -361,6 +361,7 @@ export function renderGrid(state) {
   // Defer rebuilds during an active drag or resize; the gesture flushes it after.
   if (isDragging || isResizing) { renderPending = true; return; }
   updateTokenTotal(state);   // global token line by the title
+  updateWaitingTotal(state); // "N waiting" coordination indicator
   const grid = document.getElementById("grid");
 
   // Always render the Bus tile; session tiles go to the grid unless minimized
@@ -583,6 +584,18 @@ function tokenTooltip(t) {
     + `  cache reads: ${c(t.cache_read)}  (context re-read each turn — cheap)\n`
     + `  ── total processed: ${c(t.total)}`;
 }
+// "N waiting" — sessions with unread messages addressed to them (auto-delivered
+// when idle). Lets Kyle see coordination backlog at a glance without hopping tiles.
+function updateWaitingTotal(state) {
+  const elm = document.getElementById("waiting-total");
+  if (!elm) return;
+  const waiting = (state.sessions || []).filter((s) => (s.pending_directed || 0) > 0);
+  if (!waiting.length) { elm.textContent = ""; elm.title = ""; return; }
+  elm.textContent = `📨 ${waiting.length} waiting`;
+  elm.title = "Sessions with messages addressed to them (idle ones are auto-woken to read):\n"
+    + waiting.map((s) => `  ${s.tag || s.name} ← ${(s.pending_directed_from || []).join(", ") || "?"}`).join("\n");
+}
+
 // Global token total across every session on the board, shown by the title.
 function updateTokenTotal(state) {
   const elm = document.getElementById("token-total");
@@ -663,20 +676,23 @@ function fillSessionTile(tile, s, state) {
   }, "–");
 
   const pending = s.pending_count || 0;
+  const directed = s.pending_directed || 0;   // unread messages addressed to THIS session
+  const directedFrom = s.pending_directed_from || [];
   const guard = (window.conductorPrefs && window.conductorPrefs.busClickGuard) || "confirm-busy";
   const busy = s.status === "active" || s.status === "warm";
   const blocked = guard === "block-busy" && busy;
+  const cls = "pending-badge" + (blocked ? " busy-blocked" : "") + (directed > 0 ? " directed" : "");
+  const dtitle = directed > 0
+    ? `${directed} addressed TO this session${directedFrom.length ? " (from " + directedFrom.join(", ") + ")" : ""}`
+      + (blocked ? " — Claude busy; injection off" : " — auto-delivered when idle, or click to nudge now")
+    : (blocked
+        ? `${pending} unread — Claude is busy; injection disabled (Settings → Bus bubble click)`
+        : `${pending} unread bus message(s) — click to run /msg-check in this Claude (raises its window)`);
   const pendingBadge = pending > 0
     ? el("span", {
-        class: blocked ? "pending-badge busy-blocked" : "pending-badge",
-        title: blocked
-          ? `${pending} unread — Claude is busy; injection disabled (Settings → Bus bubble click)`
-          : `${pending} unread bus message(s) — click to run /msg-check in this Claude (raises its window)`,
-        onclick: (e) => {
-          e.stopPropagation();
-          if (!blocked) window.requestCheck(s.session_id, s.status);
-        },
-      }, `📬 ${pending}`)
+        class: cls, title: dtitle,
+        onclick: (e) => { e.stopPropagation(); if (!blocked) window.requestCheck(s.session_id, s.status); },
+      }, directed > 0 ? `📨 ${directed} for you · 📬 ${pending}` : `📬 ${pending}`)
     : null;
 
   const busActive = (state.busActiveTags || []).includes(s.tag);

@@ -36,6 +36,27 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   `[operator]` (configurable `bus.sender_tag`) to all sessions or specific
   ones (soft-addressed via a leading `@to [tag]…` line), with an optional
   ping that injects /msg-check into the chosen sessions.
+- ✅ v2.19.0: 📨 Fleet coordination I — auto-delivery ("never be the courier").
+  First slice of the coordination arc (design in `docs/FLEET_COORDINATION_PLAN.md`
+  + `docs/PHASE1_BUILD_PLAN.md`; verdict from an OSS-landscape survey: **don't
+  brain-transplant onto LangGraph/CrewAI/AutoGen/Temporal — they all *drive*
+  agents; this fleet is autonomous interactive peers + a bus + an observer
+  dashboard, a category the frameworks can't serve — extend the primitives we
+  already own**). Kyle's #1 pain: manually prodding sessions to check the bus, even
+  explaining that a Claude *did* send them something. Fix reuses the v2.17 wake:
+  `bus.directed_unread_all` parses the log once (mtime-cached) for messages
+  **addressed to** a tag via the `to:<tag>` soft-address convention (`_address_targets`
+  splits on the leading `to:x to:y —`; `_plain_name` normalizes `[other:qualcomm]`
+  ≡ `other:qualcomm` ≡ `qualcomm`); same never-checked baseline as `compute_pending`.
+  `AppState._wake_unread_recipients` injects `/msg-check` into an **idle** recipient
+  with directed-unread — new `_WAKEABLE_STATUSES = {IDLE, DORMANT}` (never busy,
+  never WAITING = Kyle may be typing at it), directed-only (broadcasts don't
+  trigger), once per batch (`_unread_woken` keyed on latest-ts), `[bus] autodeliver`
+  off-switch. Payload gains `pending_directed` + `pending_directed_from`; tile 📬
+  badge shows a distinct amber **"📨 N for you"**, topbar shows **"📨 N waiting"**.
+  9 new tests in `tests/test_coord.py` (121 total). Live-verified: woke an idle
+  qualcomm for a directed message; a WAITING 93emulator with 5 directed was
+  correctly left alone. Part B (retraction) is next. Backend + frontend, both editions.
 - ✅ v2.18.0: 💓 Activity-as-heartbeat — Conductor heartbeats a shared board on
   behalf of a *working* holder. **Found live**: `orb_slam` held `orin-agx` (hard)
   and the watchdog nudged it **7×** over 2h with no reply. It wasn't stalled —

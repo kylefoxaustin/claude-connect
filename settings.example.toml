@@ -36,6 +36,13 @@ sender_tag = "operator"
 # after-reboot reaping is certain (a lease older than the boot) and needs no guess.
 orphan_flag_seconds = 600.0
 
+# Auto-delivery ("never be the courier"): when an IDLE session has an unread bus
+# message addressed to it (to:<tag>), Conductor wakes it (injects /msg-check) so it
+# reads it on its own — no more prodding sessions to check the bus. Only idle/dormant
+# sessions (never busy, never one you may be typing at), only directed messages
+# (broadcasts don't trigger it), once per batch. Set false to disable.
+autodeliver = true
+
 # Optional: map project directories to pretty tags, mirroring the case-table in
 # your bus.sh so tiles show the same tag the bus uses. Unmapped dirs fall back to
 # [other:<dirname>]. Use bare names (no brackets). Example:
