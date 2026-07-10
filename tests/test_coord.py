@@ -144,3 +144,54 @@ def test_autodeliver_off_switch(state, monkeypatch):
     state.sessions = {"q": _sess("[other:qualcomm]", Status.IDLE)}
     state._directed_unread = _directed()
     assert _run_wake(state, monkeypatch) == []
+
+
+# --- retraction (Part B) -----------------------------------------------------
+# A retraction is urgent: the recipient may be about to run the very step being
+# pulled back. So it's the ONE wake that overrides the busy guard.
+
+from conductor.coord import read_retractions  # noqa: E402
+
+
+def _write_retraction(tmp_path, target_plain="qualcomm", sender="[other:orb_slam]",
+                      created="2026-07-10 17:25", epoch=None, text="scrap the int8 patch"):
+    import time as _t
+    epoch = int(_t.time()) if epoch is None else epoch
+    rdir = tmp_path / "retractions"
+    rdir.mkdir(exist_ok=True)
+    (rdir / f"{epoch}-{target_plain}").write_text(
+        f"sender={sender}\ntarget={target_plain}\ntarget_plain={target_plain}\n"
+        f"kind=RETRACTION\ncreated={created}\nepoch={epoch}\ntext={text}\n"
+    )
+
+
+def test_read_retractions_skips_expired(tmp_path):
+    _write_retraction(tmp_path, epoch=100)                      # ancient -> expired
+    _write_retraction(tmp_path, target_plain="docs")           # fresh
+    active = read_retractions(tmp_path)
+    assert [r["target_plain"] for r in active] == ["docs"]
+
+
+def _run_retraction_wake(state, monkeypatch):
+    calls = []
+    monkeypatch.setattr("conductor.main.send_keys_to_session", lambda **kw: calls.append(kw) or True)
+    asyncio.run(state._wake_retractions())
+    return calls
+
+
+@pytest.mark.parametrize("status", [Status.ACTIVE, Status.WARM, Status.IDLE, Status.WAITING])
+def test_retraction_wakes_even_a_busy_target(state, monkeypatch, status):
+    """The busy-guard is intentionally overridden here — a busy recipient is the
+    dangerous case (it may be mid-action)."""
+    state.sessions = {"q": _sess("[other:qualcomm]", status)}
+    state._retractions = [{"id": "r1", "sender": "[other:orb_slam]",
+                           "target_plain": "qualcomm", "text": "stop", "created": "x", "epoch": 1}]
+    assert len(_run_retraction_wake(state, monkeypatch)) == 1     # woken regardless of status
+    assert len(_run_retraction_wake(state, monkeypatch)) == 0     # once per record
+
+
+def test_retraction_for_dead_target_is_left_to_the_hook(state, monkeypatch):
+    state.sessions = {}
+    state._retractions = [{"id": "r1", "sender": "[x]", "target_plain": "qualcomm",
+                           "text": "stop", "created": "x", "epoch": 1}]
+    assert _run_retraction_wake(state, monkeypatch) == []
