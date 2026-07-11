@@ -42,6 +42,7 @@
         <button id="compact-btn" title="Collapse all tiles to a compact size (keeps them all visible)">⊟ Compact</button>
         <button id="pack-btn" title="Pull all tiles together into a tidy grid — your own layout is kept and restored when you turn this off">⊞ Tidy</button>
         <button id="relaunch-btn" title="Bring dormant sessions back (fleet recovery after a reboot or crash)">⟳ Relaunch</button>
+        <button id="link-btn" title="Let these Claudes talk to each other unattended for a while — click tiles to select, then set a duration">🔗 Let them talk</button>
         <button id="groups-btn" title="Manage groups">▦ Groups</button>
         <button id="reset-layout-btn" title="Clear stored tile positions and re-cascade">Reset layout</button>
         <button id="refresh-btn" title="Force rescan">Refresh</button>
@@ -51,6 +52,32 @@
 
     <!-- Push-approval inbox: appears only when a gated `git push` awaits Kyle. -->
     <div id="push-inbox" class="push-inbox" hidden></div>
+
+    <!-- Live autonomy windows: who is allowed to wake whom right now, and for how long. -->
+    <div id="autonomy-bar" class="autonomy-bar" hidden></div>
+
+    <!-- Link mode: pick sessions on the board, then set how long they may talk. -->
+    <div id="link-bar" class="link-bar" hidden>
+      <span class="link-bar-hint">
+        <strong>🔗 Click tiles to select.</strong>
+        They'll be allowed to wake each other on directed mail — even while parked at a
+        prompt — until the window expires. Busy sessions are still never interrupted.
+      </span>
+      <span class="link-count" id="link-count">0 selected</span>
+      <button id="link-all" class="link-ghost">Whole fleet</button>
+      <label class="link-dur">
+        for
+        <select id="link-hours">
+          <option value="1">1 hour</option>
+          <option value="2">2 hours</option>
+          <option value="4">4 hours</option>
+          <option value="8" selected>8 hours (overnight)</option>
+          <option value="12">12 hours</option>
+        </select>
+      </label>
+      <button id="link-go" class="link-go">Let them talk</button>
+      <button id="link-cancel" class="link-ghost">Cancel</button>
+    </div>
 
     <main id="grid" class="grid">
       <!-- Tiles injected by tiles.js. -->

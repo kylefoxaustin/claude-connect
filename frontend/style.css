@@ -1522,3 +1522,108 @@ body.packed .lines-overlay { opacity: 0.5; }
   /* Bigger grip => reserve more footer room so the timestamp stays clear. */
   .tile-footer { padding-right: 20px; }
 }
+
+/* ============================================================================
+   🔗 Autonomy windows ("let them talk"). A green connector between sessions that
+   are allowed to wake each other unattended, drawn in the bus-wire overlay so it
+   re-anchors when tiles move. Green = go: these are talking on their own.
+   ============================================================================ */
+.autonomy-link {
+  stroke: var(--status-active);
+  stroke-width: 2;
+  fill: none;
+  opacity: 0.55;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 3px rgba(63, 185, 80, 0.5));
+  animation: autonomy-pulse 3s ease-in-out infinite;
+}
+@keyframes autonomy-pulse {
+  0%, 100% { opacity: 0.4; }
+  50%      { opacity: 0.75; }
+}
+/* Member tiles: a green edge, so membership is legible even off-screen from a wire. */
+.tile.in-window {
+  border-color: rgba(63, 185, 80, 0.6);
+  box-shadow: 0 0 0 1px rgba(63, 185, 80, 0.25), 0 0 14px rgba(63, 185, 80, 0.12);
+}
+
+/* Link mode: the board becomes a picker. */
+body.link-mode .tile { cursor: pointer; }
+body.link-mode .tile:hover { border-color: rgba(63, 185, 80, 0.55); }
+.tile.link-selected {
+  border-color: var(--status-active) !important;
+  box-shadow: 0 0 0 2px rgba(63, 185, 80, 0.55), 0 0 18px rgba(63, 185, 80, 0.28);
+}
+
+.link-bar, .autonomy-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 10px 20px 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.link-bar {
+  background: rgba(63, 185, 80, 0.10);
+  border: 1px solid rgba(63, 185, 80, 0.45);
+  position: sticky;
+  top: 58px;
+  z-index: 6;
+}
+.link-bar-hint { flex: 1; min-width: 260px; color: var(--text-dim); font-size: 12px; }
+.link-bar-hint strong { color: var(--text); }
+.link-count { font-weight: 600; color: var(--status-active); white-space: nowrap; }
+.link-dur { display: flex; align-items: center; gap: 6px; color: var(--text-dim); }
+.link-dur select {
+  appearance: none; -webkit-appearance: none;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 10px; font-size: 12px; cursor: pointer;
+}
+.link-go {
+  background: var(--status-active); color: #06210d;
+  border: 1px solid var(--status-active); border-radius: 6px;
+  padding: 8px 14px; font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.link-go:hover:not([disabled]) { filter: brightness(1.1); }
+.link-go[disabled] { opacity: 0.45; cursor: not-allowed; }
+.link-ghost {
+  background: transparent; color: var(--text-dim);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 7px 12px; font-size: 12px; cursor: pointer;
+}
+.link-ghost:hover { color: var(--text); border-color: var(--status-active); }
+
+/* The live-window banner. */
+.autonomy-bar {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  background: rgba(63, 185, 80, 0.07);
+  border: 1px solid rgba(63, 185, 80, 0.35);
+}
+.autonomy-title { font-size: 11px; color: var(--text-dim); line-height: 1.4; }
+.autonomy-row { display: flex; align-items: center; gap: 12px; }
+.autonomy-meta { flex: 1; min-width: 0; }
+.autonomy-meta strong { color: var(--status-active); }
+.autonomy-left {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-left: 6px;
+}
+.autonomy-members {
+  font-size: 11px; color: var(--text-dim); opacity: 0.85; margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.autonomy-end {
+  background: transparent; color: var(--text-dim);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 7px 12px; font-size: 12px; cursor: pointer; white-space: nowrap;
+}
+.autonomy-end:hover { color: var(--status-ended); border-color: var(--status-ended); }
+@media (pointer: coarse) {
+  .link-go, .link-ghost, .autonomy-end { min-height: 40px; }
+}

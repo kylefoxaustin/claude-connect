@@ -26,6 +26,7 @@ from pydantic import BaseModel
 from . import __version__
 from .activity import ActivityWatcher
 from .auth import path_requires_auth, resolved_token, token_ok
+from .autonomy import close_window, open_window, peers_in_window, read_windows
 from .bus import (
     BusAdapter,
     FakeBusAdapter,
@@ -43,7 +44,7 @@ from .bus import (
     set_active_tag,
     snapshot_history,
 )
-from .bus import _read_last_seen
+from .bus import _plain_name, _read_last_seen
 from .coord import read_push_requests, read_retractions, read_wake_state, write_wake_state
 from .models import BusEvent, BusTopology, ParkedSession, SessionRecord, Status
 from .resources import resources_state, touch_lease_activity
@@ -136,6 +137,7 @@ class AppState:
         self._retraction_woken: set[str] = set()              # retraction records we already delivered
         self._retractions: list[dict[str, Any]] = []          # active retraction records
         self._push_requests: list[dict[str, Any]] = []        # git-push approvals awaiting Kyle
+        self._autonomy: list[dict[str, Any]] = []             # live "let them talk" windows
         self.token_accountant = TokenAccountant()             # per-session token tally
         self._scan_misses: dict[str, int] = {}              # consecutive scans a session was absent
         self.recent_events: deque[BusEvent] = deque(maxlen=RECENT_EVENTS_MAX)
@@ -288,6 +290,10 @@ class AppState:
         if push_reqs != self._push_requests:
             self._push_requests = push_reqs
             await self.hub.broadcast("push", {"requests": push_reqs})
+        autonomy = await asyncio.to_thread(read_windows, self.coord_root)
+        if autonomy != self._autonomy:
+            self._autonomy = autonomy
+            await self.hub.broadcast("autonomy", {"windows": autonomy})
         await self._wake_offered_sessions()
         await self._wake_nudged_owners()
         await self._wake_unread_recipients()
@@ -353,8 +359,21 @@ class AppState:
                 # last-seen at all (not on the bus whitelist) isn't muted forever.
                 if seen_now == prev_seen and (now - woke_at) < _WAKE_RETRY_SECONDS:
                     continue
-            if r.status not in _WAKEABLE_STATUSES:
-                continue  # busy / attended — retry once it's quiet
+            # WAITING = parked at its prompt. Normally we never inject there (Kyle
+            # might be typing at it) — and since WAITING is the resting state of every
+            # quiet session, that guard is what forces him to hand-click "check msgs"
+            # across 30+ sessions. An AUTONOMY WINDOW is his permission slip: "I'm not
+            # at these keyboards; let them wake each other." So inside a live window we
+            # lift the WAITING guard — but ONLY for mail from a fellow member, and we
+            # still never interrupt a session that is genuinely BUSY (active/warm).
+            allowed = r.status in _WAKEABLE_STATUSES
+            if not allowed and r.status == Status.WAITING:
+                peers = peers_in_window(self._autonomy, r.tag)
+                senders = {_plain_name(s) for s in (info.get("senders") or [])}
+                if peers and (senders & peers):
+                    allowed = True
+            if not allowed:
+                continue  # busy, or attended and not in a window — retry once quiet
             await self._inject_msg_check(r, f"{info['count']} unread addressed to it")
             self._wake_outstanding[r.tag] = (seen_now, now)
             changed = True
@@ -934,6 +953,46 @@ async def decide_push(key: str, action: str, request: Request) -> dict[str, Any]
             "result": (proc.stdout or "").strip(), "notified": notified}
 
 
+class AutonomyRequest(BaseModel):
+    members: list[str]          # session tags
+    hours: float = 8.0          # 3 min .. 24 h (clamped)
+
+
+@app.get("/api/autonomy")
+async def get_autonomy(request: Request) -> dict[str, Any]:
+    state: AppState = request.app.state.cond
+    return {"windows": state._autonomy}
+
+
+@app.post("/api/autonomy")
+async def post_autonomy(payload: AutonomyRequest, request: Request) -> dict[str, Any]:
+    """Open an autonomy window: for `hours`, these sessions may wake each other on
+    directed mail even while parked at a prompt (WAITING). Busy sessions are still
+    never interrupted, and only directed mail wakes anyone — so a fleet-wide window
+    can't storm itself. It expires on its own; that time-box IS the safety property."""
+    state: AppState = request.app.state.cond
+    members = [m for m in (t.strip() for t in payload.members) if m]
+    if len(members) < 2:
+        raise HTTPException(status_code=400, detail="pick at least two sessions")
+    win = await asyncio.to_thread(open_window, state.coord_root, members, payload.hours)
+    state._autonomy = await asyncio.to_thread(read_windows, state.coord_root)
+    await state.hub.broadcast("autonomy", {"windows": state._autonomy})
+    log.info("autonomy window %s opened over %d sessions for %.2fh",
+             win["id"], len(members), payload.hours)
+    return {"ok": True, "window": win}
+
+
+@app.delete("/api/autonomy/{window_id}")
+async def delete_autonomy(window_id: str, request: Request) -> dict[str, Any]:
+    """End a window early ("I'm back at the keyboard")."""
+    state: AppState = request.app.state.cond
+    ok = await asyncio.to_thread(close_window, state.coord_root, window_id)
+    state._autonomy = await asyncio.to_thread(read_windows, state.coord_root)
+    await state.hub.broadcast("autonomy", {"windows": state._autonomy})
+    log.info("autonomy window %s closed early: %s", window_id, ok)
+    return {"ok": ok}
+
+
 def _human_label() -> str:
     """Display name for the ``[you]`` node — the OS username (capitalized), so it
     reads sensibly for whoever is running Conductor; ``"You"`` if unavailable."""
@@ -1266,6 +1325,7 @@ async def websocket(ws: WebSocket) -> None:
         await ws.send_text(json.dumps({"kind": "bus", "payload": state._bus_payload()}))
         await ws.send_text(json.dumps({"kind": "resources", "payload": state.resources}))
         await ws.send_text(json.dumps({"kind": "push", "payload": {"requests": state._push_requests}}))
+        await ws.send_text(json.dumps({"kind": "autonomy", "payload": {"windows": state._autonomy}}))
         while True:
             # We don't expect messages from the client right now; await any to detect close.
             await ws.receive_text()

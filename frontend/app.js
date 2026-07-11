@@ -67,6 +67,7 @@ const state = {
   parked: [],       // ParkedSession[] — offline, relaunchable (dormant dock)
   resources: { resources: [] },  // shared-resource tiles (GPU, boards, …)
   push: { requests: [] },        // gated git-push approvals awaiting Kyle
+  autonomy: { windows: [] },     // live "let them talk" windows
   fadeoutSeconds: 30,
   wmctrlAvailable: false,
 
@@ -259,6 +260,7 @@ function handleMessage({ kind, payload }) {
       state.wmctrlAvailable = !!payload.wmctrl_available;
       sessionCountEl.textContent = `${state.sessions.length} session${state.sessions.length === 1 ? "" : "s"}`;
       renderGrid(state);
+      applyLinkClasses();
       requestAnimationFrame(() => redrawLines(state));
       refresh3D();
       break;
@@ -293,6 +295,13 @@ function handleMessage({ kind, payload }) {
     case "push": {
       state.push = payload || { requests: [] };
       renderPushInbox(state);
+      break;
+    }
+    case "autonomy": {
+      state.autonomy = payload || { windows: [] };
+      renderAutonomyBar();
+      applyLinkClasses();
+      requestAnimationFrame(() => redrawLines(state));   // repaint the green wires
       break;
     }
     case "bus_event": {
@@ -635,6 +644,140 @@ function renderGroupsList() {
     groupsList.appendChild(li);
   }
 }
+
+// --- 🔗 Autonomy windows ("let them talk") -----------------------------------
+// The problem: a session parked at its prompt is WAITING, and WAITING is never
+// auto-woken (Kyle might be typing at it). Since that's the resting state of every
+// quiet session, it's what forces him to hand-click "check msgs" 30+ times. A window
+// is the permission slip: "I'm not at these keyboards — let them wake each other."
+let linkMode = false;
+const linkSel = new Set();          // tags selected while in link mode
+const linkBar = document.getElementById("link-bar");
+const linkCountEl = document.getElementById("link-count");
+const autonomyBar = document.getElementById("autonomy-bar");
+
+function applyLinkClasses() {
+  const members = new Set();
+  for (const w of (state.autonomy && state.autonomy.windows) || []) {
+    for (const m of w.members || []) members.add(m);
+  }
+  for (const el of document.querySelectorAll(".tile[data-tag]")) {
+    const tag = el.dataset.tag;
+    el.classList.toggle("link-selected", linkMode && linkSel.has(tag));
+    el.classList.toggle("in-window", members.has(tag));
+  }
+  document.body.classList.toggle("link-mode", linkMode);
+}
+
+function syncLinkBar() {
+  linkCountEl.textContent = `${linkSel.size} selected`;
+  const go = document.getElementById("link-go");
+  if (go) go.disabled = linkSel.size < 2;   // a window of one means nothing
+}
+
+window.toggleLinkSelect = function toggleLinkSelect(tag) {
+  if (linkSel.has(tag)) linkSel.delete(tag); else linkSel.add(tag);
+  syncLinkBar();
+  applyLinkClasses();
+};
+
+function setLinkMode(on) {
+  linkMode = on;
+  window.conductorLinkMode = on;     // read by tiles.js to select instead of drag
+  if (!on) linkSel.clear();
+  linkBar.hidden = !on;
+  const btn = document.getElementById("link-btn");
+  if (btn) btn.classList.toggle("on", on);
+  syncLinkBar();
+  applyLinkClasses();
+}
+
+document.getElementById("link-btn")?.addEventListener("click", () => setLinkMode(!linkMode));
+document.getElementById("link-cancel")?.addEventListener("click", () => setLinkMode(false));
+document.getElementById("link-all")?.addEventListener("click", () => {
+  for (const s of state.sessions) {
+    if (s.status !== "ended" && s.tag) linkSel.add(s.tag);
+  }
+  syncLinkBar();
+  applyLinkClasses();
+});
+
+document.getElementById("link-go")?.addEventListener("click", async () => {
+  const members = [...linkSel];
+  if (members.length < 2) return;
+  const hours = parseFloat(document.getElementById("link-hours").value) || 8;
+  const go = document.getElementById("link-go");
+  go.disabled = true;
+  try {
+    const r = await fetch("/api/autonomy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ members, hours }),
+    });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(body.detail || `HTTP ${r.status}`);
+    setLinkMode(false);   // the WS broadcast repaints the bar + the green wires
+  } catch (err) {
+    go.disabled = false;
+    window.alert(`Couldn't open the window: ${err.message}`);
+  }
+});
+
+window.endAutonomy = async function endAutonomy(id, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = "ending…"; }
+  try {
+    const r = await fetch(`/api/autonomy/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  } catch (err) {
+    if (btn) { btn.disabled = false; btn.textContent = "End now"; }
+    window.alert(`Couldn't end it: ${err.message}`);
+  }
+};
+
+function fmtLeft(secs) {
+  secs = Math.max(0, Math.round(secs));
+  const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60);
+  if (h) return `${h}h ${m}m`;
+  if (m) return `${m}m`;
+  return `${secs}s`;
+}
+
+function renderAutonomyBar() {
+  const wins = (state.autonomy && state.autonomy.windows) || [];
+  if (!wins.length) { autonomyBar.hidden = true; autonomyBar.replaceChildren(); return; }
+  autonomyBar.hidden = false;
+  const now = Date.now() / 1000;
+  const rows = wins.map((w) => {
+    const row = document.createElement("div");
+    row.className = "autonomy-row";
+    const names = (w.members || []).map((t) => t.replace(/^\[|\]$/g, "").replace(/^other:/, ""));
+    const shown = names.length > 4 ? `${names.slice(0, 4).join(", ")} +${names.length - 4} more` : names.join(", ");
+    const meta = document.createElement("div");
+    meta.className = "autonomy-meta";
+    meta.innerHTML = `<strong>🔗 ${names.length} Claudes talking freely</strong>`
+      + ` <span class="autonomy-left" data-expires="${w.expires}">${fmtLeft(w.expires - now)} left</span>`
+      + `<div class="autonomy-members">${escapeHtml(shown)}</div>`;
+    const end = document.createElement("button");
+    end.className = "autonomy-end";
+    end.textContent = "End now";
+    end.onclick = () => window.endAutonomy(w.id, end);
+    row.append(meta, end);
+    return row;
+  });
+  const title = document.createElement("div");
+  title.className = "autonomy-title";
+  title.textContent = "🔗 Autonomy window — these sessions may wake each other on directed mail, "
+    + "even while parked at a prompt. Busy ones are never interrupted; nothing reaches a repo without your click.";
+  autonomyBar.replaceChildren(title, ...rows);
+}
+
+// Tick the countdowns without re-rendering the bar.
+setInterval(() => {
+  const now = Date.now() / 1000;
+  for (const el of document.querySelectorAll(".autonomy-left[data-expires]")) {
+    el.textContent = `${fmtLeft(parseFloat(el.dataset.expires) - now)} left`;
+  }
+}, 1000);
 
 // --- Relaunch (fleet recovery) ----------------------------------------------
 // Bring dormant sessions back after a reboot/crash. Pick individually or "launch

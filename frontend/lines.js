@@ -17,6 +17,35 @@ function center(el) {
   return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
 }
 
+// Autonomy windows — the green connectors. Drawn into the SAME overlay as the bus
+// wires, so they re-anchor for free whenever a tile is dragged or resized.
+//
+// Topology matters here: a clique reads beautifully for a handful of sessions, but
+// "whole fleet" over 30 tiles would be 435 lines of spaghetti. So: draw every pair up
+// to 6 members, and a closed ring beyond that — N lines instead of N²/2, and a loop
+// still reads unmistakably as "this group is wired together".
+function drawAutonomyLinks(svg, state) {
+  const wins = (state.autonomy && state.autonomy.windows) || [];
+  for (const w of wins) {
+    const els = (w.members || []).map(sessionTileElByTag).filter(Boolean);
+    if (els.length < 2) continue;
+    const pairs = [];
+    if (els.length <= 6) {
+      for (let i = 0; i < els.length; i++)
+        for (let j = i + 1; j < els.length; j++) pairs.push([els[i], els[j]]);
+    } else {
+      for (let i = 0; i < els.length; i++) pairs.push([els[i], els[(i + 1) % els.length]]);
+    }
+    for (const [ea, eb] of pairs) {
+      const a = center(ea), b = center(eb);
+      const path = document.createElementNS(SVG_NS, "path");
+      path.setAttribute("d", `M ${a.x} ${a.y} L ${b.x} ${b.y}`);
+      path.setAttribute("class", "autonomy-link");
+      svg.appendChild(path);
+    }
+  }
+}
+
 export function redrawLines(state) {
   const svg = document.getElementById("lines-overlay");
   if (!svg) return;
@@ -102,6 +131,9 @@ export function redrawLines(state) {
     dot.setAttribute("class", active ? "line-plug" : "line-plug line-plug-passive");
     layer.appendChild(dot);
   }
+
+  // Green "they may talk to each other" connectors, on top of the bus wires.
+  drawAutonomyLinks(svg, state);
 }
 
 export function animateLineFor(sessionId) {

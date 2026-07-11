@@ -961,6 +961,17 @@ function wirePointerDrag(tile, key) {
 
   tile.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
+    // 🔗 Link mode: a click SELECTS the session for an autonomy window instead of
+    // dragging it. Handled here (not on "click") so it beats the drag handler.
+    if (window.conductorLinkMode) {
+      const tag = tile.dataset.tag;
+      if (tag && window.toggleLinkSelect) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.toggleLinkSelect(tag);
+      }
+      return;
+    }
     // Tidy (packed) mode flow-lays the tiles, so there's nothing to drag — bail
     // before we set the dragging state, or we'd freeze grid rebuilds for a drag
     // that can never move anything.
