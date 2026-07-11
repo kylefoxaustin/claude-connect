@@ -190,6 +190,7 @@ res_reserve() {  # name dur mode [job...]
         echo "→ /res-request $RES_NAME to join the queue (you'll be pinged when it's free)."; return 1
       fi
     else _res_write "$mode" "$secs" "$job"; echo "Reserved $(_res_label "$RES_NAME"): $mode for $(_res_human "$secs"). Job: ${job:-(none)}."; fi
+  _asset_handoff "$RES_NAME"
   ) 9>"$RES_LOCK"
 }
 
@@ -543,6 +544,123 @@ svc_dispatch() {
 }
 
 
+# ---------------------------------------------------------------------------
+# THE FLEET REGISTRY — every shared asset is a self-describing NODE.
+#
+# Two problems this fixes.
+#
+#  1. Nothing was ever *registered*. Resources and services sprang into existence
+#     on first use, which is exactly how `orin` drifted away from `orin-agx` TWICE —
+#     a live lease and a queue stranded on a phantom twin of the same board.
+#
+#  2. A node told you nothing. Reserve a board and you got… a lease. How do you
+#     reach it? What's the toolchain? What's the trap that costs a day? That
+#     knowledge lived in one session's context and died there — so every new Claude
+#     had to ask Kyle. He was the courier for "how do I ssh to the Orin?" exactly as
+#     he'd been the courier for messages.
+#
+# So an asset card travels WITH the asset: `reserve` hands it to you the moment you
+# take the board. `gotchas` is the sleeper — when qualcomm learns "the pip neutron
+# converter is broken, use the standalone eIQ SDK", the next Claude inherits it.
+#
+# Cards are markdown, so a Claude can just edit the file with its normal tools.
+# They live in ~/.claude/bus-state/registry/ — LOCAL ONLY. Never the repo, never
+# posted to the bus. Reference where credentials live; do not inline them.
+#
+#   asset new <name> [kind]   create a card from a template (prints the path)
+#   asset info <name>         print the card
+#   asset path <name>         print the file path (so you can edit it)
+#   asset list | catalog      the fleet directory — every asset, one line each
+# ---------------------------------------------------------------------------
+REGISTRY="${BUS_STATE_DIR:-$HOME/.claude/bus-state}/registry"
+
+_asset_file() { printf '%s/%s.md' "$REGISTRY" "$1"; }
+_asset_hdr()  { sed -n "s/^$1:[[:space:]]*//p" "$2" 2>/dev/null | head -1; }
+
+_asset_new() {  # <name> [kind]
+  local name="${1:-}" kind="${2:-board}" f
+  [ -n "$name" ] || { echo "usage: bus.sh asset new <name> [board|gpu|service]" >&2; return 2; }
+  mkdir -p "$REGISTRY"
+  f="$(_asset_file "$name")"
+  if [ -s "$f" ]; then echo "Card already exists: $f"; return 0; fi
+  cat > "$f" <<CARD
+# $name
+kind: $kind
+aliases:
+summary: (one line — what is this?)
+
+## access
+(How does a Claude actually reach it? ssh / serial device + baud / IP / how to power-cycle.
+ Do NOT inline passwords — say where the credential lives.)
+
+## setup
+(Toolchain, env, how to flash/deploy, anything needed before first use.)
+
+## gotchas
+(The traps. Anything that cost someone hours belongs here so it costs nobody else.)
+
+## docs
+(Paths or links to the real writeups.)
+
+## contact
+(Which sessions know this best?)
+CARD
+  echo "Created card: $f"
+  echo "Edit it with your normal file tools, then others can read it with: bus.sh asset info $name"
+}
+
+_asset_info() {  # <name>
+  local f; f="$(_asset_file "${1:-}")"
+  if [ ! -s "$f" ]; then
+    echo "No card for '${1:-}'. Create one: bus.sh asset new ${1:-<name>} [board|gpu|service]"
+    return 1
+  fi
+  cat "$f"
+}
+
+_asset_path() { _asset_file "${1:-}"; }
+
+_asset_list() {
+  if [ ! -d "$REGISTRY" ] || [ -z "$(ls -A "$REGISTRY" 2>/dev/null)" ]; then
+    echo "The fleet registry is empty. Register something: bus.sh asset new <name> [board|gpu|service]"
+    return 0
+  fi
+  echo "=== FLEET REGISTRY ==="
+  local f n k s
+  for f in "$REGISTRY"/*.md; do
+    [ -s "$f" ] || continue
+    n="$(basename "$f" .md)"
+    k="$(_asset_hdr kind "$f")"; s="$(_asset_hdr summary "$f")"
+    printf '  %-16s %-8s %s\n' "$n" "[${k:-?}]" "${s:-(no summary yet)}"
+  done
+  echo
+  echo "Full card: bus.sh asset info <name>   ·   Reserve a board: /reserve <name> <dur> <soft|hard>"
+}
+
+# Printed automatically when a session takes a resource — the card travels with the
+# asset, so you never have to ask a human how to reach the thing you just reserved.
+_asset_handoff() {  # <name>
+  local f; f="$(_asset_file "${1:-}")"
+  [ -s "$f" ] || { echo "  (no asset card for '$1' yet — if you work it out, please write one: bus.sh asset new $1)"; return 0; }
+  echo ""
+  echo "───────── how to use [$1] ─────────"
+  sed -n '/^## access/,/^## docs/p' "$f" | sed '$d'
+  echo "  (full card: bus.sh asset info $1)"
+  echo "───────────────────────────────────"
+}
+
+asset_dispatch() {
+  local verb="${1:-list}"; shift 2>/dev/null || true
+  case "$verb" in
+    new|register) _asset_new "$@" ;;
+    info|show)    _asset_info "$@" ;;
+    path|edit)    _asset_path "$@" ;;
+    list|catalog) _asset_list ;;
+    *) echo "usage: bus.sh asset {new|info|path|list} <name>" >&2; return 2 ;;
+  esac
+}
+
+
 cmd="${1:-help}"
 shift || true
 
@@ -691,6 +809,11 @@ PYEOF
 
   svc)
     svc_dispatch "$@"
+    exit $?
+    ;;
+
+  asset|catalog)
+    if [ "$cmd" = "catalog" ]; then asset_dispatch list; else asset_dispatch "$@"; fi
     exit $?
     ;;
 
