@@ -766,6 +766,20 @@ function showAuthOverlay(errMsg) {
   input.focus();
 }
 
+// Native-app seam: app.py (which knows the configured token) calls this after
+// the window loads, so the DESKTOP window auto-unlocks — you never type a token
+// on the machine that's running the server. The phone/browser still must enter it.
+window.__conductorSeedToken = (t) => {
+  if (!t) return;
+  const had = getToken();
+  setToken(t);
+  const overlay = document.querySelector(".auth-overlay");
+  // If we were locked out (overlay up, or first load with no token), restart
+  // cleanly now that the token's in place. Stable: a second call after reload is
+  // a no-op (token already present, no overlay).
+  if (overlay || (!had && !booted)) location.reload();
+};
+
 // Register the service worker (installable PWA + offline shell). Best-effort;
 // only works over a secure context (https / localhost), which is exactly the
 // Tailscale-serve setup. A failure is a no-op — the app still runs.

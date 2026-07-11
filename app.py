@@ -76,13 +76,30 @@ def main() -> None:
     # window at loopback in that case.
     url_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
 
-    webview.create_window(
+    window = webview.create_window(
         "Conductor",
         f"http://{url_host}:{port}",
         width=1400,
         height=900,
         min_size=(900, 600),
     )
+
+    # If a token is configured (so the API is gated for remote/phone access),
+    # auto-unlock THIS desktop window — it's running on the same box that holds the
+    # secret, so there's no reason to make the user type it here. The frontend's
+    # seam sets localStorage and reloads clean; the phone/browser still must enter it.
+    import json as _json
+
+    _token = os.environ.get("CONDUCTOR_AUTH_TOKEN") or settings.server.auth_token
+    if _token:
+        def _seed_token():
+            try:
+                window.evaluate_js(
+                    f"window.__conductorSeedToken && window.__conductorSeedToken({_json.dumps(_token)})"
+                )
+            except Exception:
+                pass
+        window.events.loaded += _seed_token
 
     # Give the GTK window a stable WM_CLASS ("conductor") so the .desktop file's
     # StartupWMClass can group it under the Conductor icon in the dock/taskbar —
