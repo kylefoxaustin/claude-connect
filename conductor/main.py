@@ -44,7 +44,7 @@ from .bus import (
     snapshot_history,
 )
 from .bus import _read_last_seen
-from .coord import read_push_requests, read_retractions
+from .coord import read_push_requests, read_retractions, read_wake_state, write_wake_state
 from .models import BusEvent, BusTopology, ParkedSession, SessionRecord, Status
 from .resources import resources_state, touch_lease_activity
 from .tokens import TokenAccountant
@@ -125,14 +125,17 @@ class AppState:
         self._pinged_offers: set[str] = set()                 # offers we've already woken
         self._owner_missing_since: dict[str, float] = {}      # lease -> when its owner went offline
         self._nudge_woken: set[str] = set()                   # idle episodes we already woke
+        self.coord_root = settings.bus.state_dir_resolved / "coord"
         # tag -> (its last-seen when we woke it, when we woke it). Keeps us from
         # stacking /msg-checks on a session that hasn't run the first one yet.
-        self._wake_outstanding: dict[str, tuple[str, float]] = {}
+        # PERSISTED: a restart that forgot this would re-prod every session with
+        # unread mail, and a busy session's keystrokes queue -> stacked checks.
+        self._wake_outstanding: dict[str, tuple[str, float]] = read_wake_state(
+            settings.bus.state_dir_resolved / "coord")
         self._directed_unread: dict[str, dict[str, Any]] = {} # tag -> unread addressed to it
         self._retraction_woken: set[str] = set()              # retraction records we already delivered
         self._retractions: list[dict[str, Any]] = []          # active retraction records
         self._push_requests: list[dict[str, Any]] = []        # git-push approvals awaiting Kyle
-        self.coord_root = settings.bus.state_dir_resolved / "coord"
         self.token_accountant = TokenAccountant()             # per-session token tally
         self._scan_misses: dict[str, int] = {}              # consecutive scans a session was absent
         self.recent_events: deque[BusEvent] = deque(maxlen=RECENT_EVENTS_MAX)
@@ -322,12 +325,14 @@ class AppState:
         exempt = {_bare_tag(t) for t in self.settings.bus.autodeliver_exempt}
         state_dir = self.settings.bus.state_dir_resolved
         now = time.time()
+        changed = False
         for r in self.sessions.values():
             if not r.tag or _bare_tag(r.tag) in exempt:
                 continue
             info = self._directed_unread.get(r.tag)
             if not info or not info.get("count"):
-                self._wake_outstanding.pop(r.tag, None)   # backlog cleared -> re-arm
+                if self._wake_outstanding.pop(r.tag, None) is not None:
+                    changed = True                        # backlog cleared -> re-arm
                 continue
 
             # Dedup on "has it READ yet?", NOT "is this a new batch?".
@@ -352,6 +357,9 @@ class AppState:
                 continue  # busy / attended — retry once it's quiet
             await self._inject_msg_check(r, f"{info['count']} unread addressed to it")
             self._wake_outstanding[r.tag] = (seen_now, now)
+            changed = True
+        if changed:
+            await asyncio.to_thread(write_wake_state, self.coord_root, self._wake_outstanding)
 
     # A busy holder can't run /keep, so its board looks abandoned; and our busy
     # guard (rightly) won't interrupt it to say so. Conductor knows the owner is

@@ -8,6 +8,7 @@ instruction can be pulled back before it's acted on.
 
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 from typing import Any
@@ -56,6 +57,41 @@ def read_retractions(coord_root: Path, now: float | None = None) -> list[dict[st
         })
     out.sort(key=lambda r: r["epoch"], reverse=True)
     return out
+
+
+def read_wake_state(coord_root: Path) -> dict[str, tuple[str, float]]:
+    """Which sessions we've already prodded to check the bus, and at what watermark.
+
+    Persisted (unlike most of Conductor's state, which is deliberately restart-clean)
+    because a restart that FORGETS this re-prods every session with unread mail — and
+    a session in a long tool call has its keystrokes *queue*, so repeated restarts
+    stack /msg-checks on it. Lives with the other coordination state.
+    """
+    f = coord_root / "wake-state.json"
+    try:
+        raw = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    out: dict[str, tuple[str, float]] = {}
+    if isinstance(raw, dict):
+        for tag, v in raw.items():
+            if isinstance(v, list) and len(v) == 2:
+                try:
+                    out[str(tag)] = (str(v[0]), float(v[1]))
+                except (TypeError, ValueError):
+                    continue
+    return out
+
+
+def write_wake_state(coord_root: Path, state: dict[str, tuple[str, float]]) -> None:
+    """Best-effort persist. Never raises — a failure here must not break a scan."""
+    try:
+        coord_root.mkdir(parents=True, exist_ok=True)
+        tmp = coord_root / "wake-state.json.tmp"
+        tmp.write_text(json.dumps({k: [v[0], v[1]] for k, v in state.items()}), encoding="utf-8")
+        tmp.replace(coord_root / "wake-state.json")   # atomic
+    except OSError:
+        pass
 
 
 def read_push_requests(coord_root: Path) -> list[dict[str, Any]]:

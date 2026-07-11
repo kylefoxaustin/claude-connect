@@ -331,7 +331,7 @@ retract_hook_lines() {  # myplain last_seen
 # ---- Push gate: approve/deny git-push requests the PreToolUse hook files ------
 PUSH_TOKENS="$COORD_ROOT/push-tokens"
 PUSH_REQUESTS="$COORD_ROOT/push-requests"
-PUSH_TTL="${PUSH_TOKEN_TTL:-300}"
+PUSH_TTL="${PUSH_TOKEN_TTL:-1800}"   # 30m: an approval is ONE push; 300s kept expiring before the session retried
 _push_field() { grep -E "^$1=" "$2" 2>/dev/null | head -1 | cut -d= -f2- ; }
 
 push_list() {

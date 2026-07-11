@@ -97,8 +97,14 @@ def test_own_messages_never_count(tmp_path):
 
 # --- the wake ----------------------------------------------------------------
 @pytest.fixture
-def state():
-    return AppState(load_settings())
+def state(tmp_path):
+    s = AppState(load_settings())
+    # Isolate from the REAL coordination state: AppState loads the persisted wake
+    # map on init and writes it back on change, so a test must never read the live
+    # fleet's file — nor scribble on it.
+    s.coord_root = tmp_path / "coord"
+    s._wake_outstanding = {}
+    return s
 
 
 def _sess(tag, status):

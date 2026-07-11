@@ -23,6 +23,68 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.22.0: 📱 **Mobile edition** (Conductor in your pocket) + fleet-recovery
+  relaunch + three real bug fixes found by *operating* the fleet.
+  **📱 Phone access** — the frontend was already a web app, so "phone app" is really
+  *reach it + fit it + secure it*. Ingress is **Tailscale `serve`** (`tailscale serve
+  --bg --http 80 http://127.0.0.1:8765` → `http://<host>.<tailnet>.ts.net/`), so
+  **Conductor still binds 127.0.0.1** — the single-host invariant holds and it's never
+  on the LAN, only the tailnet (WireGuard-encrypted). Needed `sudo tailscale set
+  --operator=$USER` once. (An attempt to bind `0.0.0.0` instead was correctly blocked
+  as a network-exposure change — `serve` is the right pattern.) **Auth** (`conductor/
+  auth.py`): OFF by default (empty `[server].auth_token` ⇒ localhost stays
+  frictionless); when set (or `$CONDUCTOR_AUTH_TOKEN`, which wins so it needn't touch
+  disk) every `/api/*` + the `/ws` handshake require it (constant-time compare), while
+  the public shell + `/api/health` stay open. **PWA**: `manifest.webmanifest` + `sw.js`
+  served at ROOT scope (a SW under `/static/` would only scope `/static/`), icons,
+  installable to the home screen. The **native desktop app auto-unlocks** by passing
+  the token in the URL **hash** — an earlier `evaluate_js` "seed" on pywebview's
+  `loaded` event was a silent no-op (app.js is an ES *module*, so it evaluates AFTER
+  that event; the `&&` guard swallowed it) and the window sat on the unlock screen.
+  **⟳ Fleet recovery** — one click to bring the fleet back after a reboot/crash instead
+  of hand-restarting 20 Claudes. Picker modal with per-session checkboxes, a "Launch
+  everything" master, and sorts: recent / least-recent / A→Z / Z→A / **tokens-used**.
+  The token sort is the useful one — it surfaces the fattest-context sessions, i.e.
+  exactly the ones that will **auto-compact on resume** (that compaction is Claude's
+  own startup behaviour; no launch flag prevents it, so we *pace* around it instead).
+  `POST /api/relaunch-batch` validates every project up front then launches
+  **staggered** — one at a time, waiting for each to appear — because 20 Claudes
+  spawning at once would stampede the box. Reuses the dormant-dock engine
+  (`claude --continue`, which also sidesteps the "new session vs restart" prompt).
+  Live-tested on 2 real sessions: both resumed their existing conversations.
+  **UI**: **⊟ Compact** (all tiles → header-only) and **⊞ Tidy / ↩ Restore** (pack
+  into a flow grid). Tidy is **lossless by construction** — it's a pure CSS view mode,
+  so the saved positions are never written and "restore" is just switching the class
+  off. Resize corner became a **dotted grip** (was a grey slab sitting on the footer
+  timestamp). **Touch**: the real bug was that all touch CSS sat behind
+  `@media (max-width: 640px)` — a WIDTH query — so an unfolded foldable (big screen,
+  *finger*) got mouse-sized targets and a horizontal-scroll dock. Re-keyed on
+  **`@media (pointer: coarse)`**: the dormant dock now wraps and scrolls vertically,
+  and chips/badges/buttons become thumb targets.
+  **THREE BUGS THE FLEET FOUND (all in auto-delivery, all now regression-tested):**
+  (1) **17 /msg-checks in a row** (95emulator): the dedup key was recorded *after* the
+  wakeable-status gate, so injecting `/msg-check` flipped the recipient ACTIVE, its key
+  got evicted, and it re-woke the instant it went idle — oscillating on the scan tick.
+  (2) **Stacked /msg-checks** (Kyle spotted 4 queued on rt1180emulator): dedup was
+  "have I woken you for THIS batch?", so every new message injected another check — and
+  a session in a long tool call *stops writing its transcript*, so its activity-derived
+  status decays to IDLE and it **looks wakeable while it's grinding**, with keystrokes
+  quietly queueing. Now dedup is **"have you actually READ yet?"** (keyed on the
+  recipient's `last-seen` watermark), and that map is **persisted** to
+  `coord/wake-state.json` — an in-memory one meant every restart re-prodded everyone.
+  (3) **Auto-delivery woke the operator's own console** mid-conversation → new
+  `[bus] autodeliver_exempt`. Also fixed: `dump_settings` silently dropped `[bus]`
+  fields on any UI save.
+  **Bus** (both copies): `bus.sh check` now shows **only what's new and yours** —
+  it consumes the `last-seen` watermark `prompt-check` already maintained (93emulator's
+  ask), drops traffic addressed only to other tags, never echoes your own posts, and
+  keeps `--all-tags` / `--all` / `-n N` escape hatches. Push-approval TTL 300s → **30m**
+  (it kept expiring before the session could retry; still ONE push per approval).
+  **Also**: service worker is **network-first** (cache-first served a stale shell against
+  a changed backend → a zombie UI that rendered but where every button was dead — an
+  offline shell is worthless for a live dashboard), and all 16 top-level DOM listeners
+  are null-safe so one missing element can never again kill the whole script.
+  142 tests. Backend + frontend + bus infra; both editions.
 - ✅ Phase 0: skeleton, FastAPI hello, frontend served at `/`
 - ✅ Phase 1: SessionScanner + tile grid + status dots + WS auto-refresh
 - ✅ Phase 2: jsonl tail → live activity preview
