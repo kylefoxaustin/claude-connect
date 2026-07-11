@@ -189,14 +189,30 @@ html, body {
   gap: 8px;
   min-width: 0;
 }
+/* Titles WRAP (2 lines) instead of being guillotined to "95emula…". With 30+
+   sessions the name IS the identity, so losing it costs far more than the sliver of
+   vertical space it buys. Still bounded, and the full text stays in the tooltip. */
 .tile-title {
   font-weight: 600;
   font-size: 14px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   min-width: 0;
+  white-space: normal;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
 }
+/* Compact mode is header-only by design — keep it to one tight line there. */
+body.compact .tile-title { -webkit-line-clamp: 1; }
+/* The tile action buttons (▦ ▶ –) were eating ~90px of the header. Reveal them on
+   hover so the name owns the width the rest of the time; `visibility` keeps their
+   box reserved, so nothing reflows when they appear. */
+.tile-actions { visibility: hidden; }
+.tile:hover .tile-actions,
+.tile:focus-within .tile-actions { visibility: visible; }
+@media (pointer: coarse) { .tile-actions { visibility: visible; } }  /* no hover on touch */
 
 .status-dot {
   width: 10px;
@@ -1672,3 +1688,10 @@ body.link-mode .link-pick.picked {
 /* In link mode the per-tile action buttons can't be used (a click selects), so get
    them out of the way and let the pick ring own the corner. */
 body.link-mode .tile-actions { visibility: hidden; }
+/* End-plugs on the green connectors, so a short hop between adjacent tiles still
+   reads as a deliberate link rather than a stray dash. */
+.autonomy-plug {
+  fill: var(--status-active);
+  opacity: 0.85;
+  filter: drop-shadow(0 0 3px rgba(63, 185, 80, 0.6));
+}

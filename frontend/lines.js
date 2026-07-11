@@ -24,7 +24,25 @@ function center(el) {
 // "whole fleet" over 30 tiles would be 435 lines of spaghetti. So: draw every pair up
 // to 6 members, and a closed ring beyond that — N lines instead of N²/2, and a loop
 // still reads unmistakably as "this group is wired together".
-function drawAutonomyLinks(svg, state) {
+// Where the line from `from` toward `to` crosses the tile's border. Drawing
+// edge-to-edge instead of centre-to-centre matters: adjacent tiles are usually only
+// a gap apart, so a centre-to-centre line is almost entirely UNDER the two tiles —
+// which is why the green wires seemed to vanish in "lines behind" mode. Clipped to
+// the borders, the whole line lives in the gap between them and never crosses tile
+// content in either mode.
+function edgePoint(rect, toward) {
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const dx = toward.x - cx;
+  const dy = toward.y - cy;
+  if (!dx && !dy) return { x: cx, y: cy };
+  const sx = dx ? (rect.width / 2) / Math.abs(dx) : Infinity;
+  const sy = dy ? (rect.height / 2) / Math.abs(dy) : Infinity;
+  const s = Math.min(sx, sy);                       // first slab we exit through
+  return { x: cx + dx * s, y: cy + dy * s };
+}
+
+function drawAutonomyLinks(layer, state) {
   const wins = (state.autonomy && state.autonomy.windows) || [];
   for (const w of wins) {
     const els = (w.members || []).map(sessionTileElByTag).filter(Boolean);
@@ -37,11 +55,25 @@ function drawAutonomyLinks(svg, state) {
       for (let i = 0; i < els.length; i++) pairs.push([els[i], els[(i + 1) % els.length]]);
     }
     for (const [ea, eb] of pairs) {
-      const a = center(ea), b = center(eb);
+      const ra = ea.getBoundingClientRect(), rb = eb.getBoundingClientRect();
+      const a = edgePoint(ra, center(eb));
+      const b = edgePoint(rb, center(ea));
       const path = document.createElementNS(SVG_NS, "path");
       path.setAttribute("d", `M ${a.x} ${a.y} L ${b.x} ${b.y}`);
       path.setAttribute("class", "autonomy-link");
-      svg.appendChild(path);
+      path.dataset.a = ea.dataset.tag || "";
+      path.dataset.b = eb.dataset.tag || "";
+      layer.appendChild(path);
+      // A dot on each end, so a very short hop between neighbours still reads as
+      // a deliberate connection rather than a stray dash.
+      for (const p of [a, b]) {
+        const dot = document.createElementNS(SVG_NS, "circle");
+        dot.setAttribute("cx", p.x);
+        dot.setAttribute("cy", p.y);
+        dot.setAttribute("r", "3.5");
+        dot.setAttribute("class", "autonomy-plug");
+        layer.appendChild(dot);
+      }
     }
   }
 }
@@ -132,8 +164,10 @@ export function redrawLines(state) {
     layer.appendChild(dot);
   }
 
-  // Green "they may talk to each other" connectors, on top of the bus wires.
-  drawAutonomyLinks(svg, state);
+  // Green "they may talk to each other" connectors. Always drawn into the FRONT
+  // layer (above the tiles), never the main overlay — these are semantic, not
+  // decoration, so the "lines behind tiles" preference must not be able to bury them.
+  drawAutonomyLinks(front || svg, state);
 }
 
 export function animateLineFor(sessionId) {
