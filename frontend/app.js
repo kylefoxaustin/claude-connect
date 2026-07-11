@@ -11,8 +11,16 @@ import { redrawLines, animateLineFor } from "/static/lines.js";
 // default) this stays empty and is simply never sent — nothing changes locally.
 const AUTH_KEY = "conductor.authToken.v1";
 const _origFetch = window.fetch.bind(window);
-function getToken() { try { return localStorage.getItem(AUTH_KEY) || ""; } catch { return ""; } }
+// An in-memory token wins over localStorage. This is what makes the native
+// desktop app work even though pywebview runs in private mode (no persistent
+// storage): app.py seeds the token into this variable, so we never depend on
+// localStorage surviving — and never need to reload the page to pick it up.
+function getToken() {
+  if (window.__conductorInjectedToken) return window.__conductorInjectedToken;
+  try { return localStorage.getItem(AUTH_KEY) || ""; } catch { return ""; }
+}
 function setToken(t) {
+  window.__conductorInjectedToken = t || undefined;
   try { t ? localStorage.setItem(AUTH_KEY, t) : localStorage.removeItem(AUTH_KEY); } catch {}
 }
 
@@ -771,13 +779,8 @@ function showAuthOverlay(errMsg) {
 // on the machine that's running the server. The phone/browser still must enter it.
 window.__conductorSeedToken = (t) => {
   if (!t) return;
-  const had = getToken();
-  setToken(t);
-  const overlay = document.querySelector(".auth-overlay");
-  // If we were locked out (overlay up, or first load with no token), restart
-  // cleanly now that the token's in place. Stable: a second call after reload is
-  // a no-op (token already present, no overlay).
-  if (overlay || (!had && !booted)) location.reload();
+  setToken(t);           // in-memory + localStorage — no reload, so no flicker
+  if (!booted) boot();   // (re)try startup with the token now available
 };
 
 // Register the service worker (installable PWA + offline shell). Best-effort;
@@ -790,19 +793,32 @@ function registerServiceWorker() {
 }
 
 // Startup: confirm auth (or that it's disabled), then wire the live connection.
+function dismissAuthOverlay() {
+  const o = document.querySelector(".auth-overlay");
+  if (o) o.remove();
+  authOverlayShown = false;
+}
+
+// Startup: confirm auth (or that it's disabled), then wire the live connection.
+// Concurrency-safe: boot() can run more than once (module load AND the token
+// seed), so it re-checks `booted` after the await — whichever call authenticates
+// first wins, the others no-op instead of double-connecting or re-showing the
+// overlay. No page reload anywhere (that caused the desktop flicker loop).
 let booted = false;
 async function boot() {
+  if (booted) return;
+  let ok = false;
   try {
-    const r = await _origFetch("/api/auth/check", {
-      headers: (() => { const t = getToken(); return t ? { "X-Conductor-Token": t } : {}; })(),
-    });
-    if (r.status === 401) { showAuthOverlay(); return; }  // need a token; overlay re-runs boot()
+    const t = getToken();
+    const r = await _origFetch("/api/auth/check", { headers: t ? { "X-Conductor-Token": t } : {} });
+    ok = r.ok;
+    if (r.status === 401 && !booted) showAuthOverlay();
   } catch {
-    // Network error (server down): fall through and let the WS reconnect loop
-    // surface the disconnected state rather than blocking on auth.
+    ok = true;  // network error (server down): proceed; the WS reconnect UI shows it
   }
-  if (booted) return;   // guard against double-boot if auth succeeded once already
+  if (booted || !ok) return;
   booted = true;
+  dismissAuthOverlay();     // clear a stray overlay a racing boot() may have shown
   connect();
   registerServiceWorker();
   // Restore the 3D view if it was active last session (guarded import, so a CDN
