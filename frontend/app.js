@@ -6,6 +6,38 @@ import {
 } from "/static/tiles.js";
 import { redrawLines, animateLineFor } from "/static/lines.js";
 
+// --- Auth token (for remote/phone access over Tailscale) --------------------
+// Stored per-browser. When the server has no token configured (the localhost
+// default) this stays empty and is simply never sent — nothing changes locally.
+const AUTH_KEY = "conductor.authToken.v1";
+const _origFetch = window.fetch.bind(window);
+function getToken() { try { return localStorage.getItem(AUTH_KEY) || ""; } catch { return ""; } }
+function setToken(t) {
+  try { t ? localStorage.setItem(AUTH_KEY, t) : localStorage.removeItem(AUTH_KEY); } catch {}
+}
+
+// Transparently attach the token to same-origin /api/ requests, so every
+// existing fetch("/api/…") call site stays untouched. A 401 pops the unlock
+// overlay. Non-/api requests (static assets) pass straight through.
+window.fetch = (input, init) => {
+  init = init || {};
+  let url = "";
+  try { url = typeof input === "string" ? input : (input && input.url) || ""; } catch {}
+  if (url.startsWith("/api/")) {
+    const tok = getToken();
+    if (tok) {
+      const headers = new Headers(init.headers || {});
+      headers.set("X-Conductor-Token", tok);
+      init = { ...init, headers };
+    }
+    return _origFetch(input, init).then((resp) => {
+      if (resp.status === 401) showAuthOverlay();
+      return resp;
+    });
+  }
+  return _origFetch(input, init);
+};
+
 const state = {
   sessions: [],     // SessionRecord[]
   parked: [],       // ParkedSession[] — offline, relaunchable (dormant dock)
@@ -127,13 +159,20 @@ let reconnectDelay = 500;
 
 function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  // The token rides in the query string — a browser can't set headers on a WS
+  // handshake. Empty token => omitted (local default).
+  const tok = getToken();
+  const q = tok ? `?token=${encodeURIComponent(tok)}` : "";
+  ws = new WebSocket(`${proto}://${location.host}/ws${q}`);
   ws.addEventListener("open", () => {
     setConnState(true);
     reconnectDelay = 500;
   });
-  ws.addEventListener("close", () => {
+  ws.addEventListener("close", (ev) => {
     setConnState(false);
+    // 1008 = policy violation: the server rejected our token. Don't hammer a
+    // reconnect loop — ask for the token instead.
+    if (ev && ev.code === 1008) { showAuthOverlay(); return; }
     setTimeout(connect, reconnectDelay);
     reconnectDelay = Math.min(reconnectDelay * 2, 8000);
   });
@@ -683,9 +722,78 @@ setInterval(() => {
   if (mutated) renderGrid(state);
 }, 1000);
 
-connect();
+// --- Auth unlock overlay ----------------------------------------------------
+// Shown only when the server rejects us (401 / WS 1008) — i.e. a token is
+// configured (remote access). Local default never triggers it.
+let authOverlayShown = false;
+function showAuthOverlay(errMsg) {
+  if (authOverlayShown) {
+    if (errMsg) { const e = document.querySelector(".auth-err"); if (e) e.textContent = errMsg; }
+    return;
+  }
+  authOverlayShown = true;
+  const overlay = document.createElement("div");
+  overlay.className = "auth-overlay";
+  overlay.innerHTML = `
+    <form class="auth-card">
+      <h2><img src="/static/logo.svg" alt="" width="22" height="22" /> Unlock Conductor</h2>
+      <p>This dashboard is protected. Enter your access token to continue.</p>
+      <input type="password" inputmode="text" autocomplete="current-password"
+             placeholder="Access token" aria-label="Access token" />
+      <div class="auth-err">${errMsg ? escapeHtml(errMsg) : ""}</div>
+      <button type="submit">Unlock</button>
+    </form>`;
+  const input = overlay.querySelector("input");
+  const err = overlay.querySelector(".auth-err");
+  overlay.querySelector("form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const tok = input.value.trim();
+    if (!tok) { err.textContent = "Enter a token."; return; }
+    setToken(tok);
+    // Validate before dismissing so a wrong token doesn't silently fail later.
+    try {
+      const r = await _origFetch("/api/auth/check", { headers: { "X-Conductor-Token": tok } });
+      if (r.ok) {
+        overlay.remove();
+        authOverlayShown = false;
+        boot();               // re-run the full startup with the accepted token
+        return;
+      }
+    } catch {}
+    err.textContent = "That token was rejected.";
+  });
+  document.body.appendChild(overlay);
+  input.focus();
+}
 
-// Restore the 3D view if it was active last session (guarded import, so a CDN
-// miss just falls back to 2D with a notice).
-setView3dBtn(false);
-if (prefs.view3d) enter3D();
+// Register the service worker (installable PWA + offline shell). Best-effort;
+// only works over a secure context (https / localhost), which is exactly the
+// Tailscale-serve setup. A failure is a no-op — the app still runs.
+function registerServiceWorker() {
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js").catch((e) => console.warn("sw register failed", e));
+  }
+}
+
+// Startup: confirm auth (or that it's disabled), then wire the live connection.
+let booted = false;
+async function boot() {
+  try {
+    const r = await _origFetch("/api/auth/check", {
+      headers: (() => { const t = getToken(); return t ? { "X-Conductor-Token": t } : {}; })(),
+    });
+    if (r.status === 401) { showAuthOverlay(); return; }  // need a token; overlay re-runs boot()
+  } catch {
+    // Network error (server down): fall through and let the WS reconnect loop
+    // surface the disconnected state rather than blocking on auth.
+  }
+  if (booted) return;   // guard against double-boot if auth succeeded once already
+  booted = true;
+  connect();
+  registerServiceWorker();
+  // Restore the 3D view if it was active last session (guarded import, so a CDN
+  // miss just falls back to 2D with a notice).
+  setView3dBtn(false);
+  if (prefs.view3d) enter3D();
+}
+boot();

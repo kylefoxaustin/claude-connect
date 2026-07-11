@@ -133,6 +133,23 @@ def test_busy_or_attended_recipient_never_woken(state, monkeypatch, status):
     assert status not in _WAKEABLE_STATUSES
 
 
+def test_idle_recipient_not_rewoken_after_active_blip(state, monkeypatch):
+    """Regression for the '17 /msg-checks in a row' loop (95emulator, 2026-07-10).
+
+    Injecting /msg-check flips the recipient ACTIVE while it runs `bus.sh check`.
+    The same unread batch must NOT re-wake it when it returns to idle — even though
+    it left and re-entered the wakeable set. Before the fix this re-armed every scan.
+    """
+    sess = _sess("[other:qualcomm]", Status.IDLE)
+    state.sessions = {"q": sess}
+    state._directed_unread = _directed()
+    assert len(_run_wake(state, monkeypatch)) == 1     # legit first wake
+    sess.status = Status.ACTIVE                          # running the injected check
+    assert len(_run_wake(state, monkeypatch)) == 0     # busy: skipped, key retained
+    sess.status = Status.IDLE                            # check done, batch still unread
+    assert len(_run_wake(state, monkeypatch)) == 0     # MUST stay quiet (was 17x)
+
+
 def test_no_directed_unread_no_wake(state, monkeypatch):
     state.sessions = {"q": _sess("[other:qualcomm]", Status.IDLE)}
     state._directed_unread = {"[other:qualcomm]": {"count": 0, "senders": [], "latest_ts": ""}}

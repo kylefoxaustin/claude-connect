@@ -17,6 +17,11 @@ else:  # pragma: no cover — exercised only on 3.10
 class ServerSettings:
     host: str = "127.0.0.1"
     port: int = 8765
+    # Shared secret required on every /api/* request and the /ws handshake.
+    # Empty (the default) = no auth, safe for the localhost-only default. Set it
+    # (here or via $CONDUCTOR_AUTH_TOKEN) before exposing Conductor beyond the box
+    # (e.g. a phone over Tailscale). See conductor/auth.py.
+    auth_token: str = ""
 
 
 @dataclass
@@ -138,7 +143,11 @@ def dump_settings(settings: Settings, path: Path | str | None = None) -> None:
     full known structure, so the UI becomes the editor of record for settings.toml."""
     candidate = Path(path) if path else DEFAULT_SETTINGS_PATH
     sections: dict[str, dict[str, object]] = {
-        "server": {"host": settings.server.host, "port": settings.server.port},
+        "server": {
+            "host": settings.server.host,
+            "port": settings.server.port,
+            "auth_token": settings.server.auth_token,
+        },
         "scanner": {
             "interval_seconds": settings.scanner.interval_seconds,
             "claude_home": settings.scanner.claude_home,

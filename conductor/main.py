@@ -19,12 +19,13 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import __version__
 from .activity import ActivityWatcher
+from .auth import path_requires_auth, resolved_token, token_ok
 from .bus import (
     BusAdapter,
     FakeBusAdapter,
@@ -310,18 +311,30 @@ class AppState:
             return
         current: set[str] = set()
         for r in self.sessions.values():
-            if not r.tag or r.status not in _WAKEABLE_STATUSES:
+            if not r.tag:
                 continue
             info = self._directed_unread.get(r.tag)
             if not info or not info.get("count"):
                 continue
+            # Record the batch's dedup key REGARDLESS of the session's momentary
+            # status — this is the whole fix for the "17 /msg-checks in a row" loop
+            # (95emulator, 2026-07-10). Injecting /msg-check briefly flips the
+            # recipient to ACTIVE (it's running `bus.sh check`); if we only tracked
+            # keys for currently-wakeable sessions, `self._unread_woken &= current`
+            # would evict this key during that blip and we'd re-wake the instant it
+            # returned to idle, oscillating on the scan interval. Add to `current`
+            # first, THEN gate the actual wake on wakeable-status.
             key = f"{r.tag}\x00{info.get('latest_ts')}"
             current.add(key)
             if key in self._unread_woken:
                 continue
+            if r.status not in _WAKEABLE_STATUSES:
+                # Busy / attended (Kyle may be typing at it): don't wake now, but
+                # keep the key in `current` so we wake at most once when it goes idle.
+                continue
             await self._inject_msg_check(r, f"{info['count']} unread addressed to it")
             self._unread_woken.add(key)
-        self._unread_woken &= current  # forget batches that have been read
+        self._unread_woken &= current  # forget batches read (last-seen advanced) or superseded
 
     # A busy holder can't run /keep, so its board looks abandoned; and our busy
     # guard (rightly) won't interrupt it to say so. Conductor knows the owner is
@@ -665,9 +678,34 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Conductor", lifespan=lifespan)
 
 
+@app.middleware("http")
+async def _auth_gate(request: Request, call_next):
+    """Require the configured token on gated paths (``/api/*`` + ``/ws``).
+
+    No-ops entirely when no token is configured (the localhost-only default), so
+    existing local/desktop usage is untouched. The WebSocket handshake is checked
+    in its own handler (middleware only sees HTTP), reusing ``token_ok``.
+    """
+    if path_requires_auth(request.url.path):
+        cond = getattr(request.app.state, "cond", None)
+        configured = resolved_token(cond.settings) if cond else ""
+        provided = request.headers.get("X-Conductor-Token") or request.query_params.get("token")
+        if not token_ok(configured, provided):
+            return JSONResponse({"detail": "authentication required"}, status_code=401)
+    return await call_next(request)
+
+
 @app.get("/api/health")
 async def health() -> dict[str, Any]:
     return {"ok": True, "version": __version__}
+
+
+@app.get("/api/auth/check")
+async def auth_check() -> dict[str, Any]:
+    """Reaching this (past the auth middleware) means the token was accepted — or
+    auth is disabled. The mobile/PWA login uses it to validate a token the user
+    entered before wiring up the WebSocket."""
+    return {"ok": True}
 
 
 @app.get("/api/sessions")
@@ -1068,6 +1106,11 @@ async def update_settings(payload: SettingsUpdate, request: Request) -> dict[str
 @app.websocket("/ws")
 async def websocket(ws: WebSocket) -> None:
     state: AppState = ws.app.state.cond
+    # Auth: the browser can't set headers on a WS handshake, so the token rides in
+    # the query string (?token=…). Reject before accepting when it doesn't match.
+    if not token_ok(resolved_token(state.settings), ws.query_params.get("token")):
+        await ws.close(code=1008)  # policy violation
+        return
     await state.hub.connect(ws)
     try:
         # Send initial snapshot.
@@ -1089,6 +1132,24 @@ async def websocket(ws: WebSocket) -> None:
 @app.get("/")
 async def index() -> FileResponse:
     return FileResponse(FRONTEND_DIR / "index.html")
+
+
+# PWA plumbing served at the ROOT so the service worker controls the whole origin
+# (a SW under /static/ would only scope /static/). Both are public (part of the
+# installable shell); the API behind them stays gated.
+@app.get("/manifest.webmanifest")
+async def manifest() -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "manifest.webmanifest",
+                        media_type="application/manifest+json")
+
+
+@app.get("/sw.js")
+async def service_worker() -> FileResponse:
+    return FileResponse(
+        FRONTEND_DIR / "sw.js",
+        media_type="text/javascript",
+        headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"},
+    )
 
 
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")

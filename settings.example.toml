@@ -3,6 +3,11 @@
 [server]
 host = "127.0.0.1"
 port = 8765
+# Leave empty for the localhost-only default (no auth). Set a shared secret before
+# exposing Conductor beyond this box (e.g. a phone over Tailscale) — every /api/*
+# request and the /ws handshake will then require it. Can also be provided via the
+# $CONDUCTOR_AUTH_TOKEN env var (which wins, so it needn't be written to disk).
+# auth_token = ""
 
 [scanner]
 # Seconds between full process rescans. Inotify pushes mtime updates between scans.

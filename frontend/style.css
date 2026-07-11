@@ -1232,3 +1232,103 @@ body.view-3d .dock { display: none !important; }
 .dd-speeds { display: flex; gap: 4px; }
 .dd-speed { font-size: 12px; padding: 4px 8px; background: var(--bg-panel); color: var(--text-dim); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
 .dd-speed.on { color: #fff; background: #c08cff; border-color: #c08cff; }
+
+/* ============================================================================
+   Auth unlock overlay (mobile/remote access). Only shown when the API returns
+   401 — i.e. a token is configured (Tailscale/remote). Local default never sees it.
+   ============================================================================ */
+.auth-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg);
+}
+.auth-card {
+  width: 100%;
+  max-width: 360px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 22px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+.auth-card h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 18px; }
+.auth-card p { margin: 0; color: var(--text-dim); font-size: 13px; }
+.auth-card input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 12px;
+  font-size: 16px; /* ≥16px so iOS/Android don't zoom on focus */
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.auth-card button {
+  padding: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  background: #7d5bed;
+  border: 1px solid #7d5bed;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.auth-card button:hover { background: #6c4ad8; }
+.auth-card .auth-err { color: var(--status-ended); min-height: 1em; font-size: 13px; }
+
+/* ============================================================================
+   Phone layout. The desktop board is a free-form absolute-positioned canvas;
+   on a narrow screen that's unusable, so we collapse it to a simple vertical
+   stack: tiles flow in a column, wires/legend hide, the topbar wraps, and the
+   push-approval inbox stays front-and-centre (the killer phone feature).
+   ============================================================================ */
+@media (max-width: 640px) {
+  .grid {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px;
+    min-height: 0 !important; /* beat tiles.js's inline canvas min-height */
+  }
+  /* Tiles: static flow, full width, no drag/resize, and — crucially —
+     touch-action:auto so a finger-drag scrolls the page instead of being eaten
+     by the desktop drag handler. */
+  .tile {
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+    resize: none !important;
+    cursor: default !important;
+    touch-action: auto !important;
+  }
+  /* Connection wires + legend are meaningless without spatial layout. */
+  .lines-overlay,
+  .lines-front,
+  .line-legend { display: none !important; }
+
+  .topbar { flex-wrap: wrap; height: auto; gap: 6px 8px; padding: 8px 10px; }
+  .topbar-left { flex-wrap: wrap; gap: 4px 10px; }
+  .topbar-meta { flex-wrap: wrap; gap: 6px; }
+  /* Bigger tap targets; hide layout-only controls that don't apply to a stack. */
+  .topbar-meta button { min-height: 40px; padding: 6px 10px; }
+  #view3d-btn, #heatmap-btn, #groups-btn, #reset-layout-btn { display: none; }
+
+  /* Push inbox: prominent, buttons comfortable to tap. */
+  .push-inbox { margin: 8px; }
+  .push-req { flex-wrap: wrap; gap: 8px; }
+  .push-req .push-approve, .push-req .push-deny { min-height: 40px; flex: 1; }
+
+  .dock { flex-wrap: wrap; }
+  /* Modals fill the small screen. */
+  .modal-card { width: 94vw; max-width: none; max-height: 88vh; }
+}
