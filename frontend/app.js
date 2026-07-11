@@ -74,6 +74,9 @@ const DEFAULT_PREFS = {
   view3d: false, layout3d: "carousel",
   // Draw the bus lines behind the tiles instead of on top (declutter).
   linesBehind: false,
+  // Compact density: collapse every tile to header-only (dot + name + tag),
+  // hiding the preview/tokens/path so the whole fleet fits at a glance.
+  compact: false,
   // How a 📬 bubble click behaves: "confirm-busy" | "always" | "block-busy" | "always-confirm".
   busClickGuard: "confirm-busy",
 };
@@ -149,15 +152,28 @@ function applyLinesVisibility() {
 function applyLinesBehind() {
   document.body.classList.toggle("lines-behind", !!prefs.linesBehind);
 }
+function applyCompact() {
+  document.body.classList.toggle("compact", !!prefs.compact);
+  const btn = document.getElementById("compact-btn");
+  if (btn) {
+    btn.classList.toggle("on", !!prefs.compact);
+    btn.textContent = prefs.compact ? "⊞ Expand" : "⊟ Compact";
+    btn.title = prefs.compact
+      ? "Restore tiles to their normal size"
+      : "Collapse all tiles to a compact size (keeps them all visible)";
+  }
+}
 function applyPrefs() {
   applyTheme();
   applyLinesVisibility();
   applyLinesBehind();
+  applyCompact();
   renderGrid(state);
   requestAnimationFrame(() => redrawLines(state));
 }
 applyTheme();            // apply ASAP to avoid a flash before first render
 applyLinesVisibility();
+applyCompact();
 
 const connStateEl = document.getElementById("conn-state");
 const sessionCountEl = document.getElementById("session-count");
@@ -284,6 +300,14 @@ function animateLineForTag(tag) {
 
 document.getElementById("reset-layout-btn").addEventListener("click", () => {
   resetLayout();
+});
+
+document.getElementById("compact-btn").addEventListener("click", () => {
+  prefs.compact = !prefs.compact;
+  savePrefs();
+  applyCompact();
+  // Tiles changed size -> re-anchor the bus wires.
+  requestAnimationFrame(() => redrawLines(state));
 });
 
 document.getElementById("refresh-btn").addEventListener("click", async () => {

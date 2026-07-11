@@ -129,8 +129,8 @@ html, body {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px 14px;
-  min-height: 120px;
-  min-width: 200px;
+  min-height: 148px;   /* taller floor so idle/quiet tiles aren't a hard-to-grab sliver */
+  min-width: 220px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -142,7 +142,23 @@ html, body {
   /* Drag-grip resize from the bottom-right corner; size persists per tile. */
   resize: both;
   overflow: auto;
+  /* Fatter, always-present scrollbar + a chunkier resize corner so both are easy
+     to grab — the thin native ones are near-impossible to hit, especially by
+     touch on the foldable. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
+.tile::-webkit-scrollbar { width: 13px; height: 13px; }
+.tile::-webkit-scrollbar-track { background: transparent; }
+.tile::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 7px;
+  border: 3px solid var(--bg-panel);  /* inset so the thumb reads as a grabbable pill */
+}
+.tile:hover::-webkit-scrollbar-thumb { background: var(--text-dim); }
+/* The resize corner (bottom-right). Styling the resizer bg + the fatter scrollbar
+   above enlarges the grab target and makes it visible. */
+.tile::-webkit-resizer { background: var(--text-dim); }
 .tile.dragging {
   cursor: grabbing;
   opacity: 0.85;
@@ -1332,3 +1348,25 @@ body.view-3d .dock { display: none !important; }
   /* Modals fill the small screen. */
   .modal-card { width: 94vw; max-width: none; max-height: 88vh; }
 }
+
+/* ============================================================================
+   Compact density (⊟ Compact). Collapse every tile to header-only — dot + name
+   + tag + badges (and the retraction banner, which must never hide) — so the
+   whole fleet fits at a glance. Toggled via body.compact from app.js; each
+   tile's own size returns on toggle-off.
+   ============================================================================ */
+body.compact .tile {
+  min-height: 0;
+  height: auto !important;   /* override any per-tile saved inline height */
+  padding: 7px 10px;
+  gap: 3px;
+  resize: none;              /* nothing to resize when there's only a header */
+}
+body.compact .tile-preview,
+body.compact .tile-tokens,
+body.compact .tile-projectdir,
+body.compact .tile-grouplabel,
+body.compact .tile-footer { display: none; }
+/* Keep the header tight and single-line in compact mode. */
+body.compact .tile-header { gap: 6px; }
+body.compact .tile::-webkit-scrollbar { width: 0; height: 0; }

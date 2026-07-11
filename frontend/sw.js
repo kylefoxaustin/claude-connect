@@ -5,7 +5,7 @@
 //   • LIVE DATA (/api/*, /ws) is never cached — always the network — so the
 //     fleet view is never stale and auth is never bypassed.
 // Bump CACHE when the shell asset list changes to evict the old bundle.
-const CACHE = "conductor-shell-v1";
+const CACHE = "conductor-shell-v2";
 const SHELL = [
   "/",
   "/static/app.js",
