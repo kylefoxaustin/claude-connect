@@ -76,6 +76,11 @@ _BUSY_STATUSES = frozenset({Status.ACTIVE, Status.WARM})
 # not ACTIVE/WARM (busy) and not WAITING (Kyle may be typing at that prompt).
 _WAKEABLE_STATUSES = frozenset({Status.IDLE, Status.DORMANT})
 
+# A /msg-check the recipient hasn't run yet makes a second one pointless — one
+# check drains the whole backlog. Re-arm after this long anyway, so a session
+# that never writes a last-seen watermark isn't muted forever.
+_WAKE_RETRY_SECONDS = 600.0
+
 
 def _bare_tag(tag: str | None) -> str:
     """Compare tags on a common form.
@@ -120,7 +125,9 @@ class AppState:
         self._pinged_offers: set[str] = set()                 # offers we've already woken
         self._owner_missing_since: dict[str, float] = {}      # lease -> when its owner went offline
         self._nudge_woken: set[str] = set()                   # idle episodes we already woke
-        self._unread_woken: set[str] = set()                  # directed-unread batches we delivered
+        # tag -> (its last-seen when we woke it, when we woke it). Keeps us from
+        # stacking /msg-checks on a session that hasn't run the first one yet.
+        self._wake_outstanding: dict[str, tuple[str, float]] = {}
         self._directed_unread: dict[str, dict[str, Any]] = {} # tag -> unread addressed to it
         self._retraction_woken: set[str] = set()              # retraction records we already delivered
         self._retractions: list[dict[str, Any]] = []          # active retraction records
@@ -313,32 +320,38 @@ class AppState:
         # be auto-prodded to go read the bus — compared bare so bracketed/bare
         # spellings both match.
         exempt = {_bare_tag(t) for t in self.settings.bus.autodeliver_exempt}
-        current: set[str] = set()
+        state_dir = self.settings.bus.state_dir_resolved
+        now = time.time()
         for r in self.sessions.values():
             if not r.tag or _bare_tag(r.tag) in exempt:
                 continue
             info = self._directed_unread.get(r.tag)
             if not info or not info.get("count"):
+                self._wake_outstanding.pop(r.tag, None)   # backlog cleared -> re-arm
                 continue
-            # Record the batch's dedup key REGARDLESS of the session's momentary
-            # status — this is the whole fix for the "17 /msg-checks in a row" loop
-            # (95emulator, 2026-07-10). Injecting /msg-check briefly flips the
-            # recipient to ACTIVE (it's running `bus.sh check`); if we only tracked
-            # keys for currently-wakeable sessions, `self._unread_woken &= current`
-            # would evict this key during that blip and we'd re-wake the instant it
-            # returned to idle, oscillating on the scan interval. Add to `current`
-            # first, THEN gate the actual wake on wakeable-status.
-            key = f"{r.tag}\x00{info.get('latest_ts')}"
-            current.add(key)
-            if key in self._unread_woken:
-                continue
+
+            # Dedup on "has it READ yet?", NOT "is this a new batch?".
+            #
+            # Keying on the newest message meant every *new* message minted a new key
+            # and injected another /msg-check — and a session deep in a long tool call
+            # stops touching its transcript, so its activity-derived status decays to
+            # IDLE and it looks wakeable while it's actually grinding. The keystrokes
+            # then QUEUE, and we'd stack 3+ /msg-checks on one session (seen live on
+            # rt1180emulator, 2026-07-11). But a queued check that hasn't run yet does
+            # not need a sibling: ONE check drains the entire backlog. So: once woken,
+            # stay quiet until the recipient's last-seen watermark actually advances.
+            seen_now = _read_last_seen(state_dir, r.tag) or ""
+            prev = self._wake_outstanding.get(r.tag)
+            if prev is not None:
+                prev_seen, woke_at = prev
+                # Re-arm anyway after a while, so a session that can't write a
+                # last-seen at all (not on the bus whitelist) isn't muted forever.
+                if seen_now == prev_seen and (now - woke_at) < _WAKE_RETRY_SECONDS:
+                    continue
             if r.status not in _WAKEABLE_STATUSES:
-                # Busy / attended (Kyle may be typing at it): don't wake now, but
-                # keep the key in `current` so we wake at most once when it goes idle.
-                continue
+                continue  # busy / attended — retry once it's quiet
             await self._inject_msg_check(r, f"{info['count']} unread addressed to it")
-            self._unread_woken.add(key)
-        self._unread_woken &= current  # forget batches read (last-seen advanced) or superseded
+            self._wake_outstanding[r.tag] = (seen_now, now)
 
     # A busy holder can't run /keep, so its board looks abandoned; and our busy
     # guard (rightly) won't interrupt it to say so. Conductor knows the owner is

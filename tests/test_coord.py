@@ -116,13 +116,43 @@ def _directed(ts="2026-07-10 17:00", count=1):
     return {"[other:qualcomm]": {"count": count, "senders": ["imx95"], "latest_ts": ts}}
 
 
-def test_idle_recipient_woken_once_per_batch(state, monkeypatch):
+def _seen(monkeypatch, value):
+    """Stub the recipient's last-seen watermark (what it has actually read)."""
+    monkeypatch.setattr("conductor.main._read_last_seen", lambda sd, tag: value)
+
+
+def test_idle_recipient_woken_once_until_it_reads(state, monkeypatch):
+    """Wake once, then stay quiet until the recipient's watermark advances."""
+    _seen(monkeypatch, "2026-07-10 16:00")
     state.sessions = {"q": _sess("[other:qualcomm]", Status.IDLE)}
     state._directed_unread = _directed()
     assert len(_run_wake(state, monkeypatch)) == 1
-    assert len(_run_wake(state, monkeypatch)) == 0          # same batch, no re-nag
-    state._directed_unread = _directed(ts="2026-07-10 17:30", count=2)
-    assert len(_run_wake(state, monkeypatch)) == 1          # newer batch -> wake again
+    assert len(_run_wake(state, monkeypatch)) == 0          # still unread -> no re-nag
+
+
+def test_new_mail_does_not_stack_a_second_check(state, monkeypatch):
+    """THE ANTI-STACKING PROPERTY (rt1180emulator, 2026-07-11): more mail arriving
+    while an injected /msg-check is still un-run must NOT queue another one. One
+    check drains the whole backlog."""
+    _seen(monkeypatch, "2026-07-10 16:00")                  # hasn't read anything new
+    state.sessions = {"q": _sess("[other:qualcomm]", Status.IDLE)}
+    state._directed_unread = _directed()
+    assert len(_run_wake(state, monkeypatch)) == 1          # first wake
+    state._directed_unread = _directed(ts="2026-07-10 17:30", count=2)   # more mail lands
+    assert len(_run_wake(state, monkeypatch)) == 0          # was: 1 (the stacking bug)
+    state._directed_unread = _directed(ts="2026-07-10 18:00", count=5)   # and more
+    assert len(_run_wake(state, monkeypatch)) == 0
+
+
+def test_wakes_again_once_the_recipient_has_read(state, monkeypatch):
+    """After it actually reads (watermark advances), fresh mail may wake it again."""
+    _seen(monkeypatch, "2026-07-10 16:00")
+    state.sessions = {"q": _sess("[other:qualcomm]", Status.IDLE)}
+    state._directed_unread = _directed()
+    assert len(_run_wake(state, monkeypatch)) == 1
+    _seen(monkeypatch, "2026-07-10 17:05")                  # it ran the check
+    state._directed_unread = _directed(ts="2026-07-10 17:30", count=1)   # new mail after
+    assert len(_run_wake(state, monkeypatch)) == 1          # eligible again
 
 
 @pytest.mark.parametrize("status", [Status.ACTIVE, Status.WARM, Status.WAITING])
@@ -140,6 +170,7 @@ def test_idle_recipient_not_rewoken_after_active_blip(state, monkeypatch):
     The same unread batch must NOT re-wake it when it returns to idle — even though
     it left and re-entered the wakeable set. Before the fix this re-armed every scan.
     """
+    _seen(monkeypatch, "2026-07-10 16:00")
     sess = _sess("[other:qualcomm]", Status.IDLE)
     state.sessions = {"q": sess}
     state._directed_unread = _directed()

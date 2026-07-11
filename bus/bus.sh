@@ -386,11 +386,117 @@ case "$cmd" in
     ;;
 
   check)
-    # Used by slash command and session-start hook.
-    # Tail the recent log; caller decides what to do with it.
+    # Show what's NEW and MINE — not the last 80 lines of everything.
+    #
+    # (93emulator, 2026-07-11): `check` re-printed the whole tail on every call,
+    # including traffic already read AND the caller's own posts, so most of a
+    # check's context was re-reading. The watermark that fixes this already
+    # existed — prompt-check maintains <tag>.last-seen — `check` just never
+    # consumed it. Now it does, and it advances it (as it always did).
+    #
+    #   check              new since my last-seen, addressed to me or broadcast
+    #   check --all-tags   new since my last-seen, no addressing filter
+    #   check --all        old behaviour: the full recent tail (last 80 lines)
+    #   check -n <N>       cap output to the last N selected messages
+    MODE=new; LIMIT=0
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --all)      MODE=tail ;;
+        --all-tags) MODE=alltags ;;
+        -n)         shift; LIMIT="${1:-10}" ;;
+        -n*)        LIMIT="${1#-n}" ;;
+      esac
+      shift
+    done
+
+    STATE_DIR="$HOME/.claude/bus-state"
+    LAST_SEEN=""
+    [ -f "$STATE_DIR/$TAG.last-seen" ] && LAST_SEEN="$(cat "$STATE_DIR/$TAG.last-seen" 2>/dev/null || true)"
+
     echo "=== My session tag: [$TAG] ==="
     echo
-    tail -80 "$BUS_FILE"
+
+    if [ "$MODE" = tail ]; then
+      tail -80 "$BUS_FILE"
+    else
+      BUS_FILE="$BUS_FILE" MY_TAG="$TAG" LAST_SEEN="$LAST_SEEN" MODE="$MODE" LIMIT="$LIMIT" \
+      python3 - <<'PYEOF'
+import os, re, sys
+
+path = os.environ["BUS_FILE"]
+me    = os.environ["MY_TAG"]
+last  = os.environ.get("LAST_SEEN", "") or ""
+mode  = os.environ.get("MODE", "new")
+limit = int(os.environ.get("LIMIT") or 0)
+
+def plain(t):
+    t = t.strip().strip("[]")
+    if t.lower().startswith("other:"):
+        t = t[6:]
+    return t.lower()
+
+me_p = plain(me)
+HDR  = re.compile(r'^## (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) \[([^\]]+)\]\s*$')
+TO   = re.compile(r'\bto:(\S+)')
+
+msgs, cur = [], None
+try:
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            line = line.rstrip("\n")
+            m = HDR.match(line)
+            if m:
+                if cur: msgs.append(cur)
+                cur = {"ts": m.group(1), "sender": m.group(2), "lines": [line]}
+            elif cur is not None:
+                cur["lines"].append(line)
+    if cur: msgs.append(cur)
+except OSError:
+    sys.exit(0)
+
+def targets(msg):
+    """Plain names a message is addressed to. Empty set == broadcast."""
+    for ln in msg["lines"][1:]:
+        s = ln.strip()
+        if not s:
+            continue
+        if s.startswith("@to "):                      # Conductor's compose format
+            return {plain(t) for t in re.findall(r'\[([^\]]+)\]', s)}
+        head = s.split("—", 1)[0]                # address prefix ends at the em-dash
+        return {plain(t) for t in TO.findall(head)}
+    return set()
+
+sel = []
+for m in msgs:
+    if plain(m["sender"]) == me_p:                    # never re-show my own posts
+        continue
+    if last and not (m["ts"] > last):                 # already read
+        continue
+    if mode == "new":
+        tg = targets(m)
+        if tg and me_p not in tg and "all" not in tg:
+            continue                                  # addressed only to others
+    sel.append(m)
+
+if not last:
+    sel = sel[-10:]        # never checked before: recent context, not the whole archive
+if limit:
+    sel = sel[-limit:]
+
+if not sel:
+    print("No new messages since your last check (%s)." % (last or "ever"))
+    print("(`--all-tags` = new traffic addressed to anyone · `--all` = full recent tail)")
+    sys.exit(0)
+
+for m in sel:
+    print("\n".join(m["lines"]).rstrip())
+    print()
+
+label = "new" if mode == "new" else "new (all tags)"
+print("--- %d %s message(s). `--all-tags` for traffic addressed to others · "
+      "`--all` for the full tail. ---" % (len(sel), label))
+PYEOF
+    fi
     mark_seen_if_bus_tag
     ;;
 
