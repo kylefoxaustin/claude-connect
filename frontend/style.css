@@ -156,9 +156,19 @@ html, body {
   border: 3px solid var(--bg-panel);  /* inset so the thumb reads as a grabbable pill */
 }
 .tile:hover::-webkit-scrollbar-thumb { background: var(--text-dim); }
-/* The resize corner (bottom-right). Styling the resizer bg + the fatter scrollbar
-   above enlarges the grab target and makes it visible. */
-.tile::-webkit-resizer { background: var(--text-dim); }
+/* The resize corner (bottom-right). A dotted grip, NOT a grey slab — it keeps the
+   large grab area (the resizer box is as wide as the scrollbar) but reads as a
+   modern pull-handle instead of a block parked on top of the footer text. The dot
+   grid is a repeating radial-gradient; it brightens on hover so it's discoverable
+   without shouting the rest of the time. */
+.tile::-webkit-resizer {
+  background-color: transparent;
+  background-image: radial-gradient(circle, var(--text-dim) 1.1px, transparent 1.5px);
+  background-size: 4px 4px;
+  background-position: right 1px bottom 1px;
+  opacity: 0.5;
+}
+.tile:hover::-webkit-resizer { opacity: 0.95; }
 .tile.dragging {
   cursor: grabbing;
   opacity: 0.85;
@@ -260,6 +270,9 @@ html, body {
   justify-content: space-between;
   font-size: 11px;
   color: var(--text-dim);
+  /* Reserve the bottom-right corner for the resize grip, so the trailing
+     timestamp ("9h ago") never sits underneath it. */
+  padding-right: 14px;
 }
 /* Per-session token usage (from the transcript). Subtle, hover for the breakdown. */
 .tile-tokens {
@@ -1506,4 +1519,6 @@ body.packed .lines-overlay { opacity: 0.5; }
   .relaunch-row label { padding: 12px 8px; }
   /* Fatter tile scrollbar/resizer than even the desktop bump. */
   .tile::-webkit-scrollbar { width: 16px; height: 16px; }
+  /* Bigger grip => reserve more footer room so the timestamp stays clear. */
+  .tile-footer { padding-right: 20px; }
 }
