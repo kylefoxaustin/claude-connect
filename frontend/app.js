@@ -15,14 +15,30 @@ const _origFetch = window.fetch.bind(window);
 // desktop app work even though pywebview runs in private mode (no persistent
 // storage): app.py seeds the token into this variable, so we never depend on
 // localStorage surviving — and never need to reload the page to pick it up.
+// The native app passes the token in the URL hash (`#t=…`). That's deliberate:
+// it needs NO event timing (app.js is a module, so it runs *after* pywebview's
+// page-load event — a seed fired on that event silently no-ops), and the hash
+// survives a reload, which localStorage does not under pywebview's private mode.
+// A hash is never sent to the server, and the native window has no address bar.
+function tokenFromHash() {
+  try {
+    const m = /(?:^|[#&])t=([^&]*)/.exec(location.hash || "");
+    return m ? decodeURIComponent(m[1]) : "";
+  } catch { return ""; }
+}
 function getToken() {
   if (window.__conductorInjectedToken) return window.__conductorInjectedToken;
+  const h = tokenFromHash();
+  if (h) return h;
   try { return localStorage.getItem(AUTH_KEY) || ""; } catch { return ""; }
 }
 function setToken(t) {
   window.__conductorInjectedToken = t || undefined;
   try { t ? localStorage.setItem(AUTH_KEY, t) : localStorage.removeItem(AUTH_KEY); } catch {}
 }
+// Adopt a hash-provided token immediately (before anything fetches).
+const _hashToken = tokenFromHash();
+if (_hashToken) setToken(_hashToken);
 
 // Transparently attach the token to same-origin /api/ requests, so every
 // existing fetch("/api/…") call site stays untouched. A 401 pops the unlock

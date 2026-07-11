@@ -13,11 +13,13 @@ Run:  python app.py     (use the system-site-packages venv; see README)
 
 from __future__ import annotations
 
+import json
 import os
 import socket
 import sys
 import threading
 import time
+import urllib.parse
 
 # Make this script's own directory win on sys.path BEFORE importing conductor, so
 # a staged install (`make install-app`, which copies the app into
@@ -76,26 +78,37 @@ def main() -> None:
     # window at loopback in that case.
     url_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
 
+    # If a token is configured (so the API is gated for remote/phone access),
+    # auto-unlock THIS desktop window — it runs on the same box that holds the
+    # secret, so there's no reason to make the user type it here. The phone/browser
+    # still must enter it.
+    #
+    # The token goes in the URL **hash**, not through an injected-JS "seed" on the
+    # page-load event. That earlier approach silently no-op'd: app.js is an ES
+    # module, so it evaluates *after* pywebview's `loaded` event fires, and the
+    # seed's `window.__conductorSeedToken && …` guard found nothing there yet — the
+    # window just sat on the unlock screen. A hash needs no event timing, is never
+    # sent to the server, survives a reload (pywebview's private mode wipes
+    # localStorage), and this window has no address bar to leak it into.
+    _token = os.environ.get("CONDUCTOR_AUTH_TOKEN") or settings.server.auth_token
+    _url = f"http://{url_host}:{port}"
+    if _token:
+        _url += "#t=" + urllib.parse.quote(_token, safe="")
+
     window = webview.create_window(
         "Conductor",
-        f"http://{url_host}:{port}",
+        _url,
         width=1400,
         height=900,
         min_size=(900, 600),
     )
 
-    # If a token is configured (so the API is gated for remote/phone access),
-    # auto-unlock THIS desktop window — it's running on the same box that holds the
-    # secret, so there's no reason to make the user type it here. The frontend's
-    # seam sets localStorage and reloads clean; the phone/browser still must enter it.
-    import json as _json
-
-    _token = os.environ.get("CONDUCTOR_AUTH_TOKEN") or settings.server.auth_token
+    # Belt-and-braces: if the page is already up, hand it the token directly too.
     if _token:
         def _seed_token():
             try:
                 window.evaluate_js(
-                    f"window.__conductorSeedToken && window.__conductorSeedToken({_json.dumps(_token)})"
+                    f"window.__conductorSeedToken && window.__conductorSeedToken({json.dumps(_token)})"
                 )
             except Exception:
                 pass
