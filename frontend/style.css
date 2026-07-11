@@ -1627,3 +1627,7 @@ body.link-mode .tile:hover { border-color: rgba(63, 185, 80, 0.55); }
 @media (pointer: coarse) {
   .link-go, .link-ghost, .autonomy-end { min-height: 40px; }
 }
+/* Link bar: make the "click a tile" affordance the loudest thing in the bar. */
+.link-bar-sub { display: block; margin-top: 2px; opacity: 0.85; }
+.link-ghost.on { color: var(--status-active); border-color: var(--status-active); }
+.link-ghost[disabled] { opacity: 0.4; cursor: not-allowed; }

@@ -669,10 +669,26 @@ function applyLinkClasses() {
   document.body.classList.toggle("link-mode", linkMode);
 }
 
+function liveTags() {
+  return (state.sessions || []).filter((s) => s.status !== "ended" && s.tag).map((s) => s.tag);
+}
+
 function syncLinkBar() {
-  linkCountEl.textContent = `${linkSel.size} selected`;
+  const n = linkSel.size;
+  linkCountEl.textContent = n === 0 ? "none selected" : `${n} selected`;
   const go = document.getElementById("link-go");
-  if (go) go.disabled = linkSel.size < 2;   // a window of one means nothing
+  if (go) go.disabled = n < 2;              // a window of one means nothing
+  const clear = document.getElementById("link-clear");
+  if (clear) clear.disabled = n === 0;
+  // "Whole fleet" flips to "Clear all" once everything is selected, so an accidental
+  // select-all is undone by the very button that caused it.
+  const all = document.getElementById("link-all");
+  if (all) {
+    const total = liveTags().length;
+    const everything = total > 0 && n >= total;
+    all.textContent = everything ? "Deselect all" : "Whole fleet";
+    all.classList.toggle("on", everything);
+  }
 }
 
 window.toggleLinkSelect = function toggleLinkSelect(tag) {
@@ -694,10 +710,18 @@ function setLinkMode(on) {
 
 document.getElementById("link-btn")?.addEventListener("click", () => setLinkMode(!linkMode));
 document.getElementById("link-cancel")?.addEventListener("click", () => setLinkMode(false));
+// Whole fleet <-> Deselect all. Toggling on the same button means an accidental
+// select-all is undone by exactly the control that caused it.
 document.getElementById("link-all")?.addEventListener("click", () => {
-  for (const s of state.sessions) {
-    if (s.status !== "ended" && s.tag) linkSel.add(s.tag);
-  }
+  const tags = liveTags();
+  if (tags.length && linkSel.size >= tags.length) linkSel.clear();
+  else for (const t of tags) linkSel.add(t);
+  syncLinkBar();
+  applyLinkClasses();
+});
+
+document.getElementById("link-clear")?.addEventListener("click", () => {
+  linkSel.clear();
   syncLinkBar();
   applyLinkClasses();
 });

@@ -59,12 +59,13 @@
     <!-- Link mode: pick sessions on the board, then set how long they may talk. -->
     <div id="link-bar" class="link-bar" hidden>
       <span class="link-bar-hint">
-        <strong>🔗 Click tiles to select.</strong>
-        They'll be allowed to wake each other on directed mail — even while parked at a
-        prompt — until the window expires. Busy sessions are still never interrupted.
+        <strong>👆 Click any tile to select it.</strong> Click it again to deselect.
+        <span class="link-bar-sub">Selected sessions may wake each other on directed mail even while
+        parked at a prompt. Busy ones are never interrupted.</span>
       </span>
       <span class="link-count" id="link-count">0 selected</span>
       <button id="link-all" class="link-ghost">Whole fleet</button>
+      <button id="link-clear" class="link-ghost">Clear</button>
       <label class="link-dur">
         for
         <select id="link-hours">
