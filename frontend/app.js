@@ -298,11 +298,11 @@ function animateLineForTag(tag) {
   if (prefs.view3d && view3dMod) view3dMod.animateForTag(tag);
 }
 
-document.getElementById("reset-layout-btn").addEventListener("click", () => {
+document.getElementById("reset-layout-btn")?.addEventListener("click", () => {
   resetLayout();
 });
 
-document.getElementById("compact-btn").addEventListener("click", () => {
+document.getElementById("compact-btn")?.addEventListener("click", () => {
   prefs.compact = !prefs.compact;
   savePrefs();
   applyCompact();
@@ -310,7 +310,7 @@ document.getElementById("compact-btn").addEventListener("click", () => {
   requestAnimationFrame(() => redrawLines(state));
 });
 
-document.getElementById("refresh-btn").addEventListener("click", async () => {
+document.getElementById("refresh-btn")?.addEventListener("click", async () => {
   try {
     const r = await fetch("/api/sessions");
     if (r.ok) {
@@ -349,7 +349,7 @@ fetch("/api/health").then((r) => (r.ok ? r.json() : null)).then((h) => {
   if (el && h && h.version) el.textContent = `v${h.version}`;
 }).catch(() => {});
 
-document.getElementById("settings-btn").addEventListener("click", async () => {
+document.getElementById("settings-btn")?.addEventListener("click", async () => {
   // Appearance from local prefs.
   setTheme.value = prefs.theme;
   setLines.checked = prefs.lines;
@@ -370,7 +370,7 @@ document.getElementById("settings-btn").addEventListener("click", async () => {
   settingsModal.classList.remove("hidden");
 });
 document.getElementById("settings-modal-close")
-  .addEventListener("click", () => settingsModal.classList.add("hidden"));
+  ?.addEventListener("click", () => settingsModal.classList.add("hidden"));
 settingsModal.addEventListener("click", (e) => {
   if (e.target === settingsModal) settingsModal.classList.add("hidden");
 });
@@ -420,7 +420,7 @@ setFadeout.addEventListener("change", () => postSettings({ end_fadeout_seconds: 
 // Bus modal wiring.
 const modal = document.getElementById("bus-modal");
 const modalFeed = document.getElementById("bus-modal-feed");
-document.getElementById("bus-modal-close").addEventListener("click", () => modal.classList.add("hidden"));
+document.getElementById("bus-modal-close")?.addEventListener("click", () => modal.classList.add("hidden"));
 modal.addEventListener("click", (e) => { if (e.target === modal) modal.classList.add("hidden"); });
 
 window.openBusModal = function openBusModal() {
@@ -447,7 +447,7 @@ const composeSend = document.getElementById("compose-send");
 const composeStatus = document.getElementById("compose-status");
 
 function closeCompose() { composeModal.classList.add("hidden"); }
-document.getElementById("compose-modal-close").addEventListener("click", closeCompose);
+document.getElementById("compose-modal-close")?.addEventListener("click", closeCompose);
 composeModal.addEventListener("click", (e) => { if (e.target === composeModal) closeCompose(); });
 
 function syncComposeEnabled() {
@@ -477,7 +477,7 @@ function openCompose() {
   composeModal.classList.remove("hidden");
   composeText.focus();
 }
-document.getElementById("compose-btn").addEventListener("click", openCompose);
+document.getElementById("compose-btn")?.addEventListener("click", openCompose);
 composeAll.addEventListener("change", syncComposeEnabled);
 
 async function sendCompose() {
@@ -542,8 +542,8 @@ window.toggleBusActive = async function toggleBusActive(tag, makeActive) {
 // Groups management panel (assignment happens per-tile via the ▦ menu).
 const groupsModal = document.getElementById("groups-modal");
 const groupsList = document.getElementById("groups-list");
-document.getElementById("groups-btn").addEventListener("click", () => { renderGroupsList(); groupsModal.classList.remove("hidden"); });
-document.getElementById("groups-modal-close").addEventListener("click", () => groupsModal.classList.add("hidden"));
+document.getElementById("groups-btn")?.addEventListener("click", () => { renderGroupsList(); groupsModal.classList.remove("hidden"); });
+document.getElementById("groups-modal-close")?.addEventListener("click", () => groupsModal.classList.add("hidden"));
 groupsModal.addEventListener("click", (e) => { if (e.target === groupsModal) groupsModal.classList.add("hidden"); });
 
 function renderGroupsList() {
@@ -675,12 +675,12 @@ function renderRelaunchList() {
   syncRelaunchSelection();
 }
 
-relaunchAllCb.addEventListener("change", () => {
+relaunchAllCb?.addEventListener("change", () => {
   relaunchList.querySelectorAll("input[type=checkbox]")
     .forEach((cb) => { cb.checked = relaunchAllCb.checked; });
   syncRelaunchSelection();
 });
-relaunchSort.addEventListener("change", () => {
+relaunchSort?.addEventListener("change", () => {
   try { localStorage.setItem(LS_RELAUNCH_SORT, relaunchSort.value); } catch {}
   renderRelaunchList();
 });
@@ -693,14 +693,14 @@ function openRelaunch() {
   renderRelaunchList();
   relaunchModal.classList.remove("hidden");
 }
-document.getElementById("relaunch-btn").addEventListener("click", openRelaunch);
+document.getElementById("relaunch-btn")?.addEventListener("click", openRelaunch);
 document.getElementById("relaunch-modal-close")
-  .addEventListener("click", () => relaunchModal.classList.add("hidden"));
-relaunchModal.addEventListener("click", (e) => {
+  ?.addEventListener("click", () => relaunchModal.classList.add("hidden"));
+relaunchModal?.addEventListener("click", (e) => {
   if (e.target === relaunchModal) relaunchModal.classList.add("hidden");
 });
 
-relaunchGo.addEventListener("click", async () => {
+relaunchGo?.addEventListener("click", async () => {
   const projects = [...relaunchList.querySelectorAll("input[type=checkbox]:checked")].map((c) => c.value);
   if (!projects.length) return;
   const n = projects.length;
