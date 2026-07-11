@@ -597,7 +597,15 @@ summary: (one line — what is this?)
 (Toolchain, env, how to flash/deploy, anything needed before first use.)
 
 ## gotchas
-(The traps. Anything that cost someone hours belongs here so it costs nobody else.)
+(THE MOST VALUABLE SECTION. The test is not "what works" — it is:
+ **what would a competent Claude reasonably ASSUME here, and be WRONG about?**
+ The flag that looks right and is slower. The number that looks portable and isn't.
+ Anything that cost someone hours belongs here so it costs nobody else.
+ If your finding RETRACTS an earlier claim, carry the retraction, not the claim.)
+
+ ⚠️ CO-AUTHORING: when you add a section to someone else's card, RE-READ THEIR
+ SECTIONS AGAINST YOURS. Two authors can each write something true and still produce
+ a card that lies — the defect lives in the SEAM, and it won't be in the diff you wrote.
 
 ## docs
 (Paths or links to the real writeups.)
