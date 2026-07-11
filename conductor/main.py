@@ -390,15 +390,33 @@ class AppState:
         return next((s for s in self.sessions.values()
                      if _bare_tag(s.tag) == _bare_tag(owner) and s.status != Status.ENDED), None)
 
-    async def _inject_msg_check(self, rec: SessionRecord, why: str) -> None:
+    async def _inject_text(self, rec: SessionRecord, text: str, why: str) -> bool:
+        """Type ``text`` into a live session's terminal (raises its window)."""
         try:
-            await asyncio.to_thread(
-                send_keys_to_session, text="/msg-check", pid=rec.pid,
+            ok = await asyncio.to_thread(
+                send_keys_to_session, text=text, pid=rec.pid,
                 terminal_pid=rec.terminal_pid, title=rec.title, window_title=rec.window_title,
             )
             log.info("woke [%s] — %s", rec.tag, why)
+            return bool(ok)
         except Exception:
             log.exception("failed to wake [%s]", rec.tag)
+            return False
+
+    async def _inject_msg_check(self, rec: SessionRecord, why: str) -> None:
+        await self._inject_text(rec, "/msg-check", why)
+
+    def _session_for_cwd(self, cwd: str) -> SessionRecord | None:
+        """The live session running in ``cwd`` — how a push request maps back to the
+        Claude that made it (the gate records the *session's* cwd)."""
+        if not cwd:
+            return None
+        target = os.path.realpath(cwd)
+        return next(
+            (s for s in self.sessions.values()
+             if s.status != Status.ENDED and os.path.realpath(s.project_dir) == target),
+            None,
+        )
 
     async def _wake_nudged_owners(self) -> None:
         """Make the watchdog's idle nudge actually reachable.
@@ -879,6 +897,9 @@ async def decide_push(key: str, action: str, request: Request) -> dict[str, Any]
     if not key or not all(c.isalnum() or c in "._-" for c in key):
         raise HTTPException(status_code=400, detail="bad request key")
     state: AppState = request.app.state.cond
+    # Grab the request BEFORE bus.sh consumes it — we need its cwd to tell the
+    # asking session that it's cleared to go.
+    req = next((r for r in state._push_requests if r.get("key") == key), None)
     proc = await asyncio.to_thread(
         subprocess.run,
         [str(state.settings.bus.script_path_resolved), "push", action, key],
@@ -886,7 +907,31 @@ async def decide_push(key: str, action: str, request: Request) -> dict[str, Any]
     )
     ok = proc.returncode == 0
     log.info("push %s [%s]: %s", action, key, (proc.stdout or "").strip() or proc.returncode)
-    return {"key": key, "action": action, "ok": ok, "result": (proc.stdout or "").strip()}
+
+    # Close the loop: approving is useless if the session never hears about it. The
+    # gate DENIED its push, so it's sitting there waiting — and without this Kyle has
+    # to go tell it himself, which is exactly the couriering auto-delivery exists to
+    # kill. Tell it directly (not via the bus: a session parked at its prompt is
+    # WAITING, which auto-delivery deliberately never wakes). Status guard is skipped
+    # on purpose — this is a direct answer to a request THIS session made, and Kyle
+    # just clicked. Deny stays silent: "Dismiss" may only mean "clear my inbox".
+    notified = None
+    if ok and action == "approve" and req:
+        rec = state._session_for_cwd(req.get("cwd", ""))
+        if rec is not None:
+            sent = await state._inject_text(
+                rec,
+                "✅ Kyle approved your git push — re-run it now. "
+                "The approval is valid for 30 minutes and covers exactly one push.",
+                f"push approved for {req.get('repo_name', key)}",
+            )
+            if sent:
+                notified = rec.tag
+        else:
+            log.info("push approved for %s but no live session in %s — it'll have to be told",
+                     key, req.get("cwd", "?"))
+    return {"key": key, "action": action, "ok": ok,
+            "result": (proc.stdout or "").strip(), "notified": notified}
 
 
 def _human_label() -> str:

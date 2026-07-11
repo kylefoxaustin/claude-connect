@@ -23,22 +23,50 @@ INPUT="$(cat 2>/dev/null || true)"
 printf '%s' "$INPUT" | grep -q 'push' || exit 0
 
 # ---- parse the tool call (only for commands that mention push) -------------------
-# Extract cwd (line 1 — a path, no newlines) then the command (the rest, newlines
-# preserved). Bash can't hold NUL in a variable, so we separate on the first
-# newline rather than a NUL byte.
+# Emits 3 lines: the SESSION's cwd, the directory the push actually runs in, then
+# the command (rest of stream, newlines preserved — bash can't hold NUL in a var).
+#
+# Those first two differ more often than you'd think: `cd /elsewhere && git push`
+# or `git -C /elsewhere push` pushes a DIFFERENT repo than the one the session is
+# sitting in. Keying the gate off the session's cwd mislabels the request ("image_gen
+# wants to push" when it's really pushing ai-image) and keys the token to the wrong
+# repo. So: attribute the repo from the EFFECTIVE dir, but keep the session cwd so
+# Conductor can find the Claude that asked and tell it when it's approved.
 read -r -d '' _PY <<'PY' || true
-import json, sys
+import json, os, re, sys
 try:
     d = json.load(sys.stdin)
-    sys.stdout.write((d.get("cwd", "") or "") + "\n")
-    sys.stdout.write((d.get("tool_input") or {}).get("command", ""))
+    cwd = d.get("cwd", "") or ""
+    cmd = (d.get("tool_input") or {}).get("command", "") or ""
 except Exception:
-    sys.stdout.write("\n")
+    sys.stdout.write("\n\n")
+    raise SystemExit
+
+eff = cwd
+m = re.search(r'\bgit\s+(?:-(?!C\b)[^\s]+\s+)*-C\s+([^\s;&|]+)', cmd)
+if m:                                   # `git -C <dir> ... push`
+    eff = m.group(1)
+else:                                   # last `cd <dir>` before the push
+    at = re.search(r'(^|[;&|(])\s*git\b[^;&|]*\bpush\b', cmd)
+    head = cmd[:at.start()] if at else cmd
+    cds = re.findall(r'(?:^|[;&|(&])\s*cd\s+([^\s;&|]+)', head)
+    if cds:
+        eff = cds[-1]
+
+eff = os.path.expanduser(eff.strip().strip('"').strip("'"))
+if not os.path.isabs(eff):
+    eff = os.path.join(cwd or os.getcwd(), eff)
+
+sys.stdout.write((cwd or "") + "\n")
+sys.stdout.write(os.path.normpath(eff) + "\n")
+sys.stdout.write(cmd)
 PY
-_parsed="$(printf '%s' "$INPUT" | python3 -c "$_PY" 2>/dev/null || printf '\n')"
-CWD="$(printf '%s' "$_parsed" | head -n1)"
-CMD="$(printf '%s' "$_parsed" | tail -n +2)"
+_parsed="$(printf '%s' "$INPUT" | python3 -c "$_PY" 2>/dev/null || printf '\n\n')"
+CWD="$(printf '%s' "$_parsed" | sed -n 1p)"       # the session's cwd
+PUSHDIR="$(printf '%s' "$_parsed" | sed -n 2p)"   # where the push actually runs
+CMD="$(printf '%s' "$_parsed" | tail -n +3)"
 [ -n "$CWD" ] || CWD="$PWD"
+[ -n "$PUSHDIR" ] || PUSHDIR="$CWD"
 
 # Gate only a real `git [opts] push` INVOCATION — i.e. `git` at a command position
 # (start of a line, or right after ; & | && || or `(`), not "git push" sitting
@@ -48,7 +76,9 @@ CMD="$(printf '%s' "$_parsed" | tail -n +2)"
 printf '%s' "$CMD" | grep -Eq '(^|[;&|(])[[:space:]]*git([[:space:]]+(-[^[:space:]]+|-C[[:space:]]+[^[:space:]]+))*[[:space:]]+push([[:space:]]|$)' || exit 0
 
 # ---- it's a git push: require a valid approval token ----------------------------
-REPO="$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$CWD")"
+# Attribute to the repo the push actually TARGETS (PUSHDIR), not the session's cwd —
+# so the request Kyle sees names the real repo, and the token is keyed to it.
+REPO="$(git -C "$PUSHDIR" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$PUSHDIR")"
 NAME="$(basename "$REPO")"
 KEY="$(printf '%s' "$REPO" | tr '/ ' '__' | sed 's/^_*//')"
 now="$(date +%s)"
