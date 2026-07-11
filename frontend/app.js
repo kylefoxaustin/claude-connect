@@ -68,6 +68,7 @@ const state = {
   resources: { resources: [] },  // shared-resource tiles (GPU, boards, …)
   push: { requests: [] },        // gated git-push approvals awaiting Kyle
   autonomy: { windows: [] },     // live "let them talk" windows
+  services: { services: [] },    // service Claudes (image_gen…): serving + queue
   fadeoutSeconds: 30,
   wmctrlAvailable: false,
 
@@ -302,6 +303,12 @@ function handleMessage({ kind, payload }) {
       renderAutonomyBar();
       applyLinkClasses();
       requestAnimationFrame(() => redrawLines(state));   // repaint the green wires
+      break;
+    }
+    case "services": {
+      state.services = payload || { services: [] };
+      renderGrid(state);
+      requestAnimationFrame(() => redrawLines(state));
       break;
     }
     case "bus_event": {
@@ -765,6 +772,21 @@ document.getElementById("link-go")?.addEventListener("click", async () => {
     window.alert(`Couldn't open the window: ${err.message}`);
   }
 });
+
+// Kyle's override on a service Claude. "Serve me next" is a HOLD on the queue, not a
+// place in it: it finishes the job it's on (no wasted GPU render) and then waits for
+// him rather than pulling the next one.
+window.serviceAction = async function serviceAction(name, action, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = "…"; }
+  try {
+    const r = await fetch(`/api/services/${encodeURIComponent(name)}/${action}`, { method: "POST" });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    // the WS broadcast repaints the tile
+  } catch (err) {
+    if (btn) btn.disabled = false;
+    window.alert(`Couldn't ${action} ${name}: ${err.message}`);
+  }
+};
 
 window.endAutonomy = async function endAutonomy(id, btn) {
   if (btn) { btn.disabled = true; btn.textContent = "ending…"; }

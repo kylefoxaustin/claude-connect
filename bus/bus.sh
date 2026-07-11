@@ -365,6 +365,184 @@ push_deny() {  # <repo-name-or-key>
   return 0
 }
 
+# ---------------------------------------------------------------------------
+# SERVICE CLAUDES — a session that does work FOR other sessions (image_gen).
+#
+# Kyle's realisation: image_gen is *exactly* an EVK — single-holder, one job at a
+# time, contended, needs a queue — except the resource DOES the work rather than
+# being used by the requester. So the lease inverts: not "I have taken this" but
+# "I am currently serving X".
+#
+# Fire-and-forget: a requester posts a job and goes straight back to its own work.
+# When the job is done the service posts the result back, and directed-mail
+# auto-delivery wakes the requester. Nobody blocks waiting in line.
+#
+# The human is not a queue entry. Kyle talks to a service directly, so "make me
+# first" is a HOLD on the queue: finish the current job, then wait for me instead
+# of pulling the next one. `svc hold` / `svc resume`.
+#
+#   svc request <svc> <text…>   queue a job (any session)         -> prints position
+#   svc next    <svc>           service claims the next job       -> prints it
+#   svc done    <svc> [note…]   finish + return result to requester
+#   svc status  <svc>           who's being served, who's waiting
+#   svc hold    <svc> [why…]    Kyle claims the NEXT opening
+#   svc resume  <svc>           Kyle done — resume the queue
+#   svc cancel  <svc> <id>      drop a queued job
+# ---------------------------------------------------------------------------
+SVC_ROOT="$COORD_ROOT/services"
+
+_svc_setup() {  # <name>
+  SVC_NAME="$1"
+  [ -n "$SVC_NAME" ] || { echo "usage: bus.sh svc <verb> <service> …" >&2; return 2; }
+  SVC_DIR="$SVC_ROOT/$SVC_NAME"
+  SVC_JOBS="$SVC_DIR/jobs"
+  SVC_QUEUE="$SVC_DIR/queue"
+  SVC_SERVING="$SVC_DIR/serving"
+  SVC_HOLD="$SVC_DIR/hold"
+  SVC_LOCK="$SVC_DIR/.lock"
+  mkdir -p "$SVC_JOBS" 2>/dev/null || true
+  : > "$SVC_LOCK" 2>/dev/null || true
+  return 0
+}
+
+_svc_field() { sed -n "s/^$1=//p" "$2" 2>/dev/null | head -1; }
+
+_svc_request() {  # <name> <text…>
+  _svc_setup "$1" || return 2; shift
+  local text="$*"
+  [ -n "$text" ] || { echo "usage: bus.sh svc request <service> <what you need>" >&2; return 2; }
+  local id pos
+  id="$(date +%s)-$$-$RANDOM"
+  (
+    flock 9
+    { echo "id=$id"; echo "requester=$TAG"; echo "text=$text"
+      echo "epoch=$(date +%s)"; echo "created=$(date '+%Y-%m-%d %H:%M')"; } > "$SVC_JOBS/$id"
+    echo "$id" >> "$SVC_QUEUE"
+  ) 9>"$SVC_LOCK"
+  pos="$(grep -c . "$SVC_QUEUE" 2>/dev/null || echo 1)"
+  # Tell the service. Directed mail => auto-delivery wakes it if it's parked.
+  { echo ""; echo "## $(date '+%Y-%m-%d %H:%M') [$TAG]"; echo ""
+    echo "to:$SVC_NAME — [$TAG] 🧾 JOB REQUEST (queue position $pos): $text"
+    echo "(Run \`/svc-next $SVC_NAME\` when you're free. Reply with \`/svc-done $SVC_NAME <result>\` and I'll be woken automatically — I'm NOT waiting on you.)"
+  } >> "$BUS_FILE"
+  echo "Queued for [$SVC_NAME] at position $pos (job $id). You are NOT blocked — carry on; you'll be woken when the result lands."
+}
+
+_svc_next() {  # <name>
+  _svc_setup "$1" || return 2
+  if [ -s "$SVC_HOLD" ]; then
+    echo "⏸  PAUSED — Kyle claimed the next opening ($(cat "$SVC_HOLD")). Talk to him; run 'bus.sh svc resume $SVC_NAME' when he's done."
+    return 0
+  fi
+  if [ -s "$SVC_SERVING" ]; then
+    echo "Already serving $(_svc_field requester "$SVC_SERVING"): $(_svc_field text "$SVC_SERVING")"
+    echo "Finish it with: bus.sh svc done $SVC_NAME <result>"
+    return 0
+  fi
+  local id job
+  (
+    flock 9
+    id="$(head -1 "$SVC_QUEUE" 2>/dev/null)"
+    [ -n "$id" ] || exit 0
+    sed -i '1d' "$SVC_QUEUE" 2>/dev/null || true
+    cp "$SVC_JOBS/$id" "$SVC_SERVING" 2>/dev/null || true
+    { echo "started=$(date +%s)"; } >> "$SVC_SERVING"
+  ) 9>"$SVC_LOCK"
+  if [ ! -s "$SVC_SERVING" ]; then echo "Queue is empty — nothing to do."; return 0; fi
+  echo "▶ NOW SERVING [$(_svc_field requester "$SVC_SERVING")]"
+  echo "   request: $(_svc_field text "$SVC_SERVING")"
+  echo "   when finished: bus.sh svc done $SVC_NAME <result / where you put it>"
+}
+
+_svc_done() {  # <name> [result…]
+  _svc_setup "$1" || return 2; shift
+  local result="$*" req text
+  [ -s "$SVC_SERVING" ] || { echo "Not serving anything right now."; return 0; }
+  req="$(_svc_field requester "$SVC_SERVING")"
+  text="$(_svc_field text "$SVC_SERVING")"
+  : > "$SVC_SERVING"
+  # Return the result. Directed => the requester is auto-woken. Fire-and-forget, closed.
+  { echo ""; echo "## $(date '+%Y-%m-%d %H:%M') [$TAG]"; echo ""
+    echo "to:$(_coord_plain "$req") — [$TAG] ✅ JOB DONE — re: $text"
+    echo "${result:-(no note)}"
+  } >> "$BUS_FILE"
+  local left; left="$(grep -c . "$SVC_QUEUE" 2>/dev/null || echo 0)"
+  echo "Done, and [$req] has been told (they'll be woken automatically)."
+  if [ -s "$SVC_HOLD" ]; then
+    echo "⏸  Kyle has claimed the next opening — stop here and talk to him."
+  else
+    echo "$left job(s) still queued. Run 'bus.sh svc next $SVC_NAME' to take the next."
+  fi
+}
+
+_svc_status() {  # [name]
+  if [ -z "${1:-}" ]; then
+    [ -d "$SVC_ROOT" ] || { echo "No services registered."; return 0; }
+    for d in "$SVC_ROOT"/*/; do [ -d "$d" ] || continue; _svc_status "$(basename "$d")"; echo; done
+    return 0
+  fi
+  _svc_setup "$1" || return 2
+  echo "=== service [$SVC_NAME] ==="
+  if [ -s "$SVC_HOLD" ]; then echo "  ⏸  HELD for Kyle: $(cat "$SVC_HOLD")"; fi
+  if [ -s "$SVC_SERVING" ]; then
+    echo "  ▶ serving [$(_svc_field requester "$SVC_SERVING")]: $(_svc_field text "$SVC_SERVING")"
+  else
+    echo "  ▶ idle (serving nobody)"
+  fi
+  local n=0
+  if [ -s "$SVC_QUEUE" ]; then
+    echo "  ⏳ queue:"
+    while read -r id; do
+      [ -n "$id" ] || continue; n=$((n+1))
+      echo "     $n. [$(_svc_field requester "$SVC_JOBS/$id")] $(_svc_field text "$SVC_JOBS/$id")"
+    done < "$SVC_QUEUE"
+  else
+    echo "  ⏳ queue: empty"
+  fi
+}
+
+_svc_hold() {  # <name> [why…]
+  _svc_setup "$1" || return 2; shift
+  echo "${*:-Kyle wants the next slot}" > "$SVC_HOLD"
+  echo "🙋 You have the NEXT opening on [$SVC_NAME]. It will finish its current job, then wait for you."
+  { echo ""; echo "## $(date '+%Y-%m-%d %H:%M') [operator]"; echo ""
+    echo "to:$SVC_NAME — [operator] 🙋 Kyle has claimed your NEXT opening. Finish what you're on, then STOP and wait for him — do not pull the next queued job. He'll release you with /svc-resume."
+  } >> "$BUS_FILE"
+}
+
+_svc_resume() {  # <name>
+  _svc_setup "$1" || return 2
+  rm -f "$SVC_HOLD"
+  echo "▶ [$SVC_NAME] released — it may take queued jobs again."
+  { echo ""; echo "## $(date '+%Y-%m-%d %H:%M') [operator]"; echo ""
+    echo "to:$SVC_NAME — [operator] ▶ Released. Carry on with the queue: run /svc-next $SVC_NAME."
+  } >> "$BUS_FILE"
+}
+
+_svc_cancel() {  # <name> <id>
+  _svc_setup "$1" || return 2
+  local id="${2:-}"
+  [ -n "$id" ] || { echo "usage: bus.sh svc cancel <service> <job-id>" >&2; return 2; }
+  ( flock 9; grep -v "^$id$" "$SVC_QUEUE" > "$SVC_QUEUE.tmp" 2>/dev/null || true
+    mv "$SVC_QUEUE.tmp" "$SVC_QUEUE" 2>/dev/null || true; rm -f "$SVC_JOBS/$id" ) 9>"$SVC_LOCK"
+  echo "Cancelled $id."
+}
+
+svc_dispatch() {
+  local verb="${1:-status}"; shift 2>/dev/null || true
+  case "$verb" in
+    request) _svc_request "$@" ;;
+    next)    _svc_next "$@" ;;
+    done)    _svc_done "$@" ;;
+    status)  _svc_status "$@" ;;
+    hold)    _svc_hold "$@" ;;
+    resume)  _svc_resume "$@" ;;
+    cancel)  _svc_cancel "$@" ;;
+    *) echo "usage: bus.sh svc {request|next|done|status|hold|resume|cancel} <service> …" >&2; return 2 ;;
+  esac
+}
+
+
 cmd="${1:-help}"
 shift || true
 
@@ -508,6 +686,11 @@ PYEOF
 
   res)
     res_dispatch "$@"
+    exit $?
+    ;;
+
+  svc)
+    svc_dispatch "$@"
     exit $?
     ;;
 

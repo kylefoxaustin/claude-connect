@@ -408,6 +408,8 @@ export function renderGrid(state) {
   const items = [{ key: BUS_KEY, kind: "bus" }];
   for (const res of (state.resources && state.resources.resources) || [])
     items.push({ key: "res:" + res.name, kind: "resource", res });
+  for (const svc of (state.services && state.services.services) || [])
+    items.push({ key: "svc:" + svc.name, kind: "service", svc });
   const dockSessions = [];
   for (const key of allSessionKeys) {
     if (collapsedMembers.has(key)) continue;
@@ -432,12 +434,14 @@ export function renderGrid(state) {
     if (isNew) {
       node = it.kind === "bus" ? createBusShell()
            : it.kind === "resource" ? createResShell()
+           : it.kind === "service" ? createSvcShell()
            : createSessionShell();
       node.dataset.tileKey = it.key;
       tileNodes.set(it.key, node);
     }
     if (it.kind === "bus") fillBusTile(node, state);
     else if (it.kind === "resource") fillResourceTile(node, it.res);
+    else if (it.kind === "service") fillServiceTile(node, it.svc);
     else fillSessionTile(node, it.s, state);
     if (isNew) {
       grid.appendChild(node);
@@ -837,6 +841,76 @@ function resHuman(sec) {
   if (m) return `${m}m`;
   return `${s}s`;
 }
+
+function createSvcShell() {
+  return el("div", { class: "tile svc-tile", dataset: { svcTile: "1" } });
+}
+
+// A SERVICE Claude (image_gen): a session that does work FOR other sessions. Same
+// shape as a dev board — single holder, one job at a time, a queue — except the
+// resource DOES the work, so the lease reads "now serving X" rather than "X took me".
+//
+// Kyle is never a queue entry (he talks to it directly), so his priority is a HOLD:
+// finish the current job — no wasted GPU render — then wait for him.
+function fillServiceTile(tile, svc) {
+  const serving = svc.serving;
+  const queue = svc.queue || [];
+  const held = !!svc.held;
+  tile.className = "tile svc-tile" + (held ? " svc-held" : serving ? " svc-busy" : " svc-idle");
+
+  const kids = [];
+  kids.push(el("div", { class: "tile-header" }, [
+    el("div", { class: "tile-title-wrap" }, [
+      el("span", { class: "status-dot " + (held ? "warm" : serving ? "active" : "idle") }),
+      el("span", { class: "tile-title", title: `service Claude: ${svc.name}` }, `🛠 ${svc.name}`),
+    ]),
+    el("span", { class: "svc-badge" }, held ? "HELD FOR YOU" : serving ? "BUSY" : "FREE"),
+  ]));
+
+  if (held) {
+    kids.push(el("div", { class: "svc-hold" },
+      `🙋 Reserved for you — it stops after its current job. ${svc.hold_reason || ""}`));
+  }
+
+  kids.push(serving
+    ? el("div", { class: "svc-serving" }, [
+        el("span", { class: "svc-label" }, "now serving"),
+        el("span", { class: "svc-who" }, bare(serving.requester)),
+        el("div", { class: "svc-job", title: serving.text }, serving.text || ""),
+      ])
+    : el("div", { class: "svc-serving svc-quiet" }, "idle — no job in progress"));
+
+  if (queue.length) {
+    kids.push(el("div", { class: "svc-queue-head" }, `⏳ ${queue.length} queued`));
+    const ul = el("ul", { class: "svc-queue" });
+    for (const j of queue.slice(0, 4)) {
+      ul.appendChild(el("li", {}, [
+        el("span", { class: "svc-who" }, bare(j.requester)),
+        el("span", { class: "svc-job", title: j.text }, j.text || ""),
+      ]));
+    }
+    if (queue.length > 4) ul.appendChild(el("li", { class: "svc-more" }, `+${queue.length - 4} more`));
+    kids.push(ul);
+  } else {
+    kids.push(el("div", { class: "svc-queue-head svc-quiet" }, "queue empty"));
+  }
+
+  const btn = el("button", {
+    class: "svc-btn" + (held ? " on" : ""),
+    onclick: (e) => {
+      e.stopPropagation();
+      window.serviceAction(svc.name, held ? "resume" : "hold", e.currentTarget);
+    },
+  }, held ? "Release it" : "Serve me next");
+  kids.push(el("div", { class: "svc-actions" }, [btn]));
+
+  tile.replaceChildren(...kids);
+}
+
+function bare(tag) {
+  return String(tag || "").replace(/^\[|\]$/g, "").replace(/^other:/, "") || "?";
+}
+
 function createResShell() {
   return el("div", { class: "tile gpu-tile", dataset: { resTile: "1" } });
 }

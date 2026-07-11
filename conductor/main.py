@@ -48,6 +48,7 @@ from .bus import _plain_name, _read_last_seen
 from .coord import read_push_requests, read_retractions, read_wake_state, write_wake_state
 from .models import BusEvent, BusTopology, ParkedSession, SessionRecord, Status
 from .resources import resources_state, touch_lease_activity
+from .services import read_services
 from .tokens import TokenAccountant
 from .scanner import (
     YOU_TAG,
@@ -138,6 +139,7 @@ class AppState:
         self._retractions: list[dict[str, Any]] = []          # active retraction records
         self._push_requests: list[dict[str, Any]] = []        # git-push approvals awaiting Kyle
         self._autonomy: list[dict[str, Any]] = []             # live "let them talk" windows
+        self.services: dict[str, Any] = {"services": []}      # service Claudes (image_gen…)
         self.token_accountant = TokenAccountant()             # per-session token tally
         self._scan_misses: dict[str, int] = {}              # consecutive scans a session was absent
         self.recent_events: deque[BusEvent] = deque(maxlen=RECENT_EVENTS_MAX)
@@ -290,6 +292,10 @@ class AppState:
         if push_reqs != self._push_requests:
             self._push_requests = push_reqs
             await self.hub.broadcast("push", {"requests": push_reqs})
+        svc = await asyncio.to_thread(read_services, self.coord_root)
+        if svc != self.services:
+            self.services = svc
+            await self.hub.broadcast("services", svc)
         autonomy = await asyncio.to_thread(read_windows, self.coord_root)
         if autonomy != self._autonomy:
             self._autonomy = autonomy
@@ -993,6 +999,36 @@ async def delete_autonomy(window_id: str, request: Request) -> dict[str, Any]:
     return {"ok": ok}
 
 
+@app.get("/api/services")
+async def get_services(request: Request) -> dict[str, Any]:
+    state: AppState = request.app.state.cond
+    return state.services
+
+
+@app.post("/api/services/{name}/{action}")
+async def service_action(name: str, action: str, request: Request) -> dict[str, Any]:
+    """Kyle's override on a service Claude.
+
+    ``hold`` = "serve me next": it finishes the job it's on (no half-done render, no
+    wasted GPU) and then WAITS for him instead of pulling the next queued job. He is
+    never a queue entry — he talks to the service directly — so his priority is a hold
+    on the queue, not a place in it. ``resume`` hands it back to the fleet.
+    """
+    if action not in ("hold", "resume"):
+        raise HTTPException(status_code=404, detail="unknown action")
+    if not name or not all(c.isalnum() or c in "._-" for c in name):
+        raise HTTPException(status_code=400, detail="bad service name")
+    state: AppState = request.app.state.cond
+    args = [str(state.settings.bus.script_path_resolved), "svc", action, name]
+    if action == "hold":
+        args.append("Kyle claimed the next opening from the dashboard")
+    proc = await asyncio.to_thread(subprocess.run, args, capture_output=True, text=True, timeout=15)
+    state.services = await asyncio.to_thread(read_services, state.coord_root)
+    await state.hub.broadcast("services", state.services)
+    log.info("service %s %s: %s", name, action, (proc.stdout or "").strip() or proc.returncode)
+    return {"ok": proc.returncode == 0, "result": (proc.stdout or "").strip()}
+
+
 def _human_label() -> str:
     """Display name for the ``[you]`` node — the OS username (capitalized), so it
     reads sensibly for whoever is running Conductor; ``"You"`` if unavailable."""
@@ -1326,6 +1362,7 @@ async def websocket(ws: WebSocket) -> None:
         await ws.send_text(json.dumps({"kind": "resources", "payload": state.resources}))
         await ws.send_text(json.dumps({"kind": "push", "payload": {"requests": state._push_requests}}))
         await ws.send_text(json.dumps({"kind": "autonomy", "payload": {"windows": state._autonomy}}))
+        await ws.send_text(json.dumps({"kind": "services", "payload": state.services}))
         while True:
             # We don't expect messages from the client right now; await any to detect close.
             await ws.receive_text()
