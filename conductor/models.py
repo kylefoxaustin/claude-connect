@@ -55,6 +55,9 @@ class ParkedSession:
     session_id: str
     last_activity_at: float      # unix seconds (newest transcript mtime)
     message_count: int
+    # The transcript `--continue` will resume. Used to tally this session's token
+    # usage (so the relaunch picker can sort by it) — stripped from the payload.
+    jsonl_path: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

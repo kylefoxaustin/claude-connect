@@ -605,6 +605,36 @@ class AppState:
             if not ok:
                 log.warning("relaunch: failed to inject %r into %s", text, cwd)
 
+    async def relaunch_batch(self, items: list[tuple[str, str]], rc: bool, rename: bool) -> None:
+        """Relaunch several parked sessions — one at a time, on purpose.
+
+        Fleet recovery after a reboot/crash means bringing ~20 Claudes back. Firing
+        them all at once would stampede the box (20 processes + 20 terminal windows),
+        and each *resuming* session may auto-compact its transcript, which is CPU- and
+        token-heavy. So we launch one, wait for it to actually come up, pause, then
+        start the next. A failure on one never stops the rest.
+        """
+        cfg = self.settings.relaunch
+        launched = 0
+        for real, name in items:
+            ok, detail = self.relaunch_parked(real, name, rc, rename)
+            if not ok:
+                log.warning("relaunch-batch: %s failed: %s", real, detail)
+                continue
+            launched += 1
+            target = os.path.realpath(real)
+            deadline = time.time() + cfg.appear_timeout_seconds
+            while time.time() < deadline:
+                await asyncio.sleep(0.5)
+                if any(r.status != Status.ENDED and os.path.realpath(r.project_dir) == target
+                       for r in self.sessions.values()):
+                    break
+            else:
+                log.warning("relaunch-batch: %s never appeared within %.0fs",
+                            real, cfg.appear_timeout_seconds)
+            await asyncio.sleep(cfg.batch_gap_seconds)
+        log.info("relaunch-batch: done — %d/%d launched", launched, len(items))
+
     # --- payloads ------------------------------------------------------------
 
     def _active_retraction_for(self, tag: str | None) -> dict[str, Any] | None:
@@ -633,9 +663,16 @@ class AppState:
             if ret:
                 d["retraction"] = {"sender": ret["sender"], "text": ret["text"]}
             sessions.append(d)
+        parked = []
+        for p in self.parked:
+            d = p.to_dict()
+            jp = d.pop("jsonl_path", "")   # internal: don't ship the path
+            if jp:  # tokens-to-date, so the relaunch picker can sort by weight
+                d["tokens"] = self.token_accountant.usage_for(jp)
+            parked.append(d)
         return {
             "sessions": sessions,
-            "parked": [p.to_dict() for p in self.parked],
+            "parked": parked,
             "fadeout_seconds": self.settings.ui.end_fadeout_seconds,
             "wmctrl_available": wmctrl_available(),
         }
@@ -945,22 +982,17 @@ class RelaunchRequest(BaseModel):
     rename: bool | None = None   # override settings.relaunch.rename for this click
 
 
-@app.post("/api/relaunch")
-async def relaunch(payload: RelaunchRequest, request: Request) -> dict[str, Any]:
-    """Relaunch a parked (offline) session: open ``claude --continue`` in its
-    folder in a tracked terminal. Optionally inject ``/rc`` and/or ``/rename``
-    afterwards (both opt-in via ``[relaunch]`` settings; default is a clean
-    resume with no injection).
+def _resolve_parked(state: AppState, project: str) -> tuple[str, str]:
+    """Validate an encoded project dir and resolve it to ``(cwd, session-name)``.
 
-    Resolves the encoded project dir → its newest transcript → the cwd that
-    session last ran in, validates the dir is inside the projects root and still
-    exists, and refuses if a session is already live there. Path-validated, no
-    traversal. The actual spawn + post-launch keystroke injection is handled by
-    ``AppState.relaunch_parked`` / ``_bootstrap_relaunched``.
+    Resolves the encoded ``~/.claude/projects`` dir → its newest transcript → the cwd
+    that session last ran in; validates the dir is inside the projects root (no
+    traversal) and still exists, and refuses if a session is already live there.
+    Raises ``HTTPException`` for anything unrelaunchable. Shared by the single and
+    batch relaunch endpoints.
     """
-    state: AppState = request.app.state.cond
     projects_root = (state.settings.scanner.claude_home_path / "projects").resolve()
-    pdir = (projects_root / payload.project).resolve()
+    pdir = (projects_root / project).resolve()
     if not str(pdir).startswith(str(projects_root) + "/"):
         raise HTTPException(status_code=400, detail="path outside projects root")
     if not pdir.is_dir():
@@ -977,14 +1009,59 @@ async def relaunch(payload: RelaunchRequest, request: Request) -> dict[str, Any]
         for r in state.sessions.values()
     ):
         raise HTTPException(status_code=409, detail="a session is already running in that folder")
+    return real, tag_to_state_basename(derive_tag(real, state.settings.bus.tags))
 
-    name = tag_to_state_basename(derive_tag(real, state.settings.bus.tags))
+
+@app.post("/api/relaunch")
+async def relaunch(payload: RelaunchRequest, request: Request) -> dict[str, Any]:
+    """Relaunch a parked (offline) session: open ``claude --continue`` in its
+    folder in a tracked terminal. Optionally inject ``/rc`` and/or ``/rename``
+    afterwards (both opt-in via ``[relaunch]`` settings; default is a clean
+    resume with no injection). The spawn + post-launch keystroke injection is
+    handled by ``AppState.relaunch_parked`` / ``_bootstrap_relaunched``.
+    """
+    state: AppState = request.app.state.cond
+    real, name = _resolve_parked(state, payload.project)
     rc = state.settings.relaunch.rc if payload.rc is None else payload.rc
     rename = state.settings.relaunch.rename if payload.rename is None else payload.rename
     ok, detail = state.relaunch_parked(real, name, rc, rename)
     if not ok:
         raise HTTPException(status_code=500, detail=detail)
     return {"launched": True, "name": name, "cwd": real, "rc": rc, "rename": rename, "detail": detail}
+
+
+class RelaunchBatchRequest(BaseModel):
+    projects: list[str]          # encoded project-dir names (from the parked list)
+    rc: bool | None = None
+    rename: bool | None = None
+
+
+@app.post("/api/relaunch-batch")
+async def relaunch_batch(payload: RelaunchBatchRequest, request: Request) -> dict[str, Any]:
+    """Fleet recovery: relaunch a *set* of parked sessions (one click after a
+    reboot/crash). Every project is validated up-front, then the launches run in a
+    background task **staggered** — one at a time, waiting for each to come up —
+    because 20 Claudes spawning at once would stampede the machine and each resuming
+    session may auto-compact. Returns immediately with what it accepted; anything
+    unrelaunchable is reported in ``skipped`` rather than failing the whole batch.
+    """
+    state: AppState = request.app.state.cond
+    if not payload.projects:
+        raise HTTPException(status_code=400, detail="no projects given")
+    items: list[tuple[str, str]] = []
+    skipped: list[dict[str, str]] = []
+    for proj in payload.projects:
+        try:
+            items.append(_resolve_parked(state, proj))
+        except HTTPException as e:
+            skipped.append({"project": proj, "reason": str(e.detail)})
+    if not items:
+        raise HTTPException(status_code=409, detail="nothing relaunchable in that selection")
+    rc = state.settings.relaunch.rc if payload.rc is None else payload.rc
+    rename = state.settings.relaunch.rename if payload.rename is None else payload.rename
+    asyncio.create_task(state.relaunch_batch(items, rc, rename))
+    log.info("relaunch-batch: accepted %d (skipped %d)", len(items), len(skipped))
+    return {"launching": len(items), "skipped": skipped}
 
 
 class BusMessage(BaseModel):

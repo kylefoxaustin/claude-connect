@@ -205,6 +205,7 @@ def discover_parked_projects(
             session_id=session_id,
             last_activity_at=mtime,
             message_count=msg_count,
+            jsonl_path=str(jsonl),
         )
     parked = sorted(by_cwd.values(), key=lambda p: p.last_activity_at, reverse=True)
     return parked[:limit]

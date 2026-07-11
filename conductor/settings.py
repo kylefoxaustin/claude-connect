@@ -104,6 +104,10 @@ class RelaunchSettings:
     appear_timeout_seconds: float = 40.0   # how long to wait for the new session
     settle_seconds: float = 2.5            # TUI draw delay before first keystroke
     between_seconds: float = 1.0           # gap between injected keystrokes
+    # Batch ("relaunch selected") pacing: after each session comes up, pause before
+    # starting the next. Launching 20 Claudes at once would stampede the box — and
+    # a resuming session may auto-compact its transcript, which is heavy.
+    batch_gap_seconds: float = 3.0
 
 
 @dataclass

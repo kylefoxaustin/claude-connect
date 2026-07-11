@@ -1370,3 +1370,74 @@ body.compact .tile-footer { display: none; }
 /* Keep the header tight and single-line in compact mode. */
 body.compact .tile-header { gap: 6px; }
 body.compact .tile::-webkit-scrollbar { width: 0; height: 0; }
+
+/* ============================================================================
+   ⟳ Relaunch (fleet recovery) modal — pick dormant sessions to bring back.
+   ============================================================================ */
+.relaunch-body { display: flex; flex-direction: column; gap: 12px; }
+.relaunch-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.relaunch-all-label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.relaunch-sort-label {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--text-dim);
+}
+.relaunch-sort-label select {
+  appearance: none; -webkit-appearance: none;
+  background: var(--bg) no-repeat right 8px center;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-dim) 50%),
+                    linear-gradient(135deg, var(--text-dim) 50%, transparent 50%);
+  background-size: 5px 5px, 5px 5px;
+  background-position: calc(100% - 14px) 52%, calc(100% - 9px) 52%;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 28px 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.relaunch-list {
+  list-style: none; margin: 0; padding: 0;
+  max-height: 46vh; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.relaunch-row label {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.relaunch-row label:hover { background: var(--inset-bg); }
+.relaunch-row input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; }
+.rl-name {
+  font-weight: 600; font-size: 13px; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rl-meta { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+.rl-tok {
+  font-size: 10px; color: var(--text-dim); opacity: 0.8;
+  white-space: nowrap; cursor: help;
+  font-variant-numeric: tabular-nums;
+}
+.relaunch-empty { padding: 18px 8px; color: var(--text-dim); font-size: 13px; text-align: center; }
+.relaunch-actions {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding-top: 8px; border-top: 1px solid var(--border);
+}
+.relaunch-status { font-size: 12px; color: var(--text-dim); }
+.relaunch-go {
+  background: #7d5bed; color: #fff; border: 1px solid #7d5bed;
+  padding: 9px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.relaunch-go:hover:not([disabled]) { background: #6c4ad8; }
+.relaunch-go[disabled] { opacity: 0.45; cursor: not-allowed; }

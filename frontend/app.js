@@ -592,6 +592,142 @@ function renderGroupsList() {
   }
 }
 
+// --- Relaunch (fleet recovery) ----------------------------------------------
+// Bring dormant sessions back after a reboot/crash. Pick individually or "launch
+// everything"; sort by recency, name, or TOKENS — the token sort matters because
+// the fattest-context sessions are the ones that will auto-compact on resume.
+const relaunchModal = document.getElementById("relaunch-modal");
+const relaunchList = document.getElementById("relaunch-list");
+const relaunchAllCb = document.getElementById("relaunch-all");
+const relaunchSort = document.getElementById("relaunch-sort");
+const relaunchGo = document.getElementById("relaunch-go");
+const relaunchStatus = document.getElementById("relaunch-status");
+const LS_RELAUNCH_SORT = "conductor.relaunchSort.v1";
+
+function fmtTok(n) {
+  n = Number(n) || 0;
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
+  return String(n);
+}
+function fmtAge(ts) {
+  const s = Math.max(0, Date.now() / 1000 - (Number(ts) || 0));
+  if (s < 90) return `${Math.round(s)}s ago`;
+  if (s < 5400) return `${Math.round(s / 60)}m ago`;
+  if (s < 172800) return `${Math.round(s / 3600)}h ago`;
+  return `${Math.round(s / 86400)}d ago`;
+}
+const parkedOut = (p) => (p.tokens && p.tokens.output) || 0;
+const parkedTotal = (p) => (p.tokens && p.tokens.total) || 0;
+
+function sortedParked() {
+  const list = [...(state.parked || [])];
+  const name = (p) => String(p.tag || p.title || "").toLowerCase();
+  switch (relaunchSort.value) {
+    case "oldest":     list.sort((a, b) => a.last_activity_at - b.last_activity_at); break;
+    case "az":         list.sort((a, b) => name(a).localeCompare(name(b))); break;
+    case "za":         list.sort((a, b) => name(b).localeCompare(name(a))); break;
+    case "tokens":     list.sort((a, b) => parkedTotal(b) - parkedTotal(a)); break;
+    case "tokens-asc": list.sort((a, b) => parkedTotal(a) - parkedTotal(b)); break;
+    default:           list.sort((a, b) => b.last_activity_at - a.last_activity_at); // recent
+  }
+  return list;
+}
+
+function syncRelaunchSelection() {
+  const boxes = [...relaunchList.querySelectorAll("input[type=checkbox]")];
+  const sel = boxes.filter((b) => b.checked);
+  relaunchAllCb.checked = boxes.length > 0 && sel.length === boxes.length;
+  relaunchAllCb.indeterminate = sel.length > 0 && sel.length < boxes.length;
+  relaunchGo.disabled = sel.length === 0;
+  relaunchGo.textContent = sel.length
+    ? `Relaunch ${sel.length} session${sel.length > 1 ? "s" : ""}`
+    : "Relaunch selected";
+}
+
+function renderRelaunchList() {
+  // Preserve ticks across a re-sort.
+  const checked = new Set(
+    [...relaunchList.querySelectorAll("input[type=checkbox]:checked")].map((c) => c.value),
+  );
+  relaunchList.innerHTML = "";
+  const list = sortedParked();
+  if (!list.length) {
+    relaunchList.innerHTML =
+      '<li class="relaunch-empty">No dormant sessions — the whole fleet is already running. 🎉</li>';
+    relaunchGo.disabled = true;
+    return;
+  }
+  for (const p of list) {
+    const li = document.createElement("li");
+    li.className = "relaunch-row";
+    li.innerHTML =
+      `<label><input type="checkbox" value="${escapeHtml(p.project)}"${checked.has(p.project) ? " checked" : ""} />`
+      + `<span class="rl-name">${escapeHtml(p.tag || p.title)}</span>`
+      + `<span class="rl-meta">${escapeHtml(fmtAge(p.last_activity_at))}</span>`
+      + `<span class="rl-tok" title="output ${parkedOut(p).toLocaleString()} · total ${parkedTotal(p).toLocaleString()}">`
+      + `${fmtTok(parkedOut(p))} out · ${fmtTok(parkedTotal(p))} total</span></label>`;
+    relaunchList.appendChild(li);
+  }
+  relaunchList.querySelectorAll("input[type=checkbox]")
+    .forEach((cb) => cb.addEventListener("change", syncRelaunchSelection));
+  syncRelaunchSelection();
+}
+
+relaunchAllCb.addEventListener("change", () => {
+  relaunchList.querySelectorAll("input[type=checkbox]")
+    .forEach((cb) => { cb.checked = relaunchAllCb.checked; });
+  syncRelaunchSelection();
+});
+relaunchSort.addEventListener("change", () => {
+  try { localStorage.setItem(LS_RELAUNCH_SORT, relaunchSort.value); } catch {}
+  renderRelaunchList();
+});
+
+function openRelaunch() {
+  try { relaunchSort.value = localStorage.getItem(LS_RELAUNCH_SORT) || "recent"; } catch {}
+  relaunchStatus.textContent = "";
+  relaunchAllCb.checked = false;
+  relaunchAllCb.indeterminate = false;
+  renderRelaunchList();
+  relaunchModal.classList.remove("hidden");
+}
+document.getElementById("relaunch-btn").addEventListener("click", openRelaunch);
+document.getElementById("relaunch-modal-close")
+  .addEventListener("click", () => relaunchModal.classList.add("hidden"));
+relaunchModal.addEventListener("click", (e) => {
+  if (e.target === relaunchModal) relaunchModal.classList.add("hidden");
+});
+
+relaunchGo.addEventListener("click", async () => {
+  const projects = [...relaunchList.querySelectorAll("input[type=checkbox]:checked")].map((c) => c.value);
+  if (!projects.length) return;
+  const n = projects.length;
+  if (!window.confirm(
+    `Relaunch ${n} session${n > 1 ? "s" : ""}?\n\n`
+    + `Each resumes with --continue in its own terminal window. They launch one at a `
+    + `time (staggered), so a big fleet takes a few minutes to fully come back.`)) return;
+  relaunchGo.disabled = true;
+  relaunchStatus.textContent = "Launching…";
+  try {
+    const r = await fetch("/api/relaunch-batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projects }),
+    });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(body.detail || `HTTP ${r.status}`);
+    const skipped = (body.skipped || []).length;
+    relaunchStatus.textContent = `Launching ${body.launching}`
+      + (skipped ? ` · ${skipped} skipped` : "") + " — they'll appear as they come up.";
+    setTimeout(() => relaunchModal.classList.add("hidden"), 2400);
+  } catch (err) {
+    relaunchStatus.textContent = `Failed: ${err.message}`;
+    relaunchGo.disabled = false;
+  }
+});
+
 window.requestFocus = async function requestFocus(sessionId) {
   try {
     const r = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/focus`, { method: "POST" });
