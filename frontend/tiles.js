@@ -961,6 +961,10 @@ function wirePointerDrag(tile, key) {
 
   tile.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
+    // Tidy (packed) mode flow-lays the tiles, so there's nothing to drag — bail
+    // before we set the dragging state, or we'd freeze grid rebuilds for a drag
+    // that can never move anything.
+    if (window.conductorPrefs && window.conductorPrefs.packed) return;
     if (e.target.closest("button, .pending-badge, .bus-toggle")) return;
     // Bottom-right ~18px is the native resize grip — let the browser handle it
     // instead of starting a tile drag.

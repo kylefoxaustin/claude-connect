@@ -93,6 +93,10 @@ const DEFAULT_PREFS = {
   // Compact density: collapse every tile to header-only (dot + name + tag),
   // hiding the preview/tokens/path so the whole fleet fits at a glance.
   compact: false,
+  // Tidy layout: pack the tiles into a flow grid instead of their free-form
+  // positions. Purely a VIEW — the saved positions are never touched, so turning
+  // it off restores your own layout exactly. Composes with `compact`.
+  packed: false,
   // How a 📬 bubble click behaves: "confirm-busy" | "always" | "block-busy" | "always-confirm".
   busClickGuard: "confirm-busy",
 };
@@ -179,17 +183,33 @@ function applyCompact() {
       : "Collapse all tiles to a compact size (keeps them all visible)";
   }
 }
+// Tidy: pack tiles into a flow grid. This is a pure CSS view-mode — tiles.js's
+// saved positions are never written, so toggling it off snaps every tile back to
+// exactly where you put it. That's the "restore" and it's lossless by construction.
+function applyPacked() {
+  document.body.classList.toggle("packed", !!prefs.packed);
+  const btn = document.getElementById("pack-btn");
+  if (btn) {
+    btn.classList.toggle("on", !!prefs.packed);
+    btn.textContent = prefs.packed ? "↩ Restore" : "⊞ Tidy";
+    btn.title = prefs.packed
+      ? "Restore your own tile layout (positions were never changed)"
+      : "Pull all tiles together into a tidy grid — your layout is kept and restored when you turn this off";
+  }
+}
 function applyPrefs() {
   applyTheme();
   applyLinesVisibility();
   applyLinesBehind();
   applyCompact();
+  applyPacked();
   renderGrid(state);
   requestAnimationFrame(() => redrawLines(state));
 }
 applyTheme();            // apply ASAP to avoid a flash before first render
 applyLinesVisibility();
 applyCompact();
+applyPacked();
 
 const connStateEl = document.getElementById("conn-state");
 const sessionCountEl = document.getElementById("session-count");
@@ -323,6 +343,14 @@ document.getElementById("compact-btn")?.addEventListener("click", () => {
   savePrefs();
   applyCompact();
   // Tiles changed size -> re-anchor the bus wires.
+  requestAnimationFrame(() => redrawLines(state));
+});
+
+document.getElementById("pack-btn")?.addEventListener("click", () => {
+  prefs.packed = !prefs.packed;
+  savePrefs();
+  applyPacked();
+  // Tiles moved -> re-anchor the bus wires to their new spots.
   requestAnimationFrame(() => redrawLines(state));
 });
 

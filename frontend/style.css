@@ -1441,3 +1441,69 @@ body.compact .tile::-webkit-scrollbar { width: 0; height: 0; }
 }
 .relaunch-go:hover:not([disabled]) { background: #6c4ad8; }
 .relaunch-go[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+/* ============================================================================
+   ⊞ Tidy (packed) layout. Pull every tile into a flow grid instead of its
+   free-form position. This is a PURE VIEW MODE: tiles.js never writes the saved
+   positions while packed, so toggling it off (↩ Restore) snaps every tile back
+   to exactly where you put it. Lossless by construction. Composes with compact.
+   ============================================================================ */
+body.packed .grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 10px;
+  padding: 12px;
+  min-height: 0 !important;   /* beat the inline canvas min-height tiles.js sets */
+}
+body.packed .tile {
+  position: static !important;
+  left: auto !important;
+  top: auto !important;
+  width: 280px !important;    /* uniform => an actually tidy grid */
+  height: auto !important;    /* ignore per-tile saved heights while packed */
+  resize: none !important;
+  cursor: default !important;
+}
+/* Wires between flow-positioned tiles still resolve (lines.js measures rects),
+   but a free-form overlay reads as noise in a tidy grid — keep them, just calm. */
+body.packed .lines-overlay { opacity: 0.5; }
+
+/* ============================================================================
+   TOUCH (pointer: coarse) — keyed on the POINTER, not the screen width.
+   A large unfolded foldable is still a finger: it's >640px, so the width-based
+   mobile rules never fired and it got mouse-sized targets + a horizontal-scroll
+   dock that's near-impossible to flick. This block fixes that at any width.
+   ============================================================================ */
+@media (pointer: coarse) {
+  /* The dormant dock: WRAP into rows and scroll VERTICALLY (a natural touch
+     gesture) instead of a thin horizontal strip nobody can grab. */
+  .dock {
+    flex-wrap: wrap;
+    overflow-x: hidden;
+    overflow-y: auto;
+    max-height: 45vh;
+    row-gap: 8px;
+    padding: 10px 12px 12px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .dock::-webkit-scrollbar { width: 14px; height: 0; }
+  .dock::-webkit-scrollbar-thumb { background: var(--border); border-radius: 7px; }
+
+  /* Chips and their ✕ become real thumb targets. */
+  .dock-chip, .parked-chip { padding: 9px 12px; font-size: 13px; }
+  .parked-dismiss {
+    min-width: 34px; min-height: 34px;
+    font-size: 15px; display: inline-flex;
+    align-items: center; justify-content: center;
+  }
+
+  /* General thumb-sized controls. */
+  .topbar-meta button { min-height: 40px; padding: 8px 12px; }
+  .icon-btn { min-width: 34px; min-height: 34px; font-size: 16px; }
+  .pending-badge { min-height: 30px; padding: 5px 10px; }
+  .relaunch-row input[type="checkbox"] { width: 20px; height: 20px; }
+  .relaunch-row label { padding: 12px 8px; }
+  /* Fatter tile scrollbar/resizer than even the desktop bump. */
+  .tile::-webkit-scrollbar { width: 16px; height: 16px; }
+}
