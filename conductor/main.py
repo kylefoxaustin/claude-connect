@@ -309,9 +309,13 @@ class AppState:
         once per unread batch (a newer message re-wakes; the same batch never nags)."""
         if not self.settings.bus.autodeliver:
             return
+        # Sessions the operator is actively working in (the dev console) shouldn't
+        # be auto-prodded to go read the bus — compared bare so bracketed/bare
+        # spellings both match.
+        exempt = {_bare_tag(t) for t in self.settings.bus.autodeliver_exempt}
         current: set[str] = set()
         for r in self.sessions.values():
-            if not r.tag:
+            if not r.tag or _bare_tag(r.tag) in exempt:
                 continue
             info = self._directed_unread.get(r.tag)
             if not info or not info.get("count"):

@@ -49,6 +49,11 @@ class BusSettings:
     # Auto-delivery: wake an idle session that has a message addressed to it
     # (to:<tag>) it hasn't read, so Kyle doesn't have to prod it to check the bus.
     autodeliver: bool = True
+    # Tags that auto-delivery must NEVER wake — typically the operator's own
+    # console / dev session (the one you're actively typing in), which shouldn't
+    # be auto-prodded to go read the bus while you're working in it. Bracketed
+    # tags as shown on the tile, e.g. ["[other:claude-connect]"].
+    autodeliver_exempt: list[str] = field(default_factory=list)
     # Sender tag stamped on messages you compose from the dashboard, so they're
     # distinguishable from any session (e.g. "operator" -> "[operator]").
     sender_tag: str = "operator"
@@ -129,6 +134,9 @@ def load_settings(path: Path | str | None = None) -> Settings:
 
 
 def _toml_scalar(v: object) -> str:
+    # A list of scalars (e.g. autodeliver_exempt) -> a TOML array.
+    if isinstance(v, (list, tuple)):
+        return "[" + ", ".join(_toml_scalar(x) for x in v) + "]"
     # bool must precede int — bool is an int subclass.
     if isinstance(v, bool):
         return "true" if v else "false"
@@ -160,6 +168,10 @@ def dump_settings(settings: Settings, path: Path | str | None = None) -> None:
             "jsonl_path": settings.bus.jsonl_path,
             "idle_seconds": settings.bus.idle_seconds,
             "sender_tag": settings.bus.sender_tag,
+            # Persisted so a UI settings-save (which rewrites the whole file)
+            # doesn't drop them.
+            "autodeliver": settings.bus.autodeliver,
+            "autodeliver_exempt": settings.bus.autodeliver_exempt,
         },
         "ui": {"end_fadeout_seconds": settings.ui.end_fadeout_seconds},
         "relaunch": {

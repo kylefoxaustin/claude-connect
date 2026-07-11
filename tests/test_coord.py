@@ -163,6 +163,19 @@ def test_autodeliver_off_switch(state, monkeypatch):
     assert _run_wake(state, monkeypatch) == []
 
 
+def test_autodeliver_exempts_the_operator_console(state, monkeypatch):
+    """The session you're actively working in (e.g. the dev console) must never be
+    auto-woken. Bracketed/bare spellings both match."""
+    state.settings.bus.autodeliver_exempt = ["[other:claude-connect]"]
+    state.sessions = {"c": _sess("[other:claude-connect]", Status.IDLE)}
+    state._directed_unread = {"[other:claude-connect]": {"count": 3, "senders": ["x"], "latest_ts": "t"}}
+    assert _run_wake(state, monkeypatch) == []
+    # a non-exempt session with the same unread is still woken
+    state.sessions = {"q": _sess("[other:qualcomm]", Status.IDLE)}
+    state._directed_unread = _directed()
+    assert len(_run_wake(state, monkeypatch)) == 1
+
+
 # --- retraction (Part B) -----------------------------------------------------
 # A retraction is urgent: the recipient may be about to run the very step being
 # pulled back. So it's the ONE wake that overrides the busy guard.

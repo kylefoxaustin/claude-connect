@@ -27,6 +27,12 @@ script_path   = "~/.claude/bin/bus.sh"
 # JSONL adapter (alternative): one event per line; see conductor/bus.py for schema.
 jsonl_path = "~/.claude/bus.jsonl"
 
+# Auto-delivery wakes an idle session that has an unread message addressed to it
+# (to:<tag>), so you're not the fleet's courier. Exempt any session you don't want
+# auto-prodded — typically the dashboard's own dev/operator console you work in.
+# autodeliver = true
+# autodeliver_exempt = ["[other:claude-connect]"]
+
 # Seconds of bus quiet before the bus tile dims.
 idle_seconds = 30.0
 
