@@ -481,6 +481,11 @@ export function renderGrid(state) {
     );
   }
   updateGridExtent();
+
+  // fillSessionTile rewrites tile.className wholesale, which wipes the link-mode /
+  // autonomy classes on every render (the board re-renders every few seconds, so a
+  // green selection would silently fade). Let app.js re-apply them after each pass.
+  if (window.applyLinkClasses) window.applyLinkClasses();
 }
 
 // A collapsed group as one dock chip: color swatch + name + rollup (member

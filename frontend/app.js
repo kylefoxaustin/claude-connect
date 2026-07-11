@@ -663,11 +663,30 @@ function applyLinkClasses() {
   }
   for (const el of document.querySelectorAll(".tile[data-tag]")) {
     const tag = el.dataset.tag;
-    el.classList.toggle("link-selected", linkMode && linkSel.has(tag));
+    const picked = linkMode && linkSel.has(tag);
+    el.classList.toggle("link-selected", picked);
     el.classList.toggle("in-window", members.has(tag));
+
+    // A pulsing ring that becomes a green ✓ when picked — so it's obvious the tile
+    // IS the button. Purely an indicator: the tile's own pointerdown handles the
+    // click (anywhere on the tile), so this needs no listener of its own.
+    const hdr = el.querySelector(".tile-header");
+    if (hdr) {
+      let pick = hdr.querySelector(".link-pick");
+      if (!pick) {
+        pick = document.createElement("span");
+        pick.className = "link-pick";
+        pick.setAttribute("aria-hidden", "true");
+        hdr.appendChild(pick);
+      }
+      pick.textContent = picked ? "✓" : "";
+      pick.classList.toggle("picked", picked);
+    }
   }
   document.body.classList.toggle("link-mode", linkMode);
 }
+// tiles.js calls this after every render (it rewrites tile.className wholesale).
+window.applyLinkClasses = applyLinkClasses;
 
 function liveTags() {
   return (state.sessions || []).filter((s) => s.status !== "ended" && s.tag).map((s) => s.tag);

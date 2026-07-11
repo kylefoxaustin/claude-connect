@@ -1631,3 +1631,44 @@ body.link-mode .tile:hover { border-color: rgba(63, 185, 80, 0.55); }
 .link-bar-sub { display: block; margin-top: 2px; opacity: 0.85; }
 .link-ghost.on { color: var(--status-active); border-color: var(--status-active); }
 .link-ghost[disabled] { opacity: 0.4; cursor: not-allowed; }
+
+/* ============================================================================
+   [hidden] must actually hide. A class rule like `.link-bar { display: flex }`
+   has the same specificity as the UA's `[hidden] { display: none }` and, being in
+   the author sheet, WINS — so setting el.hidden did nothing and Cancel looked
+   broken. Make the attribute authoritative, once, for everything.
+   ============================================================================ */
+[hidden] { display: none !important; }
+
+/* The link-mode pick indicator: a pulsing ring that becomes a green ✓ when the
+   tile is selected. Indicator only — the tile itself takes the click, anywhere. */
+.link-pick { display: none; }
+body.link-mode .link-pick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin-left: 6px;
+  border-radius: 50%;
+  border: 2px dashed rgba(63, 185, 80, 0.75);
+  color: transparent;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
+  animation: link-pick-pulse 1.8s ease-in-out infinite;
+}
+body.link-mode .link-pick.picked {
+  border: 2px solid var(--status-active);
+  background: var(--status-active);
+  color: #06210d;
+  animation: none;
+}
+@keyframes link-pick-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.55); opacity: 0.7; }
+  50%      { box-shadow: 0 0 0 6px rgba(63, 185, 80, 0);   opacity: 1; }
+}
+/* In link mode the per-tile action buttons can't be used (a click selects), so get
+   them out of the way and let the pick ring own the corner. */
+body.link-mode .tile-actions { visibility: hidden; }
