@@ -69,6 +69,7 @@ const state = {
   push: { requests: [] },        // gated git-push approvals awaiting Kyle
   autonomy: { windows: [] },     // live "let them talk" windows
   services: { services: [] },    // service Claudes (image_gen…): serving + queue
+  waiting: { edges: [], cycles: [], bottlenecks: [], blocked_count: 0 },  // who blocks whom
   fadeoutSeconds: 30,
   wmctrlAvailable: false,
 
@@ -309,6 +310,12 @@ function handleMessage({ kind, payload }) {
       state.services = payload || { services: [] };
       renderGrid(state);
       requestAnimationFrame(() => redrawLines(state));
+      break;
+    }
+    case "waiting": {
+      state.waiting = payload || { edges: [], cycles: [], bottlenecks: [], blocked_count: 0 };
+      updateWaitingBtn();
+      if (!document.getElementById("waiting-modal").classList.contains("hidden")) renderWaiting();
       break;
     }
     case "bus_event": {
@@ -869,6 +876,146 @@ setInterval(() => {
     el.textContent = `${fmtLeft(parseFloat(el.dataset.expires) - now)} left`;
   }
 }, 1000);
+
+
+// --- ⏳ Who's blocked on whom -------------------------------------------------
+// Kyle's original ask, and the last piece of the coordination arc. Every input already
+// existed (directed mail, service queues, resource queues) — this is a VIEW over data we
+// collect anyway. An edge A -> B means "A is blocked on B".
+//
+// Deliberately ACTIONABLE: showing a bottleneck without letting you clear it is half a
+// feature. Each blocker gets Nudge (type /msg-check into it) and Show (raise its window).
+function bareTag(t) {
+  return String(t || "").replace(/^\[|\]$/g, "").replace(/^other:/, "").toLowerCase();
+}
+function sessionForPlain(plain) {
+  return (state.sessions || []).find(
+    (s) => s.status !== "ended" && bareTag(s.tag) === plain);
+}
+function fmtAge(sec) {
+  sec = Math.max(0, Math.round(sec));
+  if (sec >= 3600) return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`;
+  if (sec >= 60) return `${Math.floor(sec / 60)}m`;
+  return `${sec}s`;
+}
+
+function updateWaitingBtn() {
+  const btn = document.getElementById("waiting-btn");
+  if (!btn) return;
+  const w = state.waiting || {};
+  const n = w.blocked_count || 0;
+  const dead = (w.cycles || []).some((c) => c.deadlock);
+  btn.textContent = n ? `⏳ ${n} blocked` : "⏳ Blocked";
+  btn.classList.toggle("has-blocked", n > 0);
+  btn.classList.toggle("has-deadlock", dead);
+  btn.title = dead
+    ? "DEADLOCK on the fleet — sessions that can never proceed without you"
+    : n
+      ? `${n} session(s) waiting on someone else`
+      : "Nobody is blocked — the fleet is flowing";
+}
+
+function actionBtns(plain) {
+  const rec = sessionForPlain(plain);
+  const wrap = document.createElement("span");
+  wrap.className = "wait-acts";
+  if (!rec) {
+    wrap.innerHTML = '<span class="wait-dead" title="No live session with this tag">offline</span>';
+    return wrap;
+  }
+  const nudge = document.createElement("button");
+  nudge.className = "wait-act";
+  nudge.textContent = "Nudge";
+  nudge.title = "Type /msg-check into this Claude so it goes and reads its mail";
+  nudge.onclick = (e) => { e.stopPropagation(); window.requestCheck(rec.session_id, rec.status); };
+  const show = document.createElement("button");
+  show.className = "wait-act";
+  show.textContent = "Show";
+  show.title = "Raise this Claude's terminal window";
+  show.onclick = (e) => { e.stopPropagation(); window.requestFocus(rec.session_id); };
+  wrap.append(nudge, show);
+  return wrap;
+}
+
+function renderWaiting() {
+  const body = document.getElementById("waiting-body");
+  if (!body) return;
+  const w = state.waiting || {};
+  const edges = w.edges || [], cycles = w.cycles || [], necks = w.bottlenecks || [];
+  body.replaceChildren();
+
+  if (!edges.length) {
+    body.innerHTML = '<p class="wait-clear">✅ Nobody is blocked. The whole fleet is flowing.</p>';
+    return;
+  }
+
+  const sec = (title, hint) => {
+    const h = document.createElement("div");
+    h.className = "wait-sec";
+    h.innerHTML = `<h3>${title}</h3>${hint ? `<p class="wait-hint">${hint}</p>` : ""}`;
+    body.appendChild(h);
+    return h;
+  };
+
+  if (cycles.length) {
+    sec("🔴 Cycles",
+        "A cycle means nobody in it can move. Only an <strong>all-resource</strong> cycle is a true "
+        + "deadlock — it will never resolve itself. A cycle through mail is a <em>mutual stall</em>: "
+        + "annoying, invisible, but either side could break it by simply replying.");
+    for (const c of cycles) {
+      const row = document.createElement("div");
+      row.className = "wait-cycle" + (c.deadlock ? " is-deadlock" : "");
+      const chain = c.nodes.concat(c.nodes[0]).join(" → ");
+      row.innerHTML = `<div class="wait-cycle-head">${c.deadlock ? "💀 DEADLOCK" : "🔁 Mutual stall"}`
+        + `<span class="wait-kinds">${(c.kinds || []).join(", ")}</span></div>`
+        + `<div class="wait-chain">${escapeHtml(chain)}</div>`
+        + `<div class="wait-why">${escapeHtml(c.label)}</div>`;
+      body.appendChild(row);
+    }
+  }
+
+  sec("🔥 Bottlenecks",
+      "Who is holding up the most sessions. This is where one minute of your attention buys the most.");
+  for (const b of necks.slice(0, 8)) {
+    const row = document.createElement("div");
+    row.className = "wait-neck";
+    const meta = document.createElement("div");
+    meta.className = "wait-neck-meta";
+    meta.innerHTML = `<strong>${escapeHtml(b.tag)}</strong>`
+      + `<span class="wait-count">${b.count} waiting</span>`
+      + `<span class="wait-age">worst ${fmtAge(b.worst_age)}</span>`
+      + (b.live ? "" : '<span class="wait-dead">⚠️ no live session</span>')
+      + `<div class="wait-blockees">${escapeHtml(b.blocking.join(", "))}</div>`;
+    row.append(meta, actionBtns(b.tag));
+    body.appendChild(row);
+  }
+
+  sec("⏳ Longest waits", "Every edge — <strong>A → B</strong> means A is blocked on B.");
+  const ul = document.createElement("ul");
+  ul.className = "wait-edges";
+  for (const e of edges.slice(0, 25)) {
+    const li = document.createElement("li");
+    li.innerHTML = `<span class="wait-src">${escapeHtml(e.src)}</span>`
+      + `<span class="wait-arrow">→</span>`
+      + `<span class="wait-dst">${escapeHtml(e.dst)}</span>`
+      + `<span class="wait-kind k-${escapeHtml(e.kind)}">${escapeHtml(e.kind)}</span>`
+      + `<span class="wait-age">${fmtAge(e.age)}</span>`
+      + `<span class="wait-why">${escapeHtml(e.why)}</span>`;
+    ul.appendChild(li);
+  }
+  body.appendChild(ul);
+}
+
+const waitingModal = document.getElementById("waiting-modal");
+document.getElementById("waiting-btn")?.addEventListener("click", () => {
+  renderWaiting();
+  waitingModal.classList.remove("hidden");
+});
+document.getElementById("waiting-modal-close")
+  ?.addEventListener("click", () => waitingModal.classList.add("hidden"));
+waitingModal?.addEventListener("click", (e) => {
+  if (e.target === waitingModal) waitingModal.classList.add("hidden");
+});
 
 // --- Relaunch (fleet recovery) ----------------------------------------------
 // Bring dormant sessions back after a reboot/crash. Pick individually or "launch

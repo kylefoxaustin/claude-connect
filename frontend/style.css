@@ -1786,3 +1786,101 @@ body.link-mode .tile-actions { visibility: hidden; }
   color: var(--status-warm); border-color: var(--status-warm);
 }
 @media (pointer: coarse) { .svc-btn { min-height: 40px; } }
+
+/* ============================================================================
+   ⏳ Who's blocked on whom. Kyle's original ask: with 30+ sessions he could see
+   WHAT everyone was doing and never WHO WAS STUCK ON WHOM. Edge A -> B == "A is
+   blocked on B". Deliberately actionable — a bottleneck you can't clear is half
+   a feature — so every blocker gets Nudge + Show.
+   ============================================================================ */
+#waiting-btn.has-blocked { color: var(--status-warm); border-color: rgba(210, 153, 34, 0.6); }
+#waiting-btn.has-deadlock {
+  color: var(--status-ended);
+  border-color: var(--status-ended);
+  animation: wait-alarm 1.6s ease-in-out infinite;
+}
+@keyframes wait-alarm {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(248, 81, 73, 0.5); }
+  50%      { box-shadow: 0 0 0 5px rgba(248, 81, 73, 0); }
+}
+
+.waiting-body { display: flex; flex-direction: column; gap: 4px; max-height: 70vh; overflow-y: auto; }
+.wait-clear { color: var(--status-active); font-size: 14px; text-align: center; padding: 24px 0; }
+.wait-sec { margin-top: 14px; }
+.wait-sec:first-child { margin-top: 0; }
+.wait-sec h3 { margin: 0 0 2px; font-size: 13px; }
+.wait-hint { margin: 0 0 8px; font-size: 11px; color: var(--text-dim); line-height: 1.45; }
+
+/* Cycles. A deadlock is red and unbreakable; a mutual stall is amber and merely sad. */
+.wait-cycle {
+  border: 1px solid rgba(210, 153, 34, 0.45);
+  background: rgba(210, 153, 34, 0.08);
+  border-radius: 8px; padding: 9px 11px; margin-bottom: 6px;
+}
+.wait-cycle.is-deadlock {
+  border-color: var(--status-ended);
+  background: rgba(248, 81, 73, 0.10);
+}
+.wait-cycle-head {
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 700; font-size: 12px; color: var(--status-warm);
+}
+.wait-cycle.is-deadlock .wait-cycle-head { color: var(--status-ended); }
+.wait-kinds {
+  font-weight: 400; font-size: 10px; color: var(--text-dim);
+  border: 1px solid var(--border); border-radius: 999px; padding: 1px 7px;
+}
+.wait-chain {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px; color: var(--text); margin: 4px 0 2px;
+}
+.wait-why { font-size: 11px; color: var(--text-dim); }
+
+/* Bottlenecks — ranked, with the actions to clear them. */
+.wait-neck {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 7px;
+  border: 1px solid var(--border); margin-bottom: 4px;
+}
+.wait-neck:hover { background: var(--inset-bg); }
+.wait-neck-meta { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wait-neck-meta strong { font-size: 13px; }
+.wait-count {
+  font-size: 10px; font-weight: 700;
+  background: rgba(210, 153, 34, 0.2); color: var(--status-warm);
+  border-radius: 999px; padding: 2px 8px;
+}
+.wait-age { font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.wait-dead { font-size: 10px; color: var(--status-ended); }
+.wait-blockees {
+  flex-basis: 100%; font-size: 11px; color: var(--text-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.wait-acts { display: flex; gap: 5px; flex: none; }
+.wait-act {
+  background: transparent; color: var(--text-dim);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 10px; font-size: 11px; cursor: pointer; white-space: nowrap;
+}
+.wait-act:hover { color: var(--accent); border-color: var(--accent); }
+
+/* Every edge, longest-suffering first. */
+.wait-edges { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.wait-edges li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 14px minmax(0, 1fr) auto auto;
+  align-items: center; gap: 7px;
+  padding: 5px 8px; border-radius: 5px; font-size: 11px;
+}
+.wait-edges li:hover { background: var(--inset-bg); }
+.wait-src { color: var(--text-dim); text-align: right; overflow: hidden; text-overflow: ellipsis; }
+.wait-arrow { color: var(--status-warm); text-align: center; }
+.wait-dst { color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.wait-kind {
+  font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em;
+  border-radius: 999px; padding: 1px 6px; border: 1px solid var(--border); color: var(--text-dim);
+}
+.wait-kind.k-resource { color: var(--status-ended); border-color: rgba(248, 81, 73, 0.4); }
+.wait-kind.k-service  { color: #c678dd; border-color: rgba(198, 120, 221, 0.4); }
+.wait-edges .wait-why { grid-column: 1 / -1; padding-left: 8px; opacity: 0.75; }
+@media (pointer: coarse) { .wait-act { min-height: 38px; } }

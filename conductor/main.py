@@ -46,6 +46,7 @@ from .bus import (
 )
 from .bus import _plain_name, _read_last_seen
 from .coord import read_push_requests, read_retractions, read_wake_state, write_wake_state
+from .deps import build_wait_graph
 from .models import BusEvent, BusTopology, ParkedSession, SessionRecord, Status
 from .resources import resources_state, touch_lease_activity
 from .services import read_services
@@ -140,6 +141,8 @@ class AppState:
         self._push_requests: list[dict[str, Any]] = []        # git-push approvals awaiting Kyle
         self._autonomy: list[dict[str, Any]] = []             # live "let them talk" windows
         self.services: dict[str, Any] = {"services": []}      # service Claudes (image_gen…)
+        self.waiting: dict[str, Any] = {"edges": [], "cycles": [], "bottlenecks": [],
+                                        "blocked_count": 0}   # who is blocked on whom
         self.token_accountant = TokenAccountant()             # per-session token tally
         self._scan_misses: dict[str, int] = {}              # consecutive scans a session was absent
         self.recent_events: deque[BusEvent] = deque(maxlen=RECENT_EVENTS_MAX)
@@ -296,6 +299,19 @@ class AppState:
         if svc != self.services:
             self.services = svc
             await self.hub.broadcast("services", svc)
+        # Who is blocked on whom. Every input is already in hand — this is a VIEW over
+        # state we collect anyway (directed mail, service queues, resource queues), which
+        # is why it's cheap enough to rebuild every scan.
+        waiting = await asyncio.to_thread(
+            build_wait_graph,
+            directed_unread=self._directed_unread,
+            services=self.services.get("services", []),
+            resources=self.resources.get("resources", []),
+            live_tags={r.tag for r in self.sessions.values() if r.tag and r.status != Status.ENDED},
+        )
+        if waiting != self.waiting:
+            self.waiting = waiting
+            await self.hub.broadcast("waiting", waiting)
         autonomy = await asyncio.to_thread(read_windows, self.coord_root)
         if autonomy != self._autonomy:
             self._autonomy = autonomy
@@ -1009,6 +1025,14 @@ async def delete_autonomy(window_id: str, request: Request) -> dict[str, Any]:
     return {"ok": ok}
 
 
+@app.get("/api/waiting")
+async def get_waiting(request: Request) -> dict[str, Any]:
+    """The fleet's wait-for graph: who is blocked on whom, which cycles exist, and who is
+    holding up the most sessions. Edge A -> B means "A is blocked on B"."""
+    state: AppState = request.app.state.cond
+    return state.waiting
+
+
 @app.get("/api/services")
 async def get_services(request: Request) -> dict[str, Any]:
     state: AppState = request.app.state.cond
@@ -1373,6 +1397,7 @@ async def websocket(ws: WebSocket) -> None:
         await ws.send_text(json.dumps({"kind": "push", "payload": {"requests": state._push_requests}}))
         await ws.send_text(json.dumps({"kind": "autonomy", "payload": {"windows": state._autonomy}}))
         await ws.send_text(json.dumps({"kind": "services", "payload": state.services}))
+        await ws.send_text(json.dumps({"kind": "waiting", "payload": state.waiting}))
         while True:
             # We don't expect messages from the client right now; await any to detect close.
             await ws.receive_text()
