@@ -1,6 +1,6 @@
 [project]
 name = "conductor"
-version = "2.27.1"
+version = "2.27.2"
 description = "Local browser-based dashboard for monitoring concurrent Claude Code sessions"
 requires-python = ">=3.10"
 authors = [{ name = "Kyle Fox" }]

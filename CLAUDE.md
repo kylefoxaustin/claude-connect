@@ -23,6 +23,33 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.27.2: 🪪 **`owner_pid` in the lease — the fleet finally has a liveness check.**
+  From image_gen's `tenant-watch` proposal (its session died holding the 5090; ComfyUI squatted
+  **27 GB for 9h36m**, and *that squatter is what poisoned backend's power denominator*). Its
+  diagnosis of our watchdog is correct and it's a **category** error, not a bug: **it guards the
+  LEASE, not the CARD.** A squatter is invisible to a lease watchdog **precisely because it never
+  reserved**. And the only crash-detection anywhere in `bus.sh` was `acquired_epoch < btime` —
+  which proves a dead owner but **only fires when the whole MACHINE reboots**, so a session that
+  dies while the box keeps running was undetectable, and the best available outcome was the
+  watchdog **nudging a corpse for nine hours.** `_owner_pid()` now records the pid in every lease
+  ⇒ `kill -0` answers *"is the owner dead?"* instantly. **The subtlety that makes it 20 lines and
+  not 5:** it records the **`claude` process**, NOT the `bash -c "… claude --continue; exec bash"`
+  wrapper — **that wrapper SURVIVES claude's death** (it execs into a plain shell), so using it as
+  a liveness proxy would report **a corpse as alive forever**, which is *strictly worse than no
+  check* because it would look like a working one. **The fix's failure mode would have been the
+  bug.** Records **nothing rather than guess** when no claude ancestor exists. Also reviewed
+  tenant-watch: its **policy inversion is right and I'd have got it wrong** — *"a dead GPU tenant
+  leaves a mess; a dead board tenant leaves a booby trap"* ⇒ **reap GPUs, QUARANTINE boards,
+  permanently** (a board keeps half-written flash / a changed boot source that **no host-side probe
+  can see**, so freeing it just relocates the corruption onto the next occupant — `ollama_95_neutron`
+  released `imx95-frdm` *cleanly* and still had to warn the fleet **in prose** that it now boots a
+  different DTB). **Killed its "next user acknowledges the risk" escape hatch:** a Claude that wants
+  the board **has an incentive to acknowledge**, so it becomes a checkbox on the path to the thing
+  it wants — *a consent form for a decision nobody is equipped to give.* Kyle clears a quarantine,
+  never a Claude (same shape as the v2.16 orphan reclaim). And **squatter alerts do NOT page the
+  phone**: Conductor pages for exactly two things — a Claude blocked on a *question*, a *gated
+  push* — both meaning **work has stopped dead and a human is the only unblocker.** A squatter is
+  a **ticket, not a page.**
 - ✅ v2.27.1: 🔔 **Notification row collapses + 👥 pick WHO may talk** (both Kyle's).
   (1) Once notifications are ON, the explainer has done its job and becomes **permanent
   clutter** — it collapses to a one-line `🔔 Notifications on · Test · Turn off`. **Test stays

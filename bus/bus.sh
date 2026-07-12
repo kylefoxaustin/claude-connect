@@ -118,9 +118,34 @@ _res_q_has() { local q; q="$(_res_queue)"; echo ",$q," | grep -q ",$1,"; }
 _res_q_pos() { local q; q="$(_res_queue)"; echo ",$q," | tr ',' '\n' | grep -nxF "$1" | head -1 | cut -d: -f1 | awk '{print $1-1}'; }
 
 # Write/refresh a normal hold as $TAG, PRESERVING the queue.
+_owner_pid() {
+  # The pid that ACTUALLY DIES when the session dies — the `claude` process itself.
+  #
+  # NOT the `bash -c "cd X && claude --continue; exec bash"` wrapper. That wrapper SURVIVES
+  # claude's death (it execs into a plain shell), so using it as a liveness proxy would report
+  # a corpse as alive forever — which is worse than having no pid at all, because it would look
+  # like a working check.
+  #
+  # Why this matters (image_gen's finding): today the ONLY crash-detection anywhere in the fleet
+  # is `acquired_epoch < btime`, which proves a dead owner but ONLY fires when the whole MACHINE
+  # reboots. A session that dies while the box keeps running is undetectable — so the best
+  # available outcome was a watchdog nudging a corpse for hours. With this, `kill -0 $owner_pid`
+  # answers "is the owner dead?" exactly and instantly.
+  local p="$$" c i
+  for i in 1 2 3 4 5 6 7 8; do
+    [ -r "/proc/$p/comm" ] || break
+    c="$(cat "/proc/$p/comm" 2>/dev/null)"
+    if [ "$c" = "claude" ]; then printf '%s' "$p"; return 0; fi
+    p="$(awk '{print $4}' "/proc/$p/stat" 2>/dev/null)"
+    case "$p" in ''|0|1) break ;; esac
+  done
+  printf '%s' ''   # not running under a Claude session — record nothing rather than guess
+}
+
 _res_write() {  # mode secs job
   local now exp q; now="$(_res_now)"; exp=$(( now + $2 )); q="$(_res_queue)"
-  { echo "owner=$TAG"; echo "mode=$1"; echo "acquired_epoch=$now"; echo "expires_epoch=$exp"
+  { echo "owner=$TAG"; echo "owner_pid=$(_owner_pid)"; echo "mode=$1"
+    echo "acquired_epoch=$now"; echo "expires_epoch=$exp"
     echo "last_active_epoch=$now"; echo "job=$3"; echo "queue=$q"; } > "$RES_LEASE"
 }
 
