@@ -23,6 +23,40 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.28.0: 📇 **The card is a DIGEST; the BUS is the LOG — Kyle found the hole in my own
+  reassurance.** I'd told him *"the card outlives the Claude, so the knowledge survives."* True
+  of the **file**; says nothing about the **knowledge**. His case: *a Claude learns a juicy fact,
+  crashes before writing it, and was the only thing in the universe that knew.* **He's right and
+  I was glib** — but the fix reframes everything: **the card was never the durable record.**
+  ollama's M-axis defect is **on the bus** (timestamped, append-only, permanent) and **in no
+  card.** ⇒ ★ **POST FIRST, CURATE SECOND** ★ — a *durability* rule, not etiquette: **you can
+  always rebuild a card from the bus; you can never rebuild an unposted thought.** Four changes:
+  (1) **`## open questions`, written BEFORE the chase.** *You cannot persist an answer you never
+  got — you CAN persist the question, and the question is most of the value.* Crash mid-chase and
+  the chase survives. The bar is ollama's: *"I am not predicting N is broken. I am saying I have
+  no right to say it isn't."* It exists to prevent rt1180's disease — *"a correctly-flagged gap
+  you stop thinking about BECAUSE you flagged it."* (2) 🎯 **`bus.sh asset drill`** — qualcomm's
+  ARA240 rule aimed at *documentation*, where it hurts more because **a card has no exit code**:
+  ***a card that has never onboarded anyone is decoration.*** **You reading your own card is THE
+  MOCK; a COLD session using it is the real tenant tripping the signal.** Stages a scratch dir
+  with **nothing but the card**; every question the cold session must ask is a **MEASURED hole**.
+  **BLOCKERS and TRAPS reported separately** — *a blocker stops you; a trap lets you continue,
+  confidently, and be wrong.* **A drill that finds nothing is a drill that didn't run.**
+  (3) **Cards are VALIDATED ON READ and shout when untrustworthy** (truncation / no `class:` /
+  no open-questions / never drilled) — *a half-written card reads EXACTLY like a whole one.*
+  (4) ⚠️ **I CORRECTED MY OWN ADVICE:** *"silicon facts are durable"* is **true of a MODEL and
+  FALSE of an INVENTORY.** Swap an identical-model EVK and **every INSTANCE fact becomes a lie
+  about an object that no longer exists — and not one word of the text changes.** A different
+  model is caught by the name; a broken board by `verify:`; **an identical model, different unit,
+  passes every check we have.** Three fact classes now (**MODEL** / **TOOLCHAIN** / **INSTANCE**);
+  instance claims are unverified after any hardware change until cards carry a **fingerprint**
+  (not built — not pretending it is). Plus the **`/release` checkpoint** (*"what did you learn
+  that is NOT in the card?"*) — the bus is continuous, the card is periodic; **a continuous
+  knowledge-sync would fail exactly like the /msg-check storm: it optimises for freshness and
+  delivers VOLUME, and a card updated on every finding is a log nobody reads.** 🐛 **The
+  validator's first act was to break itself:** it returns 1 on a bad card, `bus.sh` has `set -e`,
+  so it **aborted the command and printed NOTHING** — *the validator silenced the very thing it
+  exists to shout about.* Invisible by reading; caught on the first run.
 - ✅ v2.27.2: 🪪 **`owner_pid` in the lease — the fleet finally has a liveness check.**
   From image_gen's `tenant-watch` proposal (its session died holding the 5090; ComfyUI squatted
   **27 GB for 9h36m**, and *that squatter is what poisoned backend's power denominator*). Its

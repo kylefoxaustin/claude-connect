@@ -225,6 +225,23 @@ res_release() {
     if _res_active && [ "$(_res_field owner)" = "$TAG" ]; then
       local r; r="$(_res_promote_locked)"
       case "$r" in offered:*) echo "Released $(_res_label "$1") — handed to [${r#offered:}] (next in queue)." ;; *) echo "Released $(_res_label "$1")." ;; esac
+      # THE CHECKPOINT. This is the moment the system already knows about, and the only one
+      # where reconciling the card against what you learned is free.
+      #
+      # A continuous "knowledge sync" would fail the same way the /msg-check storm failed: it
+      # optimises for freshness and delivers VOLUME. A card updated on every finding becomes a
+      # log, and a log nobody can read is the same as no card. The card's value IS that it is
+      # short and curated — which is exactly the property streaming into it destroys.
+      #
+      # So: the BUS is continuous and durable. The CARD is periodic and curated. Reconcile at
+      # the boundary, not in between.
+      echo ""
+      echo "  📇 Before you move on — **what did you learn about $(_res_label "$1") that is NOT in its card?**"
+      echo "     Gotchas · a trap you nearly fell into · a claim in the card you found to be STALE"
+      echo "     · a question you could not answer (write the QUESTION — it survives you; the"
+      echo "     answer you never got does not)."
+      echo "       bus.sh asset path $1     # open the card and edit it"
+      echo "     **\"I have nothing further\" is a complete answer. Silence is not.**"
     elif _res_active; then echo "You don't hold $(_res_label "$1") ([$(_res_field owner)] does) — not released."; return 1
     else rm -f "$RES_LEASE"; echo "$(_res_label "$1") is already free."; fi
   ) 9>"$RES_LOCK"
@@ -753,8 +770,108 @@ svc_dispatch() {
 # ---------------------------------------------------------------------------
 REGISTRY="${BUS_STATE_DIR:-$HOME/.claude/bus-state}/registry"
 
+_asset_check() {  # <card-file> — is this card TRUSTWORTHY? Prints warnings; rc=1 if broken.
+  # A half-written card reads EXACTLY like a whole one. A Claude that crashed mid-edit leaves
+  # a file that parses, renders, and lies by omission — and the reader has no way to know.
+  # So every path that SHOWS a card checks it first, and says so out loud.
+  local f="$1" bad=0 last
+  [ -s "$f" ] || return 1
+  # Truncation: a card that ends mid-sentence (no trailing blank/heading) is a crash artifact.
+  last="$(tail -c 1 "$f" 2>/dev/null)"
+  if [ -n "$last" ]; then
+    echo "  ⚠️  CARD MAY BE TRUNCATED — it does not end with a newline. A Claude may have died"
+    echo "      mid-write. Treat every claim here as UNVERIFIED until someone re-reads it."
+    bad=1
+  fi
+  grep -q '^class:[[:space:]]*\(interrogable\|opaque\)[[:space:]]*$' "$f" || {
+    echo "  ⚠️  NO \`class:\` — this asset has never been declared interrogable or opaque."
+    echo "      Until it is, a dead owner means QUARANTINE. That is the honest default."
+    bad=1
+  }
+  grep -qi '^## open questions' "$f" || {
+    echo "  ⚠️  No \`## open questions\` section. A card with no stated gaps looks IDENTICAL to"
+    echo "      a card whose gaps nobody wrote down. Add what you know you do NOT know."
+    bad=1
+  }
+  local drilled; drilled="$(_asset_hdr drilled "$f")"
+  case "$drilled" in
+    ''|*never*|*'('*)
+      echo "  ⚠️  NEVER DRILLED. **A card that has never onboarded anyone is decoration.** Nobody"
+      echo "      has confirmed a cold session can actually USE this. Run: bus.sh asset drill $(basename "${f%.md}")"
+      bad=1 ;;
+  esac
+  return $bad
+}
+
 _asset_file() { printf '%s/%s.md' "$REGISTRY" "$1"; }
 _asset_hdr()  { sed -n "s/^$1:[[:space:]]*//p" "$2" 2>/dev/null | head -1; }
+
+_asset_drill() {  # <name> — set up a COLD-SESSION drill of this card
+  # "A card that has never onboarded anyone is decoration."
+  #
+  # The author reading their own card and thinking "yes, that's complete" is THE MOCK. It
+  # proves the card REACTS TO THEIR MEMORY. It never proves a stranger can USE it — and only
+  # the second claim matters. (qualcomm's ARA240 rule, aimed at documentation, where it hurts
+  # more, because a card has no exit code and cannot fail loudly by itself.)
+  #
+  # So: stage a scratch dir containing NOTHING BUT THE CARD, and a task. Launch a session
+  # there with no project context and no history. Every question it has to ask, and everything
+  # it gets wrong, is a MEASURED hole — not an opinion about the card.
+  local name="${1:-}" f dir
+  [ -n "$name" ] || { echo "usage: bus.sh asset drill <name>" >&2; return 2; }
+  f="$(_asset_file "$name")"
+  [ -s "$f" ] || { echo "No card for '$name'." >&2; return 1; }
+
+  dir="$HOME/.claude/drills/$name-$(date +%Y%m%d-%H%M)"
+  mkdir -p "$dir" || return 1
+  cp "$f" "$dir/CARD.md"
+  cat > "$dir/TASK.md" <<'TASK'
+# Card drill — you are a COLD session. This is deliberate.
+
+You have **no project context, no history, and no colleagues to ask.** You have exactly one
+document: `CARD.md`. That is the whole point.
+
+**Your job is NOT to succeed. It is to FAIL HONESTLY and record where.**
+
+1. Read `CARD.md`. Then, using **only** what it tells you, write down step by step how you
+   would take a **first correct measurement** on this asset.
+2. **Every single time you would have to ask someone, guess, or go and read something else —
+   STOP and write it down in `HOLES.md`.** That is the finding. Do not paper over it. Do not
+   infer it from the model name. Do not use knowledge you brought with you — you are standing
+   in for a session that has none.
+3. If a step would touch real hardware, **do not run it.** Say what you would run and what you
+   expect. This is a documentation test, not a hardware test.
+4. When you are done, write `HOLES.md`:
+     - **BLOCKERS** — things the card does not say that you cannot proceed without.
+     - **TRAPS** — things the card says that would lead you to do the WRONG thing.
+       *(These are worth more than blockers. A blocker stops you. A trap lets you continue,
+       confidently, and be wrong — which is the failure this whole fleet exists to catch.)*
+     - **STALE** — claims with no date/version stamp that you would not dare trust.
+     - **UNANSWERABLE** — anything you could not even tell whether it was missing.
+
+**A drill that finds nothing is not a pass. It is a drill that did not run.** Say so if the
+card genuinely covers everything — but be honest that you looked.
+TASK
+  echo "🎯 Drill staged: $dir"
+  echo "   Launch a COLD session there — no project context, nothing but the card:"
+  echo "     scripts/claude-tracked drill-$name --dir $dir"
+  echo "   Then record what it found:"
+  echo "     bus.sh asset drilled $name \"3 blockers, 1 trap: the DTB note is instance-only\""
+}
+
+_asset_drilled() {  # <name> "<what the drill found>"
+  local name="${1:-}" note="${2:-}" f tmp
+  [ -n "$name" ] && [ -n "$note" ] || { echo 'usage: bus.sh asset drilled <name> "<what it found>"' >&2; return 2; }
+  f="$(_asset_file "$name")"
+  [ -s "$f" ] || { echo "No card for '$name'." >&2; return 1; }
+  tmp="$f.tmp.$$"
+  # Atomic: a crash mid-write must never leave a HALF-CARD, which reads exactly like a whole
+  # one. Every other coord file has done this from the start; the cards never did, and they
+  # are the thing that matters most.
+  sed "s|^drilled:.*|drilled: $(date '+%Y-%m-%d') — $note|" "$f" > "$tmp" && mv -f "$tmp" "$f"
+  echo "📝 Recorded. $name drilled $(date '+%Y-%m-%d'): $note"
+  echo "   Now FIX the holes. A drill you don't act on is a drill you didn't run."
+}
 
 _asset_new() {  # <name> [kind]
   local name="${1:-}" kind="${2:-board}" f
@@ -831,6 +948,38 @@ class: (interrogable | opaque)
 # that cannot fire is worse than no check**, because it is a green light with nothing behind it.
 verify: (path to a script that exits 0 = KNOWN, non-zero = do not trust any measurement)
 
+# ⚠️ A CARD THAT HAS NEVER ONBOARDED ANYONE IS DECORATION.
+#
+# You reading your own card and thinking "yes, that's complete" is THE MOCK. A cold session
+# successfully USING it is the real tenant tripping the signal. (qualcomm's ARA240 rule, aimed
+# at documentation — where it hurts more, because a card has no exit code.)
+#
+# THE DRILL:  bus.sh asset drill <name>
+#   Spawn a session with NO project context and NOTHING BUT THIS CARD. Give it a real task on
+#   the asset. **Every question it has to ask, and everything it gets wrong, is a HOLE.**
+#   Not an opinion about the card — a MEASURED hole.  Then: bus.sh asset drilled <name> "..."
+drilled: (never — run `bus.sh asset drill <name>`)
+
+## open questions
+# ⚠️ WRITE THE QUESTION *BEFORE* YOU CHASE IT. NOT AFTER YOU ANSWER IT.
+#
+# You cannot persist an answer you never got. **You CAN persist the question** — and the
+# question is most of the value. If you die mid-chase, the chase survives.
+#
+# A card with no stated gaps looks IDENTICAL to a card whose gaps nobody wrote down. Same
+# green light with nothing behind it that has bitten every tool on this fleet.
+#
+# The bar, and it is ollama's:
+#   "I am not predicting N is broken. I am saying I HAVE NO RIGHT TO SAY IT ISN'T."
+#
+# And rt1180's disease, which is exactly what this section exists to prevent:
+#   "A correctly-flagged gap that you stop thinking about BECAUSE you flagged it. The flag
+#    discharges the anxiety and the gap stays. I flagged it in ONE row and it was a gap in
+#    TWELVE. Naming a gap where you first met it is not the same as understanding its extent."
+#
+# For each: what you don't know · what you ASSUMED and why that assumption is load-bearing ·
+# what experiment would settle it.
+
 ## access
 (How does a Claude actually reach it? ssh / serial device + baud / IP / how to power-cycle.
  Do NOT inline passwords — say where the credential lives.
@@ -852,8 +1001,25 @@ verify: (path to a script that exits 0 = KNOWN, non-zero = do not trust any meas
  would falsify it. Most of what bites this fleet is an inference that arrived
  pre-attached to a real measurement, which is what makes it feel earned.
 
- ⚠️ SILICON FACTS AND TOOLCHAIN FACTS HAVE DIFFERENT HALF-LIVES — never mix them
- unlabelled. "Q6 ridge = 20.0 op/B" is arithmetic on a datasheet: it does not rot.
+ ⚠️ THREE CLASSES OF FACT, THREE DIFFERENT DEATHS. Never mix them unlabelled.
+
+   **MODEL/SILICON** — arithmetic on a datasheet. "Q6 ridge = 20.0 op/B". Does NOT rot.
+   **TOOLCHAIN**     — ROTS, on a timer. Needs a version + date stamp (below).
+   **INSTANCE**      — dies with THE OBJECT. "this board boots the neutron DTB", "CmaTotal is
+                       4.94 GiB". True of THE UNIT ON THE DESK, not of the model.
+
+ ⚠️ A CORRECTION TO MY OWN EARLIER ADVICE, WHICH WAS WRONG:
+   I told this fleet "silicon facts are durable — they don't rot." **True of a MODEL. FALSE of
+   an INVENTORY.** Swap in an identical-model EVK from a different purchase, or one with a
+   different chip stepping, and every INSTANCE fact here becomes a lie about an object that no
+   longer exists — **and not one word of the text changes.**
+   A different model is caught by the name. A broken board is caught by `verify:`.
+   **An identical model, different unit, passes every check we have.** It is the purest trap
+   this fleet has produced. Until a card carries a FINGERPRINT of the physical object, treat
+   every INSTANCE claim as unverified after any hardware change.
+
+ ⚠️ SILICON vs TOOLCHAIN half-lives — "Q6 ridge = 20.0 op/B" is arithmetic on a datasheet:
+ it does not rot.
  "CUTLASS has no SM120 int8 template" rotted in 11 weeks. So:
    **every toolchain gotcha states WHEN it was observed, WITH WHAT VERSION, and what
    would re-verify it.** A toolchain claim without a version+date stamp is a landmine
@@ -880,6 +1046,16 @@ _asset_info() {  # <name>
   if [ ! -s "$f" ]; then
     echo "No card for '${1:-}'. Create one: bus.sh asset new ${1:-<name>} [board|gpu|service]"
     return 1
+  fi
+  # `|| true`: _asset_check returns 1 on a bad card, and under `set -e` that would abort
+  # the whole command — so a BROKEN card would print NOTHING AT ALL. The validator would have
+  # silenced the very thing it exists to shout about. Caught on first run.
+  local warn; warn="$(_asset_check "$f" || true)"
+  if [ -n "$warn" ]; then
+    echo "━━━ ⚠️  THIS CARD IS NOT FULLY TRUSTWORTHY ━━━"
+    echo "$warn"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
   fi
   cat "$f"
 }
@@ -922,7 +1098,9 @@ asset_dispatch() {
     info|show)    _asset_info "$@" ;;
     path|edit)    _asset_path "$@" ;;
     list|catalog) _asset_list ;;
-    *) echo "usage: bus.sh asset {new|info|path|list} <name>" >&2; return 2 ;;
+    drill)        _asset_drill "$@" ;;
+    drilled)      _asset_drilled "$@" ;;
+    *) echo "usage: bus.sh asset {new|info|path|list|drill|drilled} <name>" >&2; return 2 ;;
   esac
 }
 
