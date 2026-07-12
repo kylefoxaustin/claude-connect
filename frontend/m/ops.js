@@ -125,6 +125,10 @@ function renderInbox() {
 
   for (const d of ops.decisions) items.push(decisionCard(d));
   for (const p of ops.push) items.push(pushCard(p));
+  // Approvals you already gave that the session hasn't used yet. Shown BELOW the things
+  // that still need you — it's reassurance, not a task. Its whole job is to answer
+  // "did my tap land?", which used to have no answer at all.
+  for (const g of ops.grants || []) items.push(grantRow(g));
 
   if (!items.length) {
     host.innerHTML =
@@ -282,6 +286,29 @@ $("snack-undo").addEventListener("click", () => {
   $("snack").hidden = true;
   render();                       // un-dim the card; nothing was ever sent
 });
+
+function grantRow(g) {
+  const el = document.createElement("div");
+  el.className = "row";
+  const hrs = Math.max(0, Math.round(g.expires_in / 3600));
+  el.innerHTML =
+    `<div class="row-body">` +
+    `<div class="row-title">✅ ${esc(g.repo_name)} <span class="pill">APPROVED</span></div>` +
+    `<div class="row-sub">Waiting for the session to push · expires in ${hrs}h</div>` +
+    `</div>`;
+  const rev = document.createElement("button");
+  rev.className = "btn btn-danger";
+  rev.textContent = "Revoke";
+  rev.addEventListener("click", async () => {
+    rev.disabled = true;
+    try {
+      await api(`/api/push/${encodeURIComponent(g.key)}/revoke`, { method: "POST" });
+    } catch { /* refresh shows the truth */ }
+    refresh();
+  });
+  el.appendChild(rev);
+  return el;
+}
 
 /* ---- FLEET: a list, grouped by state. Never a grid of 30 tiles. -------- */
 function renderFleet() {

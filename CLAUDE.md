@@ -23,6 +23,31 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.24.2: 🔐 **A push approval WAITS for the agent; it no longer races it.** Kyle
+  approves from his phone — but the *session* is what has to notice and re-run the push, and
+  it may be asleep, mid-task, or unreachable because Conductor isn't running to ping it.
+  `push_approve` **deleted the pending request and armed a 30-minute token**; if the clock
+  ran out first the token expired and the request was already gone, so **the approval
+  evaporated leaving no trace.** The next push filed a *fresh* request ⇒ Kyle saw a
+  **duplicate ask with no hint he had already said yes**, and from his side it read as *"I
+  approved it and nothing happened."* (300s → 1800s were both patches on the wrong axis: the
+  problem was never the length of the fuse, it was **having a fuse at all.**) Fix has two
+  halves and both are load-bearing: (1) the grant is **durable** (24h backstop, still ONE
+  push, still consumed on use) so it waits instead of racing; (2) — the half that makes (1)
+  safe — the grant is **VISIBLE and REVOCABLE.** *"Approved, waiting for the session to
+  push"* is now its own state in both inboxes, with **`bus.sh push revoke` / a Revoke
+  button** beside it. **A short fuse is not a safety property when its failure mode is
+  losing the decision; a long-lived permission you can SEE and TAKE BACK is strictly
+  stronger than one that quietly expires behind your back.** Also: the approval ping told
+  the agent *"valid for 30 minutes"* — **true when written, a lie afterwards**, and a
+  message that tells an agent to hurry when it needn't is how you get half-done work pushed.
+  Token format is `key=value` now; the gate still honours a **leftover bare-epoch token**
+  (failing closed there would look exactly like *"Kyle's approval didn't work"*, on the one
+  control he relies on). `coord.read_push_grants`; `/api/push` + `/api/ops` carry `grants`;
+  `POST /api/push/{key}/revoke`. Scratch-tested the whole lifecycle old-vs-new before
+  touching the live copies — and the first run of that test **passed for a fake reason** (an
+  f-string SyntaxError meant the "45 minutes pass" step never actually aged the token), which
+  is its own lesson. 205 tests.
 - ✅ v2.24.1: 🔔 **Web Push — the app that finds you.** Tailnet HTTPS (`tailscale serve
   --https 443`; Let's Encrypt cert, and the plain-HTTP door **closed** — on `http://` the
   service worker and push silently never register, so two doors where one quietly lacks the

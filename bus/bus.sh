@@ -332,25 +332,66 @@ retract_hook_lines() {  # myplain last_seen
 # ---- Push gate: approve/deny git-push requests the PreToolUse hook files ------
 PUSH_TOKENS="$COORD_ROOT/push-tokens"
 PUSH_REQUESTS="$COORD_ROOT/push-requests"
-PUSH_TTL="${PUSH_TOKEN_TTL:-1800}"   # 30m: an approval is ONE push; 300s kept expiring before the session retried
+# AN APPROVAL WAITS FOR THE AGENT; IT DOES NOT RACE IT.
+#
+# This was 1800s, and before that 300s, and both were wrong for the same reason. Kyle
+# approves from his phone; the *agent* is the one that has to notice and re-run the push.
+# A denied session is parked at its prompt — it may be asleep, mid-task, or Conductor may
+# not be running to ping it. If the clock ran out first, the token expired AND the request
+# had already been deleted, so **the approval evaporated leaving nothing behind**: no
+# pending request, no token, no trace. From Kyle's side, "I approved it and nothing
+# happened", with no way to find out why. He'd have to approve again, never knowing he had.
+#
+# So the deadline is now a long backstop (24h), not a race. What makes a long-lived grant
+# safe is not a short fuse — it's VISIBILITY: an armed approval is surfaced as its own
+# state ("approved, waiting for <repo> to push"), and `push revoke` disarms it. A control
+# you can SEE and TAKE BACK beats one that silently expires.
+PUSH_TTL="${PUSH_TOKEN_TTL:-86400}"
 _push_field() { grep -E "^$1=" "$2" 2>/dev/null | head -1 | cut -d= -f2- ; }
 
+# A token is `key=value` lines now (it used to be a bare epoch). Read both: an old
+# bare-integer token left over from before this change must still work, not silently
+# fail closed on the one control Kyle relies on.
+_push_token_expiry() {  # <token-file>
+  local raw exp
+  exp="$(_push_field expires "$1")"
+  if [ -z "$exp" ]; then
+    raw="$(head -1 "$1" 2>/dev/null || true)"
+    case "$raw" in ''|*[!0-9]*) exp=0 ;; *) exp="$raw" ;; esac
+  fi
+  case "$exp" in ''|*[!0-9]*) exp=0 ;; esac
+  printf '%s' "$exp"
+}
+
 push_list() {
-  local f any=""
+  local f any="" now exp
+  now="$(date +%s)"
   [ -d "$PUSH_REQUESTS" ] && for f in "$PUSH_REQUESTS"/*; do [ -f "$f" ] || continue; any=1
-    echo "  $(_push_field repo_name "$f")  (requested $(_push_field created "$f"))"
+    echo "  ⏳ $(_push_field repo_name "$f")  — waiting for you (requested $(_push_field created "$f"))"
+  done
+  # The state that used to be invisible: you said yes, and it hasn't been used yet.
+  [ -d "$PUSH_TOKENS" ] && for f in "$PUSH_TOKENS"/*; do [ -f "$f" ] || continue
+    exp="$(_push_token_expiry "$f")"
+    [ "$now" -lt "$exp" ] || { rm -f "$f"; continue; }   # expired: reap it quietly
+    any=1
+    echo "  ✅ $(_push_field repo_name "$f")  — APPROVED, waiting for the session to push ($(( (exp - now) / 3600 ))h left)"
   done
   [ -z "$any" ] && echo "No pending push approvals."
+  return 0
 }
 push_approve() {  # <repo-name-or-key>
-  local q="${1:-}" f name key matched=""
+  local q="${1:-}" f name key repo matched=""
   [ -n "$q" ] || { echo "usage: bus.sh push approve <repo-name>"; return 2; }
   mkdir -p "$PUSH_TOKENS"
   [ -d "$PUSH_REQUESTS" ] && for f in "$PUSH_REQUESTS"/*; do [ -f "$f" ] || continue
-    name="$(_push_field repo_name "$f")"; key="$(basename "$f")"
+    name="$(_push_field repo_name "$f")"; repo="$(_push_field repo "$f")"; key="$(basename "$f")"
     if [ "$name" = "$q" ] || [ "$key" = "$q" ]; then
-      echo "$(( $(date +%s) + PUSH_TTL ))" > "$PUSH_TOKENS/$key"; rm -f "$f"; matched=1
-      echo "✅ Approved a push to '$name' (valid ${PUSH_TTL}s). The session can re-run its push now."
+      { echo "expires=$(( $(date +%s) + PUSH_TTL ))"
+        echo "repo=$repo"; echo "repo_name=$name"
+        echo "approved=$(date +%s)"
+        echo "approved_at=$(date '+%Y-%m-%d %H:%M')"; } > "$PUSH_TOKENS/$key"
+      rm -f "$f"; matched=1
+      echo "✅ Approved ONE push to '$name'. It waits until the session actually pushes (up to $(( PUSH_TTL / 3600 ))h) — re-run it whenever. Disarm with: bus.sh push revoke $name"
     fi
   done
   if [ -z "$matched" ]; then echo "No pending push request matching '$q'. (bus.sh push list)"; return 1; fi
@@ -363,6 +404,21 @@ push_deny() {  # <repo-name-or-key>
     if [ "$name" = "$q" ] || [ "$key" = "$q" ]; then rm -f "$f"; matched=1; echo "Dismissed the push request for '$name'."; fi
   done
   if [ -z "$matched" ]; then echo "No pending push request matching '$q'."; return 1; fi
+  return 0
+}
+push_revoke() {  # <repo-name-or-key> — take back an approval you already gave
+  # The counterweight to a 24h grant. Changed your mind, or approved the wrong repo?
+  # Disarm it before the agent uses it. Without this, a long-lived token would be a
+  # decision you cannot unmake, and that is not a control.
+  local q="${1:-}" f name key matched=""
+  [ -n "$q" ] || { echo "usage: bus.sh push revoke <repo-name>"; return 2; }
+  [ -d "$PUSH_TOKENS" ] && for f in "$PUSH_TOKENS"/*; do [ -f "$f" ] || continue
+    name="$(_push_field repo_name "$f")"; key="$(basename "$f")"
+    if [ "$name" = "$q" ] || [ "$key" = "$q" ]; then rm -f "$f"; matched=1
+      echo "🔒 Revoked the approval for '${name:-$key}'. The next push will be gated again."
+    fi
+  done
+  if [ -z "$matched" ]; then echo "No armed approval matching '$q'."; return 1; fi
   return 0
 }
 
@@ -892,7 +948,8 @@ PYEOF
       list)    push_list ;;
       approve) push_approve "$@" ;;
       deny)    push_deny "$@" ;;
-      *) echo "usage: bus.sh push {list|approve <repo>|deny <repo>}"; exit 2 ;;
+      revoke)  push_revoke "$@" ;;
+      *) echo "usage: bus.sh push {list|approve <repo>|deny <repo>|revoke <repo>}"; exit 2 ;;
     esac
     exit $?
     ;;

@@ -57,7 +57,7 @@ from .bus import (
     snapshot_history,
 )
 from .bus import _plain_name, _read_last_seen
-from .coord import read_push_requests, read_retractions, read_wake_state, write_wake_state
+from .coord import read_push_grants, read_push_requests, read_retractions, read_wake_state, write_wake_state
 from .deps import build_wait_graph
 from .models import BusEvent, BusTopology, ParkedSession, SessionRecord, Status
 from .resources import resources_state, touch_lease_activity
@@ -156,6 +156,7 @@ class AppState:
         self._retraction_woken: set[str] = set()              # retraction records we already delivered
         self._retractions: list[dict[str, Any]] = []          # active retraction records
         self._push_requests: list[dict[str, Any]] = []        # git-push approvals awaiting Kyle
+        self._push_grants: list[dict[str, Any]] = []          # approvals GIVEN, not yet used
         self._autonomy: list[dict[str, Any]] = []             # live "let them talk" windows
         self.services: dict[str, Any] = {"services": []}      # service Claudes (image_gen…)
         self.waiting: dict[str, Any] = {"edges": [], "cycles": [], "bottlenecks": [],
@@ -317,9 +318,17 @@ class AppState:
         await self.hub.broadcast("resources", self.resources)
         self._retractions = await asyncio.to_thread(read_retractions, self.coord_root)
         push_reqs = await asyncio.to_thread(read_push_requests, self.coord_root)
-        if push_reqs != self._push_requests:
+        grants = await asyncio.to_thread(read_push_grants, self.coord_root)
+        # Compare grants on identity, not the live countdown — `expires_in` ticks down every
+        # scan, so including it would rebroadcast (and re-render) the inbox forever.
+        gid = [(g["key"], g["expires_epoch"]) for g in grants]
+        if push_reqs != self._push_requests or gid != [
+                (g["key"], g["expires_epoch"]) for g in self._push_grants]:
             self._push_requests = push_reqs
-            await self.hub.broadcast("push", {"requests": push_reqs})
+            self._push_grants = grants
+            await self.hub.broadcast("push", {"requests": push_reqs, "grants": grants})
+        else:
+            self._push_grants = grants
         svc = await asyncio.to_thread(read_services, self.coord_root)
         if svc != self.services:
             self.services = svc
@@ -1024,15 +1033,23 @@ async def get_push(request: Request) -> dict[str, Any]:
     always firing `close`) would sit on stale state forever. An endpoint it can re-fetch
     on wake makes the inbox self-healing instead of needing a manual refresh."""
     state: AppState = request.app.state.cond
-    return {"requests": state._push_requests}
+    return {"requests": state._push_requests, "grants": state._push_grants}
 
 
 @app.post("/api/push/{key}/{action}")
 async def decide_push(key: str, action: str, request: Request) -> dict[str, Any]:
-    """Approve or deny a gated ``git push`` (user-triggered). Approve writes a
-    short-lived token the PreToolUse gate consumes on the session's next push; deny
-    just dismisses the request. Both go through ``bus.sh push`` — one token path."""
-    if action not in ("approve", "deny"):
+    """Approve, deny, or REVOKE a gated ``git push`` (all user-triggered).
+
+    Approve arms a durable one-shot grant the gate consumes on the session's next push —
+    durable because Kyle approves from his phone and the *session* is the one that has to
+    notice and retry; a short fuse meant the approval could expire unused and vanish, and
+    he'd see a duplicate request with no hint he'd already said yes.
+
+    ``revoke`` is the counterweight that makes a long-lived grant safe: he can take it back
+    before it's used. All three go through ``bus.sh push`` — one token path, no second
+    implementation to drift.
+    """
+    if action not in ("approve", "deny", "revoke"):
         raise HTTPException(status_code=404, detail="unknown action")
     if not key or not all(c.isalnum() or c in "._-" for c in key):
         raise HTTPException(status_code=400, detail="bad request key")
@@ -1061,15 +1078,27 @@ async def decide_push(key: str, action: str, request: Request) -> dict[str, Any]
         if rec is not None:
             sent = await state._inject_text(
                 rec,
-                "✅ Kyle approved your git push — re-run it now. "
-                "The approval is valid for 30 minutes and covers exactly one push.",
+                # Says "it will wait" because it now does. The old text promised 30 minutes,
+                # which was true when written and became a lie — and a message that tells an
+                # agent to hurry when it doesn't need to is how you get it pushing half-done
+                # work.
+                "✅ Kyle approved your git push — re-run it whenever you're ready. "
+                "The approval waits for you; it covers exactly one push.",
                 f"push approved for {req.get('repo_name', key)}",
             )
             if sent:
                 notified = rec.tag
         else:
-            log.info("push approved for %s but no live session in %s — it'll have to be told",
+            log.info("push approved for %s but no live session in %s — the grant waits for it",
                      key, req.get("cwd", "?"))
+
+    # Re-read now rather than waiting for the next scan tick: a just-approved request must
+    # move to the "approved, waiting" list immediately, or the click looks like it did
+    # nothing — the very confusion this whole change exists to kill.
+    state._push_requests = await asyncio.to_thread(read_push_requests, state.coord_root)
+    state._push_grants = await asyncio.to_thread(read_push_grants, state.coord_root)
+    await state.hub.broadcast("push", {"requests": state._push_requests,
+                                       "grants": state._push_grants})
     return {"key": key, "action": action, "ok": ok,
             "result": (proc.stdout or "").strip(), "notified": notified}
 
@@ -1284,6 +1313,9 @@ async def get_ops(request: Request) -> dict[str, Any]:
     return {
         "decisions": state.decisions,
         "push": state._push_requests,
+        # Approvals already GIVEN, not yet used. Shown so a durable grant is a permission
+        # Kyle can see and take back, rather than one that quietly expires behind his back.
+        "grants": state._push_grants,
         "retractions": state._retractions,
         # read_windows() already drops expired windows — re-filtering here on a field name
         # I guessed at ("expires_epoch") silently zeroed the list while 14 sessions were
@@ -1660,7 +1692,8 @@ async def websocket(ws: WebSocket) -> None:
         await ws.send_text(json.dumps({"kind": "sessions", "payload": state._sessions_payload()}))
         await ws.send_text(json.dumps({"kind": "bus", "payload": state._bus_payload()}))
         await ws.send_text(json.dumps({"kind": "resources", "payload": state.resources}))
-        await ws.send_text(json.dumps({"kind": "push", "payload": {"requests": state._push_requests}}))
+        await ws.send_text(json.dumps({"kind": "push", "payload": {
+            "requests": state._push_requests, "grants": state._push_grants}}))
         await ws.send_text(json.dumps({"kind": "autonomy", "payload": {"windows": state._autonomy}}))
         await ws.send_text(json.dumps({"kind": "services", "payload": state.services}))
         await ws.send_text(json.dumps({"kind": "waiting", "payload": state.waiting}))

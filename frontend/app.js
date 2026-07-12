@@ -1190,7 +1190,8 @@ function renderPushInbox(state) {
   const box = document.getElementById("push-inbox");
   if (!box) return;
   const reqs = (state.push && state.push.requests) || [];
-  if (!reqs.length) { box.hidden = true; box.replaceChildren(); return; }
+  const grants = (state.push && state.push.grants) || [];
+  if (!reqs.length && !grants.length) { box.hidden = true; box.replaceChildren(); return; }
   box.hidden = false;
   const rows = reqs.map((r) => {
     const meta = document.createElement("div");
@@ -1209,10 +1210,29 @@ function renderPushInbox(state) {
     row.append(meta, approve, deny);
     return row;
   });
+  // Approvals already GIVEN and not yet used. This state used to be invisible, and that
+  // was the whole bug: a click that landed looked identical to a click that evaporated.
+  const grantRows = grants.map((g) => {
+    const meta = document.createElement("div");
+    meta.className = "push-req-meta";
+    const hrs = Math.max(0, Math.round(g.expires_in / 3600));
+    meta.innerHTML = `<strong>✅ ${g.repo_name}</strong> approved — waiting for the session to push`
+      + ` <span class="push-when">· expires in ${hrs}h</span>`;
+    const revoke = document.createElement("button");
+    revoke.className = "push-deny"; revoke.textContent = "Revoke";
+    revoke.onclick = () => window.decidePush(g.key, "revoke", revoke);
+    const row = document.createElement("div");
+    row.className = "push-req push-granted";
+    row.append(meta, revoke);
+    return row;
+  });
+
   const title = document.createElement("div");
   title.className = "push-inbox-title";
-  title.textContent = `🔐 ${reqs.length} push${reqs.length > 1 ? "es" : ""} awaiting your approval — nothing hits a repo without your click`;
-  box.replaceChildren(title, ...rows);
+  title.textContent = reqs.length
+    ? `🔐 ${reqs.length} push${reqs.length > 1 ? "es" : ""} awaiting your approval — nothing hits a repo without your click`
+    : `✅ ${grants.length} approval${grants.length > 1 ? "s" : ""} armed — waiting for the session to push`;
+  box.replaceChildren(title, ...rows, ...grantRows);
 }
 window.renderPushInbox = renderPushInbox;
 

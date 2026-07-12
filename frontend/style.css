@@ -1901,3 +1901,10 @@ body.link-mode .tile-actions { visibility: hidden; }
   border: 1px solid rgba(210, 153, 34, 0.45);
 }
 .wait-verdict.bad strong { color: var(--status-warm); }
+
+/* An approval you already gave, not yet used by the session. Muted green: it is
+   reassurance ("your click landed and is waiting"), not a task. */
+.push-req.push-granted {
+  border-left: 3px solid var(--ok, #3fb950);
+  opacity: .9;
+}

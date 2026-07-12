@@ -120,3 +120,52 @@ def read_push_requests(coord_root: Path) -> list[dict[str, Any]]:
         })
     out.sort(key=lambda r: r["epoch"], reverse=True)
     return out
+
+
+def read_push_grants(coord_root: Path, *, now: float | None = None) -> list[dict[str, Any]]:
+    """Approvals Kyle has GIVEN that the session hasn't used yet.
+
+    This state used to be invisible, and the invisibility *was* the bug. Approving deleted
+    the request and armed a 30-minute token; if the session didn't retry in time (asleep,
+    busy, or Conductor not running to ping it) the token expired — and since the request was
+    already gone, the approval vanished without trace. The next push filed a *fresh* request,
+    so Kyle saw a duplicate ask with no hint that he had already said yes to it.
+
+    Making the grant durable (24h) is only half the fix. The other half is showing it: a
+    long-lived permission is safe when you can SEE it and TAKE IT BACK, not when it has a
+    short fuse. So an armed grant is now its own state — "approved, waiting for the session
+    to push" — with a revoke next to it.
+    """
+    now = time.time() if now is None else now
+    tdir = coord_root / "push-tokens"
+    if not tdir.is_dir():
+        return []
+    out: list[dict[str, Any]] = []
+    try:
+        files = list(tdir.iterdir())
+    except OSError:
+        return []
+    for f in files:
+        if not f.is_file():
+            continue
+        d = _parse(f)
+        exp = d.get("expires", "")
+        if not exp.isdigit():
+            # A leftover bare-epoch token from before the format change. Still honoured by
+            # the gate, so it must still be shown — a grant Kyle can't see is one he can't
+            # revoke.
+            try:
+                exp = f.read_text(encoding="utf-8").strip().split("\n")[0].strip()
+            except OSError:
+                continue
+        if not exp.isdigit() or int(exp) <= now:
+            continue                        # expired; bus.sh reaps these lazily
+        out.append({
+            "key": f.name,
+            "repo_name": d.get("repo_name") or f.name,
+            "approved_at": d.get("approved_at", ""),
+            "expires_epoch": int(exp),
+            "expires_in": int(exp) - now,
+        })
+    out.sort(key=lambda r: r["expires_epoch"])
+    return out

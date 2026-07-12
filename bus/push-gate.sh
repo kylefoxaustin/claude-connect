@@ -85,7 +85,12 @@ now="$(date +%s)"
 
 TOK="$TOKENS/$KEY"
 if [ -f "$TOK" ]; then
-  exp="$(cat "$TOK" 2>/dev/null || echo 0)"; case "$exp" in ''|*[!0-9]*) exp=0 ;; esac
+  # The token is `key=value` lines. It USED to be a bare epoch, and a leftover one must
+  # still be honoured — failing closed here would look exactly like "Kyle's approval
+  # didn't work", on the one control he relies on.
+  exp="$(grep -E '^expires=' "$TOK" 2>/dev/null | head -1 | cut -d= -f2-)"
+  if [ -z "$exp" ]; then exp="$(head -1 "$TOK" 2>/dev/null || echo 0)"; fi
+  case "$exp" in ''|*[!0-9]*) exp=0 ;; esac
   rm -f "$TOK"                                   # consume — one push per approval
   if [ "$now" -lt "$exp" ]; then
     rm -f "$REQUESTS/$KEY" 2>/dev/null || true   # clear the (now-satisfied) request
