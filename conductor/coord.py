@@ -182,6 +182,45 @@ def clear_push_proposal(coord_root: Path, key: str) -> None:
         pass
 
 
+def read_persist_requests(coord_root: Path) -> list[dict[str, Any]]:
+    """Acts whose consequences would OUTLIVE the session that wants to commit them.
+
+    The second hard control. The push gate guards a repo; this guards the machine — and it
+    exists because *claude-connect fabricated Kyle's approval* and image_gen went to install a
+    systemd daemon on the strength of it. Only its own harness stopped it. Luck, not
+    architecture.
+
+    The property that makes it immune to that: **the grant is a TOKEN IN A FILE, not words in
+    a message.** A Claude can say "Kyle approved this" a hundred times and it is still denied.
+    """
+    rdir = coord_root / "persist-requests"
+    if not rdir.is_dir():
+        return []
+    out: list[dict[str, Any]] = []
+    try:
+        files = list(rdir.iterdir())
+    except OSError:
+        return []
+    for f in files:
+        if not f.is_file():
+            continue
+        d = _parse(f)
+        if not d.get("target"):
+            continue
+        out.append({
+            "key": f.name,
+            "kind": d.get("kind", "?"),
+            "target": d.get("target", ""),
+            "target_name": d.get("target_name") or f.name,
+            "detail": d.get("detail", ""),
+            "cwd": d.get("cwd", ""),
+            "created": d.get("created", ""),
+            "epoch": int(d["epoch"]) if d.get("epoch", "").isdigit() else 0,
+        })
+    out.sort(key=lambda r: r["epoch"], reverse=True)
+    return out
+
+
 def read_push_grants(coord_root: Path, *, now: float | None = None) -> list[dict[str, Any]]:
     """Approvals Kyle has GIVEN that the session hasn't used yet.
 

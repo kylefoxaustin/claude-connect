@@ -405,6 +405,67 @@ _push_token_expiry() {  # <token-file>
   printf '%s' "$exp"
 }
 
+PERSIST_TOKENS="$COORD_ROOT/persist-tokens"
+PERSIST_REQUESTS="$COORD_ROOT/persist-requests"
+PERSIST_TTL="${PERSIST_TOKEN_TTL:-86400}"   # durable, like a push grant: it WAITS for the agent
+
+persist_list() {
+  local f any="" now exp
+  now="$(date +%s)"
+  [ -d "$PERSIST_REQUESTS" ] && for f in "$PERSIST_REQUESTS"/*; do [ -f "$f" ] || continue; any=1
+    echo "  ⏳ $(_push_field target_name "$f")  [$(_push_field kind "$f")] — waiting for you"
+    echo "       $(_push_field detail "$f")"
+  done
+  [ -d "$PERSIST_TOKENS" ] && for f in "$PERSIST_TOKENS"/*; do [ -f "$f" ] || continue
+    exp="$(_push_field expires "$f")"; case "$exp" in ''|*[!0-9]*) exp=0 ;; esac
+    [ "$now" -lt "$exp" ] || { rm -f "$f"; continue; }
+    any=1
+    echo "  ✅ $(_push_field target_name "$f") — APPROVED, waiting for the session to act"
+  done
+  [ -z "$any" ] && echo "No pending persistence approvals."
+  return 0
+}
+
+persist_approve() {  # <name-or-key>
+  local q="${1:-}" f name key target matched=""
+  [ -n "$q" ] || { echo "usage: bus.sh persist approve <name>"; return 2; }
+  mkdir -p "$PERSIST_TOKENS"
+  [ -d "$PERSIST_REQUESTS" ] && for f in "$PERSIST_REQUESTS"/*; do [ -f "$f" ] || continue
+    name="$(_push_field target_name "$f")"; target="$(_push_field target "$f")"; key="$(basename "$f")"
+    if [ "$name" = "$q" ] || [ "$key" = "$q" ]; then
+      { echo "expires=$(( $(date +%s) + PERSIST_TTL ))"
+        echo "target=$target"; echo "target_name=$name"
+        echo "approved=$(date +%s)"; echo "approved_at=$(date '+%Y-%m-%d %H:%M')"; } > "$PERSIST_TOKENS/$key"
+      rm -f "$f"; matched=1
+      echo "✅ Approved ONE act on '$name'. It waits until the session actually does it."
+      echo "   Disarm with: bus.sh persist revoke $name"
+    fi
+  done
+  [ -n "$matched" ] || { echo "No pending persistence request matching '$q'."; return 1; }
+  return 0
+}
+
+persist_deny() {  # <name-or-key>
+  local q="${1:-}" f name key matched=""
+  [ -d "$PERSIST_REQUESTS" ] && for f in "$PERSIST_REQUESTS"/*; do [ -f "$f" ] || continue
+    name="$(_push_field target_name "$f")"; key="$(basename "$f")"
+    if [ "$name" = "$q" ] || [ "$key" = "$q" ]; then rm -f "$f"; matched=1; echo "Dismissed the request for '$name'."; fi
+  done
+  [ -n "$matched" ] || { echo "No pending persistence request matching '$q'."; return 1; }
+  return 0
+}
+
+persist_revoke() {  # <name-or-key>
+  local q="${1:-}" f name key matched=""
+  [ -d "$PERSIST_TOKENS" ] && for f in "$PERSIST_TOKENS"/*; do [ -f "$f" ] || continue
+    name="$(_push_field target_name "$f")"; key="$(basename "$f")"
+    if [ "$name" = "$q" ] || [ "$key" = "$q" ]; then rm -f "$f"; matched=1
+      echo "🔒 Revoked the approval for '${name:-$key}'."; fi
+  done
+  [ -n "$matched" ] || { echo "No armed approval matching '$q'."; return 1; }
+  return 0
+}
+
 push_list() {
   local f any="" now exp
   now="$(date +%s)"
@@ -1323,6 +1384,18 @@ PYEOF
 
   supersede)
     _coord_retract CORRECTION "$@"
+    exit $?
+    ;;
+
+  persist)
+    action="${1:-list}"; shift 2>/dev/null || true
+    case "$action" in
+      list)    persist_list ;;
+      approve) persist_approve "$@" ;;
+      deny)    persist_deny "$@" ;;
+      revoke)  persist_revoke "$@" ;;
+      *) echo "usage: bus.sh persist {list|approve <name>|deny <name>|revoke <name>}"; exit 2 ;;
+    esac
     exit $?
     ;;
 

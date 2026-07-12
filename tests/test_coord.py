@@ -396,3 +396,50 @@ def test_being_blocked_ON_SOMEONE_ELSE_does_not_lift_your_own_floor(state, monke
     _seen(monkeypatch, "2026-07-10 17:05")
     state._directed_unread = _directed(ts="2026-07-10 17:30")
     assert _run_wake(state, monkeypatch) == []
+
+
+# --- sender-declared priority (Kyle's proposal, via orb_slam) ------------------
+# orb_slam SIGNED OFF at 09:00 — work delivered, "don't wait on me" — and was woken across the
+# next SIX HOURS, once per fleet broadcast it was merely cc'd on. Each wake spent tokens reading
+# traffic that needed no reply and returned "nothing for me".
+#
+# Kyle's framing is the useful part: "high annoyance, chews up tokens, but LOW workflow impact."
+# That is its own class of failure — not dangerous, just expensive — and it wants its own fix.
+#
+# The recipient-count heuristic (>4 = announcement) fixes it with ZERO adoption. But inferring
+# priority opens the mirror hole: what if a mass-cc genuinely IS urgent? So the sender gets an
+# override, and the DEFAULT stays inferred — because a system that REQUIRES senders to classify
+# their mail gets mail that is all one class.
+from conductor.bus import _address_targets
+
+
+def test_p_wake_forces_a_wake_even_on_a_mass_cc():
+    """The escape hatch for the message that really cannot wait — a retraction, a 'stop' —
+    even though it is addressed to everyone."""
+    t = _address_targets("to:a to:b to:c to:d to:e to:f p:wake — [x] STOP, revert that")
+    assert "p:wake" in t
+    assert "a" in t
+
+
+def test_p_low_suppresses_a_wake_even_on_DIRECTED_mail():
+    """The courteous reply that needs no action — which is most of them. orb_slam's case,
+    declared rather than inferred."""
+    t = _address_targets("to:orb_slam p:low — [x] thanks, nothing further")
+    assert "p:low" in t
+    assert "orb_slam" in t
+
+
+def test_priority_tokens_are_not_counted_as_RECIPIENTS():
+    """`p:wake` is not a session. If it were counted, it would push a 4-recipient message over
+    the announcement threshold and silence a message the sender explicitly marked urgent —
+    exactly inverting the feature."""
+    from conductor.bus import _PRIORITY_TOKENS, _WAKE_MAX_RECIPIENTS
+    t = _address_targets("to:a to:b to:c to:d p:wake — [x] hi")
+    real = t - _PRIORITY_TOKENS - {"all"}
+    assert len(real) == 4 <= _WAKE_MAX_RECIPIENTS
+
+
+def test_a_plain_message_still_works_with_no_priority_at_all():
+    """Zero adoption: the default is inferred, and nobody has to learn anything."""
+    t = _address_targets("to:qualcomm — [x] a real question")
+    assert t == frozenset({"qualcomm"})

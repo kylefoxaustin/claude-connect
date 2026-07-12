@@ -445,9 +445,14 @@ def _address_targets(first_body_line: str) -> frozenset[str]:
     list). Empty for an untargeted broadcast; ``all`` is kept but never matches a
     session name, so broadcasts don't count as *directed*."""
     head = first_body_line.split("—", 1)[0]
-    if "to:" not in head:
+    if "to:" not in head and "p:" not in head:
         return frozenset()
-    return frozenset(_plain_name(m) for m in _TO_TOKEN_RE.findall(head))
+    out = {_plain_name(m) for m in _TO_TOKEN_RE.findall(head)}
+    # Sender-declared priority rides in the same line: `to:all p:wake — …`
+    for tok in ("p:wake", "p:low"):
+        if tok in head:
+            out.add(tok)
+    return frozenset(out)
 
 
 def _directed_blocks(messages_path: Path) -> list[tuple[str, str, frozenset[str]]]:
@@ -488,6 +493,10 @@ def _directed_blocks(messages_path: Path) -> list[tuple[str, str, frozenset[str]
 # is a conversation; 8 is a mailing list. Measured on the real bus: a quarter of all
 # "directed" messages name 5+ recipients, and those are what were storming the fleet.
 _WAKE_MAX_RECIPIENTS = 4
+
+# Sender-declared priority, parsed out of the same `to:` address line. These are not
+# recipients and must never be counted as such.
+_PRIORITY_TOKENS = frozenset({"wake", "low", "p:wake", "p:low"})
 
 
 def directed_unread_all(
@@ -532,11 +541,29 @@ def directed_unread_all(
                 # you — it's one person telling everyone something. Waking on it treats an
                 # FYI as an interruption.
                 #
-                # This is why `docs` asked THREE TIMES to be exempted and why qualcomm got 12
-                # keystroke injections in an hour: the fleet tag-ccs everyone on nearly every
-                # broadcast, which defeats the directed/broadcast distinction entirely — and
-                # exempting sessions one at a time treats the symptom.
-                if len(targets - {"all"}) <= _WAKE_MAX_RECIPIENTS:
+                # This is why `docs` asked THREE TIMES to be exempted, why qualcomm got 12
+                # keystroke injections in an hour, and why orb_slam — SIGNED OFF, work done —
+                # was woken across six hours for broadcasts it was merely cc'd on. The fleet
+                # tag-ccs everyone on nearly every message, which defeats the
+                # directed/broadcast distinction entirely, and exempting sessions one at a
+                # time treats the symptom.
+                #
+                # But INFERRING priority from recipient count opens the mirror hole: what if a
+                # mass-cc genuinely IS urgent? So the sender gets an override — Kyle's idea:
+                #
+                #   p:wake  — wake them anyway. For the message that really cannot wait, even
+                #             though it's addressed to everyone. (A retraction. A "stop".)
+                #   p:low   — don't wake anyone, even though it's directed. For the courteous
+                #             reply that needs no action, which is most of them.
+                #
+                # Inference is the default (zero adoption); the declaration wins when present.
+                # That is the right way round: a system that REQUIRES senders to classify their
+                # mail gets mail that is all one class.
+                if "p:low" in targets:
+                    pass                                     # explicitly not worth a wake
+                elif "p:wake" in targets:
+                    wakeable += 1                            # explicitly IS, whoever it's to
+                elif len(targets - _PRIORITY_TOKENS - {"all"}) <= _WAKE_MAX_RECIPIENTS:
                     wakeable += 1
         out[tag] = {"count": count, "senders": sorted(senders), "latest_ts": latest,
                     # What auto-delivery may act on. `count` is what the badge shows —

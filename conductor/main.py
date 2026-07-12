@@ -62,6 +62,7 @@ from .bus import _plain_name, _read_last_seen
 from .coord import (
     clear_push_proposal,
     read_push_grants,
+    read_persist_requests,
     read_push_proposals,
     read_push_requests,
     read_retractions,
@@ -268,6 +269,10 @@ class AppState:
         # Sessions asking 'is this the right MOMENT to push?' — with the context the gate
         # can never have: what's in the commits, and what they'd do instead.
         self._push_proposals: list[dict[str, Any]] = []
+        # THE SECOND HARD CONTROL: acts whose consequences outlive the session.
+        # settings.json is the RCE — a hook there is arbitrary code on every tool
+        # call in every session, and it looks like editing a config file.
+        self._persist_requests: list[dict[str, Any]] = []
         # 'tell this session its push was approved' — delivered only when it's QUIET,
         # because a busy session swallows injected keystrokes without a trace.
         self._push_notices: dict[str, dict[str, Any]] = {}
@@ -434,6 +439,7 @@ class AppState:
         push_reqs = await asyncio.to_thread(read_push_requests, self.coord_root)
         grants = await asyncio.to_thread(read_push_grants, self.coord_root)
         self._push_proposals = await asyncio.to_thread(read_push_proposals, self.coord_root)
+        self._persist_requests = await asyncio.to_thread(read_persist_requests, self.coord_root)
         # Compare grants on identity, not the live countdown — `expires_in` ticks down every
         # scan, so including it would rebroadcast (and re-render) the inbox forever.
         gid = [(g["key"], g["expires_epoch"]) for g in grants]
@@ -442,7 +448,8 @@ class AppState:
             self._push_requests = push_reqs
             self._push_grants = grants
             await self.hub.broadcast("push", {"requests": push_reqs, "grants": grants,
-                                             "proposals": self._push_proposals})
+                                             "proposals": self._push_proposals,
+                                             "persist": self._persist_requests})
         else:
             self._push_grants = grants
         svc = await asyncio.to_thread(read_services, self.coord_root)
@@ -1257,7 +1264,7 @@ async def get_push(request: Request) -> dict[str, Any]:
     on wake makes the inbox self-healing instead of needing a manual refresh."""
     state: AppState = request.app.state.cond
     return {"requests": state._push_requests, "grants": state._push_grants,
-            "proposals": state._push_proposals}
+            "proposals": state._push_proposals, "persist": state._persist_requests}
 
 
 @app.post("/api/push/{key}/{action}")
@@ -1769,6 +1776,38 @@ async def answer_proposal(key: str, payload: ProposalAnswer,
     return {"ok": True, "approved": approved, "choice": choice}
 
 
+@app.post("/api/persist/{key}/{action}")
+async def decide_persist(key: str, action: str, request: Request) -> dict[str, Any]:
+    """Approve / deny / revoke an act whose consequences outlive the session.
+
+    Same machinery as the push gate, because that shape is proven — and because the property
+    that matters is identical: **the grant is bound to the ACTION, not conveyed in PROSE.**
+    Kyle clicks; a token appears in a file; the gate consumes it once. No amount of a Claude
+    saying "Kyle approved this" can substitute, which is precisely the failure that happened
+    this morning.
+    """
+    if action not in ("approve", "deny", "revoke"):
+        raise HTTPException(status_code=404, detail="unknown action")
+    if not key or not all(c.isalnum() or c in "._-" for c in key):
+        raise HTTPException(status_code=400, detail="bad request key")
+    state: AppState = request.app.state.cond
+    req = next((r for r in state._persist_requests if r.get("key") == key), None)
+    name = (req or {}).get("target_name") or key
+    proc = await asyncio.to_thread(
+        subprocess.run,
+        [str(state.settings.bus.script_path_resolved), "persist", action, name],
+        capture_output=True, text=True, timeout=15,
+    )
+    ok = proc.returncode == 0
+    state._persist_requests = await asyncio.to_thread(read_persist_requests, state.coord_root)
+    await state.hub.broadcast("push", {"requests": state._push_requests,
+                                       "grants": state._push_grants,
+                                       "proposals": state._push_proposals,
+                                       "persist": state._persist_requests})
+    log.info("persist %s [%s]: %s", action, name, (proc.stdout or "").strip() or proc.returncode)
+    return {"ok": ok, "result": (proc.stdout or "").strip()}
+
+
 @app.get("/api/ops")
 async def get_ops(request: Request) -> dict[str, Any]:
     """Everything the phone console needs, in ONE call.
@@ -1790,6 +1829,7 @@ async def get_ops(request: Request) -> dict[str, Any]:
         # Kyle can see and take back, rather than one that quietly expires behind his back.
         "grants": state._push_grants,
         "proposals": state._push_proposals,
+        "persist": state._persist_requests,
         "retractions": state._retractions,
         # read_windows() already drops expired windows — re-filtering here on a field name
         # I guessed at ("expires_epoch") silently zeroed the list while 14 sessions were
@@ -1800,7 +1840,8 @@ async def get_ops(request: Request) -> dict[str, Any]:
         "services": state.services.get("services", []),
         "resources": state.resources.get("resources", []),
         "counts": {
-            "needs_you": len(state.decisions) + len(state._push_requests),
+            "needs_you": (len(state.decisions) + len(state._push_requests)
+                          + len(state._push_proposals) + len(state._persist_requests)),
             "blocked": state.waiting.get("blocked_count", 0),
             "working": len(busy),
             "live": len(live),

@@ -137,6 +137,9 @@ function renderInbox() {
   // with the context attached, and answering it arms the grant.
   for (const p of ops.proposals || []) items.push(proposalCard(p));
   for (const p of ops.push) items.push(pushCard(p));
+  // Acts that would outlive the session. These outrank a push: a push touches a repo;
+  // a hook in settings.json is arbitrary code on every tool call in every session.
+  for (const p of ops.persist || []) items.push(persistCard(p));
   // Approvals you already gave that the session hasn't used yet. Shown BELOW the things
   // that still need you — it's reassurance, not a task. Its whole job is to answer
   // "did my tap land?", which used to have no answer at all.
@@ -300,6 +303,55 @@ function proposalCard(p) {
     b.addEventListener("click", () => answer(alt, b, "Telling it…"));
     el.appendChild(b);
   }
+  return el;
+}
+
+/* 🔒 THE SECOND HARD CONTROL — an act whose consequences OUTLIVE the session.
+ *
+ * "The push gate is not about git. It is about ONE property: an act whose consequences outlive
+ * the session that committed it." (image_gen). A push outlives you. So does a systemd unit, a
+ * cron job, and — the dangerous one — a hook in settings.json, which is arbitrary code executed
+ * on every tool call in every session. Fleet-wide RCE that looks like editing a config file.
+ *
+ * No Undo here, unlike a push approval. The act happens in a session we don't control, at a
+ * time we don't choose. There is no window to take it back in — so the decision is made once,
+ * deliberately, with what it touches spelled out.
+ */
+function persistCard(p) {
+  const el = document.createElement("div");
+  el.className = "card card-hot";
+  const age = p.epoch ? Date.now() / 1000 - p.epoch : null;
+  const KIND = { edit: "wants to edit", write: "wants to write to",
+                 systemd: "wants to install a service", cron: "wants a cron job" };
+  el.innerHTML =
+    `<div class="card-head">` +
+    `<span class="card-who">🔒 ${esc(KIND[p.kind] || "wants to persist")}</span>` +
+    `<span class="row-age">${ago(age)}</span></div>` +
+    `<div class="card-q">${esc(p.target_name)}</div>` +
+    `<div class="commits"><div>${esc(p.detail || p.target)}</div></div>` +
+    `<div class="row-sub" style="white-space:normal;margin-bottom:10px">` +
+    `This outlives the session that runs it.</div>`;
+
+  const row = document.createElement("div");
+  row.className = "btn-row";
+  const go = document.createElement("button");
+  go.className = "btn btn-primary";
+  go.textContent = "Allow once";
+  const no = document.createElement("button");
+  no.className = "btn btn-danger";
+  no.textContent = "Deny";
+  for (const [btn, act] of [[go, "approve"], [no, "deny"]]) {
+    btn.addEventListener("click", async () => {
+      [go, no].forEach((b) => (b.disabled = true));
+      btn.innerHTML = '<span class="spin"></span> …';
+      try {
+        await api(`/api/persist/${encodeURIComponent(p.key)}/${act}`, { method: "POST" });
+      } catch { /* refresh shows the truth */ }
+      refresh();
+    });
+  }
+  row.append(go, no);
+  el.appendChild(row);
   return el;
 }
 
