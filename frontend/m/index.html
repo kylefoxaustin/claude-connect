@@ -44,7 +44,21 @@
 
       <!-- === FLEET ==================================================== -->
       <section class="pane" id="pane-fleet" hidden>
-        <h2 class="pane-h">Fleet</h2>
+        <div class="pane-bar">
+          <h2 class="pane-h">Fleet</h2>
+          <label class="sort-label">
+            Sort
+            <select id="fleet-sort">
+              <option value="attention">Needs attention first</option>
+              <option value="recent">Most recently active</option>
+              <option value="oldest">Least recently active</option>
+              <option value="mail">Unread mail — most first</option>
+              <option value="status">Status — working first</option>
+              <option value="az">Name A → Z</option>
+              <option value="za">Name Z → A</option>
+            </select>
+          </label>
+        </div>
         <div id="fleet"></div>
       </section>
 

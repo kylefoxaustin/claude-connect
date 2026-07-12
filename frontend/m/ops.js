@@ -374,14 +374,55 @@ function grantRow(g) {
   return el;
 }
 
-/* ---- FLEET: a list, grouped by state. Never a grid of 30 tiles. -------- */
+/* ---- FLEET: a sorted list, never a grid of 30 tiles. ------------------- */
+// Status order for "working first". WAITING is the resting state of nearly every quiet
+// session, so it sits with idle rather than reading as a distinct thing you should look at.
+const STATUS_RANK = { active: 0, warm: 1, waiting: 2, idle: 3, dormant: 4, ended: 5 };
+
+const LS_FLEET_SORT = "conductor.ops.fleetSort";
+
+const FLEET_SORTS = {
+  // The default, because it answers the question you actually opened this tab to ask.
+  // A session with a question open outranks one with unread mail, which outranks a quiet one.
+  attention: (a, b) =>
+    (b.asking - a.asking) ||
+    (b.pending - a.pending) ||
+    (STATUS_RANK[a.status] ?? 9) - (STATUS_RANK[b.status] ?? 9) ||
+    (a.name || "").localeCompare(b.name || ""),
+  recent: (a, b) => a.idle_seconds - b.idle_seconds,
+  oldest: (a, b) => b.idle_seconds - a.idle_seconds,
+  mail:   (a, b) => (b.pending - a.pending) || a.idle_seconds - b.idle_seconds,
+  status: (a, b) =>
+    ((STATUS_RANK[a.status] ?? 9) - (STATUS_RANK[b.status] ?? 9)) ||
+    a.idle_seconds - b.idle_seconds,
+  az: (a, b) => (a.name || "").localeCompare(b.name || ""),
+  za: (a, b) => (b.name || "").localeCompare(a.name || ""),
+};
+
+let fleetSort = "attention";
+try { fleetSort = localStorage.getItem(LS_FLEET_SORT) || "attention"; } catch { /* private */ }
+if (!FLEET_SORTS[fleetSort]) fleetSort = "attention";
+
+const sortSel = $("fleet-sort");
+if (sortSel) {
+  sortSel.value = fleetSort;
+  sortSel.addEventListener("change", () => {
+    fleetSort = sortSel.value;
+    try { localStorage.setItem(LS_FLEET_SORT, fleetSort); } catch { /* private */ }
+    renderFleet();
+  });
+}
+
 function renderFleet() {
   const host = $("fleet");
-  if (!ops.sessions.length) {
+  if (!ops || !ops.sessions.length) {
     host.innerHTML = `<div class="empty">No live sessions.</div>`;
     return;
   }
-  host.replaceChildren(...ops.sessions.map((s) => {
+  // Copy before sorting: `ops.sessions` is the payload other panes read, and sorting in
+  // place would quietly reorder it under them.
+  const rows = [...ops.sessions].sort(FLEET_SORTS[fleetSort] || FLEET_SORTS.attention);
+  host.replaceChildren(...rows.map((s) => {
     const el = document.createElement("div");
     el.className = "row";
     const badges = [

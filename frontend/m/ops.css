@@ -225,3 +225,24 @@ body {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+
+/* Fleet sort. A 15-session list is only useful if you can bring the right ones to the top. */
+.pane-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-bottom: 10px;
+}
+.pane-bar .pane-h { margin: 0 2px; }
+.sort-label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dim); }
+.sort-label select {
+  padding: 7px 9px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--row-hi); color: var(--text); font: inherit; font-size: 13px;
+  /* The native control renders its value in a dim system colour that reads as an unset
+     placeholder — same trap the desktop settings hit. Take it over. */
+  appearance: none; -webkit-appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--dim) 50%),
+                    linear-gradient(135deg, var(--dim) 50%, transparent 50%);
+  background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 26px;
+}

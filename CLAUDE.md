@@ -23,6 +23,16 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.25.2: 🔢 **Fleet sorting on the phone** (Kyle's ask). With 15+ sessions the list is
+  only useful if you can bring the right ones to the top. Seven sorts, persisted:
+  **Needs attention first** (the default — *a session with a question open outranks one with
+  unread mail, which outranks a quiet one*, because that's the question you actually opened
+  the tab to ask), most/least recently active, unread mail, status (working first), A→Z, Z→A.
+  `WAITING` ranks **with idle, not as its own thing** — it's the resting state of nearly every
+  quiet session, so surfacing it as distinct would be noise. Sorts a **copy**: `ops.sessions`
+  is the payload the other panes read, and sorting in place would quietly reorder it under
+  them. Native `<select>` styling taken over (`appearance:none` + custom caret) — the same
+  trap the desktop settings hit, where the system colour reads as an unset placeholder.
 - ✅ v2.25.1: 🔇 **The approval ping was typed into the void — and reported success.**
   Kyle approved on his phone; Conductor logged **`woke [claude-connect] — push approved`**;
   the text landed in **NO session's transcript at all.** *(He noticed — "weird u didn't get
