@@ -1884,3 +1884,20 @@ body.link-mode .tile-actions { visibility: hidden; }
 .wait-kind.k-service  { color: #c678dd; border-color: rgba(198, 120, 221, 0.4); }
 .wait-edges .wait-why { grid-column: 1 / -1; padding-left: 8px; opacity: 0.75; }
 @media (pointer: coarse) { .wait-act { min-height: 38px; } }
+/* The verdict line — the panel must say plainly whether anything is actually wrong. */
+.wait-verdict {
+  font-size: 12px; line-height: 1.5; padding: 9px 11px;
+  border-radius: 7px; margin-bottom: 6px;
+}
+.wait-verdict.good {
+  color: var(--text-dim);
+  background: rgba(63, 185, 80, 0.08);
+  border: 1px solid rgba(63, 185, 80, 0.3);
+}
+.wait-verdict.good strong { color: var(--status-active); }
+.wait-verdict.bad {
+  color: var(--text);
+  background: rgba(210, 153, 34, 0.10);
+  border: 1px solid rgba(210, 153, 34, 0.45);
+}
+.wait-verdict.bad strong { color: var(--status-warm); }

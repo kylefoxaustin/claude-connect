@@ -134,7 +134,11 @@ def test_bottleneck_ranks_who_holds_up_the_most_sessions():
     assert sorted(top["blocking"]) == ["a", "b", "c"]
     assert top["live"] is True
     assert g["bottlenecks"][1]["tag"] == "docs"
-    assert g["blocked_count"] == 3          # a, b, c are blocked (docs/qualcomm are blockers)
+    # These are MAIL edges, so a/b/c are awaiting a reply — not trapped. Bottleneck
+    # ranking still works (qualcomm IS the fleet's critical path) without the headline
+    # number crying wolf.
+    assert g["blocked_count"] == 0
+    assert g["awaiting_count"] == 3
 
 
 def test_edges_sorted_longest_suffering_first():
@@ -149,4 +153,28 @@ def test_edges_sorted_longest_suffering_first():
 
 def test_empty_fleet_is_quiet():
     g = _g()
-    assert g == {"edges": [], "cycles": [], "bottlenecks": [], "blocked_count": 0}
+    assert g == {"edges": [], "cycles": [], "bottlenecks": [], "blocked_count": 0,
+                 "awaiting_count": 0}
+
+
+def test_awaiting_a_reply_is_NOT_being_blocked():
+    """The alarm must not cry wolf. Twenty sessions awaiting a reply on a fast fleet is a
+    conversation, not a crisis — and a dashboard that shouts on a healthy fleet is one you
+    learn to ignore, so it won't be believed the night something genuinely deadlocks.
+    Only a resource/service wait means "cannot proceed"."""
+    g = _g(directed_unread={
+        "[other:b]": {"count": 3, "senders": ["a", "c"], "latest_ts": "2026-07-11 10:00"},
+    })
+    assert g["blocked_count"] == 0        # nobody is TRAPPED
+    assert g["awaiting_count"] == 2       # a and c are merely awaiting a reply
+    assert all(e["hard"] is False for e in g["edges"])
+
+
+def test_a_resource_wait_IS_a_block():
+    g = _g(resources=[{
+        "name": "orin-agx",
+        "lease": {"owner": "[other:h]", "queue": ["[other:a]"], "acquired_epoch": NOW},
+    }])
+    assert g["blocked_count"] == 1        # `a` genuinely cannot proceed
+    assert g["awaiting_count"] == 0
+    assert g["edges"][0]["hard"] is True

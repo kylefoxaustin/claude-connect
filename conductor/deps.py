@@ -12,7 +12,20 @@ The nice part: **every input already exists.** Nothing new has to be collected �
   * **service queue**  — A queued a job with image_gen             ⇒  A waits on image_gen.
   * **resource queue** — A is queued for a board held by H         ⇒  A waits on H.
 
-An edge ``A -> B`` always means **"A is blocked on B"**: B is the one holding A up.
+An edge ``A -> B`` means **"A is waiting on B"** — but *how badly* differs, and conflating
+the two would make the alarm worthless:
+
+  * **HARD** (``resource``, ``service``) — A genuinely **cannot proceed**. It is queued for
+    a board someone else holds, or its job is sitting behind others in a service queue.
+    It is trapped until something changes.
+  * **SOFT** (``mail``) — A asked B a question and B hasn't read it. A is *awaiting a
+    reply*, and may well be doing productive work meanwhile. On a fast fleet, twenty of
+    these is just a conversation in flight, not a crisis.
+
+Calling both "blocked" would make the dashboard shout on a healthy fleet — and a
+dashboard that cries wolf is one you learn to ignore, which means it will not be believed
+on the night something genuinely deadlocks. So the counts are kept separate and the
+headline number is the HARD one.
 
 Two things make this more than a pretty picture:
 
@@ -110,8 +123,8 @@ def build_wait_graph(
             if src == dst:
                 continue
             edges.append({
-                "src": src, "dst": dst, "kind": "mail",
-                "why": f"{info['count']} unread message(s) — hasn't replied",
+                "src": src, "dst": dst, "kind": "mail", "hard": False,
+                "why": f"{info['count']} unread message(s) — awaiting a reply",
                 "since": since, "age": max(0.0, now - since),
             })
 
@@ -124,7 +137,7 @@ def build_wait_graph(
             started = float(serving.get("started") or serving.get("epoch") or now)
             if src != name:
                 edges.append({
-                    "src": src, "dst": name, "kind": "service",
+                    "src": src, "dst": name, "kind": "service", "hard": True,
                     "why": f"job in progress: {(serving.get('text') or '')[:70]}",
                     "since": started, "age": max(0.0, now - started),
                 })
@@ -134,7 +147,7 @@ def build_wait_graph(
                 continue
             since = float(job.get("epoch") or now)
             edges.append({
-                "src": src, "dst": name, "kind": "service",
+                "src": src, "dst": name, "kind": "service", "hard": True,
                 "why": f"queued job: {(job.get('text') or '')[:70]}",
                 "since": since, "age": max(0.0, now - since),
             })
@@ -153,7 +166,7 @@ def build_wait_graph(
             if not src or src == holder:
                 continue
             edges.append({
-                "src": src, "dst": holder, "kind": "resource",
+                "src": src, "dst": holder, "kind": "resource", "hard": True,
                 "why": f"waiting for {res.get('name', '?')} (held by {holder})",
                 "since": acquired, "age": max(0.0, now - acquired),
                 "resource": res.get("name", ""),
@@ -207,9 +220,13 @@ def build_wait_graph(
     )
 
     edges.sort(key=lambda e: -e["age"])          # longest-suffering first
+    # The HEADLINE number is the hard one. Twenty sessions awaiting a reply on a fast
+    # fleet is a conversation, not a crisis; a dashboard that shouts on that is a
+    # dashboard you stop reading — and then it is not believed on the night it matters.
     return {
         "edges": edges,
         "cycles": cycles_out,
         "bottlenecks": bottlenecks,
-        "blocked_count": len({e["src"] for e in edges}),
+        "blocked_count": len({e["src"] for e in edges if e.get("hard")}),   # genuinely trapped
+        "awaiting_count": len({e["src"] for e in edges if not e.get("hard")}),  # merely awaiting a reply
     }

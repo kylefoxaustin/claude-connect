@@ -903,16 +903,22 @@ function updateWaitingBtn() {
   const btn = document.getElementById("waiting-btn");
   if (!btn) return;
   const w = state.waiting || {};
-  const n = w.blocked_count || 0;
+  const hard = w.blocked_count || 0;       // genuinely trapped (resource / service queue)
+  const soft = w.awaiting_count || 0;      // merely awaiting a reply
   const dead = (w.cycles || []).some((c) => c.deadlock);
-  btn.textContent = n ? `⏳ ${n} blocked` : "⏳ Blocked";
-  btn.classList.toggle("has-blocked", n > 0);
+  // Only the HARD count gets to shout. Twenty sessions awaiting a reply on a fast fleet
+  // is a conversation, not a crisis — and a button that alarms on a healthy fleet is one
+  // you stop reading, which means it won't be believed the night something deadlocks.
+  btn.textContent = hard ? `⏳ ${hard} blocked` : soft ? `⏳ ${soft} waiting` : "⏳ Flowing";
+  btn.classList.toggle("has-blocked", hard > 0);
   btn.classList.toggle("has-deadlock", dead);
   btn.title = dead
-    ? "DEADLOCK on the fleet — sessions that can never proceed without you"
-    : n
-      ? `${n} session(s) waiting on someone else`
-      : "Nobody is blocked — the fleet is flowing";
+    ? "DEADLOCK — sessions that can never proceed without you"
+    : hard
+      ? `${hard} session(s) TRAPPED (queued for a board or a service)`
+      : soft
+        ? `Nothing is blocked. ${soft} session(s) are simply awaiting a reply — that's a conversation, not a problem.`
+        : "Nobody is waiting on anybody. The fleet is flowing.";
 }
 
 function actionBtns(plain) {
@@ -945,9 +951,19 @@ function renderWaiting() {
   body.replaceChildren();
 
   if (!edges.length) {
-    body.innerHTML = '<p class="wait-clear">✅ Nobody is blocked. The whole fleet is flowing.</p>';
+    body.innerHTML = '<p class="wait-clear">✅ Nobody is waiting on anybody. The whole fleet is flowing.</p>';
     return;
   }
+  const hard = w.blocked_count || 0, soft = w.awaiting_count || 0;
+  const verdict = document.createElement("div");
+  verdict.className = "wait-verdict" + (hard ? " bad" : " good");
+  verdict.innerHTML = hard
+    ? `<strong>${hard} session(s) genuinely TRAPPED</strong> — queued for a board or a service `
+      + `they cannot proceed without.` + (soft ? ` (${soft} more are merely awaiting a reply.)` : "")
+    : `<strong>✅ Nothing is blocked.</strong> ${soft} session(s) are awaiting a reply — `
+      + `on a fast fleet that's a conversation in flight, not a problem. `
+      + `This panel shouts only when someone genuinely <em>cannot proceed</em>.`;
+  body.appendChild(verdict);
 
   const sec = (title, hint) => {
     const h = document.createElement("div");
