@@ -127,6 +127,9 @@ function renderInbox() {
   const items = [];
 
   for (const d of ops.decisions) items.push(decisionCard(d));
+  // A proposal outranks a bare gate request: it's the same repo asking the SAME question
+  // with the context attached, and answering it arms the grant.
+  for (const p of ops.proposals || []) items.push(proposalCard(p));
   for (const p of ops.push) items.push(pushCard(p));
   // Approvals you already gave that the session hasn't used yet. Shown BELOW the things
   // that still need you — it's reassurance, not a task. Its whole job is to answer
@@ -228,6 +231,69 @@ function decisionCard(d) {
     }
   });
   el.appendChild(submit);
+  return el;
+}
+
+/* "Should I push NOW, or keep digging?" — the question the GATE cannot ask.
+ *
+ * The gate protects the repo: nothing lands without Kyle's tap. But it could only ever show
+ * him `claude-connect — git push origin main`, which says nothing about what is in the
+ * commits, whether the session thinks the work is done, or what it would do instead. Tapping
+ * Approve on that is a rubber stamp on a decision he never made — and a session that "just
+ * pushes and lets the gate sort it out" has quietly appointed ITSELF the judge of whether the
+ * work was ready.
+ *
+ * So the session says its piece, and Kyle answers ONE question with the information in front
+ * of him. Choosing "Push it" ARMS the grant — there is no second content-free tap afterwards.
+ */
+function proposalCard(p) {
+  const el = document.createElement("div");
+  el.className = "card card-propose";
+  const age = p.epoch ? Date.now() / 1000 - p.epoch : null;
+
+  el.innerHTML =
+    `<div class="card-head">` +
+    `<span class="card-who">📤 ${esc(p.repo_name)} wants to push</span>` +
+    `<span class="row-age">${ago(age)}</span></div>` +
+    `<div class="card-q">${esc(p.why)}</div>` +
+    (p.commits.length
+      ? `<div class="commits">${p.commits.map((c) => `<div>${esc(c)}</div>`).join("")}</div>`
+      : "");
+
+  const answer = async (choice, btn, label) => {
+    [...el.querySelectorAll("button")].forEach((b) => (b.disabled = true));
+    btn.innerHTML = '<span class="spin"></span> ' + label;
+    try {
+      await api(`/api/push/proposals/${encodeURIComponent(p.key)}`, {
+        method: "POST",
+        body: JSON.stringify({ choice }),
+      });
+      await refresh();
+    } catch (e) {
+      btn.textContent = e.status === 409 ? "No longer open" : `Failed: ${e.message}`;
+      setTimeout(refresh, 1500);
+    }
+  };
+
+  const go = document.createElement("button");
+  go.className = "btn btn-primary";
+  go.style.width = "100%";
+  go.style.marginTop = "4px";
+  go.textContent = "✅ Push it";
+  go.addEventListener("click", () => answer("", go, "Arming…"));
+  el.appendChild(go);
+
+  // The alternatives the session is actually weighing. This is the part the gate could never
+  // offer, and it's the whole reason Kyle keeps getting asked in the terminal.
+  for (const alt of p.alts) {
+    const b = document.createElement("button");
+    b.className = "btn";
+    b.style.width = "100%";
+    b.style.marginTop = "7px";
+    b.textContent = `Not yet — ${alt}`;
+    b.addEventListener("click", () => answer(alt, b, "Telling it…"));
+    el.appendChild(b);
+  }
   return el;
 }
 

@@ -406,6 +406,81 @@ push_deny() {  # <repo-name-or-key>
   if [ -z "$matched" ]; then echo "No pending push request matching '$q'."; return 1; fi
   return 0
 }
+PUSH_PROPOSALS="$COORD_ROOT/push-proposals"
+
+# ---------------------------------------------------------------------------
+# PUSH PROPOSAL — "is this the right MOMENT to push?", which is a different
+# question from "may I push?", and the gate cannot answer it.
+#
+# The gate protects the REPO: nothing lands without Kyle's tap. But his inbox only
+# ever showed him `claude-connect — git push origin main`, which says nothing about
+# what is in the commits, whether the session thinks the work is finished, or what
+# it would do instead. Approving that is a rubber stamp on a decision he never made
+# — and a session that "just pushes and lets the gate sort it out" has quietly
+# appointed ITSELF the judge of whether the work was ready. That is the push-happy
+# behaviour Kyle does not want, and the gate does not protect him from it.
+#
+# So: propose. Say what you would push, why now, and what you would do instead.
+# Kyle answers ONE question, with the context, from wherever he is — and his answer
+# ARMS THE GRANT, so there is no second rubber-stamp tap afterwards.
+#
+#   bus.sh push propose - <<'EOF'
+#   why: the /msg-check storm fix is done and tested (230 green)
+#   else: keep digging into clearing the already-queued checks
+#   else: pause and read the 146 unread bus messages first
+#   EOF
+#
+# `why:` is your case for pushing NOW. Each `else:` is a real alternative you are
+# weighing — Kyle can pick one instead, and you'll be told which. Commits are
+# attached automatically; do not paste them.
+push_propose() {
+  local body key repo name commits why="" alts=() line
+  repo="$(git rev-parse --show-toplevel 2>/dev/null || printf '%s' "$PWD")"
+  name="$(basename "$repo")"
+  key="$(printf '%s' "$repo" | tr '/ ' '__' | sed 's/^_*//')"
+
+  # STDIN only, for the same reason `send` is stdin-only: an argument goes through
+  # the caller's shell, which command-substitutes backticks, and the words vanish.
+  case "${1:-}" in
+    ''|-) : ;;
+    *) echo "usage: bus.sh push propose - <<'EOF' ... EOF   (reads stdin)" >&2; return 2 ;;
+  esac
+  body="$(cat)"
+  [ -n "$body" ] || { echo "propose: nothing on stdin" >&2; return 2; }
+
+  while IFS= read -r line; do
+    case "$line" in
+      why:*)  why="${line#why:}";  why="${why# }" ;;
+      else:*) alts+=("$(printf '%s' "${line#else:}" | sed 's/^ //')") ;;
+    esac
+  done <<< "$body"
+  [ -n "$why" ] || { echo "propose: needs a 'why:' line — your case for pushing NOW" >&2; return 2; }
+
+  # EXACTLY what would go up — no more, and never a stand-in.
+  #
+  # This first fell back to `git log -5` when there was nothing unpushed, which showed Kyle
+  # five commits that were ALREADY on the remote as if they were the payload. A card that
+  # misrepresents what you are approving is worse than no card: it is a confident lie on the
+  # one screen whose entire job is to tell you what you're agreeing to.
+  commits="$(git log --oneline @{u}..HEAD 2>/dev/null | head -12)"
+  if [ -z "$commits" ]; then
+    echo "propose: nothing to push — HEAD is already on the remote. Commit first." >&2
+    return 2
+  fi
+
+  mkdir -p "$PUSH_PROPOSALS" 2>/dev/null || true
+  { echo "repo=$repo"; echo "repo_name=$name"; echo "cwd=$PWD"
+    echo "why=$why"
+    for a in "${alts[@]}"; do echo "alt=$a"; done
+    printf 'commits=%s\n' "$(printf '%s' "$commits" | tr '\n' '|')"
+    echo "epoch=$(date +%s)"; echo "created=$(date '+%Y-%m-%d %H:%M')"
+  } > "$PUSH_PROPOSALS/$key" 2>/dev/null || true
+
+  echo "📤 Proposed a push of '$name' to Kyle — he'll see what's in it and why, and can pick"
+  echo "   an alternative instead. If he says push, the approval is already armed: just push."
+  echo "   Do NOT push until you hear back."
+}
+
 push_revoke() {  # <repo-name-or-key> — take back an approval you already gave
   # The counterweight to a 24h grant. Changed your mind, or approved the wrong repo?
   # Disarm it before the agent uses it. Without this, a long-lived token would be a
@@ -949,7 +1024,8 @@ PYEOF
       approve) push_approve "$@" ;;
       deny)    push_deny "$@" ;;
       revoke)  push_revoke "$@" ;;
-      *) echo "usage: bus.sh push {list|approve <repo>|deny <repo>|revoke <repo>}"; exit 2 ;;
+      propose) push_propose "$@" ;;
+      *) echo "usage: bus.sh push {list|approve <repo>|deny <repo>|revoke <repo>|propose -}"; exit 2 ;;
     esac
     exit $?
     ;;

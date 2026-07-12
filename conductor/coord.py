@@ -9,6 +9,7 @@ instruction can be pulled back before it's acted on.
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -120,6 +121,65 @@ def read_push_requests(coord_root: Path) -> list[dict[str, Any]]:
         })
     out.sort(key=lambda r: r["epoch"], reverse=True)
     return out
+
+
+def read_push_proposals(coord_root: Path) -> list[dict[str, Any]]:
+    """A session asking *"is this the right MOMENT to push?"* — with the context to answer it.
+
+    Different question from the gate's. The gate asks **"may you push?"** and protects the
+    repo. This asks **"should you push NOW, or keep digging?"** and protects the *work* — and
+    the gate cannot answer it, because Kyle's inbox only ever showed him a repo name and a
+    command. Approving that is a rubber stamp on a decision he never made.
+
+    A proposal carries what the gate can't: what is actually in the commits, the session's
+    case for shipping now, and the alternatives it is weighing. One decision, with the
+    information, from anywhere — and answering it ARMS the grant, so there is no second
+    content-free tap afterwards.
+    """
+    pdir = coord_root / "push-proposals"
+    if not pdir.is_dir():
+        return []
+    out: list[dict[str, Any]] = []
+    try:
+        files = list(pdir.iterdir())
+    except OSError:
+        return []
+    for f in files:
+        if not f.is_file():
+            continue
+        # `alt=` repeats, so the flat single-value parser won't do.
+        alts: list[str] = []
+        d: dict[str, str] = {}
+        try:
+            for line in f.read_text(encoding="utf-8").splitlines():
+                k, _, v = line.partition("=")
+                if k == "alt":
+                    alts.append(v)
+                elif k:
+                    d[k] = v
+        except OSError:
+            continue
+        if not d.get("why"):
+            continue
+        out.append({
+            "key": f.name,
+            "repo_name": d.get("repo_name", f.name),
+            "cwd": d.get("cwd", ""),
+            "why": d["why"],
+            "alts": alts,
+            "commits": [c for c in (d.get("commits", "").split("|")) if c],
+            "created": d.get("created", ""),
+            "epoch": int(d["epoch"]) if d.get("epoch", "").isdigit() else 0,
+        })
+    out.sort(key=lambda r: r["epoch"], reverse=True)
+    return out
+
+
+def clear_push_proposal(coord_root: Path, key: str) -> None:
+    try:
+        os.unlink(coord_root / "push-proposals" / key)
+    except OSError:
+        pass
 
 
 def read_push_grants(coord_root: Path, *, now: float | None = None) -> list[dict[str, Any]]:

@@ -23,6 +23,36 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.27.0: 📤 **Push PROPOSALS — "should I push NOW?" is not the question the gate asks.**
+  Kyle found the conflation, and it's a good one: *"Claudes often ask me 'do you want me to
+  push now or keep digging into issue X'... honestly I don't want Claude to go push happy."*
+  **Two different questions, and I had collapsed them:**
+  | | asks | protects |
+  |---|---|---|
+  | **the gate** | *"MAY you push?"* | the **repo** — nothing lands without his tap |
+  | **a Claude** | *"should I push NOW, or keep digging?"* | the **work** — is it actually done? |
+  **A gate approval cannot answer the second.** His inbox showed `claude-connect — git push
+  origin main`: nothing about what's in the commits, whether the session thinks it's finished,
+  or what it would do instead. **Tapping Approve on that is a rubber stamp on a decision he
+  never made** — and worse, a session that *"just pushes and lets the gate sort it out"* has
+  **quietly appointed ITSELF the judge of whether the work was ready.** That is precisely the
+  push-happy behaviour he doesn't want, **and the gate does not protect him from it**, because
+  the gate isn't asking that question. It also forced a **two-app, two-tap** dance he spotted
+  immediately: be in a terminal, say yes, then go to Conductor and say yes *again*.
+  Fix: **`bus.sh push propose -`** (stdin-only, like `send`) — the session states `why:` it's
+  ready and each `else:` it's weighing; **the commits are attached automatically**. It lands on
+  the phone as a real question with the payload and the alternatives, and **answering "Push it"
+  ARMS THE GRANT** (`_mint_grant`, byte-compatible with what `push-gate.sh` parses) — *one*
+  decision, made where the information is, instead of a content-free second tap ten minutes
+  later. Picking an alternative tells the session what to do instead. **The gate is untouched**
+  — still one push per grant, still consumed on use, still revocable. *We didn't weaken the
+  control; we moved Kyle's tap to where the information is.* Verdicts ride the **queued**
+  notice path (a busy session QUEUES keystrokes — v2.26.1's lesson, honoured on first use).
+  🐛 **Caught a lie in my own card during the live test:** with nothing unpushed, `commits`
+  fell back to `git log -5` and showed **five commits already on the remote as if they were
+  the payload.** Now it refuses. *A card that misrepresents what you're approving is worse than
+  no card — it's a confident lie on the one screen whose whole job is telling you what you're
+  agreeing to.* `/push-propose` slash-command. 237 tests.
 - ✅ v2.26.1: 🌩 **THE /msg-check STORM — ~450 injections overnight, 16 stacked on one
   session. Third recurrence of one bug; this time it's pinned.** Kyle woke up to a terminal
   full of `/msg-check` and *"Press up to edit queued messages"*. **The fact that was wrong,

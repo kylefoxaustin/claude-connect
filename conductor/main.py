@@ -58,7 +58,15 @@ from .bus import (
     snapshot_history,
 )
 from .bus import _plain_name, _read_last_seen
-from .coord import read_push_grants, read_push_requests, read_retractions, read_wake_state, write_wake_state
+from .coord import (
+    clear_push_proposal,
+    read_push_grants,
+    read_push_proposals,
+    read_push_requests,
+    read_retractions,
+    read_wake_state,
+    write_wake_state,
+)
 from .deps import build_wait_graph
 from .models import BusEvent, BusTopology, ParkedSession, SessionRecord, Status
 from .resources import resources_state, touch_lease_activity
@@ -142,6 +150,24 @@ def _build_bus_adapter(settings: Settings) -> BusAdapter:
     return MarkdownBusAdapter(settings.bus.markdown_path_resolved, poll_interval=0.5)
 
 
+def _mint_grant(coord_root: Path, key: str, repo_name: str, repo: str) -> None:
+    """Arm a push grant straight from an approved proposal.
+
+    A proposal normally arrives BEFORE the session has ever tried to push, so there is no
+    pending gate request for `bus.sh push approve` to consume. Kyle has still made the
+    decision — with more context than the gate could ever have shown him — so the grant is
+    written directly, in exactly the format the gate reads.
+    """
+    tdir = coord_root / "push-tokens"
+    tdir.mkdir(parents=True, exist_ok=True)
+    now = int(time.time())
+    (tdir / key).write_text(
+        f"expires={now + 86400}\nrepo={repo}\nrepo_name={repo_name}\n"
+        f"approved={now}\napproved_at={time.strftime('%Y-%m-%d %H:%M')}\n",
+        encoding="utf-8",
+    )
+
+
 def _unpack_wake(v: Any) -> tuple[str, float, float]:
     """``(seen, woke_at)`` (the old on-disk shape) or ``(seen, woke_at, activity_at)``.
 
@@ -186,6 +212,9 @@ class AppState:
         self._retractions: list[dict[str, Any]] = []          # active retraction records
         self._push_requests: list[dict[str, Any]] = []        # git-push approvals awaiting Kyle
         self._push_grants: list[dict[str, Any]] = []          # approvals GIVEN, not yet used
+        # Sessions asking 'is this the right MOMENT to push?' — with the context the gate
+        # can never have: what's in the commits, and what they'd do instead.
+        self._push_proposals: list[dict[str, Any]] = []
         # 'tell this session its push was approved' — delivered only when it's QUIET,
         # because a busy session swallows injected keystrokes without a trace.
         self._push_notices: dict[str, dict[str, Any]] = {}
@@ -351,6 +380,7 @@ class AppState:
         self._retractions = await asyncio.to_thread(read_retractions, self.coord_root)
         push_reqs = await asyncio.to_thread(read_push_requests, self.coord_root)
         grants = await asyncio.to_thread(read_push_grants, self.coord_root)
+        self._push_proposals = await asyncio.to_thread(read_push_proposals, self.coord_root)
         # Compare grants on identity, not the live countdown — `expires_in` ticks down every
         # scan, so including it would rebroadcast (and re-render) the inbox forever.
         gid = [(g["key"], g["expires_epoch"]) for g in grants]
@@ -358,7 +388,8 @@ class AppState:
                 (g["key"], g["expires_epoch"]) for g in self._push_grants]:
             self._push_requests = push_reqs
             self._push_grants = grants
-            await self.hub.broadcast("push", {"requests": push_reqs, "grants": grants})
+            await self.hub.broadcast("push", {"requests": push_reqs, "grants": grants,
+                                             "proposals": self._push_proposals})
         else:
             self._push_grants = grants
         svc = await asyncio.to_thread(read_services, self.coord_root)
@@ -573,9 +604,10 @@ class AppState:
                 continue                           # busy -> the keystrokes would vanish
             sent = await self._inject_text(
                 rec,
-                f"✅ Kyle approved your git push to {note['repo']} — re-run it whenever "
-                "you're ready. The approval waits for you; it covers exactly one push.",
-                f"push approved for {note['repo']}",
+                note.get("text") or (
+                    f"✅ Kyle approved your git push to {note['repo']} — re-run it whenever "
+                    "you're ready. The approval waits for you; it covers exactly one push."),
+                f"push verdict for {note['repo']}",
             )
             if sent:
                 del self._push_notices[key]
@@ -1110,7 +1142,8 @@ async def get_push(request: Request) -> dict[str, Any]:
     always firing `close`) would sit on stale state forever. An endpoint it can re-fetch
     on wake makes the inbox self-healing instead of needing a manual refresh."""
     state: AppState = request.app.state.cond
-    return {"requests": state._push_requests, "grants": state._push_grants}
+    return {"requests": state._push_requests, "grants": state._push_grants,
+            "proposals": state._push_proposals}
 
 
 @app.post("/api/push/{key}/{action}")
@@ -1490,6 +1523,76 @@ async def unstall(payload: UnstallRequest, request: Request) -> dict[str, Any]:
             "deadlock": bool(cycle.get("deadlock"))}
 
 
+class ProposalAnswer(BaseModel):
+    # "" (empty) = push now. Otherwise the exact alternative label Kyle picked.
+    choice: str = ""
+
+
+@app.post("/api/push/proposals/{key}")
+async def answer_proposal(key: str, payload: ProposalAnswer,
+                          request: Request) -> dict[str, Any]:
+    """Answer a session's *"should I push now, or keep digging?"*.
+
+    **Choosing "push now" ARMS the grant.** That's the whole point: Kyle makes ONE decision,
+    at the moment he actually has the information — what's in the commits, and what the
+    session would do instead. Without this, he'd answer the real question here and then be
+    asked a second, content-free question ("approve claude-connect — git push origin main")
+    ten minutes later, which is a rubber stamp on a decision he already made.
+
+    The gate is untouched. A grant is still one push, still consumed on use, still revocable.
+    We are not weakening the control — we are moving Kyle's tap to where the information is.
+    """
+    if not key or not all(c.isalnum() or c in "._-" for c in key):
+        raise HTTPException(status_code=400, detail="bad proposal key")
+    state: AppState = request.app.state.cond
+    prop = next((p for p in state._push_proposals if p["key"] == key), None)
+    if prop is None:
+        raise HTTPException(status_code=409, detail="that proposal is no longer open")
+
+    choice = payload.choice.strip()
+    if choice and choice not in prop["alts"]:
+        # A label we don't recognise means our view of the question is stale. Refuse rather
+        # than tell a session to do something Kyle didn't pick.
+        raise HTTPException(status_code=400, detail="that isn't one of the options")
+
+    approved = not choice
+    if approved:
+        proc = await asyncio.to_thread(
+            subprocess.run,
+            [str(state.settings.bus.script_path_resolved), "push", "approve",
+             prop["repo_name"]],
+            capture_output=True, text=True, timeout=15,
+        )
+        if proc.returncode != 0:
+            # No pending gate request yet (the usual case — a proposal comes BEFORE the
+            # session ever tries to push), so mint the grant directly from the proposal.
+            await asyncio.to_thread(_mint_grant, state.coord_root, key, prop["repo_name"],
+                                    prop.get("repo", ""))
+        msg = (f"✅ Kyle says PUSH — the approval is already armed for {prop['repo_name']}, "
+               "so just run your push. It covers exactly one push.")
+    else:
+        msg = (f"🛑 Kyle says NOT YET. Instead: {choice}\n"
+               "Do not push. Carry on with that, and propose again when you're ready.")
+
+    await asyncio.to_thread(clear_push_proposal, state.coord_root, key)
+    state._push_proposals = await asyncio.to_thread(read_push_proposals, state.coord_root)
+    state._push_grants = await asyncio.to_thread(read_push_grants, state.coord_root)
+
+    # Deliver the verdict the same way as an approval notice: QUEUED, and typed only once the
+    # session is quiet. A session waiting on an answer is often mid-work, and a busy Claude
+    # Code session QUEUES injected keystrokes rather than dropping them — which is how we got
+    # 16 stacked /msg-checks. Never type at a busy one.
+    state._push_notices[f"proposal:{key}"] = {
+        "cwd": prop.get("cwd", ""), "repo": prop["repo_name"],
+        "queued": time.time(), "text": msg,
+    }
+    await state.hub.broadcast("push", {"requests": state._push_requests,
+                                       "grants": state._push_grants,
+                                       "proposals": state._push_proposals})
+    log.info("push proposal %s: %s", key, "PUSH" if approved else f"defer -> {choice}")
+    return {"ok": True, "approved": approved, "choice": choice}
+
+
 @app.get("/api/ops")
 async def get_ops(request: Request) -> dict[str, Any]:
     """Everything the phone console needs, in ONE call.
@@ -1510,6 +1613,7 @@ async def get_ops(request: Request) -> dict[str, Any]:
         # Approvals already GIVEN, not yet used. Shown so a durable grant is a permission
         # Kyle can see and take back, rather than one that quietly expires behind his back.
         "grants": state._push_grants,
+        "proposals": state._push_proposals,
         "retractions": state._retractions,
         # read_windows() already drops expired windows — re-filtering here on a field name
         # I guessed at ("expires_epoch") silently zeroed the list while 14 sessions were
@@ -1887,7 +1991,8 @@ async def websocket(ws: WebSocket) -> None:
         await ws.send_text(json.dumps({"kind": "bus", "payload": state._bus_payload()}))
         await ws.send_text(json.dumps({"kind": "resources", "payload": state.resources}))
         await ws.send_text(json.dumps({"kind": "push", "payload": {
-            "requests": state._push_requests, "grants": state._push_grants}}))
+            "requests": state._push_requests, "grants": state._push_grants,
+            "proposals": state._push_proposals}}))
         await ws.send_text(json.dumps({"kind": "autonomy", "payload": {"windows": state._autonomy}}))
         await ws.send_text(json.dumps({"kind": "services", "payload": state.services}))
         await ws.send_text(json.dumps({"kind": "waiting", "payload": state.waiting}))
