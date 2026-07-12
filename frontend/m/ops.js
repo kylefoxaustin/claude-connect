@@ -264,7 +264,7 @@ function proposalCard(p) {
     [...el.querySelectorAll("button")].forEach((b) => (b.disabled = true));
     btn.innerHTML = '<span class="spin"></span> ' + label;
     try {
-      await api(`/api/push/proposals/${encodeURIComponent(p.key)}`, {
+      await api(`/api/proposals/${encodeURIComponent(p.key)}`, {
         method: "POST",
         body: JSON.stringify({ choice }),
       });

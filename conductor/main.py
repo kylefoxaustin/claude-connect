@@ -1528,7 +1528,12 @@ class ProposalAnswer(BaseModel):
     choice: str = ""
 
 
-@app.post("/api/push/proposals/{key}")
+# NOT "/api/push/proposals/{key}": `@app.post("/api/push/{key}/{action}")` is registered
+# earlier and would match it first, with key="proposals" and action="<the real key>" — so
+# every tap came back "unknown action". A route that is a strict prefix-shape of another
+# route is shadowed by whichever was registered first, silently. Its own namespace, no
+# ambiguity possible.
+@app.post("/api/proposals/{key}")
 async def answer_proposal(key: str, payload: ProposalAnswer,
                           request: Request) -> dict[str, Any]:
     """Answer a session's *"should I push now, or keep digging?"*.
@@ -2028,6 +2033,28 @@ async def service_worker() -> FileResponse:
         media_type="text/javascript",
         headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"},
     )
+
+
+@app.middleware("http")
+async def no_cache_the_app_shell(request: Request, call_next):
+    """Never let a browser cache the app's own code.
+
+    StaticFiles sends an ETag and a Last-Modified but NO Cache-Control — which means the
+    browser is free to guess how long to keep the file, and mobile browsers guess
+    generously. Kyle's phone quietly ran the previous night's `ops.js` for hours: the backend
+    had a push proposal, the API returned it, and the phone rendered nothing, because the JS
+    it was running had never heard of proposals. **A stale frontend against a live backend
+    fails SILENTLY — the app looks fine and is simply blind to whatever is new**, which is the
+    exact shape of the zombie-UI bug the desktop service worker caused.
+
+    `no-cache` does not mean "don't store"; it means "revalidate before use". With the ETag
+    already there, an unchanged file is a 304 and costs nothing.
+    """
+    resp = await call_next(request)
+    path = request.url.path
+    if path.startswith("/m") or path in ("/", "/index.html") or path.startswith("/static/"):
+        resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return resp
 
 
 @app.get("/m")
