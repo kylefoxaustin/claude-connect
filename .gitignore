@@ -11,3 +11,6 @@ venv/
 
 # User config (copy from settings.example.toml)
 settings.toml
+
+# Kyle's drafts — talks, articles. Not part of the project.
+private/
