@@ -916,6 +916,22 @@ PYEOF
       mark_seen_if_bus_tag
       exit 0
     fi
+    # THE SAME SILENT-MAIL-LOSS BUG LIVED HERE TOO (2026-07-11, found while fixing the
+    # `send` one). We show `tail -60` — SIXTY LINES, and a single message routinely runs
+    # 30-40 — and then marked the ENTIRE FILE as read. So a session restarting after any
+    # absence got shown one or two messages while fifty were silently marked seen and
+    # became invisible forever. It fired on EVERY restart, including click-to-relaunch.
+    #
+    # Rule, applied everywhere now: NEVER advance the watermark past mail you did not
+    # actually SHOW.
+    #   * first contact (no watermark) -> establish the baseline, as designed: a new
+    #     session shouldn't have the archive dumped on it, and nothing is unread to it.
+    #   * a RESTART (watermark exists) -> show the recent tail as context but leave the
+    #     watermark ALONE. The unread stays unread and `check` will show it in full.
+    #     Over-notifying is recoverable; eating mail is not.
+    SS_STATE_DIR="$HOME/.claude/bus-state"
+    SS_HAD_WATERMARK=0
+    [ -f "$SS_STATE_DIR/$TAG.last-seen" ] && SS_HAD_WATERMARK=1
     LATEST="$(tail -60 "$BUS_FILE")"
     ESCAPED="$(printf '%s' "$LATEST" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"
     cat <<EOF
@@ -926,7 +942,8 @@ PYEOF
   }
 }
 EOF
-    mark_seen_if_bus_tag
+    # Only on first contact. See above: never mark mail read that we did not show.
+    [ "$SS_HAD_WATERMARK" -eq 1 ] || mark_seen_if_bus_tag
     ;;
 
   prompt-check)
