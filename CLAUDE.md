@@ -23,6 +23,31 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.24.1: 🔔 **Web Push — the app that finds you.** Tailnet HTTPS (`tailscale serve
+  --https 443`; Let's Encrypt cert, and the plain-HTTP door **closed** — on `http://` the
+  service worker and push silently never register, so two doors where one quietly lacks the
+  feature is the exact failure shape we keep killing). `conductor/webpush.py` — **named
+  `webpush`, not `push`, because "push" already means a gated `git push` and collapsing two
+  meanings of a word where one is a security control is a bug waiting to happen.** VAPID
+  keypair generated once and kept (rotating the public key **silently invalidates every
+  subscription** — the phone keeps "working" and simply never rings again); subs keyed on
+  endpoint so a browser's own re-subscribe **replaces** rather than duplicating. **The
+  restraint is the feature:** we page on exactly TWO things — a Claude blocked on a
+  **question**, and a **gated push**. Never idle leases, queue depth, mutual stalls, unread
+  mail. *If the fix is robotic, it isn't a page* — and an alarm that fires on a healthy fleet
+  is one you learn to swipe away, which means it won't be believed the night it matters.
+  Reminder-not-nag: re-ring an unanswered item hourly, and **forget answered ones** (a stale
+  timestamp would silently suppress the *next* question from that session). `/m/sw.js` is
+  **not a cache** (the desktop's cache-first SW once served a stale shell → a UI that
+  rendered fine with every button dead); `notificationclick` **steers an already-open console
+  to the right pane** — the notification must never be the only door. A `POST
+  /api/webpush/test` exists because **every Web Push failure is silent** (bad key, revoked
+  permission, SW never activated) and all of them look exactly like "nothing needs you".
+  **Honest limit, stated in the UI: a PWA cannot break Do Not Disturb** — it will not wake
+  Kyle at 3am, and that's accepted (a push approval waits; the agent retries). Bug caught by
+  its own test: `due()` treated "never sent" as "sent at epoch 0", so a brand-new item only
+  rang because `time.time()` happens to be a big number — **correct by accident, wrong in
+  principle.** 198 tests.
 - ✅ v2.24.0: 📱 **Ops console (`/m`) + ❓ the decision queue — answer a Claude from your
   phone.** Kyle killed the old phone UI himself: *"the phone web UI is a dead end and
   fundamentally flawed. I asked to replicate the desktop app verbatim. That's not what the

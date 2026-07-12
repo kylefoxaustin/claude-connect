@@ -419,6 +419,88 @@ document.querySelectorAll(".tab").forEach((t) => {
 // Mobile's approval flow ends up unusable.
 showPane(new URLSearchParams(location.search).get("pane") || "inbox");
 
+// ---------------------------------------------------------------- notifications
+/* Web Push. Every failure mode here is silent — permission denied, a service worker that
+ * never activated, a stale VAPID key — and all of them look identical to "nothing needs
+ * you". So the UI always states which of those it is, and there is a Test button. */
+const notifBtn = $("notif-btn");
+const notifState = $("notif-state");
+
+function urlB64ToUint8Array(b64) {
+  const pad = "=".repeat((4 - (b64.length % 4)) % 4);
+  const raw = atob((b64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
+async function notifStatus() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    return { state: "unsupported", text: "This browser can't do notifications." };
+  }
+  if (!window.isSecureContext) {
+    // The classic trap: over plain http everything "works" and simply never rings.
+    return { state: "insecure", text: "Needs HTTPS. Open the https:// address." };
+  }
+  if (Notification.permission === "denied") {
+    return { state: "denied", text: "Blocked. Re-allow in your browser's site settings." };
+  }
+  const reg = await navigator.serviceWorker.getRegistration("/m");
+  const sub = reg && (await reg.pushManager.getSubscription());
+  if (sub) return { state: "on", text: "On for this device." };
+  return { state: "off", text: "Off. You'll only see things when you open the app." };
+}
+
+async function paintNotif() {
+  if (!notifBtn) return;
+  const st = await notifStatus();
+  notifState.textContent = st.text;
+  notifBtn.hidden = ["unsupported", "insecure", "denied"].includes(st.state);
+  notifBtn.textContent = st.state === "on" ? "Send a test" : "Turn on notifications";
+  notifBtn.dataset.mode = st.state === "on" ? "test" : "enable";
+}
+
+async function enableNotifications() {
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") return paintNotif();
+  const reg = await navigator.serviceWorker.register("/m/sw.js", { scope: "/m" });
+  await navigator.serviceWorker.ready;
+  const { key } = await api("/api/webpush/key");
+  const sub = await reg.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlB64ToUint8Array(key),
+  });
+  await api("/api/webpush/subscribe", { method: "POST", body: JSON.stringify(sub.toJSON()) });
+  await paintNotif();
+}
+
+if (notifBtn) {
+  notifBtn.addEventListener("click", async () => {
+    notifBtn.disabled = true;
+    try {
+      if (notifBtn.dataset.mode === "test") {
+        const r = await api("/api/webpush/test", { method: "POST" });
+        notifState.textContent = r.sent
+          ? `Sent to ${r.sent} device(s) — it should appear now.`
+          : "Couldn't deliver. Try turning them on again.";
+      } else {
+        await enableNotifications();
+      }
+    } catch (e) {
+      notifState.textContent = `Failed: ${e.message}`;
+    } finally {
+      notifBtn.disabled = false;
+    }
+  });
+}
+
+// A notification click steers an ALREADY-OPEN console to the right pane.
+navigator.serviceWorker?.addEventListener("message", (e) => {
+  if (e.data?.kind === "navigate") {
+    const pane = new URL(e.data.url, location.origin).searchParams.get("pane");
+    showPane(pane || "inbox");
+    refresh();
+  }
+});
+
 // ---------------------------------------------------------------- live
 async function refresh() {
   try {
@@ -462,6 +544,7 @@ setInterval(refresh, 15000);
 async function start() {
   await refresh();
   connect();
+  paintNotif();
 }
 
 // Is auth even on? If not, go straight in.

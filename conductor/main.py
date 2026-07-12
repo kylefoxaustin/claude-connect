@@ -11,6 +11,7 @@ import getpass
 import logging
 import os
 import shutil
+import socket
 import subprocess
 import time
 from collections import deque
@@ -28,6 +29,16 @@ from .activity import ActivityWatcher
 from .auth import path_requires_auth, resolved_token, token_ok
 from .autonomy import close_window, open_window, peers_in_window, read_windows
 from .decisions import plan_keystrokes, read_decisions, reap_decision
+from .webpush import (
+    add_sub,
+    drop_sub,
+    due,
+    load_or_create_keys,
+    notifiable,
+    prune_sent,
+    read_subs,
+    send_one,
+)
 from .bus import (
     BusAdapter,
     FakeBusAdapter,
@@ -153,6 +164,10 @@ class AppState:
         # the guard for keystroke injection: a session sitting on a picker must never be
         # typed at, because the picker swallows typed text into its free-text option.
         self.decisions: list[dict[str, Any]] = []
+        # Web Push. `_notified` maps a pending item's stable key -> when we last rang
+        # about it, so a still-unanswered question gets a reminder (hourly) and not a
+        # nag (every scan tick).
+        self._notified: dict[str, float] = {}
         self.token_accountant = TokenAccountant()             # per-session token tally
         self._scan_misses: dict[str, int] = {}              # consecutive scans a session was absent
         self.recent_events: deque[BusEvent] = deque(maxlen=RECENT_EVENTS_MAX)
@@ -337,6 +352,7 @@ class AppState:
         await self._wake_nudged_owners()
         await self._wake_unread_recipients()
         await self._wake_retractions()
+        await self._notify()
 
     async def _wake_retractions(self) -> None:
         """A retraction is urgent: the recipient may be about to act on the very
@@ -447,6 +463,36 @@ class AppState:
     def _live_session_for(self, owner: str) -> SessionRecord | None:
         return next((s for s in self.sessions.values()
                      if _bare_tag(s.tag) == _bare_tag(owner) and s.status != Status.ENDED), None)
+
+    async def _notify(self) -> None:
+        """Ring Kyle's phone about the only two things that stop work dead: a Claude blocked
+        on a question, and a gated ``git push``.
+
+        Everything else — idle leases, queue depth, mutual stalls, unread mail — resolves
+        itself or waits, and notifying about it would train him to swipe us away. **If the
+        fix is robotic, it isn't a page.**
+        """
+        items = notifiable(self.decisions, self._push_requests)
+        # Forget items that are no longer pending FIRST, so the same question asked again
+        # later rings immediately rather than being suppressed by a stale timestamp.
+        self._notified = prune_sent(self._notified, items)
+        pending = due(items, self._notified)
+        if not pending:
+            return
+        subs = await asyncio.to_thread(read_subs, self.coord_root)
+        if not subs:
+            return                     # no phone registered — nothing to do, and not an error
+        keys = await asyncio.to_thread(load_or_create_keys, self.coord_root)
+        subject = f"mailto:conductor@{socket.gethostname()}"
+        now = time.time()
+        for item in pending:
+            for sub in list(subs):
+                ok = await asyncio.to_thread(send_one, sub, item, keys, subject)
+                if ok is None:         # 410/404: that device is gone for good, not retrying
+                    await asyncio.to_thread(drop_sub, self.coord_root, sub["endpoint"])
+                    subs.remove(sub)
+            self._notified[item["key"]] = now
+            log.info("notified: %s", item["title"])
 
     def _has_open_picker(self, rec: SessionRecord) -> bool:
         """Is this session sitting on an AskUserQuestion picker right now?
@@ -1171,6 +1217,56 @@ async def answer_decision(session_id: str, payload: DecisionAnswer,
     return {"ok": True, "keys": keys}
 
 
+@app.get("/api/webpush/key")
+async def webpush_key(request: Request) -> dict[str, Any]:
+    """The VAPID public key the browser needs to create a subscription."""
+    state: AppState = request.app.state.cond
+    keys = await asyncio.to_thread(load_or_create_keys, state.coord_root)
+    return {"key": keys["public"]}
+
+
+class WebPushSub(BaseModel):
+    endpoint: str
+    keys: dict[str, str]
+
+
+@app.post("/api/webpush/subscribe")
+async def webpush_subscribe(sub: WebPushSub, request: Request) -> dict[str, Any]:
+    state: AppState = request.app.state.cond
+    subs = await asyncio.to_thread(
+        add_sub, state.coord_root, {"endpoint": sub.endpoint, "keys": sub.keys})
+    log.info("webpush: device registered (%d total)", len(subs))
+    return {"ok": True, "devices": len(subs)}
+
+
+@app.post("/api/webpush/test")
+async def webpush_test(request: Request) -> dict[str, Any]:
+    """Ring every registered device once.
+
+    This exists because every failure mode of Web Push is SILENT — a wrong VAPID key, a
+    revoked permission, a service worker that never activated — and all of them look exactly
+    like "nothing needs you right now". You cannot debug a notification system by waiting to
+    see whether it notifies you.
+    """
+    state: AppState = request.app.state.cond
+    subs = await asyncio.to_thread(read_subs, state.coord_root)
+    if not subs:
+        raise HTTPException(status_code=404, detail="no device is registered for notifications")
+    keys = await asyncio.to_thread(load_or_create_keys, state.coord_root)
+    payload = {"title": "🔔 Conductor",
+               "body": "Notifications are working.",
+               "url": "/m", "tag": "test"}
+    subject = f"mailto:conductor@{socket.gethostname()}"
+    sent = 0
+    for sub in list(subs):
+        ok = await asyncio.to_thread(send_one, sub, payload, keys, subject)
+        if ok is None:
+            await asyncio.to_thread(drop_sub, state.coord_root, sub["endpoint"])
+        elif ok:
+            sent += 1
+    return {"ok": sent > 0, "sent": sent, "devices": len(subs)}
+
+
 @app.get("/api/ops")
 async def get_ops(request: Request) -> dict[str, Any]:
     """Everything the phone console needs, in ONE call.
@@ -1619,6 +1715,19 @@ async def ops_console() -> FileResponse:
 async def ops_manifest() -> FileResponse:
     return FileResponse(FRONTEND_DIR / "m" / "manifest.webmanifest",
                         media_type="application/manifest+json")
+
+
+@app.get("/m/sw.js")
+async def ops_service_worker() -> FileResponse:
+    """The ops console's service worker. Scoped to /m — that's all it needs, since its only
+    job is receiving a push. Deliberately not a cache: a cache-first SW once served a stale
+    shell against a changed backend and produced a UI that rendered fine with every button
+    dead."""
+    return FileResponse(
+        FRONTEND_DIR / "m" / "sw.js",
+        media_type="text/javascript",
+        headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/m"},
+    )
 
 
 app.mount("/m", StaticFiles(directory=str(FRONTEND_DIR / "m")), name="ops")

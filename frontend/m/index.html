@@ -67,6 +67,21 @@
             <button id="grant-go" class="btn btn-primary">Let the whole fleet talk</button>
           </div>
         </div>
+
+        <!-- Notifications. Lives on the Unattended tab because that's the "I'm not at the
+             keyboard" screen, which is exactly when being findable matters. -->
+        <div class="grant" style="margin-top: 12px">
+          <p class="grant-note">
+            <strong>🔔 Notifications.</strong> You'll be told about two things only: a Claude
+            blocked on a question, and a <code>git push</code> waiting for you. Nothing else —
+            an alarm that fires on a healthy fleet is one you learn to ignore.
+            <br /><em>A web app can't break through Do Not Disturb, so this won't wake you at 3am.</em>
+          </p>
+          <div class="grant-row">
+            <button id="notif-btn" class="btn btn-primary" hidden>Turn on notifications</button>
+          </div>
+          <p class="grant-note" id="notif-state" style="margin: 10px 0 0"></p>
+        </div>
       </section>
 
       <!-- === BLOCKED ================================================== -->
