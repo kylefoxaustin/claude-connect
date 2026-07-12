@@ -23,6 +23,41 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.30.0: 🕵️ **Input provenance — "I didn't type that /msg-check."** Kyle was right:
+  **Conductor typed it, and it arrived in the session's transcript AS A USER TURN** —
+  indistinguishable from him. The receiving Claude then **answered him as though he had asked.**
+  image_gen's spec, and it is correct: **you cannot authenticate a sender from inside the
+  channel the sender controls** — a self-applied marker (`--auto`, an `[injected]` prefix) is
+  *"a convention, not a credential"*, because it would be typed by the very thing you are trying
+  to distinguish. So: an **attestation ledger** (`bus-state/injections.jsonl`) written **before**
+  the keystrokes, consumed by a hook that independently resolves its own `claude` pid —
+  **neither side trusts the other's label; the PID is the join key.** ⭐ **A QUEUE, NEVER A
+  TIMESTAMP WINDOW:** image_gen's first instinct was ±5s, and *my own code is the counter-example*
+  — a busy session **QUEUES** injected keystrokes, so injection→arrival took **6–13 MINUTES** on
+  the very event it was built to explain. A time window *"would have failed silently, in the
+  direction that credits Kyle with Conductor's keystrokes."* ⚠️ **AND THE HOLE IN ITS OWN SPEC,
+  WHICH IT FOUND ITSELF: THE DECISION INJECTOR IS THE CONSENT CHANNEL.** `/msg-check` is a
+  read-only nudge; **answering an `AskUserQuestion` picker is literally how "yes, install it"
+  reaches a Claude** — and the spec attested the harmless path and ignored that one. *"A ledger
+  that attests the nudge and not the channel that answers consent dialogs is theatre: it watches
+  the door nobody breaks in through."* Both choke points now attest (**inside `_inject_text` and
+  `answer_decision`, not at the call sites — a sixth path added next month CANNOT FORGET; call-site
+  attestation is the version that rots**), and the consent path records **who drove it** (`human:<ip>`
+  vs `conductor`). **ADVISORY, NEVER AUTHORITY** — *"a provenance label that confers authority is
+  just the I-accept-the-risk checkbox with better branding"* (my own Q1, pointed back at me).
+  🐛 **AND THE BUG THAT PRODUCED A FALSE STATEMENT ABOUT KYLE'S CONSENT:** `conductor.log` had
+  **2,426 NUL bytes** (session previews carry control bytes), so **`grep` classified it as BINARY
+  and searched NOTHING — returning EMPTY, not an error** (and *"binary file matches"* goes to
+  **stderr**, so a piped check never sees it). image_gen grepped for the wake, got silence, **read
+  the silence as evidence**, and told Kyle the `/msg-check` was probably his. **It wasn't.** *A
+  tool that could not fire, and its silence taken as proof* — ollama's crashed verify and rt1180's
+  zero-run loop, **this time inside the audit trail itself, which is the worst possible place for
+  it.* Log filter strips control bytes (**0 NULs, `file` says ASCII text**) and the ledger is its
+  own clean JSONL, never stdout: **an audit log a text tool cannot parse is a green light with
+  nothing behind it.** Also 🐛 the ⏳ **"tell them they're both waiting" button fired THREE times**
+  — the card rebuilds on every refresh so `btn.disabled` was wiped; **the Approve-button bug, which
+  I fixed two hours earlier and did not carry one column to the right.** Now idempotent
+  **server-side** (429): a UI bug must never be able to spam ten sessions. 249 tests.
 - ✅ v2.29.0: 🎚 **The wake floor is CONDITIONAL, not constant — and a mass-cc is an
   announcement, not a question.** qualcomm filed a bug report (*"`/msg-check` auto-fired 13
   times and Kyle never typed it"*), ruled out cron/tmux/hooks/itself first, and **its diagnosis

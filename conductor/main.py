@@ -29,6 +29,7 @@ from .activity import ActivityWatcher
 from .auth import path_requires_auth, resolved_token, token_ok
 from .autonomy import close_window, open_window, peers_in_window, read_windows
 from .decisions import plan_keystrokes, read_decisions, reap_decision
+from .provenance import attest, prune as prune_ledger
 from .webpush import (
     add_sub,
     drop_sub,
@@ -132,6 +133,10 @@ _WAKE_RETRY_SECONDS = 3600.0
 # that will deliver MORE when it fires, not less.
 _WAKE_MIN_INTERVAL = 600.0
 
+# Don't tell the same stall it's stalled twice inside this window. Once is a nudge;
+# twice is noise, and noise is what makes the next one ignorable.
+_UNSTALL_COOLDOWN = 300.0
+
 
 def _bare_tag(tag: str | None) -> str:
     """Compare tags on a common form.
@@ -143,7 +148,39 @@ def _bare_tag(tag: str | None) -> str:
     return (tag or "").strip().strip("[]")
 
 
+class _StripControlBytes(logging.Filter):
+    """Keep the log READABLE BY grep. This is not cosmetic — it produced a false statement to
+    Kyle about whether he had consented to something.
+
+    Conductor logs session previews, and a transcript can contain NUL and other control bytes.
+    2,426 of them ended up in conductor.log, so `file` called it `data` and **grep classified
+    it as binary and searched NOTHING — returning EMPTY rather than an error.** (The "binary
+    file matches" warning goes to stderr, so a piped check never sees it either.)
+
+    image_gen tried to audit an injection with grep, got nothing, read the silence as "Conductor
+    didn't wake me", and told Kyle the /msg-check was probably his. It wasn't.
+
+    **A tool that could not fire, and its silence was treated as evidence.** Same failure class
+    as ollama's crashed verify and rt1180's zero-run loop — this time inside the audit trail
+    itself, which is the worst place for it, because an audit log a text tool cannot parse is a
+    green light with nothing behind it.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str) and any(ord(c) < 32 and c not in "\n\t" for c in record.msg):
+            record.msg = "".join(c if c.isprintable() or c in " \t" else "·" for c in record.msg)
+        if record.args:
+            record.args = tuple(
+                "".join(c if c.isprintable() or c in " \t" else "·" for c in a)
+                if isinstance(a, str) else a
+                for a in (record.args if isinstance(record.args, tuple) else (record.args,))
+            )
+        return True
+
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+for _h in logging.getLogger().handlers:
+    _h.addFilter(_StripControlBytes())
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 RECENT_EVENTS_MAX = 200
@@ -220,6 +257,7 @@ class AppState:
         # separate from the watermark dedup: dedup stops repeats for one batch;
         # this stops a busy conversation from injecting every few minutes.
         self._woke_at: dict[str, float] = {}
+        self._unstalled: dict[str, float] = {}   # cycle-key -> when we last told it
         self._wake_outstanding: dict[str, tuple[str, float]] = read_wake_state(
             settings.bus.state_dir_resolved / "coord")
         self._directed_unread: dict[str, dict[str, Any]] = {} # tag -> unread addressed to it
@@ -440,6 +478,7 @@ class AppState:
         await self._wake_unread_recipients()
         await self._wake_retractions()
         await self._deliver_push_notices()
+        await asyncio.to_thread(prune_ledger, self.settings.bus.state_dir_resolved)
         await self._notify()
 
     async def _wake_retractions(self) -> None:
@@ -696,11 +735,25 @@ class AppState:
         )
 
     async def _inject_text(self, rec: SessionRecord, text: str, why: str) -> bool:
-        """Type ``text`` into a live session's terminal (raises its window)."""
+        """Type ``text`` into a live session's terminal (raises its window).
+
+        THE CHOKE POINT. Attestation lives here, not at the five call sites — a sixth
+        injection path added next month cannot forget to attest if it cannot inject without
+        passing through here. Call-site attestation is the version that rots.
+        """
         if self._has_open_picker(rec):
             log.info("NOT typing at [%s] (%s) — it has a question open and the picker "
                      "would eat the keystrokes", rec.tag, why)
             return False
+        # ATTEST BEFORE TYPING. Kyle said "I didn't type that /msg-check" — he was right, and
+        # neither he nor the receiving Claude had any way to know. The keystrokes arrive as a
+        # USER TURN, indistinguishable from him. The receiving session then answered him as
+        # though he had asked.
+        await asyncio.to_thread(
+            attest, self.settings.bus.state_dir_resolved,
+            target_pid=rec.pid, target_tag=rec.tag, text=text, why=why,
+            source="conductor:_inject_text", actor="conductor",
+        )
         try:
             ok = await asyncio.to_thread(
                 send_keys_to_session, text=text, pid=rec.pid,
@@ -1404,6 +1457,23 @@ async def answer_decision(session_id: str, payload: DecisionAnswer,
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
+    # ⚠️ THE CONSENT CHANNEL, AND IT IS THE ONE image_gen's OWN SPEC MISSED.
+    #
+    # `/msg-check` is a read-only nudge. THIS is how "yes, install it" reaches a Claude — we
+    # answer its AskUserQuestion picker by typing keystrokes. A provenance ledger that attests
+    # the harmless nudge and not the channel that answers consent dialogs is theatre: it
+    # watches the door nobody breaks in through.
+    #
+    # So we record WHO drove it. "Genuinely Kyle" must be a VERIFIED join against the ledger,
+    # never an assumption made because the answer looked plausible. image_gen assumed today.
+    # It happened to be true. "It happened to be true" is not a control.
+    client = request.client.host if request.client else "?"
+    await asyncio.to_thread(
+        attest, state.settings.bus.state_dir_resolved,
+        target_pid=session.pid, target_tag=session.tag,
+        text=f"[picker] {payload.answers}", why=f"answered via {client}",
+        source="conductor:answer_decision", actor=f"human:{client}",
+    )
     ok = await asyncio.to_thread(
         send_key_sequence, keys=keys, pid=session.pid,
         terminal_pid=session.terminal_pid, title=session.title,
@@ -1577,6 +1647,27 @@ async def unstall(payload: UnstallRequest, request: Request) -> dict[str, Any]:
                             detail="that stall is no longer active — it may have resolved itself")
 
     nodes = cycle["nodes"]
+
+    # IDEMPOTENCY. The cycle stays in `state.waiting` until the next scan, so a second tap
+    # re-posts — and Kyle tapped three times, because the UI gave him no sign the first one
+    # landed. THREE identical "you are both waiting" messages went to the fleet.
+    #
+    # This is the Approve-button bug, and I made it again: I fixed the optimistic-state-wiped-
+    # by-re-render problem for push approvals two hours ago and did not carry it one column to
+    # the right. rt1180 named this disease TODAY — "a correctly-flagged gap you stop thinking
+    # about BECAUSE you flagged it" — and I did it inside the same afternoon.
+    #
+    # The UI fix follows, but the guard belongs HERE: a frontend bug must never be able to spam
+    # ten sessions. Telling a stall it is stalled twice in five minutes is not a nudge, it's
+    # noise — and noise is what makes the next one ignorable.
+    ck = "|".join(sorted(nodes))
+    last = state._unstalled.get(ck, 0.0)
+    if time.time() - last < _UNSTALL_COOLDOWN:
+        raise HTTPException(
+            status_code=429,
+            detail="they've already been told — give them a few minutes to answer")
+    state._unstalled[ck] = time.time()
+
     pairs = {(nodes[i], nodes[(i + 1) % len(nodes)]) for i in range(len(nodes))}
     edges = [e for e in state.waiting.get("edges", []) if (e["src"], e["dst"]) in pairs]
 

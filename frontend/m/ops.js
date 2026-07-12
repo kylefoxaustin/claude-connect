@@ -70,6 +70,11 @@ $("gate-form").addEventListener("submit", async (e) => {
 // ---------------------------------------------------------------- state
 let ops = null;
 const selected = new Map();  // session_id -> array of Sets, one per question
+const told = new Set();     // cycle-keys we've already told. Survives re-render — the
+                            // card is rebuilt every refresh, so `btn.disabled = true`
+                            // is wiped within seconds and the tap looks like it did
+                            // nothing. That is exactly how Kyle sent the same stall
+                            // message three times.
 const answering = new Set(); // session_ids whose answer POST is in flight — same reason
                             // as `sending`: a refresh mid-POST would rebuild the card
                             // with a live Send button and invite a second answer.
@@ -624,12 +629,18 @@ function renderBlocked() {
     // Tell them. A stall is invisible from the INSIDE — each side thinks it's politely
     // awaiting a reply, and both are right about that, which is exactly why neither speaks.
     // The only actor who can see the loop is the one standing outside it.
+    const ck = [...c.nodes].sort().join("|");
     const btn = document.createElement("button");
     btn.className = "btn btn-primary";
     btn.style.width = "100%";
     btn.style.marginTop = "12px";
-    btn.textContent = c.deadlock ? "Tell them it's a deadlock" : "Tell them they're both waiting";
+    btn.disabled = told.has(ck);
+    btn.textContent = told.has(ck)
+      ? "✅ Told them — give them a minute"
+      : (c.deadlock ? "Tell them it's a deadlock" : "Tell them they're both waiting");
     btn.addEventListener("click", async () => {
+      if (told.has(ck)) return;
+      told.add(ck);                       // state, not DOM — survives the next render
       btn.disabled = true;
       btn.innerHTML = '<span class="spin"></span> Telling them…';
       try {
@@ -642,7 +653,10 @@ function renderBlocked() {
           : "✅ Told them — they'll see it when they surface";
         setTimeout(refresh, 4000);
       } catch (e) {
-        btn.textContent = e.status === 409 ? "Already resolved" : `Failed: ${e.message}`;
+        told.delete(ck);                  // it never landed — let him try again
+        btn.textContent = e.status === 409 ? "Already resolved"
+          : e.status === 429 ? "Already told them"
+          : `Failed: ${e.message}`;
         btn.disabled = false;
       }
     });
