@@ -66,11 +66,25 @@
       <section class="pane" id="pane-auto" hidden>
         <h2 class="pane-h">Unattended</h2>
         <div id="autonomy"></div>
+
         <div class="grant">
           <p class="grant-note">
-            Let the fleet wake each other on directed mail while you're away.
-            Busy sessions are still never interrupted, and it expires on its own.
+            Let these sessions wake each other on directed mail while you're away.
+            Busy ones are still never interrupted, and it expires on its own.
           </p>
+
+          <!-- Pick WHO. The desktop has always had this (click tiles); the phone only ever
+               offered "the whole fleet", which is a blunter permission than Kyle wants to
+               grant at 2am. -->
+          <div class="pick-head">
+            <span id="pick-count">all sessions</span>
+            <span>
+              <button id="pick-all" class="link-btn">All</button>
+              <button id="pick-none" class="link-btn">None</button>
+            </span>
+          </div>
+          <ul id="pick-list" class="pick-list"></ul>
+
           <div class="grant-row">
             <select id="grant-hours">
               <option value="1">1 hour</option>
@@ -78,13 +92,16 @@
               <option value="8" selected>8 hours</option>
               <option value="12">12 hours</option>
             </select>
-            <button id="grant-go" class="btn btn-primary">Let the whole fleet talk</button>
+            <button id="grant-go" class="btn btn-primary">Let them talk</button>
           </div>
         </div>
 
-        <!-- Notifications. Lives on the Unattended tab because that's the "I'm not at the
-             keyboard" screen, which is exactly when being findable matters. -->
-        <div class="grant" style="margin-top: 12px">
+        <!-- Notifications. On the Unattended tab because that's the "I'm not at the keyboard"
+             screen, which is exactly when being findable matters.
+             Once it's ON this collapses to a one-line row: the explainer has done its job and
+             becomes clutter, but Test must stay reachable — you need it precisely when
+             something has gone wrong and you're trying to work out what. -->
+        <div class="grant" id="notif-setup" style="margin-top: 12px">
           <p class="grant-note">
             <strong>🔔 Notifications.</strong> You'll be told about two things only: a Claude
             blocked on a question, and a <code>git push</code> waiting for you. Nothing else —
@@ -96,6 +113,15 @@
           </div>
           <p class="grant-note" id="notif-state" style="margin: 10px 0 0"></p>
         </div>
+
+        <div class="notif-row" id="notif-on" hidden>
+          <span>🔔 <strong>Notifications on</strong> for this device</span>
+          <span>
+            <button id="notif-test" class="link-btn">Test</button>
+            <button id="notif-off" class="link-btn danger">Turn off</button>
+          </span>
+        </div>
+        <p class="grant-note" id="notif-msg" style="margin: 8px 2px 0" hidden></p>
       </section>
 
       <!-- === BLOCKED ================================================== -->

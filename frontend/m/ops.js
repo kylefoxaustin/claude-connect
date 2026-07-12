@@ -105,6 +105,7 @@ function render() {
   renderInbox();
   renderFleet();
   renderAutonomy();
+  renderPicker();
   renderBlocked();
 
   setBadge("inbox", c.needs_you, "badge");
@@ -539,16 +540,66 @@ function renderAutonomy() {
   }));
 }
 
+// Who may talk. The desktop has always had this (click tiles to select); the phone only
+// ever offered "the whole fleet" — a blunter permission than you want to be granting at 2am.
+// `picked === null` means "everyone", so the default behaviour is unchanged and you never
+// have to tick 15 boxes to do the common thing.
+let picked = null;   // null = all; otherwise a Set of tags
+
+function renderPicker() {
+  const list = $("pick-list");
+  if (!list || !ops) return;
+  const tags = ops.sessions.map((s) => s.tag).filter(Boolean);
+  const on = (t) => (picked === null ? true : picked.has(t));
+
+  list.replaceChildren(...ops.sessions.filter((s) => s.tag).map((s) => {
+    const li = document.createElement("li");
+    const lab = document.createElement("label");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = on(s.tag);
+    cb.addEventListener("change", () => {
+      if (picked === null) picked = new Set(tags);      // materialise before removing one
+      cb.checked ? picked.add(s.tag) : picked.delete(s.tag);
+      paintCount();
+    });
+    lab.append(cb);
+    const dot = document.createElement("span");
+    dot.className = `pick-st st-${s.status}`;
+    lab.append(dot, document.createTextNode(s.name));
+    li.appendChild(lab);
+    return li;
+  }));
+  paintCount();
+}
+
+function paintCount() {
+  const el = $("pick-count");
+  if (!el || !ops) return;
+  const n = picked === null ? ops.sessions.filter((s) => s.tag).length : picked.size;
+  el.textContent = picked === null ? "all sessions" : `${n} selected`;
+  const go = $("grant-go");
+  if (go) {
+    // Two is the floor: a "window" of one session cannot let anyone wake anyone.
+    go.disabled = n < 2;
+    go.textContent = picked === null ? "Let the whole fleet talk" : `Let these ${n} talk`;
+  }
+}
+
+$("pick-all")?.addEventListener("click", () => { picked = null; renderPicker(); });
+$("pick-none")?.addEventListener("click", () => { picked = new Set(); renderPicker(); });
+
 $("grant-go").addEventListener("click", async (e) => {
   e.target.disabled = true;
   try {
+    const members = picked === null
+      ? ops.sessions.map((s) => s.tag).filter(Boolean)
+      : [...picked];
     await api("/api/autonomy", {
       method: "POST",
-      body: JSON.stringify({
-        members: ops.sessions.map((s) => s.tag).filter(Boolean),
-        hours: Number($("grant-hours").value),
-      }),
+      body: JSON.stringify({ members, hours: Number($("grant-hours").value) }),
     });
+    picked = null;                 // back to the safe default for next time
     await refresh();
   } finally {
     e.target.disabled = false;
@@ -677,11 +728,69 @@ async function notifStatus() {
 async function paintNotif() {
   if (!notifBtn) return;
   const st = await notifStatus();
+  const on = st.state === "on";
+
+  // When it's ON, the explainer has done its job and becomes permanent clutter. Collapse to
+  // one line — but Test stays reachable, because you need it exactly when something has gone
+  // wrong and you're trying to tell "the pipe is dead" from "the fleet is just quiet".
+  $("notif-setup").hidden = on;
+  $("notif-on").hidden = !on;
+
   notifState.textContent = st.text;
-  notifBtn.hidden = ["unsupported", "insecure", "denied"].includes(st.state);
-  notifBtn.textContent = st.state === "on" ? "Send a test" : "Turn on notifications";
-  notifBtn.dataset.mode = st.state === "on" ? "test" : "enable";
+  notifBtn.hidden = on || ["unsupported", "insecure", "denied"].includes(st.state);
+  notifBtn.textContent = "Turn on notifications";
+  notifBtn.dataset.mode = "enable";
 }
+
+function notifMsg(text) {
+  const el = $("notif-msg");
+  if (!el) return;
+  el.textContent = text || "";
+  el.hidden = !text;
+}
+
+async function disableNotifications() {
+  const reg = await navigator.serviceWorker.getRegistration("/m");
+  const sub = reg && (await reg.pushManager.getSubscription());
+  if (sub) {
+    // Tell the server FIRST. If we only unsubscribed locally, the backend would keep a dead
+    // endpoint and keep pushing into it — every send failing silently, forever.
+    await api("/api/webpush/unsubscribe", {
+      method: "POST",
+      body: JSON.stringify({ endpoint: sub.endpoint }),
+    }).catch(() => {});
+    await sub.unsubscribe();
+  }
+  await paintNotif();
+  notifMsg("Notifications off. Nothing will reach this device until you turn them back on.");
+}
+
+$("notif-test")?.addEventListener("click", async (e) => {
+  e.target.disabled = true;
+  notifMsg("Sending…");
+  try {
+    const r = await api("/api/webpush/test", { method: "POST" });
+    notifMsg(r.sent
+      ? `Sent to ${r.sent} device(s) — it should appear now. If it doesn't, your phone is
+         blocking it, not Conductor.`.replace(/\s+/g, " ")
+      : "Couldn't deliver. Turn them off and on again.");
+  } catch (err) {
+    notifMsg(`Failed: ${err.message}`);
+  } finally {
+    e.target.disabled = false;
+  }
+});
+
+$("notif-off")?.addEventListener("click", async (e) => {
+  e.target.disabled = true;
+  try {
+    await disableNotifications();
+  } catch (err) {
+    notifMsg(`Failed: ${err.message}`);
+  } finally {
+    e.target.disabled = false;
+  }
+});
 
 async function enableNotifications() {
   const perm = await Notification.requestPermission();
@@ -701,14 +810,8 @@ if (notifBtn) {
   notifBtn.addEventListener("click", async () => {
     notifBtn.disabled = true;
     try {
-      if (notifBtn.dataset.mode === "test") {
-        const r = await api("/api/webpush/test", { method: "POST" });
-        notifState.textContent = r.sent
-          ? `Sent to ${r.sent} device(s) — it should appear now.`
-          : "Couldn't deliver. Try turning them on again.";
-      } else {
-        await enableNotifications();
-      }
+      await enableNotifications();
+      notifMsg("On. Try Test to make sure it actually reaches you.");
     } catch (e) {
       notifState.textContent = `Failed: ${e.message}`;
     } finally {

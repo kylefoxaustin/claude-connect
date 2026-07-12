@@ -1383,6 +1383,25 @@ async def webpush_subscribe(sub: WebPushSub, request: Request) -> dict[str, Any]
     return {"ok": True, "devices": len(subs)}
 
 
+class WebPushDrop(BaseModel):
+    endpoint: str
+
+
+@app.post("/api/webpush/unsubscribe")
+async def webpush_unsubscribe(payload: WebPushDrop, request: Request) -> dict[str, Any]:
+    """Turn notifications off for a device.
+
+    The browser can unsubscribe on its own, but if we weren't told, the server would keep a
+    dead endpoint and keep pushing into it — every send failing silently, forever. Off has to
+    mean off on BOTH sides or it doesn't mean anything.
+    """
+    state: AppState = request.app.state.cond
+    await asyncio.to_thread(drop_sub, state.coord_root, payload.endpoint)
+    remaining = await asyncio.to_thread(read_subs, state.coord_root)
+    log.info("webpush: device unsubscribed (%d left)", len(remaining))
+    return {"ok": True, "devices": len(remaining)}
+
+
 @app.post("/api/webpush/test")
 async def webpush_test(request: Request) -> dict[str, Any]:
     """Ring every registered device once.

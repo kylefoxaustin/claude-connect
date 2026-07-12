@@ -23,6 +23,21 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.27.1: 🔔 **Notification row collapses + 👥 pick WHO may talk** (both Kyle's).
+  (1) Once notifications are ON, the explainer has done its job and becomes **permanent
+  clutter** — it collapses to a one-line `🔔 Notifications on · Test · Turn off`. **Test stays
+  reachable on purpose:** you need it *exactly* when something has gone wrong and you're
+  trying to tell *"the pipe is dead"* from *"the fleet is just quiet"* — a diagnostic you can
+  only reach while things are working is no diagnostic. **Turn off** unsubscribes **server-side
+  first** (`POST /api/webpush/unsubscribe`): unsubscribing only in the browser would leave the
+  backend pushing into a dead endpoint forever, every send failing silently. *Off has to mean
+  off on BOTH sides or it doesn't mean anything.* (2) The phone could only grant **"the whole
+  fleet"** — a blunter permission than Kyle wants to hand out at 2am, and the desktop has had
+  tile-click subset selection since v2.23.0. Now a checkbox list with **All / None**, status
+  dots, and a live count; the button reads *"Let the whole fleet talk"* or *"Let these 4
+  talk"*. `picked === null` means everyone, so **the default behaviour is unchanged and the
+  common case still needs zero ticking**. Floor of 2 members — a "window" of one can't let
+  anyone wake anyone.
 - ✅ v2.27.0: 📤 **Push PROPOSALS — "should I push NOW?" is not the question the gate asks.**
   Kyle found the conflation, and it's a good one: *"Claudes often ask me 'do you want me to
   push now or keep digging into issue X'... honestly I don't want Claude to go push happy."*
