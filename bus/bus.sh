@@ -311,7 +311,7 @@ _coord_retract() {  # kind to-tag text...
   { echo "sender=$TAG"; echo "target=$to"; echo "target_plain=$plain"; echo "kind=$kind"
     echo "created=$ts"; echo "epoch=$now"; echo "text=$text"; } > "$RETRACT_DIR/${now}-${plain}"
   echo "$label sent to [$plain] — they'll be woken to see it immediately."
-  mark_seen_if_bus_tag
+  # No mark_seen: posting must never mark OTHERS' unread mail as read (see send).
 }
 
 # Loud lines for UNACKNOWLEDGED retractions targeting me (created after my last-seen).
@@ -688,36 +688,56 @@ shift || true
 
 case "$cmd" in
   send)
-    # `send -` (or send with no args) reads the body from STDIN. This is the SAFE form
-    # and the one to prefer: a message passed as an ARGUMENT goes through the caller's
-    # shell first, so backticks are command-substituted and the words silently VANISH —
-    # the send SUCCEEDS and your message is quietly missing two words. No error. With a
-    # quoted heredoc (<<'MSG') nothing is substituted at all.
-    if [ "${1:-}" = "-" ] || [ $# -eq 0 ]; then
-      MSG_BODY="$(cat)"
-      if [ -z "$MSG_BODY" ]; then
-        echo "ERROR: /msg-send requires a message (piped on stdin, or as arguments)" >&2
-        exit 2
-      fi
-      TS="$(date '+%Y-%m-%d %H:%M')"
-      { echo ""; echo "## $TS [$TAG]"; echo ""; printf '%s\n' "$MSG_BODY"; } >> "$BUS_FILE"
-      echo "Sent message tagged [$TAG] at $TS."
-      mark_seen_if_bus_tag
-      exit 0
-    fi
-    if [ $# -eq 0 ]; then
-      echo "ERROR: /msg-send requires a message" >&2
+    # STDIN ONLY. The argument path is DELETED, not deprecated. Two silent bugs lived
+    # here, both found by the fleet by LIVING them (2026-07-11):
+    #
+    #  1. A message passed as an ARGUMENT goes through the caller's shell FIRST, which
+    #     command-substitutes backticks: `bus.sh send "run `foo` now"` posts "run  now".
+    #     Exit 0, no warning. You cannot validate your way out of this — the shell ate
+    #     the bytes before bus.sh had a process. It is a gap in TIME, not a gap in a
+    #     check, so the path must be REMOVED, not warned about.
+    #
+    #  2. Accepting BOTH args and stdin gave the tool two mouths. `bus.sh send docs
+    #     <<'EOF' … EOF` sent the single word "docs" and silently DROPPED the entire
+    #     heredoc body. Exit 0 again. (It "read almost right" — a message from [docs]
+    #     whose content was, fittingly, just "docs".)
+    #
+    # `-` is accepted as an explicit "read stdin" marker so the recipe we print is a
+    # recipe the guard actually allows.
+    case "$#:${1:-}" in
+      0:|1:-) : ;;
+      *)
+        cat >&2 <<'SENDERR'
+ERROR: `bus.sh send` takes NO message arguments — it reads the body from STDIN.
+
+    ~/.claude/bin/bus.sh send - <<'MSG'
+    to:sometag — [me] your message here.
+    Backticks like `/svc-next`, $vars and "quotes" all survive untouched.
+    MSG
+
+WHY: a message passed as an argument goes through your shell first, which
+command-substitutes backticks and DELETES them. The send SUCCEEDS and your words
+silently vanish. A QUOTED heredoc delimiter (<<'MSG') substitutes nothing at all.
+SENDERR
+        exit 2 ;;
+    esac
+    MSG_BODY="$(cat)"
+    if [ -z "$MSG_BODY" ]; then
+      echo "ERROR: bus.sh send received an empty message on stdin." >&2
       exit 2
     fi
     TS="$(date '+%Y-%m-%d %H:%M')"
-    {
-      echo ""
-      echo "## $TS [$TAG]"
-      echo ""
-      echo "$*"
-    } >> "$BUS_FILE"
+    { echo ""; echo "## $TS [$TAG]"; echo ""; printf '%s\n' "$MSG_BODY"; } >> "$BUS_FILE"
     echo "Sent message tagged [$TAG] at $TS."
-    mark_seen_if_bus_tag
+    # DELIBERATELY NO mark_seen_if_bus_tag. (backend, 2026-07-11 — silent mail loss.)
+    # mark_seen sets last-seen to the NEWEST header in the FILE, regardless of what you
+    # actually read. So posting a message marked every unread message as seen — and now
+    # that `check` correctly shows only what is new, those messages became invisible
+    # FOREVER. Making check honest turned a cosmetic wart into silent mail loss, and it
+    # preferentially ate the most time-critical traffic: the sessions most likely to be
+    # mid-thread are precisely the ones sending, so mail landing while you compose was
+    # consumed by your own reply.
+    # Nothing needs marking here: prompt-check already excludes your own tag.
     ;;
 
   check)

@@ -1532,9 +1532,12 @@ body.packed .lines-overlay { opacity: 0.5; }
     flex-wrap: wrap;
     overflow-x: hidden;
     overflow-y: auto;
-    max-height: 45vh;
-    row-gap: 8px;
-    padding: 10px 12px 12px;
+    /* 45vh was HALF THE SCREEN once there were ~18 dormant sessions — the dock was
+       burying the board it exists to annotate. Cap it hard and let it scroll; the
+       full list is one tap away in ⟳ Relaunch anyway, so this never needs to be big. */
+    max-height: 15vh;
+    row-gap: 6px;
+    padding: 8px 12px 10px;
     -webkit-overflow-scrolling: touch;
   }
   .dock::-webkit-scrollbar { width: 14px; height: 0; }
