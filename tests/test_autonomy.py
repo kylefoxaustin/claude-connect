@@ -85,8 +85,10 @@ def state(tmp_path):
 
 
 def _sess(tag, status):
+    # Mirror the real SessionRecord: `last_activity_at` and `project_dir` are always there.
     return types.SimpleNamespace(tag=tag, status=status, pid=1, terminal_pid=2,
-                                 title="t", window_title="w")
+                                 title="t", window_title="w", project_dir="/p",
+                                 last_activity_at=time.time())
 
 
 def _run(state, monkeypatch):

@@ -23,6 +23,29 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.26.1: 🌩 **THE /msg-check STORM — ~450 injections overnight, 16 stacked on one
+  session. Third recurrence of one bug; this time it's pinned.** Kyle woke up to a terminal
+  full of `/msg-check` and *"Press up to edit queued messages"*. **The fact that was wrong,
+  and everything followed from it: a busy Claude Code session does NOT drop injected
+  keystrokes — it QUEUES them.** So a re-injection is never a repair; it is another identical
+  command stacked behind the first. And **one `/msg-check` drains the entire backlog**, so a
+  second can only ever be noise. The watermark dedup (v2.22.0) was *right* — *"once woken,
+  stay quiet until the recipient actually reads"* — but a **10-minute `_WAKE_RETRY_SECONDS`
+  "re-arm anyway" escape hatch**, added for the corner case of a session that never writes a
+  last-seen, **defeated it and re-broke the exact bug the dedup existed to fix.** Over seven
+  hours: **42 re-wakes into a session that was simply busy.** *(The comment directly above it
+  predicts this failure. A fix for a corner case silently un-fixed the main case.)* **The tell
+  was always in hand: a session grinding through a long tool call STOPS WRITING ITS TRANSCRIPT
+  — which is precisely why its status decays to IDLE and it looks wakeable in the first
+  place.** So a **frozen transcript ⇒ our check is still queued** ⇒ never re-inject. Only a
+  transcript that has **MOVED** while the watermark has **NOT** is evidence a keystroke was
+  genuinely lost — that, plus 1h, is now the only retry path. `_wake_outstanding` gains an
+  activity stamp; the persisted 2-tuples are read back with activity `+inf` so **a legacy
+  entry can never satisfy the retry test** (defaulting to 0 would have re-prodded the entire
+  fleet on first boot — the very storm being fixed). Also fixed the test fakes: they lacked
+  `last_activity_at`, which every real `SessionRecord` carries — **a fake missing a field the
+  real object always has is a fake that passes while production crashes on the same line.**
+  Live: **~1 injection/sec → 2 per minute.** 230 tests.
 - ✅ v2.26.0: 🔁 **"Tell them they're both waiting" — break a mutual stall with one tap**
   (Kyle's ask, and the shape of it is the whole point). **A mutual stall is invisible to its
   participants BY CONSTRUCTION.** Each side believes it is politely awaiting a reply — *and

@@ -9,6 +9,7 @@ the same batch.
 from __future__ import annotations
 
 import asyncio
+import time
 import types
 
 import pytest
@@ -108,7 +109,11 @@ def state(tmp_path):
 
 
 def _sess(tag, status):
-    return types.SimpleNamespace(tag=tag, status=status, pid=1, terminal_pid=2, title="t", window_title="w")
+    # `last_activity_at` and `project_dir` are on every real SessionRecord. A fake that
+    # omits them is a fake that can pass while production crashes on the same path.
+    return types.SimpleNamespace(tag=tag, status=status, pid=1, terminal_pid=2, title="t",
+                                 window_title="w", project_dir="/p",
+                                 last_activity_at=time.time())
 
 
 def _run_wake(state, monkeypatch):

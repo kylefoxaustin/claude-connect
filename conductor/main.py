@@ -100,7 +100,18 @@ _WAKEABLE_STATUSES = frozenset({Status.IDLE, Status.DORMANT})
 # A /msg-check the recipient hasn't run yet makes a second one pointless — one
 # check drains the whole backlog. Re-arm after this long anyway, so a session
 # that never writes a last-seen watermark isn't muted forever.
-_WAKE_RETRY_SECONDS = 600.0
+# How long before we'll consider re-injecting a /msg-check that a session still hasn't
+# acted on. This used to be 600s and it caused a keystroke STORM: over one night a single
+# session accumulated ~16 queued /msg-checks, and Conductor fired ~450 injections fleet-wide.
+#
+# The mistake was believing a busy session DROPS injected keystrokes. It doesn't — Claude
+# Code QUEUES them ("Press up to edit queued messages"). So a re-injection is never a repair;
+# it is just another identical command stacked behind the first. One /msg-check drains the
+# entire backlog, so a second one can only ever be noise.
+#
+# The retry now exists solely for the case where the keystroke was genuinely LOST, and it is
+# gated on evidence of that (see _wake_unread_recipients) rather than on a stopwatch.
+_WAKE_RETRY_SECONDS = 3600.0
 
 
 def _bare_tag(tag: str | None) -> str:
@@ -129,6 +140,23 @@ def _build_bus_adapter(settings: Settings) -> BusAdapter:
         return FakeBusAdapter()
     log.warning("unknown bus.adapter %r — falling back to markdown", name)
     return MarkdownBusAdapter(settings.bus.markdown_path_resolved, poll_interval=0.5)
+
+
+def _unpack_wake(v: Any) -> tuple[str, float, float]:
+    """``(seen, woke_at)`` (the old on-disk shape) or ``(seen, woke_at, activity_at)``.
+
+    ``coord/wake-state.json`` persists across restarts, so the first run after this change
+    reads 2-tuples. Treating a short tuple as corrupt and dropping it would re-prod every
+    session with unread mail exactly once — which is the very storm this change exists to
+    end. Default the missing activity stamp to +inf so a legacy entry can never satisfy the
+    "it has been active since we typed" retry test.
+    """
+    if isinstance(v, (list, tuple)):
+        if len(v) >= 3:
+            return str(v[0]), float(v[1]), float(v[2])
+        if len(v) == 2:
+            return str(v[0]), float(v[1]), float("inf")
+    return "", 0.0, float("inf")
 
 
 class AppState:
@@ -423,11 +451,26 @@ class AppState:
             seen_now = _read_last_seen(state_dir, r.tag) or ""
             prev = self._wake_outstanding.get(r.tag)
             if prev is not None:
-                prev_seen, woke_at = prev
-                # Re-arm anyway after a while, so a session that can't write a
-                # last-seen at all (not on the bus whitelist) isn't muted forever.
-                if seen_now == prev_seen and (now - woke_at) < _WAKE_RETRY_SECONDS:
-                    continue
+                prev_seen, woke_at, prev_activity = _unpack_wake(prev)
+                if seen_now == prev_seen:
+                    # It still hasn't read. There is a /msg-check outstanding — QUEUED, not
+                    # lost (Claude Code queues input typed while it's busy), and one check
+                    # drains the whole backlog. A second one cannot help and will simply
+                    # stack. Stay quiet.
+                    #
+                    # The ONE exception is a keystroke that never landed at all. We can tell
+                    # the difference: a session grinding through a long tool call stops
+                    # writing its transcript (which is exactly why its status decayed to IDLE
+                    # and made it look wakeable) — so a FROZEN transcript means our check is
+                    # still queued and waiting its turn. A transcript that has MOVED since we
+                    # woke it, with a watermark that hasn't, is the only real evidence the
+                    # keystroke went missing.
+                    moved = r.last_activity_at > prev_activity + 1.0
+                    if not (moved and (now - woke_at) >= _WAKE_RETRY_SECONDS):
+                        continue
+                    log.info("re-waking [%s]: it has been active for %.0fm since we typed "
+                             "and still hasn't read — the keystroke was probably lost",
+                             r.tag, (now - woke_at) / 60)
             # WAITING = parked at its prompt. Normally we never inject there (Kyle
             # might be typing at it) — and since WAITING is the resting state of every
             # quiet session, that guard is what forces him to hand-click "check msgs"
@@ -444,7 +487,7 @@ class AppState:
             if not allowed:
                 continue  # busy, or attended and not in a window — retry once quiet
             await self._inject_msg_check(r, f"{info['count']} unread addressed to it")
-            self._wake_outstanding[r.tag] = (seen_now, now)
+            self._wake_outstanding[r.tag] = (seen_now, now, r.last_activity_at)
             changed = True
         if changed:
             await asyncio.to_thread(write_wake_state, self.coord_root, self._wake_outstanding)
