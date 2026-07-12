@@ -768,9 +768,74 @@ kind: $kind
 aliases:
 summary: (one line — what is this?)
 
+# ⚠️ REQUIRED. This single field decides what may be done to the resource when its
+# owner dies, so it is not optional and it is not a guess.
+#
+#   interrogable — the resource can NAME ITS OWN TENANTS. Ask it, it answers.
+#                  (a GPU: `nvidia-smi --query-compute-apps` lists every pid + bytes)
+#                  ⇒ a dead owner's process may be REAPED. Killing it genuinely cleans
+#                    the resource, the same instant, and it is reversible.
+#
+#   opaque       — you CANNOT ask it who is using it. There is no ledger on the device;
+#                  every host-side signal is a PROXY (fuser on a serial line, a heartbeat).
+#                  (any EVK, an Orin over ssh, anything behind a serial cable)
+#                  ⇒ a dead owner's board is QUARANTINED. Never reaped, never auto-freed.
+#
+# WHY THE POLICY INVERTS (and it is the opposite of what you would guess — you would
+# expect to be MORE aggressive on the scarce, exclusive board):
+#
+#   **A dead GPU tenant leaves a mess. A dead board tenant leaves a BOOBY TRAP.**
+#
+# Kill a GPU process and the card is clean instantly. A board keeps whatever state it was
+# left in — half-written flash, a held debug halt, a changed boot source — and NO probe on
+# this host can see any of it. Freeing it does not clean it; it relocates the corruption
+# onto the next occupant, who debugs a phantom.
+#
+# MEASURED, 2026-07-12: ollama_95_neutron released imx95-frdm CLEANLY and still had to warn
+# the fleet IN PROSE that the board now boots a different device tree. The lease read FREE.
+# `fuser /dev/neutron0` was empty. Every host-side check said clean. It was not.
+#
+# And the trap has TWO jaws: a "restore to a known-good baseline" reaper would have reverted
+# that board to the STOCK DTB — which does not clean it, it SILENTLY BREAKS it. The stock
+# 960 MiB CMA pool can never satisfy the NPU's 2 GiB request, so it logs `hardware init
+# failed` at a severity nobody reads and runs the whole graph on the CPU at a plausible
+# latency. That exact failure is why this fleet believed for MONTHS that "Neutron is
+# CNN-only".  ⇒ verify asks "is it KNOWN?", never "is it STOCK?"
+class: (interrogable | opaque)
+
+# Prove the resource is in a KNOWN state. Required before an `opaque` asset may ever be
+# handed on automatically; until it exists, a dead owner means quarantine and a human.
+#
+# It must PRESENCE-check, not activity-check: an idle process merely HOLDING a device adds
+# ZERO load, and a load-average gate cannot see it. (That is the original catastrophe above.)
+#
+# ⚠️ AND A MOCK IS NOT A NEGATIVE TEST. This rule cost us a live false-negative and it is the
+# sharpest thing in this template:
+#
+#   ollama wrote an ARA240 presence check, negative-tested it by FORCING the refcount to 1,
+#   and watched it fire. The script logic was correct. qualcomm then ran it against a REAL
+#   held accelerator — 500 confirmed inferences — and the refcount read **0 in 100% of
+#   samples.** The tenant reaches the device by mmap'ing the PCI BAR, which never touches the
+#   module use-count the check was reading. The guard would have printed **"✅ free"** on a
+#   board running inference at full tilt.
+#
+#   The mock proved the script REACTS TO THE SIGNAL. It never proved A REAL TENANT PRODUCES
+#   THE SIGNAL. Those are different claims and only the second one matters.
+#
+#   ⇒ **A guard negative-tested only against a mock is decoration until a real tenant trips
+#     it.** Go and hold the thing. Watch the check fire. Anything less is an unaudited claim
+#     wearing a passing test.
+#
+# And when no host-side signal can distinguish idle from busy — which is what qualcomm found
+# here — the honest verify does NOT invent one. It says "cannot tell → quarantine". **A check
+# that cannot fire is worse than no check**, because it is a green light with nothing behind it.
+verify: (path to a script that exits 0 = KNOWN, non-zero = do not trust any measurement)
+
 ## access
 (How does a Claude actually reach it? ssh / serial device + baud / IP / how to power-cycle.
- Do NOT inline passwords — say where the credential lives.)
+ Do NOT inline passwords — say where the credential lives.
+ ⚠️ PIN SERIAL DEVICES TO /dev/serial/by-id/… — `ttyACM*` numbering is NOT stable across a
+ replug, and a reaper acting on a guessed device node acts on the WRONG BOARD.)
 
 ## setup
 (Toolchain, env, how to flash/deploy, anything needed before first use.)
