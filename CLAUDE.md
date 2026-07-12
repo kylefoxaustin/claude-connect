@@ -23,6 +23,33 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.24.3: 🐛 **Two live bugs Kyle found by USING it, and they rhyme.**
+  **(1) The Approve button punished you for pressing it.** He tapped Approve, *"nothing
+  changed"*, so he tapped again — several times. Two faults, and the second is nasty:
+  `renderInbox()` calls `replaceChildren()` on **every** refresh (every few seconds), so the
+  optimistic dimmed card was **wiped by the next scan tick** and rebuilt looking untouched —
+  *and* each tap ran `clearTimeout(undoTimer)`, **restarting the 5-second window, so the
+  approval never fired AT ALL while he kept pressing.** It only landed once he gave up. This
+  is **the same bug I fixed on the desktop hours earlier** (`fillSessionTile` rewriting
+  `className` wholesale, fading the link selection) and reintroduced from scratch in the new
+  app. The rule, now written down: **optimistic UI must be REBUILT FROM STATE on every
+  render, never painted onto an element and hoped for.** State moved out of the DOM
+  (`approving` / `sending` / `answering`), a second tap is an explicit no-op, the card itself
+  shows **"Approving in 3s…" with an in-card Undo** and then a **"Sending…" spinner** —
+  feedback where the thumb already is, not in a snackbar he never saw. The snackbar is gone.
+  **(2) Web Push never worked, and said so quietly.** *Two* config bugs, **same root cause**:
+  the VAPID **private key was stored as PEM** (pywebpush hands it to `Vapid.from_string`,
+  which only parses base64url raw/DER) and the **`sub` claim was `mailto:conductor@skippy`**
+  — `socket.gethostname()` has **no dot**, so py_vapid's email regex rejected it. Every send
+  raised; `send_one` caught it; the phone said *"Couldn't deliver"*. **My tests passed both
+  times — because they asserted my DESCRIPTION of the format instead of asking the library
+  that consumes it.** (`test_public_key_is_raw_base64url_not_pem` was green while the
+  *private* key was a PEM.) Now: `Vapid01.from_string()` and `_check_sub()` are called **in
+  the tests**. The PEM key is **migrated, not regenerated** — the public half is baked into
+  the subscription the browser already made, so a fresh keypair would leave the phone
+  looking subscribed and **never ringing again**. `vapid_subject()` never uses Kyle's real
+  email (it rides in a JWT to Google/Mozilla on every notification, and this repo is public).
+  Verified live: `{"ok":true,"sent":1}`. 209 tests.
 - ✅ v2.24.2: 🔐 **A push approval WAITS for the agent; it no longer races it.** Kyle
   approves from his phone — but the *session* is what has to notice and re-run the push, and
   it may be asleep, mid-task, or unreachable because Conductor isn't running to ping it.

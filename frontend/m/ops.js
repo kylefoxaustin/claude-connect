@@ -70,6 +70,9 @@ $("gate-form").addEventListener("submit", async (e) => {
 // ---------------------------------------------------------------- state
 let ops = null;
 const selected = new Map();  // session_id -> array of Sets, one per question
+const answering = new Set(); // session_ids whose answer POST is in flight — same reason
+                            // as `sending`: a refresh mid-POST would rebuild the card
+                            // with a live Send button and invite a second answer.
 
 // ---------------------------------------------------------------- helpers
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
@@ -185,7 +188,7 @@ function decisionCard(d) {
           sel[qi].add(o.label);
         }
         el.querySelectorAll(".opt").forEach((x) => x.dispatchEvent(new Event("repaint")));
-        submit.disabled = sel.some((s) => s.size === 0);
+        submit.disabled = answering.has(d.session_id) || sel.some((s) => s.size === 0);
       });
       b.addEventListener("repaint", paint);
       paint();
@@ -197,24 +200,30 @@ function decisionCard(d) {
   submit.className = "btn btn-primary";
   submit.style.width = "100%";
   submit.style.marginTop = "6px";
-  submit.textContent = "Send answer";
-  submit.disabled = true;
+  const busy = answering.has(d.session_id);
+  submit.innerHTML = busy
+    ? '<span class="spin"></span> Sending…'
+    : "Send answer";
+  submit.disabled = busy || sel.some((s) => s.size === 0);
   submit.addEventListener("click", async () => {
-    submit.disabled = true;
-    submit.textContent = "Sending…";
+    if (answering.has(d.session_id)) return;
+    answering.add(d.session_id);
+    renderInbox();                     // repaint FROM state, so a refresh can't undo it
     try {
       await api(`/api/decisions/${encodeURIComponent(d.session_id)}`, {
         method: "POST",
         body: JSON.stringify({ answers: sel.map((s) => [...s]) }),
       });
       selected.delete(d.session_id);
-      // No Undo here on purpose: the answer IS the keystroke, it has already landed in
-      // the Claude, and there is nothing to take back. Undo would be a lie.
-      submit.textContent = "✅ Sent";
+      // No Undo here on purpose: the answer IS the keystroke, it has already landed in the
+      // Claude, and there is nothing to take back. An Undo button would be a lie.
+      answering.delete(d.session_id);
       await refresh();
     } catch (e) {
+      answering.delete(d.session_id);
       // The common case is benign — he answered it at the keyboard a moment ago.
-      submit.textContent = e.status === 409 ? "Already answered" : `Failed: ${e.message}`;
+      const b = el.querySelector(".btn-primary");
+      if (b) b.textContent = e.status === 409 ? "Already answered" : `Failed: ${e.message}`;
       setTimeout(refresh, 1500);
     }
   });
@@ -222,19 +231,84 @@ function decisionCard(d) {
   return el;
 }
 
-/* A push approval is REVERSIBLE for five seconds instead of gated behind a confirm
- * dialog. A dialog you see twenty times a day is habituated within a week and then it
- * protects nobody; an undo window covers the only moment a mistake is actually noticed. */
-let undoTimer = null;
-let pendingApprove = null;
+/* A push approval is REVERSIBLE for five seconds rather than gated behind a confirm
+ * dialog: a dialog you see twenty times a day is habituated within a week and protects
+ * nobody, while an undo window covers the only moment a mistake is actually noticed.
+ *
+ * THE STATE LIVES HERE, NOT IN THE DOM. renderInbox() calls replaceChildren() on every
+ * refresh — and a refresh fires every few seconds — so anything stashed on the element
+ * (a dimmed card, a disabled button) is wiped within one scan tick. That is exactly what
+ * happened to Kyle: he tapped Approve, the card briefly dimmed, the next broadcast rebuilt
+ * it looking untouched, so he tapped again. And each tap restarted the 5s timer, so the
+ * approval never fired AT ALL while he kept pressing. A button that punishes you for
+ * pressing it twice, and gives you no reason not to.
+ *
+ * Same class of bug as the desktop's link-selection fade (fillSessionTile rewriting
+ * className wholesale). Optimistic UI must be rebuilt FROM state on every render, never
+ * painted onto an element and hoped for. */
+const approving = new Map();   // push key -> { repo, commitAt (ms), timer }
+const sending = new Set();     // push keys whose POST is in flight
+
+function armApprove(p) {
+  if (approving.has(p.key) || sending.has(p.key)) return;   // idempotent: a 2nd tap is a no-op
+  const timer = setTimeout(() => commitApprove(p.key), 5000);
+  approving.set(p.key, { repo: p.repo_name || nameOf(p.cwd), commitAt: Date.now() + 5000, timer });
+  renderInbox();
+}
+
+function cancelApprove(key) {
+  const a = approving.get(key);
+  if (!a) return;
+  clearTimeout(a.timer);
+  approving.delete(key);
+  renderInbox();                 // nothing was ever sent
+}
+
+async function commitApprove(key) {
+  approving.delete(key);
+  sending.add(key);
+  renderInbox();                 // -> "Sending…", so the tap is never ambiguous
+  try {
+    await api(`/api/push/${encodeURIComponent(key)}/approve`, { method: "POST" });
+  } catch { /* the refresh below shows the truth */ }
+  sending.delete(key);
+  await refresh();
+}
 
 function pushCard(p) {
   const el = document.createElement("div");
   el.className = "card";
+  const repo = p.repo_name || nameOf(p.cwd);
   const age = p.epoch ? Date.now() / 1000 - p.epoch : null;
+
+  // --- in flight: the POST is out, there is nothing to undo -----------------
+  if (sending.has(p.key)) {
+    el.innerHTML =
+      `<div class="card-head"><span class="card-who">🔐 ${esc(repo)}</span></div>` +
+      `<div class="row-sub"><span class="spin"></span> Sending your approval…</div>`;
+    return el;
+  }
+
+  // --- armed, counting down: undo is still possible -------------------------
+  if (approving.has(p.key)) {
+    el.classList.add("card-arming");
+    el.innerHTML =
+      `<div class="card-head"><span class="card-who">✅ ${esc(repo)}</span></div>` +
+      `<div class="row-sub">Approving in <b class="cd" data-key="${esc(p.key)}">5</b>s…</div>`;
+    const undo = document.createElement("button");
+    undo.className = "btn";
+    undo.style.width = "100%";
+    undo.style.marginTop = "12px";
+    undo.textContent = "Undo";
+    undo.addEventListener("click", () => cancelApprove(p.key));
+    el.appendChild(undo);
+    return el;
+  }
+
+  // --- idle: waiting for a decision -----------------------------------------
   el.innerHTML =
     `<div class="card-head">` +
-    `<span class="card-who">🔐 ${esc(p.repo_name || nameOf(p.cwd))}</span>` +
+    `<span class="card-who">🔐 ${esc(repo)}</span>` +
     `<span class="row-age">${ago(age)}</span></div>` +
     `<div class="row-sub">wants to push · <code>${esc(p.cmd || "git push")}</code></div>`;
 
@@ -245,15 +319,18 @@ function pushCard(p) {
   const approve = document.createElement("button");
   approve.className = "btn btn-primary";
   approve.textContent = "Approve";
-  approve.addEventListener("click", () => armApprove(p, el));
+  approve.addEventListener("click", () => armApprove(p));
 
   const deny = document.createElement("button");
   deny.className = "btn btn-danger";
   deny.textContent = "Deny";
   // Deny needs no undo: it's recoverable by construction — the agent just asks again.
   deny.addEventListener("click", async () => {
-    deny.disabled = approve.disabled = true;
+    if (sending.has(p.key)) return;
+    sending.add(p.key);
+    renderInbox();
     await api(`/api/push/${encodeURIComponent(p.key)}/deny`, { method: "POST" }).catch(() => {});
+    sending.delete(p.key);
     refresh();
   });
 
@@ -262,30 +339,17 @@ function pushCard(p) {
   return el;
 }
 
-function armApprove(p, card) {
-  card.style.opacity = ".45";
-  pendingApprove = p;
-  $("snack-text").textContent = `Approving push to ${p.repo || nameOf(p.cwd)}…`;
-  $("snack").hidden = false;
-  clearTimeout(undoTimer);
-  undoTimer = setTimeout(async () => {
-    $("snack").hidden = true;
-    const target = pendingApprove;
-    pendingApprove = null;
-    if (!target) return;
-    try {
-      await api(`/api/push/${encodeURIComponent(target.key)}/approve`, { method: "POST" });
-    } catch { /* refresh will show the truth */ }
-    refresh();
-  }, 5000);
-}
+// Tick the countdown text in place. Rebuilding the whole card every 250ms would risk
+// swapping the Undo button out from under a thumb mid-tap.
+setInterval(() => {
+  if (!approving.size) return;
+  for (const el of document.querySelectorAll(".cd")) {
+    const a = approving.get(el.dataset.key);
+    if (a) el.textContent = String(Math.max(0, Math.ceil((a.commitAt - Date.now()) / 1000)));
+  }
+}, 200);
 
-$("snack-undo").addEventListener("click", () => {
-  clearTimeout(undoTimer);
-  pendingApprove = null;
-  $("snack").hidden = true;
-  render();                       // un-dim the card; nothing was ever sent
-});
+
 
 function grantRow(g) {
   const el = document.createElement("div");

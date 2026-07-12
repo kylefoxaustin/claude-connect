@@ -211,3 +211,17 @@ body {
   border: 0; background: none; color: var(--accent);
   font: inherit; font-weight: 700; padding: 6px 4px;
 }
+
+/* A tap must never be ambiguous. These states are rebuilt FROM state on every render —
+   painting them onto the element instead is what let a 3-second refresh silently undo
+   the feedback and make Kyle press Approve five times. */
+.card-arming { border-color: var(--ok); background: #17251b; }
+
+.spin {
+  display: inline-block; width: 13px; height: 13px; margin-right: 6px;
+  vertical-align: -1px; border-radius: 50%;
+  border: 2px solid var(--line); border-top-color: var(--accent);
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }

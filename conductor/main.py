@@ -38,6 +38,7 @@ from .webpush import (
     prune_sent,
     read_subs,
     send_one,
+    vapid_subject,
 )
 from .bus import (
     BusAdapter,
@@ -492,7 +493,7 @@ class AppState:
         if not subs:
             return                     # no phone registered — nothing to do, and not an error
         keys = await asyncio.to_thread(load_or_create_keys, self.coord_root)
-        subject = f"mailto:conductor@{socket.gethostname()}"
+        subject = vapid_subject(socket.gethostname())
         now = time.time()
         for item in pending:
             for sub in list(subs):
@@ -1285,7 +1286,7 @@ async def webpush_test(request: Request) -> dict[str, Any]:
     payload = {"title": "🔔 Conductor",
                "body": "Notifications are working.",
                "url": "/m", "tag": "test"}
-    subject = f"mailto:conductor@{socket.gethostname()}"
+    subject = vapid_subject(socket.gethostname())
     sent = 0
     for sub in list(subs):
         ok = await asyncio.to_thread(send_one, sub, payload, keys, subject)

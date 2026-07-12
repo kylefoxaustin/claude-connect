@@ -54,34 +54,55 @@ def load_or_create_keys(coord_root: Path) -> dict[str, str]:
     browser creates, so rotating it silently invalidates every existing subscription —
     the phone would keep "working" and simply never ring again.
     """
+    from cryptography.hazmat.primitives.serialization import (
+        Encoding,
+        PublicFormat,
+        load_pem_private_key,
+    )
+    from py_vapid import Vapid01
+
     path = coord_root / _KEYS
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        if data.get("private") and data.get("public"):
+        priv, pub = data.get("private"), data.get("public")
+        if priv and pub:
+            if "-----BEGIN" not in priv:
+                return data
+            # MIGRATION. The first version stored a PEM, but `pywebpush` hands the string
+            # straight to `Vapid.from_string`, which only understands base64url of the raw
+            # 32-byte key (or DER) — so every single send raised, and the phone just said
+            # "couldn't deliver". CONVERT the existing key; do NOT generate a new one. The
+            # public key is baked into the subscription the browser already created, so
+            # regenerating would silently orphan Kyle's phone: it would keep looking
+            # subscribed and never ring again.
+            key = load_pem_private_key(priv.encode(), password=None)
+            data["private"] = _b64(key.private_numbers().private_value.to_bytes(32, "big"))
+            _write_keys(path, data)
+            log.info("migrated the VAPID private key from PEM to raw (subscription preserved)")
             return data
-    except (OSError, ValueError):
+    except (OSError, ValueError, TypeError):
         pass
-
-    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-    from py_vapid import Vapid01
 
     v = Vapid01()
     v.generate_keys()
-    # The browser wants the raw uncompressed P-256 point, base64url, unpadded — that is
-    # what `applicationServerKey` is. A PEM here silently produces a subscription that
-    # every push then fails to authenticate against.
-    raw = v.public_key.public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
-    data = {
-        "private": v.private_pem().decode("utf-8"),
-        "public": _b64(raw),
-    }
-    coord_root.mkdir(parents=True, exist_ok=True)
+    # Both halves are raw base64url, unpadded, and neither is a PEM:
+    #   * `public`  -> the uncompressed P-256 point. This is `applicationServerKey`, the
+    #     thing the browser bakes into its subscription.
+    #   * `private` -> the raw 32-byte scalar, which is what `Vapid.from_string` parses.
+    pub_raw = v.public_key.public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
+    priv_raw = v.private_key.private_numbers().private_value.to_bytes(32, "big")
+    data = {"private": _b64(priv_raw), "public": _b64(pub_raw)}
+    _write_keys(path, data)
+    log.info("generated a new VAPID keypair")
+    return data
+
+
+def _write_keys(path: Path, data: dict[str, str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(data), encoding="utf-8")
     os.replace(tmp, path)
     os.chmod(path, 0o600)          # it's a private key
-    log.info("generated a new VAPID keypair")
-    return data
 
 
 def _b64(raw: bytes) -> str:
@@ -169,6 +190,27 @@ def prune_sent(sent: dict[str, float], items: list[dict[str, Any]]) -> dict[str,
     rings immediately instead of being suppressed by a stale timestamp."""
     live = {i["key"] for i in items}
     return {k: v for k, v in sent.items() if k in live}
+
+
+def vapid_subject(hostname: str) -> str:
+    """The VAPID `sub` claim: a contact for whoever runs this push endpoint.
+
+    py_vapid validates it against a real-email regex, and a bare hostname FAILS it —
+    `mailto:conductor@skippy` has no dot in the domain, so every send raised
+    `VapidException: Missing 'sub'` and the phone just said "couldn't deliver". Two config
+    bugs in a row now, both because the tests asserted my *description* of a value instead
+    of asking the library that consumes it. Hence `test_the_vapid_subject_is_one_py_vapid_
+    accepts`.
+
+    Deliberately NOT Kyle's real email: it would end up in a JWT sent to Google/Mozilla's
+    push servers on every notification, and this repo is public.
+    """
+    host = (hostname or "").strip().lower()
+    if not host or " " in host:
+        return "mailto:conductor@localhost"
+    if "." not in host:
+        host = f"{host}.local"          # `skippy` -> `skippy.local`, which validates
+    return f"mailto:conductor@{host}"
 
 
 # --- delivery ---------------------------------------------------------------
