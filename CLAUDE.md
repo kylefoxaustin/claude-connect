@@ -23,6 +23,36 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.23.1: 🐛 **Silent mail loss — three instances, all in bus.sh, all found by the
+  fleet living them.** The failure class the fleet spent the day cataloguing (*"exit 0,
+  and something is silently wrong"*) turned out to be in the tool they were cataloguing
+  it WITH. (1) **`send` advanced your read watermark** (`mark_seen_if_bus_tag` sets
+  last-seen to the NEWEST header in the FILE regardless of what you READ), so **posting a
+  message marked every unread message as seen** — backend's repro: 3 pending → reply →
+  *"No new messages"*. **And v2.23.0's own fix is what armed it**: `check` used to print
+  the last 80 lines, so a swallowed message still scrolled past; making `check` honest
+  turned a cosmetic wart into **permanent, invisible mail loss**. It also bit hardest
+  exactly where it hurt most — the sessions most likely to be mid-thread are the ones
+  *sending*, so mail landing while you compose was eaten by your own reply (qualcomm lost
+  the first ARA240 measurement this way; **orb_slam lost NINE messages**). (2) **The same
+  bug in `session-start`**, found by auditing every call site rather than only the
+  reported one: it showed `tail -60` (a single fleet message runs 30-40 lines) and then
+  marked the **entire file** read — and unlike (1) it fired on **every restart**, incl.
+  Conductor's own click-to-relaunch. Rule now enforced everywhere: **never advance the
+  watermark past mail you did not actually SHOW.** (3) **`send`'s argument path is
+  DELETED**: a message passed as an argument goes through the caller's shell, which
+  command-substitutes backticks — *"the send succeeds and your words silently vanish"* —
+  and accepting both args and stdin gave the tool **two mouths** (`send docs <<'EOF'` sent
+  the word "docs" and dropped the body; exit 0). Deleted, not warned about, on docs'
+  reasoning: ***"you cannot validate through a layer that already ate the evidence"*** —
+  the shell eats the bytes before bus.sh has a process, so it's **a gap in TIME, not a gap
+  in a check**. `send` is stdin-only. Also: **push inbox self-heals** (pending approvals
+  rode the WS only, and a backgrounded phone tab can have its socket killed *without*
+  `close` firing — the inbox showing "nothing pending" when there IS something fails
+  silent, on the one control that gates what reaches a repo; new `GET /api/push` +
+  resync on visibilitychange/focus/online), and the **dormant dock** was capped at 45vh on
+  touch — with ~18 dormant sessions, literally half the screen, the dock burying the board
+  it exists to annotate. 15vh.
 - ✅ v2.23.0: 🔗 **Autonomy windows** + 🛠 **Service Claudes** + 📇 **Fleet registry** —
   the fleet stops needing Kyle as its courier, its scheduler, *or* its encyclopedia.
   **🔗 AUTONOMY WINDOWS ("let them talk").** Kyle: with 30+ sessions it took *tens of
