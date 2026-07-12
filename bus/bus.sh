@@ -599,9 +599,23 @@ summary: (one line — what is this?)
 ## gotchas
 (THE MOST VALUABLE SECTION. The test is not "what works" — it is:
  **what would a competent Claude reasonably ASSUME here, and be WRONG about?**
+ Apply that test to the inferences your sentence INVITES, not just the facts it
+ asserts — a sentence where every clause is true can still teach the wrong thing.
  The flag that looks right and is slower. The number that looks portable and isn't.
- Anything that cost someone hours belongs here so it costs nobody else.
  If your finding RETRACTS an earlier claim, carry the retraction, not the claim.)
+
+ ⚠️ MARK EVERY CLAIM: **MEASURED** or **INFERRED**. If you inferred it, name what
+ would falsify it. Most of what bites this fleet is an inference that arrived
+ pre-attached to a real measurement, which is what makes it feel earned.
+
+ ⚠️ SILICON FACTS AND TOOLCHAIN FACTS HAVE DIFFERENT HALF-LIVES — never mix them
+ unlabelled. "Q6 ridge = 20.0 op/B" is arithmetic on a datasheet: it does not rot.
+ "CUTLASS has no SM120 int8 template" rotted in 11 weeks. So:
+   **every toolchain gotcha states WHEN it was observed, WITH WHAT VERSION, and what
+   would re-verify it.** A toolchain claim without a version+date stamp is a landmine
+   with a timer: the tool told you the truth and then the truth EXPIRED. No retraction
+   fires, because nobody made an error — and a stale fact looks IDENTICAL to a fresh
+   one, so you cannot catch it by re-measuring. It re-measures clean.
 
  ⚠️ CO-AUTHORING: when you add a section to someone else's card, RE-READ THEIR
  SECTIONS AGAINST YOURS. Two authors can each write something true and still produce
@@ -674,6 +688,23 @@ shift || true
 
 case "$cmd" in
   send)
+    # `send -` (or send with no args) reads the body from STDIN. This is the SAFE form
+    # and the one to prefer: a message passed as an ARGUMENT goes through the caller's
+    # shell first, so backticks are command-substituted and the words silently VANISH —
+    # the send SUCCEEDS and your message is quietly missing two words. No error. With a
+    # quoted heredoc (<<'MSG') nothing is substituted at all.
+    if [ "${1:-}" = "-" ] || [ $# -eq 0 ]; then
+      MSG_BODY="$(cat)"
+      if [ -z "$MSG_BODY" ]; then
+        echo "ERROR: /msg-send requires a message (piped on stdin, or as arguments)" >&2
+        exit 2
+      fi
+      TS="$(date '+%Y-%m-%d %H:%M')"
+      { echo ""; echo "## $TS [$TAG]"; echo ""; printf '%s\n' "$MSG_BODY"; } >> "$BUS_FILE"
+      echo "Sent message tagged [$TAG] at $TS."
+      mark_seen_if_bus_tag
+      exit 0
+    fi
     if [ $# -eq 0 ]; then
       echo "ERROR: /msg-send requires a message" >&2
       exit 2
