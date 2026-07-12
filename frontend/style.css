@@ -1908,3 +1908,15 @@ body.link-mode .tile-actions { visibility: hidden; }
   border-left: 3px solid var(--ok, #3fb950);
   opacity: .9;
 }
+
+/* Who is ACTUALLY on the GPU, next to who holds the lease. A container gets a whale so it
+   reads as "someone's service", never as "a stray root daemon you could kill". */
+.gpu-procs { display: flex; flex-direction: column; gap: 3px; margin: 6px 0 2px; }
+.gpu-proc {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 11px; color: var(--muted, #8b949e);
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.gpu-proc-mem { font-variant-numeric: tabular-nums; color: var(--text, #e6edf3); flex: none; }
+.gpu-proc-who { overflow: hidden; text-overflow: ellipsis; }
+.gpu-proc-who.is-container { color: #58a6ff; }

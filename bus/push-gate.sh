@@ -98,9 +98,20 @@ if [ -f "$TOK" ]; then
   fi
 fi
 
+# The line Kyle actually approves on. `$CMD` is the WHOLE tool call and is multi-line —
+# the Bash tool prepends a `cd`, so storing it verbatim meant the inbox read back only its
+# FIRST line and showed "cd /home/kyle/Documents/GitHub/claude-connect" as the thing being
+# approved. The gate was right and the LABEL was lying, which is the same failure as the
+# repo-attribution bug: control intact, description false. Pull out the actual push
+# invocation, strip any leading `cd … &&`, and store that one line.
+PUSHCMD="$(printf '%s' "$CMD" \
+  | grep -Eo 'git([[:space:]]+(-[^[:space:]]+|-C[[:space:]]+[^[:space:]]+))*[[:space:]]+push[^;&|]*' \
+  | head -1 | sed -E 's/[[:space:]]*[0-9]*>[[:space:]]*$//; s/[[:space:]]*$//')"
+[ -n "$PUSHCMD" ] || PUSHCMD="git push"
+
 # no valid token -> file a request Conductor surfaces, and DENY this push
 mkdir -p "$REQUESTS" 2>/dev/null || true
 { echo "repo=$REPO"; echo "repo_name=$NAME"; echo "cwd=$CWD"
-  echo "cmd=$CMD"; echo "epoch=$now"; echo "created=$(date '+%Y-%m-%d %H:%M')"; } > "$REQUESTS/$KEY" 2>/dev/null || true
+  echo "cmd=$PUSHCMD"; echo "epoch=$now"; echo "created=$(date '+%Y-%m-%d %H:%M')"; } > "$REQUESTS/$KEY" 2>/dev/null || true
 echo "🛑 Push to '$NAME' needs Kyle's approval (commits are fine — only pushes are gated). Requested in Conductor's push inbox; approve there or Kyle runs 'bus.sh push approve $NAME', then re-run this push." >&2
 exit 2

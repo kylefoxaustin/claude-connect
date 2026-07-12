@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .gpu import query_nvidia_smi, read_lease
+from .gpu_procs import gpu_processes
 
 
 def touch_lease_activity(res_dir: Path, now: int | None = None) -> bool:
@@ -66,7 +67,16 @@ def resources_state(res_root: Path) -> dict[str, Any]:
 
     smi = query_nvidia_smi()
     if smi is not None:
-        entries["gpu"] = {"name": "gpu", "label": "GPU", "smi": smi, "lease": read_lease(res_root / "gpu")}
+        entries["gpu"] = {
+            "name": "gpu", "label": "GPU", "smi": smi,
+            "lease": read_lease(res_root / "gpu"),
+            # WHO IS ACTUALLY ON THE CARD. The lease describes intentions; nvidia-smi
+            # describes reality. image_gen held the lease, found the GPU crowded anyway, and
+            # had no way to learn that the 8.3 GB belonged to a live container of another
+            # session — so it asked to kill it as "a stale leftover". A lease that can't see
+            # the card it leases is a lease that lies by omission.
+            "processes": gpu_processes(),
+        }
 
     if res_root.is_dir():
         try:

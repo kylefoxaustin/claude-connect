@@ -23,6 +23,36 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.25.0: 🎮 **The GPU lease was lying by omission — `gpu-who` + reconciliation.**
+  **Found by a Claude falling into the hole.** `image_gen` held the GPU lease, watched its
+  renders take **10m26s instead of 24.7s**, found a **root-owned `python3` holding 8.3 GB**,
+  and asked Kyle to kill it as *"a stale leftover"*. **It was `personal-ai-framework-llm-
+  server-1` — a Docker container of another LIVE session that had served a request 90
+  seconds earlier.** Seconds from destroying a colleague's working set. **And image_gen did
+  everything right**: took the lease, measured, found the card crowded anyway — then hit a
+  wall, because it had **no way to discover who else was on the card or how to ask them**. So
+  it went to Kyle. *That is the couriering the bus exists to abolish, and it was a hole in the
+  system, not a mistake by image_gen.* **Root cause, and it's the failure shape of the whole
+  arc: a lease describes INTENTIONS; `nvidia-smi` describes REALITY. A container started
+  outside the lease system is invisible to the first and perfectly visible to the second —
+  and when they disagree, THE LEASE REPORTS THE REASSURING ONE.** Holding the lease never
+  meant holding the card; we just couldn't see the difference. Fix: `conductor/gpu_procs.py`
+  attributes every VRAM holder via `/proc/<pid>/cgroup` → **docker container name** (`python3`
+  invites you to kill it; `personal-ai-framework-llm-server-1` tells you who to **ask** — *the
+  attribution IS the safety property*); surfaced on the GPU tile and in `/api/resources`. New
+  **`scripts/gpu-who`** for the fleet, and — the part that actually reaches them — **three
+  rules written into the `gpu` asset card**, which *travels with the asset*, so `/reserve gpu`
+  prints them: (1) the lease doesn't know who's on the card, run `gpu-who` first; (2) **a
+  root-owned `python3` here is almost always a CONTAINER, not a daemon** — *exactly what a
+  competent Claude will reasonably ASSUME and be WRONG about*; (3) **never kill a GPU process
+  you don't own — ask its owner on the bus.** **Rule 3's argument is the ending:** we asked,
+  and `docs` stopped its container within minutes, unprompted and unobliged. **Asking cost
+  four minutes; killing would have cost someone their afternoon.** Two Claudes negotiated a
+  GPU handoff with no human in the loop. Also 🔐 **the push inbox stopped lying**: `$CMD` is
+  the whole multi-line tool call (the Bash tool prepends a `cd`), and `_push_field` read back
+  only the **first line** — so Kyle was approving on `cd /home/kyle/…` instead of the actual
+  push. Same shape as the repo-attribution bug: **control intact, label false.** The gate now
+  extracts the real `git … push` invocation. 213 tests.
 - ✅ v2.24.3: 🐛 **Two live bugs Kyle found by USING it, and they rhyme.**
   **(1) The Approve button punished you for pressing it.** He tapped Approve, *"nothing
   changed"*, so he tapped again — several times. Two faults, and the second is nasty:

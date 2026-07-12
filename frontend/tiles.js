@@ -992,6 +992,25 @@ function fillResourceTile(tile, res) {
       el("div", { class: "gpu-bar", title: `utilization ${util}%` },
         el("div", { class: `gpu-bar-fill ${utilClass}`, style: `width:${util}%` })),
       leaseEl,
+    );
+
+    // WHO IS ACTUALLY ON THE CARD. The lease says who INTENDS to use the GPU; nvidia-smi
+    // says who IS. When those disagree the lease reports the reassuring one — which is how
+    // image_gen came within seconds of killing another session's live container, believing
+    // it was a stale daemon. So show the truth next to the claim.
+    const procs = res.processes || [];
+    if (procs.length) {
+      children.push(el("div", { class: "gpu-procs" },
+        ...procs.slice(0, 4).map((pr) => el("div", { class: "gpu-proc", title: pr.cmd || "" },
+          el("span", { class: "gpu-proc-mem" }, `${(pr.mem_mb / 1024).toFixed(1)}G`),
+          el("span", { class: "gpu-proc-who" + (pr.container ? " is-container" : "") },
+            pr.container ? `🐳 ${pr.container}` : pr.owner),
+        )),
+        procs.length > 4 ? el("div", { class: "gpu-proc" }, `+${procs.length - 4} more`) : null,
+      ));
+    }
+
+    children.push(
       el("div", { class: "tile-footer" },
         el("span", { title: "GPU memory used / total" },
           `mem ${(memUsed / 1024).toFixed(1)}/${(memTotal / 1024).toFixed(0)} GB · ${memPct}%`),

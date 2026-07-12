@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+"""Who is actually on the GPU — and who to ask about it.
+
+Run this BEFORE you conclude that a process on the card is stale.
+
+Why this exists: `image_gen` held the GPU lease, found its renders taking 10m26s instead of
+24.7s, and had no way to discover who else was on the card. It asked whether it could kill
+"a root-owned python3 holding 8.3 GB" as a leftover daemon. It was not a leftover — it was
+another live session's Docker container, which had served a request 90 seconds earlier.
+
+The lease system only knows about sessions that TOOK a lease. A container started outside it
+is invisible to the lease and perfectly visible to nvidia-smi. So: ask the card.
+
+    scripts/gpu-who            # who is on the GPU
+    scripts/gpu-who --json
+
+RULE: **do not kill a process you do not own.** A root-owned `python3` is usually a
+container, not a daemon. Find its owner below and ask them on the bus — they can yield, and
+in practice they do.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+
+
+def cmdline(pid: int) -> str:
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as fh:
+            return " ".join(fh.read().decode("utf-8", "replace").split("\0")).strip()
+    except OSError:
+        return ""
+
+
+def container_of(pid: int) -> str | None:
+    try:
+        with open(f"/proc/{pid}/cgroup", encoding="utf-8") as fh:
+            cg = fh.read()
+    except OSError:
+        return None
+    if "docker" not in cg and "containerd" not in cg:
+        return None
+    for part in cg.replace("/", "\n").split("\n"):
+        part = part.strip().removesuffix(".scope").removeprefix("docker-")
+        if len(part) == 64 and all(c in "0123456789abcdef" for c in part):
+            try:
+                return subprocess.run(
+                    ["docker", "inspect", "--format", "{{.Name}}", part],
+                    capture_output=True, text=True, timeout=5, check=True,
+                ).stdout.strip().lstrip("/") or part[:12]
+            except (subprocess.SubprocessError, OSError):
+                return part[:12]
+    return None
+
+
+def user_of(pid: int) -> str:
+    try:
+        import pwd
+        return pwd.getpwuid(os.stat(f"/proc/{pid}").st_uid).pw_name
+    except (OSError, KeyError):
+        return "?"
+
+
+def main() -> int:
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-compute-apps=pid,used_memory",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=10, check=True,
+        ).stdout
+    except FileNotFoundError:
+        print("nvidia-smi not found — no NVIDIA GPU on this box.", file=sys.stderr)
+        return 2
+    except (subprocess.SubprocessError, OSError) as e:
+        print(f"nvidia-smi failed: {e}", file=sys.stderr)
+        return 2
+
+    procs = []
+    for line in out.strip().splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) < 2 or not parts[0].isdigit():
+            continue
+        pid = int(parts[0])
+        cont = container_of(pid)
+        procs.append({
+            "pid": pid,
+            "mem_mb": int(parts[1]) if parts[1].isdigit() else 0,
+            "user": user_of(pid),
+            "container": cont,
+            "cmd": cmdline(pid)[:100],
+            "owner": cont or os.path.basename((cmdline(pid).split() or [""])[-1]) or f"pid {pid}",
+        })
+    procs.sort(key=lambda p: -p["mem_mb"])
+
+    if "--json" in sys.argv:
+        print(json.dumps({"processes": procs}, indent=2))
+        return 0
+
+    if not procs:
+        print("The GPU is idle — nothing is holding VRAM.")
+        return 0
+
+    total = sum(p["mem_mb"] for p in procs)
+    print(f"{len(procs)} process(es) on the GPU, holding {total / 1024:.1f} GB:\n")
+    for p in procs:
+        tag = f"[docker: {p['container']}]" if p["container"] else f"[user: {p['user']}]"
+        print(f"  {p['mem_mb'] / 1024:5.1f} GB  pid {p['pid']:<8} {tag}")
+        print(f"            {p['cmd']}")
+    print()
+    print("⚠  DO NOT kill a process you do not own. A root-owned `python3` is usually a")
+    print("   CONTAINER belonging to another project, not a stale system daemon — killing it")
+    print("   destroys someone's working set. If one is in your way, ask its owner on the")
+    print("   bus; a `soft` holder will yield, and in practice they do.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
