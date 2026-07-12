@@ -481,6 +481,29 @@ push_propose() {
   echo "   Do NOT push until you hear back."
 }
 
+push_withdraw() {  # pull back your OWN proposal when the ground moves under it
+  # A proposal is a PHOTOGRAPH of what you believed when you filed it. It does not update, it
+  # does not know you changed your mind, and it will sit in Kyle's queue looking perfectly
+  # valid while you retract its premise on the bus.
+  #
+  # That is exactly what happened: ollama_95_neutron proposed a push at 09:56, retracted the
+  # architecture rule behind it at 10:55, and the proposal stayed live — Kyle would have been
+  # approving a belief its own author had already abandoned. The retraction machinery existed
+  # for MESSAGES and not for PROPOSALS, which is the same bug one layer up.
+  local repo key name
+  repo="$(git rev-parse --show-toplevel 2>/dev/null || printf '%s' "$PWD")"
+  name="$(basename "$repo")"
+  key="$(printf '%s' "$repo" | tr '/ ' '__' | sed 's/^_*//')"
+  if [ -f "$PUSH_PROPOSALS/$key" ]; then
+    rm -f "$PUSH_PROPOSALS/$key"
+    echo "↩️  Withdrew your push proposal for '$name'. Kyle will no longer see it."
+    echo "   Re-propose when the ground stops moving."
+  else
+    echo "No open push proposal for '$name'."
+    return 1
+  fi
+}
+
 push_revoke() {  # <repo-name-or-key> — take back an approval you already gave
   # The counterweight to a 24h grant. Changed your mind, or approved the wrong repo?
   # Disarm it before the agent uses it. Without this, a long-lived token would be a
@@ -1025,7 +1048,8 @@ PYEOF
       deny)    push_deny "$@" ;;
       revoke)  push_revoke "$@" ;;
       propose) push_propose "$@" ;;
-      *) echo "usage: bus.sh push {list|approve <repo>|deny <repo>|revoke <repo>|propose -}"; exit 2 ;;
+      withdraw) push_withdraw "$@" ;;
+      *) echo "usage: bus.sh push {list|approve <repo>|deny <repo>|revoke <repo>|propose -|withdraw}"; exit 2 ;;
     esac
     exit $?
     ;;
