@@ -35,8 +35,12 @@ _PUBLIC_PATHS = frozenset({
     "/", "/index.html",
     "/api/health",              # liveness/version probe — safe, and used by monitors
     "/sw.js", "/manifest.webmanifest", "/favicon.ico",
+    # The phone console's shell. Same rule as the desktop shell: the HTML/CSS/JS is a
+    # public wrapper that renders nothing until it can authenticate — every /api/* call it
+    # makes is gated, so a stranger who loads it gets a token prompt and nothing else.
+    "/m", "/m/", "/m/index.html", "/m/manifest.webmanifest",
 })
-_PUBLIC_PREFIXES = ("/static/",)
+_PUBLIC_PREFIXES = ("/static/", "/m/")
 
 
 def resolved_token(settings: Settings) -> str:

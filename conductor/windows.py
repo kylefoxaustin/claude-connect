@@ -24,6 +24,10 @@ _FOCUS_SETTLE_S = 0.25
 _TYPE_DELAY_MS = "28"
 # Pause after typing so the slash menu settles on the full match before Enter.
 _PRE_RETURN_S = 0.15
+# Pause between raw keystrokes driving the AskUserQuestion picker. The picker
+# re-renders on every key (toggling a checkbox, switching tabs); pressing faster
+# than it redraws is how you end up submitting a selection you never made.
+_KEY_STEP_S = 0.35
 
 
 def wmctrl_available() -> bool:
@@ -259,6 +263,83 @@ def focus_session(
         terminal_pid=terminal_pid, title=title, window_title=window_title,
     )
     return wid is not None and _raise_window(wid)
+
+
+def _focus_and_get_window(
+    *,
+    pid: int | None,
+    terminal_pid: int | None,
+    title: str | None,
+    window_title: str | None,
+) -> int | None:
+    """Raise a session's window and return its X11 id, or None.
+
+    Exact path first (tilix tile by ``TILIX_ID``), falling back to wmctrl title
+    matching. Shared by the text and raw-key senders.
+    """
+    tilix_id = tilix_id_for_pid(pid)
+    if tilix_id and tilix_activate_terminal(tilix_id):
+        time.sleep(_FOCUS_SETTLE_S)   # let the tile take focus before we read it
+        wid = _active_window_id()
+        if wid is not None:
+            return wid
+    if not wmctrl_available():
+        return None
+    wid = _resolve_window(
+        terminal_pid=terminal_pid, title=title, window_title=window_title,
+    )
+    if wid is None or not _raise_window(wid):
+        return None
+    return wid
+
+
+def send_key_sequence(
+    *,
+    keys: list[str],
+    pid: int | None = None,
+    terminal_pid: int | None,
+    title: str | None = None,
+    window_title: str | None = None,
+) -> bool:
+    """Send raw key *names* (``"1"``, ``"Right"``, ``"Return"``) to a session's window.
+
+    This drives Claude Code's interactive ``AskUserQuestion`` picker, which is a
+    keyboard widget and not a text field: digits toggle options, ``Right`` opens the
+    review tab, ``Return`` confirms. Typing the answer as *text* would not work — while
+    a picker is open the terminal routes typed characters into the picker's free-text
+    "Other" field, silently turning an answer into a new option.
+
+    Deliberately does NOT send the ctrl+u "clear the input line" that
+    ``send_keys_to_session`` opens with: there is no input line here, and ctrl+u inside
+    a picker is not a no-op we have any reason to trust.
+
+    Returns True if every keystroke dispatched.
+    """
+    if not xdotool_available() or not keys:
+        return False
+    wid = _focus_and_get_window(
+        pid=pid, terminal_pid=terminal_pid, title=title, window_title=window_title,
+    )
+    if wid is None:
+        return False
+    try:
+        subprocess.run(
+            ["xdotool", "windowactivate", "--sync", str(wid)],
+            check=True, capture_output=True, timeout=3.0,
+        )
+        time.sleep(_FOCUS_SETTLE_S)
+        for key in keys:
+            # One key per call: the picker re-renders between keystrokes and a batched
+            # `xdotool key a b c` can outrun the redraw.
+            subprocess.run(
+                ["xdotool", "key", "--clearmodifiers", key],
+                check=True, capture_output=True, timeout=3.0,
+            )
+            time.sleep(_KEY_STEP_S)
+        return True
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
+        log.debug("send_key_sequence failed: %s", e)
+        return False
 
 
 def send_keys_to_session(

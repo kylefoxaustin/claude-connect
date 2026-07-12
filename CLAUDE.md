@@ -23,6 +23,65 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.24.0: 📱 **Ops console (`/m`) + ❓ the decision queue — answer a Claude from your
+  phone.** Kyle killed the old phone UI himself: *"the phone web UI is a dead end and
+  fundamentally flawed. I asked to replicate the desktop app verbatim. That's not what the
+  phone is for."* Right, and the reason is **informational, not aesthetic**: the desktop
+  board is **spatial** — you arranged those tiles and the arrangement carries meaning. That's
+  a **workbench**. A phone is **episodic** — you open it for 30 seconds because something
+  needs you. That's a **console**. **Responsive CSS can shrink a workbench; it cannot turn
+  one into a console.** Proof in the data: 13 of 15 sessions were `WAITING`, so the board on
+  a phone showed *fifteen tiles all saying the same thing* — not a small dashboard, **zero
+  information**. Research agreed hard: **Grafana — the dashboard company — never shipped a
+  mobile dashboard app**, and **GitHub Mobile's gated-deploy approval (structurally our push
+  gate) is its one broken feature** — reachable *only* from a notification, open ~2 years ⇒
+  **the notification must never be the only door.** So `/m` is a **separate frontend**
+  (rows, chevrons, counts, bottom tabs — Kyle's Synology DSM app as the reference), sharing
+  **nothing** with the board but the API; importing `tiles.js` is exactly how the workbench
+  would crawl back in. **❓ THE DECISION QUEUE is the product.** Kyle: *"a Claude gives me
+  choices — 1 or 2, or select several — and responding unblocks work I have to walk to the
+  PC for."* **The obvious build would have shipped broken, and it's the best catch of the
+  arc.** Claude Code records `AskUserQuestion` in the transcript, so: read the transcripts,
+  find asks with no `tool_result`, done — **zero adoption**. The payload *is* there. But
+  **Claude Code does not flush the assistant message until the tool completes** — while the
+  picker is on screen and the session is genuinely stuck, **there is NOTHING on disk** (the
+  probe's file sat unchanged for 4 minutes). **The record appears only once the question has
+  been ANSWERED.** ⇒ a transcript-driven queue **would have shown exactly the questions that
+  no longer needed answering, and been silent about every one that did** — empty precisely
+  when it mattered, which reads as *"nothing needs me."* Plausible, self-confirming, silent:
+  the exact failure class the fleet spent a day cataloguing. It died only because it was
+  **tested against a live session instead of reasoned about.** What works: a
+  **`PreToolUse(AskUserQuestion)` hook** (`bus/ask-capture.sh`) fires *before* the picker
+  renders and gets the full `tool_input` → `coord/decisions/<sid>.json`; **`PostToolUse`
+  reaps it** whoever answered (phone, or Kyle at the keyboard). Still zero adoption, and it
+  **can never break anything** (always exit 0 — verified on garbage JSON, empty stdin, wrong
+  tool). Answering = **keystroke injection**, and the protocol was **measured, never
+  inferred**: single-select `digit → Return`; multi-select `digits → Right → Return`, where
+  `Right` opens the picker's **own review tab** (*"Ready to submit your answers? → Orin,
+  IMX95"*) — **the confirmation is native, we didn't invent a safety net**; multi-question is
+  **asymmetric** (a single-select auto-advances, a multi-select needs its own `Right` — emit
+  both and you skip a question and submit it blank, silently). `plan_keystrokes` is a **pure
+  function** and **refuses rather than guesses** (unknown label / >9 options / wrong arity),
+  because every failure here is silent — a wrong digit doesn't raise, it submits an answer
+  Kyle never gave. **⚠️ AND IT FOUND A LIVE BUG IN SHIPPED CODE: an open picker SWALLOWS
+  typed text into its free-text "Other" field** (watched a prompt become option 5 of a menu)
+  — so **injecting `/msg-check` at a session that is asking Kyle a question corrupts the very
+  question he is about to answer.** The `WAITING` guard hid it *by accident*; **autonomy
+  windows deliberately lift that guard**, which is exactly when it fires. The capture hook is
+  also the fix: Conductor now knows who has a picker up and refuses to type at them
+  (`_has_open_picker`). **Capture and safety are the same signal.** Also: **`GET /api/ops`**
+  (one aggregate call — six round-trips over a tunnel is the difference between instant and
+  sluggish), `GET/POST /api/decisions`, pane deep-links (`/m?pane=blocked` — a notification
+  must open the screen it's about), and **Undo, not Confirm**, for push approval (a dialog
+  you see 20×/day is habituated within a week and protects nobody; **never swipe-to-approve**
+  — swipe is learned as *destructive*). Two invented-field bugs caught by cross-checking
+  against the real payloads: the frontend sent `Authorization: Bearer` (the middleware reads
+  `X-Conductor-Token`), and `/api/ops` filtered autonomy on `expires_epoch` when the store
+  says `expires` — which **silently showed "nobody is unattended" while 14 sessions were live
+  and talking.** *A permission display that lies in the SAFE direction is still lying.*
+  Live on day one: **the queue caught a real one within minutes** — `image_gen` blocked 4
+  minutes on *"a root-owned llm_server.py is holding 8.3 GB of VRAM, making each image take
+  10m26s instead of 24.7s — kill it?"* 185 tests. **Desktop app untouched, by design.**
 - ✅ v2.23.1: 🐛 **Silent mail loss — three instances, all in bus.sh, all found by the
   fleet living them.** The failure class the fleet spent the day cataloguing (*"exit 0,
   and something is silently wrong"*) turned out to be in the tool they were cataloguing

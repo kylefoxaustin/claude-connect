@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Conductor Ops</title>
+    <link rel="icon" type="image/svg+xml" href="/static/logo.svg" />
+    <link rel="manifest" href="/m/manifest.webmanifest" />
+    <meta name="theme-color" content="#0e1117" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Conductor Ops" />
+    <link rel="apple-touch-icon" href="/static/icon-192.png" />
+    <link rel="stylesheet" href="/m/ops.css" />
+  </head>
+  <body>
+    <!-- Token gate. Shown only when the backend says auth is on and we don't have one. -->
+    <div id="gate" class="gate" hidden>
+      <form id="gate-form" class="gate-card">
+        <h1>Conductor Ops</h1>
+        <p>Enter the access token from <code>settings.toml</code>.</p>
+        <input id="gate-token" type="password" autocomplete="current-password"
+               placeholder="access token" />
+        <button type="submit">Unlock</button>
+        <p class="gate-err" id="gate-err" hidden></p>
+      </form>
+    </div>
+
+    <div id="app" hidden>
+      <!-- The status strip. Answers "is anything wrong" without a tap. -->
+      <header class="strip">
+        <div class="strip-title">
+          <span class="dot" id="conn-dot"></span>
+          <strong>Conductor</strong>
+        </div>
+        <div class="strip-counts" id="counts"></div>
+      </header>
+
+      <!-- === NEEDS YOU — the reason this app exists ==================== -->
+      <section class="pane" id="pane-inbox">
+        <h2 class="pane-h">Needs you <span class="pane-n" id="inbox-n"></span></h2>
+        <div id="inbox"></div>
+      </section>
+
+      <!-- === FLEET ==================================================== -->
+      <section class="pane" id="pane-fleet" hidden>
+        <h2 class="pane-h">Fleet</h2>
+        <div id="fleet"></div>
+      </section>
+
+      <!-- === UNATTENDED (autonomy windows) ============================ -->
+      <section class="pane" id="pane-auto" hidden>
+        <h2 class="pane-h">Unattended</h2>
+        <div id="autonomy"></div>
+        <div class="grant">
+          <p class="grant-note">
+            Let the fleet wake each other on directed mail while you're away.
+            Busy sessions are still never interrupted, and it expires on its own.
+          </p>
+          <div class="grant-row">
+            <select id="grant-hours">
+              <option value="1">1 hour</option>
+              <option value="4">4 hours</option>
+              <option value="8" selected>8 hours</option>
+              <option value="12">12 hours</option>
+            </select>
+            <button id="grant-go" class="btn btn-primary">Let the whole fleet talk</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- === BLOCKED ================================================== -->
+      <section class="pane" id="pane-blocked" hidden>
+        <h2 class="pane-h">Blocked</h2>
+        <div id="blocked"></div>
+      </section>
+
+      <nav class="tabs">
+        <button class="tab tab-on" data-pane="inbox">
+          <span class="tab-i">📥</span><span>Inbox</span>
+          <span class="badge" id="tab-badge-inbox" hidden></span>
+        </button>
+        <button class="tab" data-pane="fleet">
+          <span class="tab-i">🖥</span><span>Fleet</span>
+        </button>
+        <button class="tab" data-pane="auto">
+          <span class="tab-i">🔗</span><span>Unattended</span>
+          <span class="badge badge-ok" id="tab-badge-auto" hidden></span>
+        </button>
+        <button class="tab" data-pane="blocked">
+          <span class="tab-i">⏳</span><span>Blocked</span>
+          <span class="badge badge-warn" id="tab-badge-blocked" hidden></span>
+        </button>
+      </nav>
+
+      <!-- Undo snackbar. An approval is reversible for 5s instead of gated behind a
+           confirm dialog that you'd habituate to within a week. -->
+      <div class="snack" id="snack" hidden>
+        <span id="snack-text"></span>
+        <button id="snack-undo">Undo</button>
+      </div>
+    </div>
+
+    <script type="module" src="/m/ops.js"></script>
+  </body>
+</html>

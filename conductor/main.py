@@ -27,6 +27,7 @@ from . import __version__
 from .activity import ActivityWatcher
 from .auth import path_requires_auth, resolved_token, token_ok
 from .autonomy import close_window, open_window, peers_in_window, read_windows
+from .decisions import plan_keystrokes, read_decisions, reap_decision
 from .bus import (
     BusAdapter,
     FakeBusAdapter,
@@ -66,7 +67,12 @@ from .scanner import (
     tag_to_state_basename,
 )
 from .settings import DEFAULT_SETTINGS_PATH, Settings, dump_settings, load_settings
-from .windows import focus_session, send_keys_to_session, wmctrl_available
+from .windows import (
+    focus_session,
+    send_key_sequence,
+    send_keys_to_session,
+    wmctrl_available,
+)
 from .ws import WSHub
 
 log = logging.getLogger("conductor")
@@ -143,6 +149,10 @@ class AppState:
         self.services: dict[str, Any] = {"services": []}      # service Claudes (image_gen…)
         self.waiting: dict[str, Any] = {"edges": [], "cycles": [], "bottlenecks": [],
                                         "blocked_count": 0}   # who is blocked on whom
+        # Questions a Claude is BLOCKED ON, captured by the PreToolUse hook. Doubles as
+        # the guard for keystroke injection: a session sitting on a picker must never be
+        # typed at, because the picker swallows typed text into its free-text option.
+        self.decisions: list[dict[str, Any]] = []
         self.token_accountant = TokenAccountant()             # per-session token tally
         self._scan_misses: dict[str, int] = {}              # consecutive scans a session was absent
         self.recent_events: deque[BusEvent] = deque(maxlen=RECENT_EVENTS_MAX)
@@ -312,6 +322,13 @@ class AppState:
         if waiting != self.waiting:
             self.waiting = waiting
             await self.hub.broadcast("waiting", waiting)
+        decisions = await asyncio.to_thread(read_decisions, self.coord_root)
+        # Drop records whose session is gone — a session killed mid-picker leaves its
+        # file behind, and a dead question in the queue is a false alarm.
+        decisions = [d for d in decisions if self._session_for_cwd(d.get('cwd', ''))]
+        if decisions != self.decisions:
+            self.decisions = decisions
+            await self.hub.broadcast("decisions", {"decisions": decisions})
         autonomy = await asyncio.to_thread(read_windows, self.coord_root)
         if autonomy != self._autonomy:
             self._autonomy = autonomy
@@ -431,8 +448,34 @@ class AppState:
         return next((s for s in self.sessions.values()
                      if _bare_tag(s.tag) == _bare_tag(owner) and s.status != Status.ENDED), None)
 
+    def _has_open_picker(self, rec: SessionRecord) -> bool:
+        """Is this session sitting on an AskUserQuestion picker right now?
+
+        This is a HARD guard on every keystroke we inject, and it fixes a real bug:
+        **an open picker swallows typed text into its free-text "Other" field.** Type
+        ``/msg-check`` at a session that is asking Kyle a question and you do not send it a
+        message — you silently add "/msg-check" as an option to the menu he is about to
+        answer, and possibly submit it.
+
+        The ``WAITING``-status guard used to hide this by accident (a session on a picker is
+        WAITING, and WAITING is not wakeable). But autonomy windows deliberately lift that
+        guard — which is *exactly* the case where this fires. So it needs its own guard,
+        keyed on a signal that means what it says.
+        """
+        if not self.decisions:      # the overwhelmingly common case — nobody is asking
+            return False
+        target = os.path.realpath(getattr(rec, "project_dir", "") or "")
+        return bool(target) and any(
+            d.get("cwd") and os.path.realpath(d["cwd"]) == target
+            for d in self.decisions
+        )
+
     async def _inject_text(self, rec: SessionRecord, text: str, why: str) -> bool:
         """Type ``text`` into a live session's terminal (raises its window)."""
+        if self._has_open_picker(rec):
+            log.info("NOT typing at [%s] (%s) — it has a question open and the picker "
+                     "would eat the keystrokes", rec.tag, why)
+            return False
         try:
             ok = await asyncio.to_thread(
                 send_keys_to_session, text=text, pid=rec.pid,
@@ -1063,6 +1106,133 @@ async def service_action(name: str, action: str, request: Request) -> dict[str, 
     return {"ok": proc.returncode == 0, "result": (proc.stdout or "").strip()}
 
 
+@app.get("/api/decisions")
+async def get_decisions(request: Request) -> dict[str, Any]:
+    """Questions the fleet is blocked on, waiting for a human. Oldest first."""
+    state: AppState = request.app.state.cond
+    return {"decisions": state.decisions}
+
+
+class DecisionAnswer(BaseModel):
+    # One list of chosen option LABELS per question (a single-select question gets a
+    # one-item list). Labels, not indices: an index is only meaningful against the option
+    # order we captured, and if that has changed underneath us we want a mismatch we can
+    # DETECT, not a digit that happens to be in range.
+    answers: list[list[str]]
+
+
+@app.post("/api/decisions/{session_id}")
+async def answer_decision(session_id: str, payload: DecisionAnswer,
+                          request: Request) -> dict[str, Any]:
+    """Answer a Claude's question by driving its picker.
+
+    This types into a terminal we do not own, so it verifies before it acts and refuses
+    rather than guesses:
+
+      * the question must still be pending (not already answered at the keyboard);
+      * its session must still be live and locatable;
+      * every chosen label must exist on the captured question — a label we can't find is
+        a state mismatch, and pressing a digit we guessed at would submit an answer Kyle
+        never gave, silently.
+    """
+    state: AppState = request.app.state.cond
+    rec_dec = next((d for d in state.decisions if d["session_id"] == session_id), None)
+    if rec_dec is None:
+        # Almost always benign: Kyle answered it at the keyboard between the phone
+        # rendering it and him tapping. Say so plainly rather than 500-ing.
+        raise HTTPException(status_code=409,
+                            detail="that question is no longer pending — it was already answered")
+
+    session = state._session_for_cwd(rec_dec.get("cwd", ""))
+    if session is None:
+        raise HTTPException(status_code=409,
+                            detail="the session that asked is no longer running")
+
+    try:
+        keys = plan_keystrokes(rec_dec["questions"], payload.answers)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    ok = await asyncio.to_thread(
+        send_key_sequence, keys=keys, pid=session.pid,
+        terminal_pid=session.terminal_pid, title=session.title,
+        window_title=session.window_title,
+    )
+    if not ok:
+        raise HTTPException(status_code=502,
+                            detail="couldn't reach that session's window — answer it at the keyboard")
+
+    # Clear it now rather than waiting for the PostToolUse hook to land on the next scan:
+    # a question that still shows as pending after you answered it invites a second answer.
+    await asyncio.to_thread(reap_decision, state.coord_root, session_id)
+    state.decisions = [d for d in state.decisions if d["session_id"] != session_id]
+    await state.hub.broadcast("decisions", {"decisions": state.decisions})
+    log.info("answered [%s]: %s -> keys %s", session.tag, payload.answers, keys)
+    return {"ok": True, "keys": keys}
+
+
+@app.get("/api/ops")
+async def get_ops(request: Request) -> dict[str, Any]:
+    """Everything the phone console needs, in ONE call.
+
+    The phone talks over a Tailscale tunnel where six round-trips is the difference
+    between "instant" and "sluggish", and the ops console is a glance-and-act tool — it
+    must be usable in the seconds before you put the phone back in your pocket.
+
+    Deliberately NOT the desktop payload: no tile geometry, no groups, no token
+    histories, no bus feed. Counts and the things that are blocked on a human.
+    """
+    state: AppState = request.app.state.cond
+    live = [s for s in state.sessions.values() if s.status != Status.ENDED]
+    busy = [s for s in live if s.status in _BUSY_STATUSES]
+    return {
+        "decisions": state.decisions,
+        "push": state._push_requests,
+        "retractions": state._retractions,
+        # read_windows() already drops expired windows — re-filtering here on a field name
+        # I guessed at ("expires_epoch") silently zeroed the list while 14 sessions were
+        # live and talking. A permission display that lies in the SAFE direction is still
+        # lying, and this is the one screen that tells Kyle the fleet is unattended.
+        "autonomy": state._autonomy,
+        "waiting": state.waiting,
+        "services": state.services.get("services", []),
+        "resources": state.resources.get("resources", []),
+        "counts": {
+            "needs_you": len(state.decisions) + len(state._push_requests),
+            "blocked": state.waiting.get("blocked_count", 0),
+            "working": len(busy),
+            "live": len(live),
+            "idle": len(live) - len(busy),
+            "parked": len(state.parked),
+        },
+        # Reuse the canonical record shape rather than inventing a parallel one — a second
+        # definition of "a session" is a second thing to keep in sync, and it will drift.
+        "sessions": sorted(
+            (_ops_session_of(state, s) for s in live),
+            key=lambda d: (d["status"] != Status.ACTIVE.value, d.get("name") or ""),
+        ),
+    }
+
+
+def _ops_session_of(state: AppState, r: SessionRecord) -> dict[str, Any]:
+    d = r.to_dict()
+    info = state._directed_unread.get(r.tag or "")
+    target = os.path.realpath(r.project_dir)
+    return {
+        "tag": d.get("tag"),
+        "project": r.project_dir,
+        "name": Path(r.project_dir).name,
+        "status": d.get("status"),
+        "preview": d.get("preview") or "",
+        "idle_seconds": max(0.0, time.time() - (r.last_activity_at or 0.0)),
+        "pending": (info or {}).get("count", 0),
+        "asking": any(
+            dd.get("cwd") and os.path.realpath(dd["cwd"]) == target
+            for dd in state.decisions
+        ),
+    }
+
+
 def _human_label() -> str:
     """Display name for the ``[you]`` node — the OS username (capitalized), so it
     reads sensibly for whoever is running Conductor; ``"You"`` if unavailable."""
@@ -1398,6 +1568,7 @@ async def websocket(ws: WebSocket) -> None:
         await ws.send_text(json.dumps({"kind": "autonomy", "payload": {"windows": state._autonomy}}))
         await ws.send_text(json.dumps({"kind": "services", "payload": state.services}))
         await ws.send_text(json.dumps({"kind": "waiting", "payload": state.waiting}))
+        await ws.send_text(json.dumps({"kind": "decisions", "payload": {"decisions": state.decisions}}))
         while True:
             # We don't expect messages from the client right now; await any to detect close.
             await ws.receive_text()
@@ -1431,6 +1602,26 @@ async def service_worker() -> FileResponse:
     )
 
 
+@app.get("/m")
+@app.get("/m/")
+async def ops_console() -> FileResponse:
+    """The phone console. A SEPARATE app, not a responsive skin on the board.
+
+    The desktop board is a spatial workbench — you arranged those tiles and the
+    arrangement means something. A phone is episodic: you open it for thirty seconds
+    because something needs you. Responsive CSS can shrink a workbench; it cannot turn one
+    into a console. So this is its own frontend, sharing nothing but the API.
+    """
+    return FileResponse(FRONTEND_DIR / "m" / "index.html")
+
+
+@app.get("/m/manifest.webmanifest")
+async def ops_manifest() -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "m" / "manifest.webmanifest",
+                        media_type="application/manifest+json")
+
+
+app.mount("/m", StaticFiles(directory=str(FRONTEND_DIR / "m")), name="ops")
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
 
