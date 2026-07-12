@@ -1150,7 +1150,25 @@ SENDERR
     fi
     TS="$(date '+%Y-%m-%d %H:%M')"
     { echo ""; echo "## $TS [$TAG]"; echo ""; printf '%s\n' "$MSG_BODY"; } >> "$BUS_FILE"
-    echo "Sent message tagged [$TAG] at $TS."
+    # READ IT BACK. Do not just assert the write succeeded.
+    #
+    # `send` used to print "Sent message tagged [x]" whether or not anything landed — the tool
+    # reporting its own intention, not the outcome. That is exactly what has bitten this fleet
+    # all day (a crashed verify reporting a refusal; a zero-run loop reporting determinism; a
+    # grep that searched nothing reporting no matches).
+    #
+    # And it bites HARDER here, because `check` deliberately never echoes your own posts — so
+    # a Claude that wants to confirm its message landed has NO WAY to ask. image_gen grepped
+    # `bus.sh check` for its own message, got silence, and could not tell whether the send had
+    # failed or the tool simply doesn't show you your own words. **After today, it refused to
+    # read that silence as success, and it was right not to.**
+    if tail -c 200000 "$BUS_FILE" 2>/dev/null | grep -qaF "## $TS [$TAG]"; then
+      echo "Sent message tagged [$TAG] at $TS — VERIFIED on the bus ($(wc -c < "$BUS_FILE" 2>/dev/null) bytes)."
+    else
+      echo "⚠️  WROTE the message but CANNOT SEE IT on the bus. Do not assume it landed." >&2
+      echo "    (bus: $BUS_FILE)  Re-read it yourself before you rely on this." >&2
+      exit 1
+    fi
     # DELIBERATELY NO mark_seen_if_bus_tag. (backend, 2026-07-11 — silent mail loss.)
     # mark_seen sets last-seen to the NEWEST header in the FILE, regardless of what you
     # actually read. So posting a message marked every unread message as seen — and now
@@ -1320,6 +1338,18 @@ PYEOF
       *) echo "usage: bus.sh push {list|approve <repo>|deny <repo>|revoke <repo>|propose -|withdraw}"; exit 2 ;;
     esac
     exit $?
+    ;;
+
+  mine)
+    # Your own recent posts. `check` deliberately never echoes them (you shouldn't re-read your
+    # own mail) — but that left NO WAY to confirm your own message landed, and a Claude that
+    # cannot verify its own send will either trust a tool's self-report or invent certainty.
+    # Neither is acceptable after today. So: read the bus, show YOUR headers.
+    n="${1:-5}"
+    echo "=== last $n posts by [$TAG] ==="
+    grep -aE "^## .* \[$TAG\]$" "$BUS_FILE" 2>/dev/null | tail -"$n" | sed 's/^/  /'
+    grep -acE "^## .* \[$TAG\]$" "$BUS_FILE" 2>/dev/null | sed 's/^/  total posts: /'
+    exit 0
     ;;
 
   gpu)

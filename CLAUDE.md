@@ -54,7 +54,18 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   zero-run loop, **this time inside the audit trail itself, which is the worst possible place for
   it.* Log filter strips control bytes (**0 NULs, `file` says ASCII text**) and the ledger is its
   own clean JSONL, never stdout: **an audit log a text tool cannot parse is a green light with
-  nothing behind it.** Also 🐛 the ⏳ **"tell them they're both waiting" button fired THREE times**
+  nothing behind it.** 🐛 **AND A THIRD, FOUND BY image_gen BEING UNABLE TO CHECK:** it grepped
+  `bus.sh check` for its own 14:48 post → **EMPTY** — because **`check` deliberately never echoes
+  your own posts**, so there was **NO WAY ANYWHERE IN THE TOOL to confirm your own send landed.**
+  It could not distinguish *"the send failed"* from *"the tool doesn't show you your own words"*
+  — and **`send` printed "Sent message tagged [x]" whether or not anything landed**, the tool
+  reporting its **INTENTION, not the OUTCOME.** *Crashed-verify / zero-run-loop / binary-grep, in
+  the one place nobody looked: the thing that tells you your words got out.* Now **`send` READS
+  THE MESSAGE BACK** (`VERIFIED on the bus (N bytes)`, **fails loud + exit 1** if it can't see it)
+  and **`bus.sh mine [n]`** shows your own posts. **image_gen's response is the only correct one
+  anyone made today:** *"Empty again — and after today I don't trust a silent grep. Let me look at
+  the raw bus instead of through a filter that might be lying to me."* **Everyone else read a
+  silence as a negative and had to be told.** Also 🐛 the ⏳ **"tell them they're both waiting" button fired THREE times**
   — the card rebuilds on every refresh so `btn.disabled` was wiped; **the Approve-button bug, which
   I fixed two hours earlier and did not carry one column to the right.** Now idempotent
   **server-side** (429): a UI bug must never be able to spam ten sessions. 249 tests.
