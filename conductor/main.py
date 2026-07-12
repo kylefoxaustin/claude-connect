@@ -912,6 +912,16 @@ async def reclaim_resource(name: str, request: Request) -> dict[str, Any]:
     return {"resource": name, "owner": owner, "result": result, "ok": proc.returncode == 0}
 
 
+@app.get("/api/push")
+async def get_push(request: Request) -> dict[str, Any]:
+    """Pending push approvals. These also ride the WebSocket, but a client whose socket
+    died silently (a backgrounded phone tab — mobile browsers kill sockets without
+    always firing `close`) would sit on stale state forever. An endpoint it can re-fetch
+    on wake makes the inbox self-healing instead of needing a manual refresh."""
+    state: AppState = request.app.state.cond
+    return {"requests": state._push_requests}
+
+
 @app.post("/api/push/{key}/{action}")
 async def decide_push(key: str, action: str, request: Request) -> dict[str, Any]:
     """Approve or deny a gated ``git push`` (user-triggered). Approve writes a

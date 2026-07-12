@@ -384,6 +384,32 @@ document.getElementById("refresh-btn")?.addEventListener("click", async () => {
 
 window.addEventListener("resize", () => requestAnimationFrame(() => redrawLines(state)));
 
+// Self-heal on wake. A backgrounded tab — especially on a phone — can have its
+// WebSocket killed WITHOUT the `close` event ever firing, so the reconnect loop never
+// starts and the board silently freezes on stale state (the push inbox showing no
+// pending approvals when there are some). Whenever the page becomes visible again:
+// reconnect if the socket is actually dead, and resync the state that matters either
+// way. No manual refresh.
+async function resyncOnWake() {
+  if (document.visibilityState !== "visible") return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    setConnState(false);
+    connect();               // dead or dying socket -> reconnect now, don't wait
+    return;                  // the fresh connection sends a full snapshot anyway
+  }
+  try {                      // socket claims to be alive: pull the live-critical bits
+    const [p, ss] = await Promise.all([
+      fetch("/api/push").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      fetch("/api/sessions").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    ]);
+    if (p) { state.push = p; renderPushInbox(state); }
+    if (ss) handleMessage({ kind: "sessions", payload: ss });
+  } catch {}
+}
+document.addEventListener("visibilitychange", resyncOnWake);
+window.addEventListener("focus", resyncOnWake);
+window.addEventListener("online", resyncOnWake);
+
 // Settings modal wiring.
 const settingsModal = document.getElementById("settings-modal");
 const setTheme = document.getElementById("set-theme");
