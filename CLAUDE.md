@@ -23,6 +23,75 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.23.0: 🔗 **Autonomy windows** + 🛠 **Service Claudes** + 📇 **Fleet registry** —
+  the fleet stops needing Kyle as its courier, its scheduler, *or* its encyclopedia.
+  **🔗 AUTONOMY WINDOWS ("let them talk").** Kyle: with 30+ sessions it took *tens of
+  minutes* to hand-click "check msgs". **Root cause, and it reframes the feature: 80%
+  of it already existed and simply never fired.** Auto-delivery wakes a session with
+  unread directed mail — but only when IDLE/DORMANT. A session parked quietly at its
+  prompt is **WAITING** (`low_cpu && mtime≥30`), and WAITING was *deliberately* excluded
+  from `_WAKEABLE_STATUSES` because *"Kyle may be typing at that prompt"*. Since WAITING
+  is the **resting state of virtually every quiet session**, that one guard was exactly
+  what forced the hand-clicking. Right when he's at the keyboard; worthless when he's
+  asleep. So a window is not a new subsystem — it's a **scoped, time-boxed permission
+  slip**: *"I am not at these keyboards for the next N hours. Let them wake each other."*
+  `conductor/autonomy.py`: a window = tags + expiry, persisted to `coord/autonomy.json`,
+  windows **compose**. How far it goes and — the point — how far it does NOT: **BUSY is
+  still never interrupted** (it lifts the *attended* guard, never the *working* one);
+  only **directed** mail wakes anyone (a 30-member window **cannot storm itself**); a
+  **non-member can never wake you**; and **it expires** — the time-box IS the safety
+  property. Each is a test (12 new). Safety rests on guardrails Kyle already built:
+  nothing reaches a repo without his click (push gate), a bad instruction can be pulled
+  back (retraction). *Guardrails first, autonomy second — the right order.* UI: **🔗 Let
+  them talk** → click tiles (pulsing ring → green ✓) → duration → go; green connectors
+  drawn **edge-to-edge in the front layer** (a display pref must not be able to bury a
+  live permission), clique ≤6 members else a ring (a 30-way clique = 435 lines).
+  **🛠 SERVICE CLAUDES.** Kyle's realisation: **image_gen is *exactly* an EVK** — single
+  holder, one job at a time, contended, needs a queue. He didn't invent a new thing; he
+  **discovered the resource abstraction was more general than the thing he built it for**.
+  But **the lease inverts**: with a board the requester does the work *on* it; with
+  image_gen the *service* does the work — so the lease means **"I am now serving X"**, and
+  the queue holds **jobs**, not sessions. Two decisions shape it: **fire-and-forget** (a
+  requester posts a job and goes straight back to work; the result returns as directed
+  mail and auto-delivery **wakes them** — a queue of *blocked* Claudes would be the worst
+  of both worlds, and this is what makes it a service rather than a lock), and **the human
+  is not a queue entry** (Kyle talks to services directly, so "serve me next" is a **HOLD**:
+  finish the current job — no wasted GPU render — then stop and wait for him).
+  `bus.sh svc {request|next|done|status|hold|resume|cancel}` + 6 slash-commands +
+  `conductor/services.py` + a 🛠 tile with "Serve me next". Live within minutes:
+  `[other:tipometer]` found `/svc-request` on its own and queued a real render job.
+  **📇 FLEET REGISTRY.** Two problems: (1) nothing was ever *registered* — resources sprang
+  into existence on first use, which is how `orin` drifted from `orin-agx` **twice**; (2) a
+  node **told you nothing** — reserve a board and you got a lease, so the Claude asked
+  Kyle. **He was the courier for "how do I ssh to the Orin?" exactly as he'd been the
+  courier for messages. Same disease, different payload.** Now every asset has a **card**
+  (access / setup / **gotchas** / docs / contact) and **the card travels with the asset** —
+  `/reserve` prints it to the session taking the board. `bus.sh asset {new|info|path|list}`
+  + `/catalog`. Cards are local-only (never the repo, never the bus; credentials are
+  *referenced*, not inlined). **The fleet filled it in under 30 minutes** — including
+  qualcomm registering a board nobody had asked for (`o6`) through the new mechanism on
+  day one — and then **improved the template**: gotchas now ask *"what would a competent
+  Claude reasonably ASSUME here, and be WRONG about?"* (orb_slam), warn about the
+  **co-authoring SEAM** (*"two authors can each write something true and produce a card
+  that lies"*), and enforce the **half-life rule**: *"a toolchain claim without a
+  version+date stamp is a landmine with a timer"* — silicon facts (durable arithmetic)
+  must never share an unlabelled table with toolchain facts (which rot; "CUTLASS has no
+  SM120 int8 template" expired in 11 weeks). **A stale fact re-measures clean.**
+  **🔐 PUSH GATE, two fixes.** Approving now **pings the session** (it was denied and left
+  waiting in the dark, so *Kyle* had to relay — the couriering auto-delivery exists to
+  abolish, left half-done in the push path); injected directly because a denied session is
+  **WAITING**, which auto-delivery deliberately never wakes. And repo **attribution**:
+  `cd /elsewhere && git push` was filed under the session's repo, not the one actually
+  being pushed — control was never lost, but **the label Kyle approved on was lying**.
+  **🐛 THE BACKTICK TRAP** (found by qualcomm, in *our* tooling): a bus message passed as an
+  *argument* goes through the caller's shell, which command-substitutes backticks — **the
+  send succeeds and words silently vanish. Exit 0, no warning.** Precisely the failure
+  class the fleet spent the day cataloguing. `bus.sh send -` now reads from stdin; the
+  slash-command teaches a quoted heredoc. Plus UI: titles **wrap** (the action buttons had
+  to LEAVE the flow — `visibility:hidden` still *reserves* the box, which is why the first
+  fix made it worse), link-mode selection no longer fades (`fillSessionTile` rewrites
+  `className` wholesale), and `[hidden]` is now authoritative (`.link-bar{display:flex}`
+  outranked the UA sheet, so Cancel "did nothing"). 154 tests.
 - ✅ v2.22.0: 📱 **Mobile edition** (Conductor in your pocket) + fleet-recovery
   relaunch + three real bug fixes found by *operating* the fleet.
   **📱 Phone access** — the frontend was already a web app, so "phone app" is really
