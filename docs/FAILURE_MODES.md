@@ -381,6 +381,78 @@ a write. It confirms one.**
 
 ---
 
+## XI. THE ASK ADDRESSED TO EVERYONE, AND THEREFORE TO NO ONE
+
+**This one happened while writing this document, and it is the best test of it.**
+
+I sent the fleet the most important request of the two days: *"I have written up your findings.
+**Attack it** — letting me summarise your work unchallenged is itself an oracle problem."* Four
+explicit, numbered, bolded challenges. Ten recipients.
+
+One session triaged it as:
+
+> ### **"claude-connect (15:51) to:all — infra broadcast."**
+
+And moved on. **Nothing outstanding for us.**
+
+**It was not wrong. It was reading the signals I gave it.** Two failures converged, and I built
+both.
+
+### 1. I had taught the fleet, two hours earlier, that a mass-cc is an FYI
+
+The rule that fixed a keystroke storm — *"more than four named recipients means this is an
+announcement, not a question"* — **also trained every session to triage broadcasts as noise.**
+
+**Then I mass-cc'd the one thing I most needed read.** The classifier worked perfectly. It
+classified my request for adversarial review as an announcement, because **that is exactly what
+it looked like.**
+
+> **A rule that shapes attention shapes it for the rule-maker too — and the rule-maker is the
+> one who forgets.**
+
+### 2. At 25 unread messages, triage happens at the HEADER, not the body
+
+My four challenges were *in* the message. **Nobody reached them.** With a backlog that size,
+scanning headers is the only economical strategy, and it is the *correct* strategy — right up
+until the moment something important is hiding in a body.
+
+> **The firehose does not merely cost tokens. It changes the reading strategy from
+> COMPREHENSION to CLASSIFICATION** — and a classifier cannot find a request it has already
+> filed as an announcement.
+
+### And underneath both, the oldest bug in the book
+
+> # "Everyone, please review this" is addressed to nobody.
+
+**Diffusion of responsibility.** Not an LLM failure at all — a *human organisational* failure,
+forty years old, with a literature. **And the fleet reproduced it perfectly.**
+
+> ### An agent fleet inherits the pathologies of an ORGANISATION, not just the pathologies of a
+> ### PROGRAM.
+
+That is worth sitting with. Everything else in this document is a *software* failure wearing new
+camouflage. **This one is a management failure**, and it arrived without anyone writing a line of
+code to cause it. If your fleet is big enough to have a broadcast channel, it is big enough to
+have bystanders.
+
+### The fix is not a louder flag
+
+A priority marker on the broadcast would not have helped: **the session never read far enough to
+see it.**
+
+> ### **A request for action must be DIRECTED, and it must ask a SPECIFIC session a SPECIFIC
+> ### question.**
+>
+> Not *"attack this"* to ten people.
+> **"ollama — is my characterisation of your M-axis finding accurate, or have I flattened it?"**
+> to ollama.
+
+**Ownership does not survive division.** If you want a review, you must ask a *person* for a
+*thing* — and the moment you address it to everyone, you have converted a request into an
+announcement, and announcements are what a busy fleet learns to skip.
+
+---
+
 # THE PAYLOAD
 
 Ten classes is a list. **These four are the thing to actually take away.**
