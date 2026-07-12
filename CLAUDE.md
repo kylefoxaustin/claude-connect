@@ -23,6 +23,22 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.25.1: 🔇 **The approval ping was typed into the void — and reported success.**
+  Kyle approved on his phone; Conductor logged **`woke [claude-connect] — push approved`**;
+  the text landed in **NO session's transcript at all.** *(He noticed — "weird u didn't get
+  the ping" — and it would otherwise have stayed invisible forever, because the log said it
+  worked.)* Cause: a session that was just **DENIED** a push is **mid-turn and BUSY**, and a
+  **busy Claude Code session silently swallows injected keystrokes.** The push path
+  **deliberately overrode the busy guard** (there was a comment justifying it), and
+  `send_keys_to_session` returns **True because xdotool exited 0** — *but xdotool succeeding
+  is not the message arriving.* Every earlier ping worked only because the session **happened
+  to be idle**. Luck, not design. Fix: the notice is **queued** (`_push_notices`) and
+  delivered by `_deliver_push_notices()` on a later scan **once the session is genuinely
+  quiet** — the same discipline every other wake path already used, and the one place that
+  opted out. Expires after 1h rather than nagging. **And it stays an ACCELERATOR, never the
+  channel: the grant is DURABLE, so an agent that never hears a word still pushes fine on its
+  next attempt — which is exactly what saved the live case.** *The notification must never be
+  the only door* — the rule we wrote for the phone, now enforced for the fleet. 217 tests.
 - ✅ v2.25.0: 🎮 **The GPU lease was lying by omission — `gpu-who` + reconciliation.**
   **Found by a Claude falling into the hole.** `image_gen` held the GPU lease, watched its
   renders take **10m26s instead of 24.7s**, found a **root-owned `python3` holding 8.3 GB**,

@@ -81,3 +81,84 @@ def test_grants_sorted_soonest_to_expire_first(tmp_path):
     _token(tmp_path, "late", expires=NOW + 80000, name="late")
     _token(tmp_path, "soon", expires=NOW + 100, name="soon")
     assert [g["repo_name"] for g in read_push_grants(tmp_path, now=NOW)] == ["soon", "late"]
+
+
+# --- the approval ping must not be typed into a busy session ------------------
+# Kyle approved on his phone. Conductor logged "woke [claude-connect] — push approved".
+# The text landed in NO session's transcript. It was typed into the void.
+#
+# A session that was just DENIED a push is mid-turn and BUSY, and a busy Claude Code session
+# SWALLOWS injected keystrokes. send_keys_to_session returned True because xdotool exited 0 —
+# but xdotool succeeding is not the message arriving. The earlier pings only worked because
+# the session happened to be idle at that moment. Luck, not design.
+import asyncio
+import types
+
+from conductor.main import AppState
+from conductor.models import Status
+from conductor.settings import load_settings
+
+
+def _app(tmp_path):
+    a = AppState(load_settings())
+    a.coord_root = tmp_path / "coord"
+    a._wake_outstanding = {}
+    return a
+
+
+def _sess(status, project_dir):
+    return types.SimpleNamespace(
+        tag="[other:claude-connect]", status=status, pid=1, terminal_pid=2,
+        title="t", window_title="w", project_dir=project_dir)
+
+
+def _run(app, monkeypatch):
+    sent = []
+    monkeypatch.setattr("conductor.main.send_keys_to_session",
+                        lambda **kw: sent.append(kw["text"]) or True)
+    asyncio.run(app._deliver_push_notices())
+    return sent
+
+
+def test_a_busy_session_is_NOT_typed_at(tmp_path, monkeypatch):
+    """THE REGRESSION. Injecting here 'succeeds' and delivers nothing."""
+    app = _app(tmp_path)
+    proj = str(tmp_path / "repo")
+    app._push_notices = {"k": {"cwd": proj, "repo": "claude-connect", "queued": time.time()}}
+    app.sessions = {proj: _sess(Status.WARM, proj)}       # mid-turn, reacting to the denial
+
+    assert _run(app, monkeypatch) == []                   # nothing typed
+    assert "k" in app._push_notices                       # and it is NOT forgotten
+
+
+def test_it_is_delivered_once_the_session_goes_quiet(tmp_path, monkeypatch):
+    app = _app(tmp_path)
+    proj = str(tmp_path / "repo")
+    app._push_notices = {"k": {"cwd": proj, "repo": "claude-connect", "queued": time.time()}}
+    app.sessions = {proj: _sess(Status.IDLE, proj)}
+
+    sent = _run(app, monkeypatch)
+    assert len(sent) == 1
+    assert "approved your git push" in sent[0]
+    assert app._push_notices == {}                        # delivered -> forgotten
+
+
+def test_an_undeliverable_notice_expires_instead_of_nagging_forever(tmp_path, monkeypatch):
+    """If the session never goes quiet, no harm done: the grant is DURABLE, so the agent's
+    next push succeeds whether or not it ever heard a word. The ping is a courtesy, not the
+    channel — which is exactly what saved the live case."""
+    app = _app(tmp_path)
+    proj = str(tmp_path / "repo")
+    app._push_notices = {"k": {"cwd": proj, "repo": "x",
+                               "queued": time.time() - app._NOTICE_TTL_S - 1}}
+    app.sessions = {proj: _sess(Status.IDLE, proj)}
+
+    assert _run(app, monkeypatch) == []
+    assert app._push_notices == {}
+
+
+def test_a_dead_session_does_not_block_the_queue(tmp_path, monkeypatch):
+    app = _app(tmp_path)
+    app._push_notices = {"k": {"cwd": "/gone", "repo": "x", "queued": time.time()}}
+    app.sessions = {}
+    assert _run(app, monkeypatch) == []                   # no crash, nothing typed

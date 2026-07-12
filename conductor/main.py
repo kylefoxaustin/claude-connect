@@ -158,6 +158,9 @@ class AppState:
         self._retractions: list[dict[str, Any]] = []          # active retraction records
         self._push_requests: list[dict[str, Any]] = []        # git-push approvals awaiting Kyle
         self._push_grants: list[dict[str, Any]] = []          # approvals GIVEN, not yet used
+        # 'tell this session its push was approved' — delivered only when it's QUIET,
+        # because a busy session swallows injected keystrokes without a trace.
+        self._push_notices: dict[str, dict[str, Any]] = {}
         self._autonomy: list[dict[str, Any]] = []             # live "let them talk" windows
         self.services: dict[str, Any] = {"services": []}      # service Claudes (image_gen…)
         self.waiting: dict[str, Any] = {"edges": [], "cycles": [], "bottlenecks": [],
@@ -362,6 +365,7 @@ class AppState:
         await self._wake_nudged_owners()
         await self._wake_unread_recipients()
         await self._wake_retractions()
+        await self._deliver_push_notices()
         await self._notify()
 
     async def _wake_retractions(self) -> None:
@@ -503,6 +507,35 @@ class AppState:
                     subs.remove(sub)
             self._notified[item["key"]] = now
             log.info("notified: %s", item["title"])
+
+    _NOTICE_TTL_S = 3600.0
+
+    async def _deliver_push_notices(self) -> None:
+        """Tell a session its push was approved — but only once it is actually listening.
+
+        A session that was just denied a push is mid-turn and BUSY, and a busy Claude Code
+        session eats injected keystrokes silently. So we wait for it to go quiet, exactly as
+        the mail/nudge/offer wakes do. If it never does, no harm: the grant is durable and the
+        agent's next push succeeds regardless. The notice is a courtesy, not the channel.
+        """
+        if not self._push_notices:
+            return
+        now = time.time()
+        for key, note in list(self._push_notices.items()):
+            if now - note["queued"] > self._NOTICE_TTL_S:
+                del self._push_notices[key]        # it'll find out by pushing
+                continue
+            rec = self._session_for_cwd(note["cwd"])
+            if rec is None or rec.status in _BUSY_STATUSES:
+                continue                           # busy -> the keystrokes would vanish
+            sent = await self._inject_text(
+                rec,
+                f"✅ Kyle approved your git push to {note['repo']} — re-run it whenever "
+                "you're ready. The approval waits for you; it covers exactly one push.",
+                f"push approved for {note['repo']}",
+            )
+            if sent:
+                del self._push_notices[key]
 
     def _has_open_picker(self, rec: SessionRecord) -> bool:
         """Is this session sitting on an AskUserQuestion picker right now?
@@ -1075,23 +1108,28 @@ async def decide_push(key: str, action: str, request: Request) -> dict[str, Any]
     # just clicked. Deny stays silent: "Dismiss" may only mean "clear my inbox".
     notified = None
     if ok and action == "approve" and req:
+        # QUEUE it; do not fire it here. Firing it here used to "work" and silently didn't:
+        # a session that has just been DENIED a push is usually still BUSY (it's mid-turn,
+        # reacting to the denial), and **a busy Claude Code session swallows injected
+        # keystrokes**. `send_keys_to_session` returns True because xdotool exited 0 — but
+        # xdotool succeeding is not the message arriving. Kyle approved on his phone, the log
+        # said "woke [claude-connect]", and the text landed in NO transcript at all. The
+        # earlier pings only worked because the session happened to be idle. Luck.
+        #
+        # So the ping is now delivered by `_deliver_push_notices()` on a later scan, once the
+        # session is genuinely quiet — the same discipline every other wake path already uses.
+        # And it stays an ACCELERATOR, never the mechanism: the grant is durable, so an agent
+        # that never hears a word still pushes fine on its next attempt. That is what saved
+        # this one.
+        state._push_notices[key] = {
+            "cwd": req.get("cwd", ""),
+            "repo": req.get("repo_name", key),
+            "queued": time.time(),
+        }
         rec = state._session_for_cwd(req.get("cwd", ""))
-        if rec is not None:
-            sent = await state._inject_text(
-                rec,
-                # Says "it will wait" because it now does. The old text promised 30 minutes,
-                # which was true when written and became a lie — and a message that tells an
-                # agent to hurry when it doesn't need to is how you get it pushing half-done
-                # work.
-                "✅ Kyle approved your git push — re-run it whenever you're ready. "
-                "The approval waits for you; it covers exactly one push.",
-                f"push approved for {req.get('repo_name', key)}",
-            )
-            if sent:
-                notified = rec.tag
-        else:
-            log.info("push approved for %s but no live session in %s — the grant waits for it",
-                     key, req.get("cwd", "?"))
+        notified = rec.tag if rec is not None else None
+        log.info("push approved for %s — notice queued for %s",
+                 key, (rec.tag if rec else "no live session (the grant waits)"))
 
     # Re-read now rather than waiting for the next scan tick: a just-approved request must
     # move to the "approved, waiting" list immediately, or the click looks like it did
