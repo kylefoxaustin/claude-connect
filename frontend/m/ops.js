@@ -503,6 +503,33 @@ function renderBlocked() {
       `<div class="card-who">${c.deadlock ? "🛑 DEADLOCK" : "🔁 Mutual stall"}</div>` +
       `<div class="row-sub" style="white-space:normal">${esc(c.nodes.join(" → "))} → ${esc(c.nodes[0])}</div>` +
       `<div class="row-sub" style="white-space:normal;margin-top:6px">${esc(c.label)}</div>`;
+
+    // Tell them. A stall is invisible from the INSIDE — each side thinks it's politely
+    // awaiting a reply, and both are right about that, which is exactly why neither speaks.
+    // The only actor who can see the loop is the one standing outside it.
+    const btn = document.createElement("button");
+    btn.className = "btn btn-primary";
+    btn.style.width = "100%";
+    btn.style.marginTop = "12px";
+    btn.textContent = c.deadlock ? "Tell them it's a deadlock" : "Tell them they're both waiting";
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spin"></span> Telling them…';
+      try {
+        const r = await api("/api/unstall", {
+          method: "POST",
+          body: JSON.stringify({ nodes: c.nodes }),
+        });
+        btn.textContent = r.pinged.length
+          ? `✅ Told them · woke ${r.pinged.join(", ")}`
+          : "✅ Told them — they'll see it when they surface";
+        setTimeout(refresh, 4000);
+      } catch (e) {
+        btn.textContent = e.status === 409 ? "Already resolved" : `Failed: ${e.message}`;
+        btn.disabled = false;
+      }
+    });
+    el.appendChild(btn);
     bits.push(el);
   }
 

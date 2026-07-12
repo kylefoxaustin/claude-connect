@@ -23,6 +23,29 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.26.0: 🔁 **"Tell them they're both waiting" — break a mutual stall with one tap**
+  (Kyle's ask, and the shape of it is the whole point). **A mutual stall is invisible to its
+  participants BY CONSTRUCTION.** Each side believes it is politely awaiting a reply — *and
+  each is correct about that.* Both are behaving well. Neither can see that the other believes
+  exactly the same thing about them, which is why neither speaks, which is why the silence
+  continues. **From the inside it is indistinguishable from a conversation in progress, so
+  there is no moment at which either would think to check.** ⇒ **the only actor who can see
+  the loop is the one standing outside it** — which is the dashboard, and until now it could
+  only *display* the stall it alone could see. `POST /api/unstall` posts a **directed** bus
+  message (`to:a to:b`, so auto-delivery reaches even the ones it can't wake) naming the loop
+  and **every edge in it** — the fact they cannot derive — then injects `/msg-check` into each
+  member that is **quiet enough to hear it** (busy sessions swallow keystrokes silently; the
+  directed mail catches them later — the v2.25.1 lesson, applied on first use). It also
+  **licenses the cheapest possible answer**: *"a short 'I have nothing further' is a complete
+  and useful answer — silence is not"*, because a Claude with nothing to add will keep saying
+  nothing, and **that is the stall.** A **DEADLOCK gets a different message**: telling a
+  resource cycle to "just reply" is not merely useless, it's *exactly the advice that keeps
+  them stuck* — so it says **one of you has to `/release`**, and names the trap (*"do not both
+  wait for the other to go first: that is precisely the state you are already in"*). Guarded:
+  the cycle must be one the **backend itself currently sees** (409 otherwise) — else this is
+  an arbitrary *"message these N sessions and wake them all"* primitive, a far bigger gun than
+  the button asked for. Buttons on **both** the phone Blocked pane and the desktop ⏳ panel.
+  222 tests.
 - ✅ v2.25.2: 🔢 **Fleet sorting on the phone** (Kyle's ask). With 15+ sessions the list is
   only useful if you can bring the right ones to the top. Seven sorts, persisted:
   **Needs attention first** (the default — *a session with a question open outranks one with

@@ -986,6 +986,34 @@ function renderWaiting() {
         + `<span class="wait-kinds">${(c.kinds || []).join(", ")}</span></div>`
         + `<div class="wait-chain">${escapeHtml(chain)}</div>`
         + `<div class="wait-why">${escapeHtml(c.label)}</div>`;
+
+      // Tell them. A stall is invisible from INSIDE it: each side thinks it is politely
+      // awaiting a reply, and each is right, which is exactly why neither speaks. The only
+      // actor who can see the loop is the one standing outside it — that's this panel.
+      const tell = document.createElement("button");
+      tell.className = "wait-tell";
+      tell.textContent = c.deadlock ? "Tell them it's a deadlock" : "Tell them they're both waiting";
+      tell.onclick = async () => {
+        tell.disabled = true;
+        tell.textContent = "Telling them…";
+        try {
+          // window.fetch is already wrapped to inject the auth token on /api/*.
+          const r = await fetch("/api/unstall", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ nodes: c.nodes }),
+          });
+          if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+          const d = await r.json();
+          tell.textContent = d.pinged.length
+            ? `✅ Told them · woke ${d.pinged.join(", ")}`
+            : "✅ Told them — they'll see it when they surface";
+        } catch (e) {
+          tell.textContent = `Failed: ${e.message}`;
+          tell.disabled = false;
+        }
+      };
+      row.appendChild(tell);
       body.appendChild(row);
     }
   }

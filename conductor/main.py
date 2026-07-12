@@ -1335,6 +1335,118 @@ async def webpush_test(request: Request) -> dict[str, Any]:
     return {"ok": sent > 0, "sent": sent, "devices": len(subs)}
 
 
+class UnstallRequest(BaseModel):
+    nodes: list[str]
+
+
+def _stall_message(nodes: list[str], deadlock: bool, edges: list[dict[str, Any]]) -> str:
+    """The message a stalled Claude cannot write for itself.
+
+    A mutual stall is invisible from the inside — *by construction*. Each side believes it is
+    politely awaiting a reply, which is a completely reasonable thing to believe, and neither
+    can see that the other believes the same thing about them. Both are behaving correctly and
+    the pair is stuck. **The only actor who can see the loop is the one standing outside it.**
+
+    So this doesn't nag them to hurry up. It tells them the one fact they are missing.
+    """
+    who = " → ".join(nodes + [nodes[0]])
+    to_line = " ".join(f"to:{n}" for n in nodes)
+    why = "\n".join(
+        f"  • **{e['src']} is waiting on {e['dst']}** — {e['why']}"
+        for e in edges
+    )
+
+    if deadlock:
+        return (
+            f"{to_line} — [operator] 🛑 **DEADLOCK — you are in a resource cycle and it will "
+            f"NEVER resolve itself. Kyle is telling you from outside the loop.**\n\n"
+            f"    {who}\n\n{why}\n\n"
+            "**Each of you is holding a resource the other is queued for.** Neither can make "
+            "progress by waiting, no matter how long you wait — and waiting is exactly what "
+            "each of you is currently doing. This is not a delay; it is a permanent stop.\n\n"
+            "**One of you has to release.** Decide between yourselves who is closer to a "
+            "natural stopping point and `/release` that resource — the other will be offered "
+            "it immediately and can hand it back when done. **Do not both wait for the other "
+            "to go first: that is precisely the state you are already in.**"
+        )
+
+    return (
+        f"{to_line} — [operator] 🔁 **MUTUAL STALL — you are each waiting for the other to "
+        f"speak. Neither of you can see this from inside; Kyle can, from outside.**\n\n"
+        f"    {who}\n\n{why}\n\n"
+        "**Nobody is blocked and nothing is broken.** Each of you sent something, is politely "
+        "awaiting a reply, and reasonably assumes the silence means the other is still "
+        "thinking. **You are both assuming that about each other, which is why neither of you "
+        "has spoken, which is why the silence continues.** It can run indefinitely, and it "
+        "costs you nothing to notice — because from where you are sitting, it looks exactly "
+        "like a conversation in progress.\n\n"
+        "**Either of you can end it right now by replying — so do, both of you.** If you were "
+        "waiting on an answer, ask again plainly. If you already have what you need, say so "
+        "and close the thread. If you are genuinely blocked on the other, say what you need "
+        "and by when. **A short 'I have nothing further' is a complete and useful answer** — "
+        "silence is not."
+    )
+
+
+@app.post("/api/unstall")
+async def unstall(payload: UnstallRequest, request: Request) -> dict[str, Any]:
+    """Tell a stalled cycle that it is stalled.
+
+    Kyle's ask, and it's the right shape: **a mutual stall is invisible to its participants
+    by definition.** Each one thinks it's awaiting a reply. The only actor who can see the
+    loop is the one outside it — which, right now, is the dashboard.
+
+    Posts a directed bus message naming the loop and every edge in it, then wakes each member
+    that is quiet enough to actually hear it. Busy members are left alone: a busy Claude Code
+    session swallows injected keystrokes without a trace (learned the hard way tonight), and
+    the message is directed mail anyway, so auto-delivery reaches them when they surface.
+    """
+    state: AppState = request.app.state.cond
+    if not isinstance(state.bus, MarkdownBusAdapter):
+        raise HTTPException(status_code=409, detail="sending requires the markdown bus adapter")
+
+    want = [n.strip() for n in payload.nodes if n.strip()]
+    if len(want) < 2:
+        raise HTTPException(status_code=400, detail="a cycle needs at least two members")
+
+    # Only nudge a cycle the backend ITSELF currently sees. Otherwise this endpoint is an
+    # arbitrary "message these N sessions and wake them all" primitive, which is a much
+    # bigger gun than the button Kyle asked for.
+    cycle = next(
+        (c for c in state.waiting.get("cycles", []) if sorted(c["nodes"]) == sorted(want)),
+        None,
+    )
+    if cycle is None:
+        raise HTTPException(status_code=409,
+                            detail="that stall is no longer active — it may have resolved itself")
+
+    nodes = cycle["nodes"]
+    pairs = {(nodes[i], nodes[(i + 1) % len(nodes)]) for i in range(len(nodes))}
+    edges = [e for e in state.waiting.get("edges", []) if (e["src"], e["dst"]) in pairs]
+
+    body = _stall_message(nodes, bool(cycle.get("deadlock")), edges)
+    await asyncio.to_thread(
+        append_message,
+        state.settings.bus.markdown_path_resolved,
+        state.settings.bus.sender_tag,
+        body,
+    )
+
+    pinged: list[str] = []
+    for name in nodes:
+        rec = next((r for r in state.sessions.values()
+                    if _plain_name(r.tag or "") == name and r.status != Status.ENDED), None)
+        if rec is None or rec.status in _BUSY_STATUSES:
+            continue          # busy sessions eat keystrokes; the directed mail still reaches them
+        if await state._inject_text(rec, "/msg-check", f"mutual stall: {' → '.join(nodes)}"):
+            pinged.append(name)
+
+    log.info("unstalled %s (deadlock=%s), pinged %s",
+             " → ".join(nodes), cycle.get("deadlock"), pinged or "nobody (all busy)")
+    return {"ok": True, "nodes": nodes, "pinged": pinged,
+            "deadlock": bool(cycle.get("deadlock"))}
+
+
 @app.get("/api/ops")
 async def get_ops(request: Request) -> dict[str, Any]:
     """Everything the phone console needs, in ONE call.

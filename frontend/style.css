@@ -1920,3 +1920,15 @@ body.link-mode .tile-actions { visibility: hidden; }
 .gpu-proc-mem { font-variant-numeric: tabular-nums; color: var(--text, #e6edf3); flex: none; }
 .gpu-proc-who { overflow: hidden; text-overflow: ellipsis; }
 .gpu-proc-who.is-container { color: #58a6ff; }
+
+/* "Tell them they're both waiting." A mutual stall is invisible from inside it — each
+   participant believes it is awaiting a reply, and each is right, which is why neither
+   speaks. The only actor who can see the loop is the one outside it. */
+.wait-tell {
+  margin-top: 10px; padding: 8px 14px;
+  border: 1px solid var(--bus-color, #bc8cff); border-radius: 8px;
+  background: transparent; color: var(--bus-color, #bc8cff);
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.wait-tell:hover:not(:disabled) { background: rgba(188, 140, 255, .12); }
+.wait-tell:disabled { opacity: .6; cursor: default; }
