@@ -484,6 +484,12 @@ def _directed_blocks(messages_path: Path) -> list[tuple[str, str, frozenset[str]
     return blocks
 
 
+# Above this many named recipients, a message is an ANNOUNCEMENT, not a question. 1-3 people
+# is a conversation; 8 is a mailing list. Measured on the real bus: a quarter of all
+# "directed" messages name 5+ recipients, and those are what were storming the fleet.
+_WAKE_MAX_RECIPIENTS = 4
+
+
 def directed_unread_all(
     messages_path: Path, state_dir: Path, tags: list[str]
 ) -> dict[str, dict[str, Any]]:
@@ -512,7 +518,7 @@ def directed_unread_all(
             if not own:
                 continue  # never read, never sent — no unread basis
             last_seen = max(own)
-        count, latest, senders = 0, "", set()
+        count, latest, senders, wakeable = 0, "", set(), 0
         for ts, snd, targets in blocks:
             if ts <= last_seen or snd == me:
                 continue
@@ -521,7 +527,21 @@ def directed_unread_all(
                 senders.add(_bare_name(snd))
                 if ts > latest:
                     latest = ts
-        out[tag] = {"count": count, "senders": sorted(senders), "latest_ts": latest}
+                # A message cc'd to half the fleet is an ANNOUNCEMENT wearing directed-mail
+                # clothes. `to:a to:b to:c to:d to:e to:f` is not six people each blocking on
+                # you — it's one person telling everyone something. Waking on it treats an
+                # FYI as an interruption.
+                #
+                # This is why `docs` asked THREE TIMES to be exempted and why qualcomm got 12
+                # keystroke injections in an hour: the fleet tag-ccs everyone on nearly every
+                # broadcast, which defeats the directed/broadcast distinction entirely — and
+                # exempting sessions one at a time treats the symptom.
+                if len(targets - {"all"}) <= _WAKE_MAX_RECIPIENTS:
+                    wakeable += 1
+        out[tag] = {"count": count, "senders": sorted(senders), "latest_ts": latest,
+                    # What auto-delivery may act on. `count` is what the badge shows —
+                    # the human should still SEE the cc; they just shouldn't be woken for it.
+                    "wakeable": wakeable}
     return out
 
 

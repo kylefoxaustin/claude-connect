@@ -15,7 +15,7 @@ import types
 import pytest
 
 from conductor.bus import _address_targets, _plain_name, directed_unread_all
-from conductor.main import AppState, _WAKEABLE_STATUSES
+from conductor.main import _WAKE_MIN_INTERVAL, AppState, _WAKEABLE_STATUSES
 from conductor.models import Status
 from conductor.settings import load_settings
 
@@ -155,15 +155,54 @@ def test_new_mail_does_not_stack_a_second_check(state, monkeypatch):
     assert len(_run_wake(state, monkeypatch)) == 0
 
 
-def test_wakes_again_once_the_recipient_has_read(state, monkeypatch):
-    """After it actually reads (watermark advances), fresh mail may wake it again."""
+def test_wakes_again_once_the_recipient_has_read_AND_the_floor_has_passed(state, monkeypatch):
+    """After it reads (watermark advances), fresh mail may wake it again — but NOT immediately.
+
+    This test used to assert an instant re-wake, and that assertion was the bug. Reading
+    clears the dedup, so a session the fleet is actively talking to got woken on EVERY new
+    message: qualcomm took **12 keystroke injections in one hour**, each one stealing focus
+    mid-work. The watermark dedup only ever stopped repeats WITHIN one batch; nothing capped
+    the rate ACROSS batches.
+
+    So there is now a floor. Auto-delivery is not a pager — nothing on this bus is so urgent
+    it cannot wait ten minutes, and one /msg-check drains the whole backlog anyway, so a
+    deferred wake delivers MORE when it fires, not less.
+    """
     _seen(monkeypatch, "2026-07-10 16:00")
     state.sessions = {"q": _sess("[other:qualcomm]", Status.IDLE)}
     state._directed_unread = _directed()
     assert len(_run_wake(state, monkeypatch)) == 1
+
     _seen(monkeypatch, "2026-07-10 17:05")                  # it ran the check
-    state._directed_unread = _directed(ts="2026-07-10 17:30", count=1)   # new mail after
-    assert len(_run_wake(state, monkeypatch)) == 1          # eligible again
+    state._directed_unread = _directed(ts="2026-07-10 17:30", count=1)   # new mail arrives
+
+    # Inside the floor: silence, even though it has read and there IS fresh mail.
+    assert _run_wake(state, monkeypatch) == []
+
+    # Once the floor has passed, it is eligible again.
+    state._woke_at["[other:qualcomm]"] = time.time() - _WAKE_MIN_INTERVAL - 1
+    assert len(_run_wake(state, monkeypatch)) == 1
+
+
+def test_a_message_ccd_to_half_the_fleet_does_not_wake_you(state, monkeypatch):
+    """An announcement wearing directed-mail clothes.
+
+    `to:a to:b to:c to:d to:e to:f` is not six people each blocking on you — it is one person
+    telling everyone something. The fleet tag-ccs nearly every broadcast, which defeated the
+    directed/broadcast distinction entirely: `docs` asked THREE TIMES to be exempted, and
+    qualcomm was woken 12 times in an hour. Exempting sessions one at a time treats the
+    symptom; the cc IS the disease.
+
+    It still COUNTS (the badge shows it — the human should see the cc). It just isn't an
+    interruption.
+    """
+    _seen(monkeypatch, "2026-07-10 16:00")
+    state.sessions = {"q": _sess("[other:qualcomm]", Status.IDLE)}
+    state._directed_unread = {
+        "[other:qualcomm]": {"count": 5, "senders": ["docs"], "latest_ts": "2026-07-10 17:00",
+                             "wakeable": 0},          # all five were mass-ccs
+    }
+    assert _run_wake(state, monkeypatch) == []
 
 
 @pytest.mark.parametrize("status", [Status.ACTIVE, Status.WARM, Status.WAITING])
@@ -288,3 +327,72 @@ def test_read_push_requests(tmp_path):
 
 def test_read_push_requests_empty(tmp_path):
     assert read_push_requests(tmp_path) == []
+
+
+# --- the floor is CONDITIONAL, not constant -----------------------------------
+# Kyle: "when 7 Claudes are working a big problem together, asymmetric in how busy each one
+# is, that could break through just about any ceiling we put in place."
+#
+# He is right, and the failure is not overflow — the mail always arrives and one /msg-check
+# drains it all. The failure is PRIORITY INVERSION: a fixed floor spends its one wake per ten
+# minutes on an FYI, while the message that actually BLOCKS someone waits behind it.
+#
+# No choice of constant fixes that. A bigger number wakes you more for noise; a smaller one
+# delays the thing that matters. So the floor asks the wait-for graph instead: is anyone
+# HARD-blocked on you? That is the one case where interrupting is unambiguously right — and
+# it is exactly the case a rate limit is blindest to, because the bottleneck is busy BECAUSE
+# it is the bottleneck.
+def test_the_floor_silences_an_FYI(state, monkeypatch):
+    _seen(monkeypatch, "2026-07-10 16:00")
+    state.sessions = {"q": _sess("[other:qualcomm]", Status.IDLE)}
+    state._directed_unread = _directed()
+    state.waiting = {"edges": []}                       # nobody is stuck on qualcomm
+    assert len(_run_wake(state, monkeypatch)) == 1      # first one goes through
+    _seen(monkeypatch, "2026-07-10 17:05")
+    state._directed_unread = _directed(ts="2026-07-10 17:30")
+    assert _run_wake(state, monkeypatch) == []          # ...and then it is quiet
+
+
+def test_but_a_session_someone_is_STUCK_ON_is_woken_regardless(state, monkeypatch):
+    """The exemption. Someone is queued for a board qualcomm holds — they cannot proceed, and
+    no amount of politeness about focus changes that."""
+    _seen(monkeypatch, "2026-07-10 16:00")
+    state.sessions = {"q": _sess("[other:qualcomm]", Status.IDLE)}
+    state._directed_unread = _directed()
+    state.waiting = {"edges": [
+        {"src": "docs", "dst": "qualcomm", "kind": "resource", "hard": True},
+    ]}
+    assert len(_run_wake(state, monkeypatch)) == 1
+    _seen(monkeypatch, "2026-07-10 17:05")
+    state._directed_unread = _directed(ts="2026-07-10 17:30")
+    assert len(_run_wake(state, monkeypatch)) == 1      # floor does NOT apply
+
+
+def test_merely_AWAITING_A_REPLY_does_not_lift_the_floor(state, monkeypatch):
+    """If a soft edge counted, the exemption would swallow the floor whole — twenty sessions
+    awaiting a reply on a fast fleet is a conversation, not a crisis, and every one of them
+    would become a licence to interrupt."""
+    _seen(monkeypatch, "2026-07-10 16:00")
+    state.sessions = {"q": _sess("[other:qualcomm]", Status.IDLE)}
+    state._directed_unread = _directed()
+    state.waiting = {"edges": [
+        {"src": "docs", "dst": "qualcomm", "kind": "mail", "hard": False},
+    ]}
+    assert len(_run_wake(state, monkeypatch)) == 1
+    _seen(monkeypatch, "2026-07-10 17:05")
+    state._directed_unread = _directed(ts="2026-07-10 17:30")
+    assert _run_wake(state, monkeypatch) == []          # soft edge -> still throttled
+
+
+def test_being_blocked_ON_SOMEONE_ELSE_does_not_lift_your_own_floor(state, monkeypatch):
+    """Direction matters. The edge must point AT you (`dst`), not away from you."""
+    _seen(monkeypatch, "2026-07-10 16:00")
+    state.sessions = {"q": _sess("[other:qualcomm]", Status.IDLE)}
+    state._directed_unread = _directed()
+    state.waiting = {"edges": [
+        {"src": "qualcomm", "dst": "docs", "kind": "resource", "hard": True},
+    ]}
+    assert len(_run_wake(state, monkeypatch)) == 1
+    _seen(monkeypatch, "2026-07-10 17:05")
+    state._directed_unread = _directed(ts="2026-07-10 17:30")
+    assert _run_wake(state, monkeypatch) == []

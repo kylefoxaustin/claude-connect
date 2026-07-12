@@ -23,6 +23,32 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.29.0: 🎚 **The wake floor is CONDITIONAL, not constant — and a mass-cc is an
+  announcement, not a question.** qualcomm filed a bug report (*"`/msg-check` auto-fired 13
+  times and Kyle never typed it"*), ruled out cron/tmux/hooks/itself first, and **its diagnosis
+  beat mine.** Measured: **12 injections into qualcomm in one hour**. Not the v2.26.1 storm
+  (stacking) — a different bug: **the fleet tag-ccs `to:qualcomm` on nearly every broadcast, so
+  every announcement looked like directed mail that was BLOCKING it.** On the real bus, **a
+  quarter of all "directed" messages name 5–10 recipients.** `to:a to:b … to:f` is **not six
+  people each blocked on you** — it is one person telling everyone something. *That is why
+  `docs` asked THREE times to be exempted; exempting sessions one at a time treats the symptom
+  — **the cc IS the disease.*** Fix 1: **>4 recipients ⇒ announcement.** Still counted (the
+  badge shows it; the human should SEE the cc) but **it cannot wake you.** Fix 2: **a floor** —
+  no session woken more than once per 10 min. *The watermark dedup only ever stopped repeats
+  WITHIN a batch; nothing capped the rate ACROSS batches.* ⚠️ **THEN KYLE BROKE THE FIX:** *"7
+  Claudes on one problem, asymmetric in how busy each is — that breaks through any ceiling."*
+  **He's right, and the failure isn't overflow** (the mail always arrives; one `/msg-check`
+  drains it all) — **it's PRIORITY INVERSION: a fixed floor spends its one wake per ten minutes
+  on an FYI while the message that actually BLOCKS someone waits behind it.** **No constant
+  fixes that** — bigger wakes you more for noise, smaller delays what matters. **And I'd picked
+  `10 min` / `>4` out of a 40-message sample and called it measured.** So the floor now asks the
+  **wait-for graph** — which we built, put a button on, and then ignored: **is anyone
+  HARD-blocked on you?** (queued for your board, behind you in a service queue — *not* "awaiting
+  a reply", which would swallow the floor whole). If yes, **the floor does not apply.** *The
+  bottleneck is busy BECAUSE it is the bottleneck — the session you should interrupt least and
+  the one you should interrupt most are frequently the same session, and a rate limit is
+  blindest to exactly that.* **The floor stops protecting the fleet from mail and starts
+  protecting your attention from unimportant mail.** 242 tests.
 - ✅ v2.28.0: 📇 **The card is a DIGEST; the BUS is the LOG — Kyle found the hole in my own
   reassurance.** I'd told him *"the card outlives the Claude, so the knowledge survives."* True
   of the **file**; says nothing about the **knowledge**. His case: *a Claude learns a juicy fact,

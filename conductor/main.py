@@ -121,6 +121,17 @@ _WAKEABLE_STATUSES = frozenset({Status.IDLE, Status.DORMANT})
 # gated on evidence of that (see _wake_unread_recipients) rather than on a stopwatch.
 _WAKE_RETRY_SECONDS = 3600.0
 
+# A FLOOR on how often any one session may be woken, no matter how much mail arrives.
+#
+# The watermark dedup stops us re-waking for the SAME unread batch. It does nothing across
+# batches — so a session the fleet is actively talking to gets woken on every new message.
+# qualcomm took 12 keystroke injections in one hour, each one stealing focus mid-work.
+#
+# Auto-delivery is not a pager. Nothing on this bus is so urgent that it cannot wait ten
+# minutes, and one /msg-check drains the whole backlog anyway — so a wake deferred is a wake
+# that will deliver MORE when it fires, not less.
+_WAKE_MIN_INTERVAL = 600.0
+
 
 def _bare_tag(tag: str | None) -> str:
     """Compare tags on a common form.
@@ -205,6 +216,10 @@ class AppState:
         # stacking /msg-checks on a session that hasn't run the first one yet.
         # PERSISTED: a restart that forgot this would re-prod every session with
         # unread mail, and a busy session's keystrokes queue -> stacked checks.
+        # tag -> when we last injected into it. The FLOOR (_WAKE_MIN_INTERVAL) is
+        # separate from the watermark dedup: dedup stops repeats for one batch;
+        # this stops a busy conversation from injecting every few minutes.
+        self._woke_at: dict[str, float] = {}
         self._wake_outstanding: dict[str, tuple[str, float]] = read_wake_state(
             settings.bus.state_dir_resolved / "coord")
         self._directed_unread: dict[str, dict[str, Any]] = {} # tag -> unread addressed to it
@@ -468,6 +483,30 @@ class AppState:
                 if self._wake_outstanding.pop(r.tag, None) is not None:
                     changed = True                        # backlog cleared -> re-arm
                 continue
+            # Only mail actually AIMED at this session may wake it. A message cc'd to half the
+            # fleet still shows in the badge (the human should see it) but is not an
+            # interruption — see _WAKE_MAX_RECIPIENTS.
+            if not info.get("wakeable", info.get("count", 0)):
+                continue
+            # THE FLOOR, AND IT IS CONDITIONAL — because a rate limit is a CONSTANT and the
+            # situation is DYNAMIC. Kyle found this: with seven Claudes on one problem the load
+            # is wildly asymmetric, and a fixed ceiling spends its one wake per ten minutes on
+            # an FYI while the message that actually BLOCKS someone waits behind it.
+            #
+            # That is priority inversion, and no choice of constant fixes it. A bigger number
+            # wakes you more for noise; a smaller one delays the thing that matters.
+            #
+            # We already built the only thing that can tell them apart and then ignored it:
+            # THE WAIT-FOR GRAPH. It knows, right now, whether anyone is HARD-blocked on you —
+            # queued for a board you hold, waiting on a service you run. That is not "someone
+            # wants to tell you something". It is "someone CANNOT PROCEED without you".
+            #
+            # So the floor stops protecting the fleet from mail and starts protecting your
+            # attention from UNIMPORTANT mail. Same mechanism; correct question.
+            if not self._is_blocking_someone(r.tag):
+                last = self._woke_at.get(r.tag, 0.0)
+                if now - last < _WAKE_MIN_INTERVAL:
+                    continue
 
             # Dedup on "has it READ yet?", NOT "is this a new batch?".
             #
@@ -519,6 +558,7 @@ class AppState:
                 continue  # busy, or attended and not in a window — retry once quiet
             await self._inject_msg_check(r, f"{info['count']} unread addressed to it")
             self._wake_outstanding[r.tag] = (seen_now, now, r.last_activity_at)
+            self._woke_at[r.tag] = now
             changed = True
         if changed:
             await asyncio.to_thread(write_wake_state, self.coord_root, self._wake_outstanding)
@@ -611,6 +651,27 @@ class AppState:
             )
             if sent:
                 del self._push_notices[key]
+
+    def _is_blocking_someone(self, tag: str | None) -> bool:
+        """Is another session HARD-blocked on this one right now?
+
+        Hard = it genuinely cannot proceed: queued for a board this session holds, or its job
+        is sitting behind this session in a service queue. NOT "awaiting a reply" — twenty
+        sessions awaiting a reply on a fast fleet is a conversation, not a crisis, and if that
+        counted here the exemption would swallow the floor whole.
+
+        This is the ONE case where interrupting a session is unambiguously right, and it is
+        the case a fixed rate limit is blindest to: the bottleneck is busy *because* it is the
+        bottleneck. The session you should interrupt least and the one you should interrupt
+        most are frequently the same session. A constant cannot adjudicate that. The graph can.
+        """
+        if not tag:
+            return False
+        me = _plain_name(tag)
+        return any(
+            e.get("hard") and e.get("dst") == me
+            for e in self.waiting.get("edges", [])
+        )
 
     def _has_open_picker(self, rec: SessionRecord) -> bool:
         """Is this session sitting on an AskUserQuestion picker right now?
