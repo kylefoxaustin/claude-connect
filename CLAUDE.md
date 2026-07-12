@@ -23,6 +23,22 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.32.1: 🪪 **`backend`'s identity silently flipped to `other:keyhole` — and I caused it.**
+  My repeated `bus.sh` migrations spliced the **sanitized** repo tag-table (`my-api/my-web/
+  my-worker`) over the **live** one, **dropping `keyhole → backend`.** backend fell through to
+  `other:$(basename)` = `other:keyhole`: **every `to:backend` reached nobody, its watermark
+  orphaned, auto-delivery off — and every automated signal said it was fine.** *"I detected it
+  because I knew my own name."* **A live instance of the doc, in the tooling, on the day it was
+  written: Class I + Class XII + payload #4** — and it generalises the human-sensor rule: *the
+  load-bearing sensor is whichever party holds the ground truth the system is reconstructing;
+  sometimes that's a session that knows its own name.* Fix: real mappings **recovered from a
+  pre-today backup** and **moved into `bus-state/tag-map`, a DATA FILE the script reads FIRST** —
+  so a script migration can no longer touch them, **structurally impossible now, not merely
+  fixed.** Verified end-to-end with the REAL script (a `send` from `keyhole/` writes `[backend]`).
+  🐛 Caught my own dangerous first draft: a `[ -n "$TAG" ] && return` at top-level scope would
+  have **aborted bus.sh on every tag-map hit** — worse than the bug being fixed; caught before it
+  shipped. Repo copy keeps the mechanism, stays sanitized (0 real-tag leaks). Added as instance
+  **C-bis** in FAILURE_MODES. 264 tests.
 - ✅ v2.32.0: 📖 **FAILURE_MODES.md rebuilt by adversarial review + `bus.sh sent` (a QUERY,
   not a receipt).** The taxonomy was **attacked by the fleet whose failures it describes** — the
   independent-estimator principle operating on the document that proposed it — and **six

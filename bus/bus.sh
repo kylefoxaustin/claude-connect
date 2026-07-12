@@ -35,12 +35,31 @@ _proj_root() {
   printf '%s\n' "$root"
 }
 
+# TAG RESOLUTION. An optional data file (`$BUS_STATE/tag-map`, "glob<TAB>tag" per line) wins
+# over this built-in table. This exists because on 2026-07-12 a migration of this script over
+# the operator's LIVE copy silently replaced the real project→tag mappings with these sanitized
+# placeholders — a session's cwd stopped matching, it fell through to `other:<dirname>`, and it
+# became unaddressable for hours while every automated signal reported it was fine. Keeping the
+# real map in a DATA FILE the script reads first makes that failure structurally impossible: a
+# script edit cannot touch data it does not contain.
+TAG=""
+BUS_STATE="${BUS_STATE_DIR:-$HOME/.claude/bus-state}"
+if [ -r "$BUS_STATE/tag-map" ]; then
+  while IFS="$(printf '\t')" read -r glob t; do
+    case "$glob" in ''|'#'*) continue ;; esac
+    case "$CWD" in $glob|$glob/*) TAG="$t"; break ;; esac
+  done < "$BUS_STATE/tag-map"
+fi
+# Never `return` here — this is top-level code, not a function; a stray return would abort the
+# whole script on every tag-map hit, which is a worse bug than the one being prevented.
+if [ -z "$TAG" ]; then
 case "$CWD" in
   */my-api|*/my-api/*)       TAG="api"    ;;
   */my-web|*/my-web/*)       TAG="web"    ;;
   */my-worker|*/my-worker/*) TAG="worker" ;;
   *)                         TAG="other:$(basename "$(_proj_root)")" ;;
 esac
+fi
 
 # Tags that participate in the AUTOMATIC hooks (SessionStart context injection +
 # UserPromptSubmit nudges). This whitelist keeps the bus out of unrelated

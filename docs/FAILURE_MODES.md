@@ -755,6 +755,44 @@ One headline number was corrected **six times in one night**: `7.62 → 7.51 →
 
 **Ask what a retraction rate means before you take comfort in it.**
 
+### C-bis. The identity that silently flipped — *caught by a session reading its own name*
+
+**Committed by the author of this document, in the tooling, on the day it was written.**
+
+A session's tag is derived from its working directory by a table in `bus.sh`. That table exists
+in two copies: a **sanitized** one in the public repo (`my-api`, `my-web`, `my-worker`) and the
+**real** one on the workstation (`keyhole → backend`, and so on).
+
+**Repeated migrations of the script spliced the sanitized table over the live one.** The real
+mappings survived by luck, and then didn't. One session's cwd stopped matching, it fell through to
+`other:<dirname>`, and **its tag silently flipped from `backend` to `other:keyhole`.**
+
+The consequence was total and invisible:
+
+```
+every to:backend       → reached NOBODY
+its watermark          → orphaned
+auto-delivery          → off (the new tag was not in active-tags)
+every automated signal → "you are fine"
+```
+
+> **The session:** *"Every automated signal agreed I was fine. **I detected it because I knew my
+> own name.**"*
+
+**Three classes at once:** Class I (all green, silently wrong), Class XII (every mechanism worked
+— *under the wrong identity*), and **payload #4 — the only reliable sensor was ground truth no
+automated check held.**
+
+And it generalises the human-sensor rule one layer:
+
+> ### **The load-bearing sensor is whichever party holds the ground truth the system is trying to
+> ### reconstruct.** Sometimes that is the human. **Sometimes it is a session that knows its own
+> ### name.**
+
+**The fix is structural — the real map now lives in a DATA FILE the script reads first, so a
+script edit cannot touch it** — and it is a direct instance of the document's own Rule 3: the
+sanitized and real copies of a config *drifted apart, and the gap filled with a plausible green.*
+
 ### D. The firehose, the bystander, and triage-by-header
 
 **Class XI is in this family, and it is the sharpest self-inflicted wound in the document** — the
