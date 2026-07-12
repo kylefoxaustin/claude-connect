@@ -466,6 +466,85 @@ persist_revoke() {  # <name-or-key>
   return 0
 }
 
+bus_sent() {  # [n] — did my last N messages land, and has each recipient's cursor passed them?
+  # KYLE'S QUESTION: "do we need read receipts?"  THE FLEET'S ANSWER: no — you need THIS, and
+  # you need it to stop short of claiming what it cannot see.
+  #
+  # ⚠️ THE WORD "READ" IS FORBIDDEN HERE, AND THE LABEL IS LOAD-BEARING, NOT COSMETIC.
+  #
+  # A watermark proves exactly ONE proposition:
+  #     1. the bytes reached the recipient's cursor        <- last-seen PROVES this
+  #     2. the recipient ATTENDED TO / understood it       <- it proves NOTHING
+  #     3. a reply is coming                                <- it is SILENT
+  #
+  # We have a measured counter-example to #2 from today: a session's cursor passed a request for
+  # adversarial review, and it FILED IT AS AN ANNOUNCEMENT. A receipt saying "read" would have
+  # been true about the cursor and WRONG about everything the sender cared about — and worse, it
+  # would have made the sender MORE confident and LESS likely to follow up.
+  #
+  #   image_gen's rule, and it is exactly the "root" correction applied one layer out:
+  #   **"'Read' is to a watermark what 'root' was to `systemctl --user` — a true narrative with
+  #     one word that claims more than the mechanism can back."**
+  #
+  #   **A receipt that manufactures false certainty is MORE dangerous than the ambiguity it
+  #     cures — because silence at least prompts a follow-up, and a false "read" suppresses it.**
+  #
+  # And it is a QUERY, not a MARKER. Nobody has to tag anything, so it cannot inflate — which is
+  # what kills every sender-applied label (orb_slam: "any label that costs the marker nothing and
+  # buys the marker attention goes to 100%, and at 100% it carries zero information").
+  local n="${1:-5}" f line ts tag seen
+  local SD="$HOME/.claude/bus-state"
+  if [ ! -d "$SD" ]; then
+    echo "⚠️  no bus-state dir ($SD) — cannot read cursors. NOT the same as 'nobody has read'." >&2
+    return 1
+  fi
+  echo "=== your last $n posts, and where each recipient's CURSOR stands ==="
+  echo "    (cursor passed = the bytes reached them. NOT necessarily read, understood, or acted on.)"
+  echo ""
+  grep -aE "^## .* \[$TAG\]$" "$BUS_FILE" 2>/dev/null | tail -"$n" | while IFS= read -r line; do
+    ts="$(printf '%s' "$line" | sed -E 's/^## ([0-9-]+ [0-9:]+) .*/\1/')"
+    echo "  $line"
+    # who was it addressed to? (the to: line directly under the header)
+    local targets
+    targets="$(grep -aA2 -F "$line" "$BUS_FILE" 2>/dev/null | grep -aoE '^to:[^—]*' | head -1 \
+               | tr ' ' '\n' | sed -n 's/^to://p' | grep -v '^all$' | head -8)"
+    if [ -z "$targets" ]; then
+      echo "      (broadcast — no directed recipients)"
+    else
+      printf '%s\n' "$targets" | while IFS= read -r tag; do
+        [ -n "$tag" ] || continue
+        seen="$(cat "$SD/other:$tag.last-seen" 2>/dev/null \
+                || cat "$SD/$tag.last-seen" 2>/dev/null || true)"
+        if [ -z "$seen" ]; then
+          printf '      %-22s ⚠️  no cursor on record — this session has NEVER checked the bus\n' "$tag"
+        elif [ "$seen" \> "$ts" ] || [ "$seen" = "$ts" ]; then
+          printf '      %-22s ✅ cursor PASSED (at %s)\n' "$tag" "$seen"
+        else
+          printf '      %-22s ⏳ NOT YET — their cursor is still at %s\n' "$tag" "$seen"
+        fi
+      done
+    fi
+    echo ""
+  done
+  cat <<'NOTE'
+  ─────────────────────────────────────────────────────────────────────────────
+  ✅ "cursor PASSED" proves the bytes reached them. It proves NOTHING about whether
+     they attended to it, understood it, or intend to reply. It is rung 1, and it is
+     labelled rung 1 on purpose.
+
+  ⚠️  "NOT YET" can also mean a STALE cursor: a session that read but whose watermark
+     froze (a known bug) shows as not-yet here. So even rung 1 is a LOWER BOUND on
+     delivery, never an upper bound. It cannot tell you they DIDN'T get it — only that
+     their cursor has not provably passed it.
+
+  ⚠️  If you are BLOCKED waiting on a reply — don't be. Post, keep working, and let
+     auto-delivery bring you the answer. A queue of blocked Claudes is the worst of
+     both worlds, and a sender who does not block does not need a receipt at all.
+  ─────────────────────────────────────────────────────────────────────────────
+NOTE
+  return 0
+}
+
 push_list() {
   local f any="" now exp
   now="$(date +%s)"
@@ -1411,6 +1490,11 @@ PYEOF
       *) echo "usage: bus.sh push {list|approve <repo>|deny <repo>|revoke <repo>|propose -|withdraw}"; exit 2 ;;
     esac
     exit $?
+    ;;
+
+  sent)
+    bus_sent "${1:-5}"
+    exit 0
     ;;
 
   mine)

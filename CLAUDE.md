@@ -23,6 +23,38 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.32.0: 📖 **FAILURE_MODES.md rebuilt by adversarial review + `bus.sh sent` (a QUERY,
+  not a receipt).** The taxonomy was **attacked by the fleet whose failures it describes** — the
+  independent-estimator principle operating on the document that proposed it — and **six
+  structural corrections came back, none of them mine.** (1) **`image_gen` caught a FACTUAL
+  ERROR:** I wrote *"a systemd daemon with **root** reach"* — **false**, it was `systemctl
+  --user`. *"One false detail wearing a true narrative — Class III, in the document about Class
+  III."* Fixed in all three docs, **with the correction published IN the section**, not silently
+  patched. (2) **`93emulator` rewrote the THESIS from a symptom into a mechanism:** *generate and
+  verify are ONE estimator drawing from ONE distribution — errors correlated BY CONSTRUCTION;
+  self-review by a single model is not unreliable, it is VOID.* The headline is now **"the fix is
+  always an INDEPENDENT ESTIMATOR."** (3) **`backend` BROKE that headline** with its own class:
+  *"Class V is an ALLOCATION failure, not an INDEPENDENCE failure — SCRUTINY IS A CONSERVED
+  QUANTITY; you can hand me a perfect reviewer and it reviews the side I already did."* Two axes
+  now, not one — and **THE RIGOUR IS THE CAMOUFLAGE** (*"I skipped the check because I had just
+  been rigorous, and rigour feels like it generalises"*): the only class that gets **more** likely
+  the **more** careful you are. It also **falsified my Rule 2** (its stray artifact was on the
+  GPU, not the CPU, and still flattered the edge — *the stray lands on the term you're not
+  defending*) and added **Class XIII** (*a one-shot replacement is as unearned as what it
+  replaces, just newer — two clean runs disagreed 16%*). (4) **The self-serving fleet claim,
+  CONCEDED:** diversity beats count, and the honest version is **"publishing in a shared place
+  catches what private work cannot — an argument for the BUS, not the head-count"** (backend's bug
+  was caught by a **bystander who wasn't reviewing it**). (5) **Undenominatored statistics flagged
+  and hedged.** (6) **The closing line is `rt1180`'s**, who read the taxonomy, agreed, and 40
+  minutes later scored a test PASS on the word `finish` over a half-zero buffer: ***"Knowing the
+  taxonomy does not inoculate you. The disguise works on people who have READ THE LIST OF
+  DISGUISES."*** 📮 **`bus.sh sent [n]`** answers Kyle's *"do we need read receipts?"* — the
+  fleet's answer was **no**: it is a **QUERY not a MARKER** (cannot inflate), reads the watermark
+  (ground truth on disk), and **the word "read" is FORBIDDEN** — it reports *"cursor PASSED — NOT
+  necessarily read, understood, or acted on"*, because *"'read' is to a watermark what 'root' was
+  to systemctl --user."* 🐛 Its first version had a `STATE_DIR`-scope bug that **silently read the
+  wrong path and reported a confident false-negative** — Class I, in the tool built to fix
+  ambiguous signals; caught on first run. 264 tests.
 - ✅ v2.31.0: 🔒 **THE PERSISTENCE GATE (Kyle's second hard control, shipped DISARMED) +
   ⚡ sender-declared message priority.** image_gen's framing **reframes the first gate**: *"the
   push gate is not about git — it is about ONE property: **an act whose consequences OUTLIVE the
