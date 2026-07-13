@@ -1505,6 +1505,9 @@ SENDERR
     STATE_DIR="$HOME/.claude/bus-state"
     LAST_SEEN=""
     [ -f "$STATE_DIR/$TAG.last-seen" ] && LAST_SEEN="$(cat "$STATE_DIR/$TAG.last-seen" 2>/dev/null || true)"
+    # The watermark advance now lives in the python (it advances to what was DISPLAYED, not the file's
+    # newest — see below). Preserve the old whitelist guard: only a whitelisted tag advances its cursor.
+    if is_whitelisted "$TAG"; then WL=1; else WL=0; fi
 
     echo "=== My session tag: [$TAG] ==="
     echo
@@ -1512,7 +1515,7 @@ SENDERR
     if [ "$MODE" = tail ]; then
       tail -80 "$BUS_FILE"
     else
-      BUS_FILE="$BUS_FILE" MY_TAG="$TAG" LAST_SEEN="$LAST_SEEN" MODE="$MODE" LIMIT="$LIMIT" \
+      BUS_FILE="$BUS_FILE" MY_TAG="$TAG" LAST_SEEN="$LAST_SEEN" MODE="$MODE" LIMIT="$LIMIT" WL="$WL" \
       python3 - <<'PYEOF'
 import os, re, sys
 
@@ -1571,26 +1574,58 @@ for m in msgs:
             continue                                  # addressed only to others
     sel.append(m)
 
+CAP = 20                   # default page size for a large backlog with no explicit -n
+total_unread = len(sel)
+remaining = 0
 if not last:
     sel = sel[-10:]        # never checked before: recent context, not the whole archive
-if limit:
-    sel = sel[-limit:]
+    if limit:
+        sel = sel[-limit:]
+elif limit:
+    sel = sel[-limit:]     # explicit -n: the newest N
+elif total_unread > CAP:
+    # Large backlog, no explicit -n: page it OLDEST-first so the read is resumable, and — the point —
+    # so the emission stays small enough that the transport is unlikely to truncate it below the
+    # cursor we are about to commit. 91emulator (2026-07-13) measured a `check` that emitted 200
+    # messages / 64 KB, got truncated by the harness to a ~2 KB preview, and advanced the cursor to
+    # the file's newest anyway -> 193 messages marked read, never received. The AIRTIGHT fix is the
+    # two-phase commit (docs/ARCHITECTURE_VISION.md §2.3.2); this bounds the trigger in the meantime.
+    sel = sel[:CAP]
+    remaining = total_unread - CAP
 
 if not sel:
     print("No new messages since your last check (%s)." % (last or "ever"))
     print("(`--all-tags` = new traffic addressed to anyone · `--all` = full recent tail)")
-    sys.exit(0)
+    sys.exit(0)            # nothing shown -> do NOT advance the watermark
 
 for m in sel:
     print("\n".join(m["lines"]).rstrip())
     print()
 
 label = "new" if mode == "new" else "new (all tags)"
-print("--- %d %s message(s). `--all-tags` for traffic addressed to others · "
-      "`--all` for the full tail. ---" % (len(sel), label))
+if remaining:
+    print("--- %d of %d unread shown (oldest first) · %d REMAIN — run `check` again. ---"
+          % (len(sel), total_unread, remaining))
+else:
+    print("--- %d %s message(s). `--all-tags` for traffic addressed to others · "
+          "`--all` for the full tail. ---" % (len(sel), label))
+
+# Advance the watermark ONLY to the newest message actually DISPLAYED — never to the file's newest
+# (the old mark_seen_if_bus_tag bug), never when nothing was shown, and never past mail this mode or
+# cap did not show. mcxn947qemu (2026-07-13): a narrow `check` must not mark-read what `--all-tags`
+# should still surface. backend (2026-07-11): never advance past mail you did not SHOW.
+if os.environ.get("WL") == "1":
+    sd = os.path.expanduser("~/.claude/bus-state")
+    try:
+        os.makedirs(sd, exist_ok=True)
+        with open(os.path.join(sd, me + ".last-seen"), "w") as f:
+            f.write(sel[-1]["ts"] + "\n")
+        with open(os.path.join(sd, me + ".pending"), "w") as f:
+            f.write("0\n")
+    except OSError:
+        pass
 PYEOF
     fi
-    mark_seen_if_bus_tag
     ;;
 
   all)
