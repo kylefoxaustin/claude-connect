@@ -47,6 +47,28 @@ CLAUDE_HOME="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 INPUT="$(cat 2>/dev/null || true)"
 [ -n "$INPUT" ] || exit 0
 
+# ---- ROLE PRE-CHECK (v4 §3.4) — the referee's mid-flight dial -----------------------------
+# Runs BEFORE the persistence fast-path, because an Observer may not write ANY file, not only a
+# persistent one. Gated on a members file EXISTING, so a fleet that has set NO roles pays a single
+# stat() and nothing else — default = Peer = byte-for-byte today. Enforces the exact write-TOOLS
+# here (the tool-level ceiling); an Observer's Bash writes are the OS floor's job (§3.4's layering),
+# so is_write=0 is passed and Bash falls through to the normal persist logic.
+_MEMBERS="${BUS_STATE_DIR:-$HOME/.claude/bus-state}/members"
+if [ -s "$_MEMBERS" ]; then
+  _here="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" 2>/dev/null && pwd)"
+  [ -r "$_here/member-registry.sh" ] && . "$_here/member-registry.sh"
+  [ -r "$_here/role-gate.sh" ]       && . "$_here/role-gate.sh"
+  if command -v role_verdict >/dev/null 2>&1; then
+    _rp="$(printf '%s' "$INPUT" | python3 -c 'import json,sys
+d=json.load(sys.stdin); print(d.get("session_id","")+"\t"+d.get("tool_name",""))' 2>/dev/null || true)"
+    _SID="${_rp%%$(printf '\t')*}"; _TOOL="${_rp#*$(printf '\t')}"
+    if _reason="$(role_verdict "$(role_of "$_SID")" "$_TOOL" 0)"; then
+      printf '🔒 ROLE GATE — %s\n' "$_reason" >&2
+      exit 2
+    fi
+  fi
+fi
+
 # ---- fast path -------------------------------------------------------------------
 # Exit instantly if the payload mentions none of the dangerous nouns. This runs on EVERY
 # Bash/Edit/Write in EVERY session, so the common case must cost one grep and nothing else.
