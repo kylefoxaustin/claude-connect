@@ -525,11 +525,37 @@ identity: **every hook payload carries `session_id`**, assigned by Claude Code, 
 agent, and *verified stable across `--continue`/`--resume`*. We already key the decision queue on it.
 So:
 
+- **A member is the durable CONTEXT, not the directory.** A member is the persistent worker/conversation;
+  `session_id` is its credential. **Identity follows the context, and the project is a soft label on it** —
+  true ~99% of the time, used for display and default addressing, but *not* the identity. This is what
+  makes the operator's valued flexibility work: a Claude can extend its mandate into an adjacent repo
+  or a different-but-related task and stay the *same member* — the tag drifts, the identity doesn't.
+  Pinning identity to the folder would turn that feature into a bug (the tag-drift class).
 - **Registry:** `session_id → member → role`, stored in `state/roles/` (a data file the referee reads
-  first — the `tag-map` pattern, so no script migration can touch it).
-- **Binding:** Conductor registers the `session_id` against a member at launch/adoption (it already
-  knows which sessions it spawned). Project dir stays a *display hint* and a fallback for foreign
-  sessions, never the credential.
+  first — the `tag-map` pattern, so no script migration can touch it). Cursor, role, and leases all
+  key on the **member**.
+- **Binding is blunt, because the ambiguous case is not one the operator creates on purpose.**
+  `--continue` preserves the `session_id` → **same member** (cursor and role carry over); a genuinely
+  fresh `claude` is a **new member** with a fresh start — which is correct, because for the operator a
+  cold launch *is* "starting something," and "resume this worker" is done via the dormant dock
+  (`--continue`). So: **two `session_id`s = two members, full stop** — no resume-vs-concurrent
+  arbitration, no adoption card for it, because the operator confirmed he *never intentionally* runs
+  two sessions in one repo. (The one time it happened — rt1180's dual-session — was an accident, and
+  §3.4.1 below is its real fix.)
+- **Conductor registers the `session_id` → member at launch** (it already knows which sessions it
+  spawned); project dir is a display hint and a fallback for foreign sessions, never the credential.
+
+#### 3.4.1 The rt1180 dual-session was an OBSERVABILITY bug, not an identity bug
+
+The one accidental two-in-one-repo case did not happen because the identity model was wrong; it
+happened because **the operator could not tell the first session was still alive.** It had lost its
+`/RC` (remote control), so it was invisible in the phone's Claude app, and a crash was the reasonable
+assumption — so he launched a replacement, and now there were two. No identity scheme prevents that;
+**observability does.** Conductor's job — the thing it is *for* — is to surface live sessions,
+including ones that are alive-but-lost-`/RC`, and to **warn before a launch into a repo that already
+has a live member** (*"⚠️ this project already has a live session (lost `/RC` 40m ago) — resume it, or
+start a second?"*). That guard would have prevented the whole episode, which is strictly better than
+arbitrating identities after the duplicate exists. *(Added to the build list; see Part 4 / Part 5.)*
 - **The unregistered-session question — resolved by round 2 into a ratchet, not a permanent posture.**
   A `session_id` the referee hasn't bound yet (hand-launched, or the instant before Conductor
   registers) defaults to **Peer** *for the migration window only* — because "unregistered = full local
