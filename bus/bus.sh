@@ -617,6 +617,16 @@ def plain(t):
     return t.lower()
 
 me_p = plain(me)
+
+# The human (operator) NEVER posts a bus reply — Kyle reads through the UI and ACTS; his
+# "answer" is action in the world, never a bus message. So his edge could never close by the
+# reply rule and would dangle as a permanent false "open ask" until the decay window (image_gen
+# found this by dogfooding the tool). A human is a CC you INFORM, not a peer thread you are
+# blocked behind — you don't wait ON Kyle the way you wait on a peer. Exclude him from the
+# inferred waiting-on set entirely. (This is the same rung-split as `sent`: for a non-posting
+# recipient, "reply" is the wrong close signal — and for the human it never arrives at all.)
+NONPOSTING = {"operator", "human", "kyle"}
+
 HDR = re.compile(r'^## (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) \[([^\]]+)\]\s*$')
 TO  = re.compile(r'\bto:(\S+)')
 
@@ -660,6 +670,7 @@ for i, m in enumerate(msgs):
     open_on = []
     for r in sorted(tgt):
         if r == me_p: continue
+        if r in NONPOSTING: continue   # the human never posts a reply; his edge can't close
         replied = any(later["snd"] == r and me_p in later["to"] and later["e"] >= m["e"]
                       for later in msgs[i+1:])
         if not replied:

@@ -122,6 +122,19 @@ if tool != "Bash":
     sys.exit(0)
 cmd = ti.get("command", "") or ""
 
+# NORMALIZE NEWLINES TO A COMMAND SEPARATOR. The Bash tool routinely sends MULTI-LINE commands
+# (a `cd X` on line 1, the real work on line 2). The write-verb detection below anchors on `^`
+# WITHOUT re.MULTILINE, and the systemctl/crontab/segment checks split on `[;&|(]` — and NONE of
+# those include a newline. So a `cp/mv/install/ln` (or `systemctl`/`crontab`) on any line after
+# the first was INVISIBLE: its `^` was the PREVIOUS line, and no separator sat before it.
+#
+# This is how `cd /tmp\ninstall src ~/.claude/bin/bus.sh` walked straight through an ARMED gate
+# and updated a live hook — found the moment a real multi-line install did exactly that. It is
+# bug #1's cousin: the redirect regex is global so `>` on line 2 was caught, which made the hole
+# look closed while cp/mv/install/ln stayed wide open. A newline separates simple commands
+# exactly as `;` does, so treat it as one and every downstream anchor sees the command.
+cmd = re.sub(r'[\r\n]+', ' ; ', cmd)
+
 # A systemd unit, a cron job: they run after we are gone, by definition.
 #
 # ⚠️ THE WORD MUST BE AN INVOCATION, NOT THE WORD.
@@ -178,7 +191,7 @@ targets += re.findall(r'>>?\s*([~/][^\s;&|]+)', cmd)
 
 # Per-segment verbs. Split on shell separators so a write in one segment cannot claim a path
 # that belongs to another.
-for seg in re.split(r'[;&|]+|\&\&|\|\|', cmd):
+for seg in re.split(r'[;&|()]+', cmd):   # incl. () so a `(install … )` subshell can't hide the verb
     paths = PATHS.findall(seg)
     if not paths:
         continue

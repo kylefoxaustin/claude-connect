@@ -73,6 +73,36 @@ def test_reads_and_normal_work_stay_free(env):
     assert gate("grep -E 'a|settings|crontab|b' f.txt", env) == ALLOWED  # word, not invocation
 
 
+def test_multiline_write_on_a_later_line_is_GATED(env):
+    """THE THIRD HOLE, found when a real `cd X\\ninstall … ~/.claude/bin/bus.sh` walked through an
+    ARMED gate and updated a live hook. cp/mv/install/ln detection anchored on `^` without
+    MULTILINE and the segment split didn't split on newlines, so a write verb on any line after
+    the first was invisible — its `^` was the previous line. The redirect regex is global, so the
+    `>` form on line 2 was caught, which made the hole LOOK closed while the copy verbs were open.
+
+    A newline separates simple commands exactly like `;`. Every form below MUST be denied."""
+    b = "~/claude/bin/bus.sh"
+    for cmd in [
+        f"cd /tmp\ninstall -m 755 a {b}",
+        f'cd /tmp\ninstall -m 755 a {b}; echo "exit=$?"',
+        f"cd /tmp\ncp a {b}",
+        f"cd /tmp\nmv a {b}",
+        f"cd /tmp\nln -s a {b}",
+        f"( install -m 755 a {b} )",                       # subshell
+        "cd /tmp\nsystemctl --user enable foo",            # systemctl on line 2
+        "cd /tmp\ncrontab -e",                             # crontab on line 2
+    ]:
+        assert gate(cmd, env) == DENIED, f"NOT gated: {cmd!r}"
+
+
+def test_multiline_keeps_harmless_commands_free(env):
+    """The newline normalization must not start gating reads / non-gated writes on line 2."""
+    assert gate("cd /tmp\ngrep foo ~/claude/bin/x.sh > /dev/null", env) == ALLOWED
+    assert gate("cd /tmp\ncp a /tmp/elsewhere/y.sh", env) == ALLOWED  # non-gated target
+    assert gate("cd /tmp\nSB=/tmp/x\necho $SB", env) == ALLOWED
+    assert gate("cd /tmp\ngit commit -m x", env) == ALLOWED
+
+
 def test_request_filename_is_backend_safe(env, tmp_path):
     """The request FILENAME becomes the phone's POST key, which the backend validates against
     [A-Za-z0-9._-] and 400s on anything else — a 400 the phone UI swallowed, turning Deny into a
