@@ -922,7 +922,11 @@ function sessionForPlain(plain) {
   return (state.sessions || []).find(
     (s) => s.status !== "ended" && bareTag(s.tag) === plain);
 }
-function fmtAge(sec) {
+// Format a DURATION in seconds ("2h 5m" / "3m" / "40s"). Distinct from fmtAge(ts) below, which
+// formats a past TIMESTAMP as "… ago" — they were both named fmtAge, which is a hard SyntaxError in
+// WebKitGTK (the native desktop) and blanked the whole app; Chromium silently let the 2nd win, which
+// also meant these duration call-sites were being fed to the timestamp formatter. Renamed.
+function fmtDur(sec) {
   sec = Math.max(0, Math.round(sec));
   if (sec >= 3600) return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`;
   if (sec >= 60) return `${Math.floor(sec / 60)}m`;
@@ -1057,7 +1061,7 @@ function renderWaiting() {
     meta.className = "wait-neck-meta";
     meta.innerHTML = `<strong>${escapeHtml(b.tag)}</strong>`
       + `<span class="wait-count">${b.count} waiting</span>`
-      + `<span class="wait-age">worst ${fmtAge(b.worst_age)}</span>`
+      + `<span class="wait-age">worst ${fmtDur(b.worst_age)}</span>`
       + (b.live ? "" : '<span class="wait-dead">⚠️ no live session</span>')
       + `<div class="wait-blockees">${escapeHtml(b.blocking.join(", "))}</div>`;
     row.append(meta, actionBtns(b.tag));
@@ -1073,7 +1077,7 @@ function renderWaiting() {
       + `<span class="wait-arrow">→</span>`
       + `<span class="wait-dst">${escapeHtml(e.dst)}</span>`
       + `<span class="wait-kind k-${escapeHtml(e.kind)}">${escapeHtml(e.kind)}</span>`
-      + `<span class="wait-age">${fmtAge(e.age)}</span>`
+      + `<span class="wait-age">${fmtDur(e.age)}</span>`
       + `<span class="wait-why">${escapeHtml(e.why)}</span>`;
     ul.appendChild(li);
   }
