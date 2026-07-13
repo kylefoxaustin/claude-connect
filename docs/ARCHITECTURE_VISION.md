@@ -1,19 +1,24 @@
 # Conductor + the Bus — Architecture Vision
 
-> **Status: DRAFT v2 — round-1 review incorporated.** Written from first principles plus four
-> parallel research threads (object-capability security, actor/OTP supervision, durable-log
-> messaging, and human-approver UX), then revised against a fresh-Claude browser review and a
-> verification of the actual Claude Code hook contracts. It is meant to keep being torn apart — Kyle,
-> the browser again, then the fleet. The "Open questions — round 2" section lists what's still open.
+> **Status: DRAFT v3 — two review rounds incorporated; converged, ready for the fleet.** Written from
+> first principles plus four parallel research threads (object-capability security, actor/OTP
+> supervision, durable-log messaging, human-approver UX), then hardened across two fresh-Claude
+> browser reviews and a **live behavioral test of the Claude Code hook contract on the installed
+> harness.** The "Open questions" section is now a resolution table — nothing is left deliberately
+> open. Next stop: the fleet.
 >
-> **What changed in v2 (from round-1 review):** identity now keys on the harness-minted `session_id`,
-> not a directory (Finding 1 — v1 repeated the tag-drift failure class); the delivery plane is
-> *shrunk* via harness-native hooks rather than *hardened* (§2.3, corrected against the real hook
-> contract — a Stop hook's `reason` is **not** shown to the model, so delivery rides `UserPromptSubmit`
-> + `SessionStart`); the Observer role gains a construction-time + OS-level floor (§3.4); a new
-> **Part 3.5** names inter-agent message forgery as the largest unmodeled risk (Finding 5); §2.7 adds
-> version-skew defenses and one canonical install path; §2.2 adds log segmentation; and **Part 6**
-> makes the controls *tested* (canary self-tests + FAILURE_MODES-as-regression) rather than believed.
+> **What changed across the rounds:** identity keys on the harness-minted `session_id`, not a directory
+> (v1 repeated the tag-drift failure class); the delivery plane is *shrunk* to **three harness-native
+> read points** — `SessionStart`, `UserPromptSubmit`, and the **`Stop`-hook `reason`** (v2 wrongly
+> claimed the Stop reason wasn't model-visible; a **round-3 live test proved it is**, and the browser
+> was right); keystroke injection drops to a mere wake-trigger, making the storm idempotent and the
+> void a mere delay. The Observer role gains a construction ceiling + a shelf-ready OS sandbox floor;
+> the unbound-session default becomes a **ratchet** (Peer → adoption-card → Observer); **Part 3.5**
+> names inter-agent message forgery as the largest unmodeled risk; §2.7 adds version-skew defenses and
+> one canonical install path; §2.2 adds log segmentation; and **Part 6** makes the controls *tested* by
+> canarying the **referee** (synthetic payloads on deploy) + heartbeat-absence for wiring — zero
+> canary acts in real sessions. The throughline the doc now argues by example: *every hook-contract
+> assumption is re-verified on the live harness before it's built on.*
 >
 > **The one-paragraph version:** the bus was born to carry a conversation and has quietly been drafted
 > into two more jobs — holding coordination state and delivering messages — with contradictory
@@ -206,51 +211,67 @@ simple" and "keep it O(new)" are both load-bearing, not aspirational.) Concretel
 broker is pure overhead. We adopt the *discipline* (immutable log, explicit cursors, schema-on-write,
 replay) without the infrastructure.
 
-### 2.3 Delivery: make injection *rare*, not merely honest (revised after hook-contract verification)
+### 2.3 Delivery: make injection *rare* — three harness-guaranteed read points (settled by live test)
 
-The v1 draft tried to make keystroke injection *honest*. The better move — from the round-1 review,
-then corrected against the actual Claude Code hook contracts — is to make it *rare*, by using the
-harness's own lifecycle hooks as the read path so that "did the keystroke land?" (unknowable) stops
-being the question that matters.
+The v1 draft tried to make keystroke injection *honest*. The better move — from the round-1 review —
+is to make it *rare*, by using the harness's own lifecycle hooks as the read path so that "did the
+keystroke land?" (unknowable) stops being the question that matters. There are **three** such points,
+and all three are content-delivery, not just triggers.
 
-**What the harness actually guarantees (verified, not assumed):**
-- **`UserPromptSubmit` injects `additionalContext` alongside every submitted prompt.** Our
-  `prompt-check` hook already lives here — so **any session that takes another turn reads its unread
-  mail, guaranteed, with zero dependency on a keystroke landing.** Promote this from "surfaces bus
-  lines" to *the* read path.
-- **`SessionStart` injects context on start and on resume** (`source:"resume"`), so a relaunched
-  dormant session reads its mail on the way back up.
-- **A `Stop` hook can prevent a session going idle** while it has unread *directed* mail (guarded by
-  `stop_hook_active`, which the harness force-releases after 8 blocks). ⚠️ **Correction to the review:
-  a Stop hook's `reason` is NOT shown to the model** — `block` keeps the session from idling, but it
-  does *not* deliver content. Content delivery is the two context-injection hooks above; the Stop
-  hook is only the "don't fall asleep with mail waiting" latch.
+> **Settled empirically, because a doc dispute deserved a test.** v2 wrongly "corrected" the review to
+> say a `Stop` hook's `reason` is *not* shown to the model. A round-3 live test on the installed
+> harness (Claude Code 2.1.207, Skippy) proved the opposite: a Stop hook that blocked with a reason
+> instructing the model to emit a token caused the model to *respond to that reason* — so **the Stop
+> `reason` IS delivered to the model.** The browser review was right; the docs-derived correction was
+> wrong. (The test doubles as a Part-3.5 demo: the reason was phrased as an injection and the model
+> *refused* it — proof it was received, and a live example of why the delivery channel must be
+> trusted-writer-only.) The test lives in the scratchpad (`stop-canary.sh`, `stoptest.out`).
+
+**The three harness-guaranteed delivery points (verified):**
+- **`SessionStart`** injects context on start and resume (`source:"resume"`) — mail on the way up,
+  including after a dormant relaunch.
+- **`UserPromptSubmit`** injects `additionalContext` alongside every submitted prompt — where our
+  `prompt-check` hook already lives. Promote it from "surfaces bus lines" to *the* baseline read path.
+- **`Stop`** delivers mail *in the `block` `reason`* at every turn-end — the **earliest** possible
+  moment for an actively-working session, ingested that same turn instead of waiting for the next
+  prompt. Guarded by `stop_hook_active` (the harness force-releases after 8 blocks), so it is
+  effectively **one delivery attempt per stretch of work** — which is fine, because `UserPromptSubmit`
+  is the guaranteed backstop. The reason is written as an instruction (*"You have 2 unread directed
+  messages: … Process them, then you may stop"*), capped under the ~10k-char hook-output limit;
+  overflow degrades to *"run `bus.sh check`"*.
 
 **What this does to the failure modes:** keystroke injection shrinks from *the delivery mechanism* to
 *one trigger that makes an idle session take a turn* — and if the trigger fails, the mail still lands
-the instant the session next does anything. So:
+the instant the session next hits any of the three points. So:
 - **The storm becomes idempotent noise.** A double-wake re-reads a cursor that has already advanced —
   nothing is re-delivered. (Dedup is the cursor, not a heuristic.)
-- **The void becomes a delay, not a loss.** A wake that's swallowed by a busy session just means the
-  mail is read on that session's next `UserPromptSubmit` instead. It cannot vanish.
+- **The void becomes a delay, not a loss.** A wake swallowed by a busy session just means the mail is
+  read at its next Stop/`UserPromptSubmit` instead. It cannot vanish.
 
 **The rules that still hold, now on a firmer base:**
 - **At-least-once + idempotency, keyed on the cursor.** Exactly-once is provably impossible; the
   cursor being authoritative and atomically advanced is what makes re-triggering safe.
 - **The read-offset is explicit, committed deliberately, and means exactly one rung.** No operation
   advances another operation's cursor. (The `send`-ate-your-mail bug, impossible.)
-- **The acknowledgment ladder is layered and never promoted** — and one rung is now a *fact*, not an
-  inference: "read" = *the `UserPromptSubmit`/`SessionStart` hook returned this message as context in
-  turn N*, an event the hook itself appends to `control.jsonl`. No transcript-mtime forensics.
+- **The acknowledgment ladder is layered and never promoted** — and "read" is now a *fact*: whichever
+  of the three points delivered a message appends its own read event to `control.jsonl`, stamped with
+  *which point delivered it* (free provenance). No transcript-mtime forensics.
 
-  > **composed → delivered (a lifecycle hook fed it to the loop) → read (the hook logged that it did)
-  > → acted-on (an observable reply with content).**
+  > **composed → delivered (a lifecycle hook fed it to the loop — SessionStart / UserPromptSubmit /
+  > Stop-reason) → read (that hook logged it) → acted-on (an observable reply with content).**
 
   "Delivered" is not "read"; "read" is not "acted-on." The only trustworthy proof of *acted-on* is a
   reply with content — exactly what `bus.sh waiting`'s close-by-reply already encodes.
   *"'read' is to a watermark what 'root' was to systemctl --user."*
+- **The latch is cursor-keyed so it can never hold a session hostage (Q2).** The Stop path blocks at
+  most **once per message ID**: it fires only for mail newer than the last delivered cursor, and a
+  message delivered through *any* of the three points can never trigger it again. "The latch keeps a
+  session awake indefinitely" becomes unrepresentable, not merely tuned away.
+- **"Kyle is here" is derived, never declared (Q2).** A session the workbench shows as *focused* is
+  attended; the latch defers there and lets the mail ride Kyle's own next message via
+  `UserPromptSubmit`. Derived state over a manual flag — the §4.2 rubric again.
 - **The one honest cost:** the Stop hook runs on *every* turn-end and blocks the user-visible loop, so
-  the mail check there must be a single flock'd cursor read, single-digit milliseconds — measured,
+  the no-mail common case must be a single flock'd cursor read, single-digit milliseconds — measured,
   not hoped. A slow Stop hook is friction on the common path, which is the exact resentment we're
   trying to avoid.
 
@@ -374,22 +395,40 @@ So:
 - **Binding:** Conductor registers the `session_id` against a member at launch/adoption (it already
   knows which sessions it spawned). Project dir stays a *display hint* and a fallback for foreign
   sessions, never the credential.
-- **The unregistered-session question (open — see Open Questions):** what role does the referee apply
-  to a `session_id` it hasn't bound yet (a hand-launched session, or the instant before Conductor
-  registers)? Fail-safe (default **Observer**) is safest but breaks a manually-launched session's
-  ability to work; backward-compat (default **Peer**) preserves today but means unregistered = full
-  local authority. Current lean: **Peer + a loud unregistered-session warning** (matches the
-  migration's backward-compat rule and the existing tag-warning), but this is a genuine fork.
+- **The unregistered-session question — resolved by round 2 into a ratchet, not a permanent posture.**
+  A `session_id` the referee hasn't bound yet (hand-launched, or the instant before Conductor
+  registers) defaults to **Peer** *for the migration window only* — because "unregistered = full local
+  authority" is the very default-open shape Part 3 exists to kill, so it can't be the forever answer.
+  The reason fail-safe *felt* too expensive is that binding was invisible plumbing; make it visible
+  and cheap and the safe default becomes free:
+  1. **Adoption card first.** An unbound `session_id` in hook traffic raises a *"New session — adopt as
+     Peer / Observer / ignore"* card in the Needs You queue (ticket tier, not a page). One tap binds
+     it; hand-launching costs Kyle five seconds, not a blocked workflow.
+  2. **Interim tightening at zero cost to work.** Even while unbound-defaults-to-Peer, an unbound
+     session is **denied Trusted elevation and denied board leases** — the two highest-blast-radius
+     grants. It can still edit, commit, and talk. That bounds the compat window's exposure without
+     breaking anyone.
+  3. **The ratchet.** Once launch/adoption binding has run clean for an agreed period (say two weeks
+     with no spurious unbound warning), **flip the default to Observer**, announced on the bus. The
+     adoption card makes the flip painless. *Fail-safe isn't inherently expensive — it's expensive
+     when adoption is manual.*
 
 **Enforcement is three layers, and the hook is only the middle one (Finding 3):**
 
 1. **Construction (the ceiling)** — an Observer launches with Write/Edit/MultiEdit/NotebookEdit
    *absent from its tool set* (`--disallowedTools`/permission-deny), not merely gated. What isn't in
    the toolbox can't be reached by a clever prompt.
-2. **OS (the floor, for Bash)** — if read-only must be a *guarantee* not a posture, run Observer
-   sessions under a separate UID (or a bwrap/landlock sandbox with read-only binds outside a scratch
-   dir). *Permissions belong in the kernel, not in grep* — one `observer` user closes every
-   exotic-Bash hole at once, forever, with zero pattern-matching. (Effort call flagged for Kyle.)
+2. **OS (the floor, for Bash) — ship profile-only, keep a tested sandbox wrapper on the shelf (Q3).**
+   The effort tiers honestly: **(a)** launch-profile alone is a strong *posture* and ships now (zero
+   infra); **(b)** a ~10-line **bwrap/landlock wrapper** (read-only binds over the projects tree,
+   tmpfs scratch, no global state, per-launch opt-in) is the right middle — *kernel-enforced, costs
+   nothing until invoked, touches nothing global*; **(c)** a separate UID is the strongest but taxes
+   git/ssh/ownership across the whole tree permanently, for a guarantee the wrapper already gives
+   per-task. **Rubric for reaching past (a):** *would you be more than annoyed if this Observer
+   wrote something?* Extra-eyes review of your own tree → profile is enough. An untrusted/unfamiliar
+   repo, or anywhere a write is a real incident → launch through the wrapper. Build and test the
+   wrapper now (an afternoon) so task-time is a flag, not a project: `conductor launch --role observer
+   --sandbox`, padlock on the tile. *Permissions belong in the kernel, not in grep.*
 3. **Hook (the dial)** — the `PreToolUse` role check remains, but its job is **mid-flight revocation
    and elevation**, the thing launch profiles can't do — not primary enforcement. Fail-closed on
    Edit/Write (exact), best-effort on Bash (honest), same split we ship.
@@ -535,12 +574,12 @@ control plane.
    replay if wrong.
 
 3. **★ Hook-native delivery — do this early, right after offsets move.** Promote `prompt-check`
-   (`UserPromptSubmit`) + `SessionStart` into *the* read path and add the Stop-hook "don't idle with
-   unread directed mail" latch, so keystroke injection drops to a mere wake-trigger. Sequenced here,
-   ahead of capabilities, **because it removes the buggiest plane rather than hardening it** — every
-   week injection stays the primary read path is a week the storm/void failure modes stay live.
-   *Guarantee preserved:* injection still works as a fallback; if a wake is lost, mail lands on the
-   next turn.
+   (`UserPromptSubmit`) + `SessionStart` into the read path and add the **Stop-reason delivery**
+   (cursor-keyed, §2.3) as the earliest read point, so keystroke injection drops to a mere
+   wake-trigger. Sequenced here, ahead of capabilities, **because it removes the buggiest plane rather
+   than hardening it** — every week injection stays the primary read path is a week the storm/void
+   failure modes stay live. *Guarantee preserved:* injection still works as a fallback; if a wake is
+   lost, mail lands at the session's next turn-end or prompt.
 
 4. **Capability/role model — backward-compatible by default.** Add the role file + the one hook
    enrichment, and **default every session to `Peer` — byte-for-byte today's behavior** (full local
@@ -563,43 +602,63 @@ control plane.
 
 The doc creates several *new* referees, and failure class #1 — *a control that partly works looks
 exactly like one that works* — applies to every one of them. This whole week is the proof: every gate
-hole was found by **walking into it**, not by a test. Two mechanisms make that discipline structural:
+hole was found by **walking into it**, not by a test. Round 2 sharpened this: **you're canarying the
+wrong object if you canary the session — test the *referee*.** A hook is just a script that reads a
+JSON payload on stdin; you don't need a live Claude to test it, you pipe it the exact payload the
+harness would send and assert the verdict. That splits the problem cleanly and drops the blast radius
+to zero:
 
-1. **Canary self-tests.** At `SessionStart` (or on a schedule), each gate is deliberately made to
-   attempt one representative *denied* act, and denial is asserted. **A canary that the gate lets
-   *through* pages Kyle at the top tier of the Needs You queue.** A gate that has never been walked
-   into is one you *believe in*, not one you've *verified* — and belief is what shipped three holes.
-2. **`FAILURE_MODES.md` becomes a regression suite, not a memoir.** Each named class → a test against
-   the new architecture: *kill Conductor mid-delivery, assert zero message loss; corrupt a projection,
-   assert replay reconstructs it; splice the registry, assert the referee still resolves identity;
-   post a forged "Kyle says…" message, assert it moves no gated act.* The doc's central promises
-   ("Conductor down never loses a message," "a corrupt projection is recoverable") are currently
-   *asserted*; they're cheap to make *tested* — and this system has already demonstrated it punishes
-   untested confidence.
+1. **Logic correctness → an out-of-band synthetic suite.** A harness invokes each gate script directly
+   with synthetic payloads: one representative denied act per role, the unbound-`session_id` case, and
+   — *permanently* — **every historical hole as a regression** (the hardcoded path, the tilde write,
+   the multiline command). Runs on every deploy of `hooks/`/`bus.sh` (this *is* §2.7's
+   checksum-and-deploy ritual — one atomic step, not two) plus a cron. **Zero real sessions, zero side
+   effects, zero queue traffic. A synthetic denied-act that *passes* pages Kyle top-tier.** This is
+   where FAILURE_MODES-as-regression actually lives — and it's exactly the shape of the scratchpad
+   tests we already write against the real script.
+2. **Wiring liveness → observation, not injection.** The one thing synthetics can't prove is that the
+   hook is *registered and firing* in live sessions — a deleted `settings.json` entry fails
+   silent-and-open (failure class #7). Solve it with zero extra acts: **every gate appends a one-line
+   heartbeat event to `control.jsonl` on invocation, and Conductor alarms on its absence** — a session
+   with tool traffic but no gate heartbeats means a hook isn't firing. Detection by observing normal
+   traffic; **no canary act ever runs inside a real session.**
+
+So the old "fleet-wide or scheduled?" question dissolves: **synthetic-on-deploy + cron for logic,
+heartbeat-absence for wiring.** Blast radius is zero by construction.
+
+`FAILURE_MODES.md` becomes the seed list for suite (1): each named class → a test — *kill Conductor
+mid-delivery, assert zero message loss; corrupt a projection, assert replay reconstructs it; splice
+the registry, assert the referee still resolves identity; post a forged "Kyle says…" message, assert
+it moves no gated act.* The doc's central promises are currently *asserted*; they're cheap to make
+*tested*, and this system has already demonstrated it punishes untested confidence — most recently in
+§2.3, where a docs-derived "correction" survived exactly until someone ran it.
 
 ---
 
-## Open questions — round 2
+## Open questions — status after round 2 (converged)
 
-**Resolved by round 1 + the hook-contract check** (folded into the doc above): identity keys on
-`session_id` not PID→cwd (§3.4); read-only is enforced by launch-profile + OS floor, not best-effort
-Bash (§3.4, was Q4); fencing tokens for boards only (§2.6, was Q3); grant Trusted from PC, revoke from
-anywhere (Q5 — reversibility rubric); Service is Peer-attenuated but keeps its UI name (Q1);
-control-plane extraction scoped to planes that have actually bitten us (Q2); default-Peer is genuinely
-zero-cost, watch only the Stop-hook and role-file hot paths (Q6).
+Every fork raised across two review rounds is now resolved and folded into the doc above. Nothing is
+left deliberately open; what remains is the *"re-verify on the live harness before building"* rigor
+that §2.3's live test just demonstrated the value of.
 
-**Still genuinely open — the questions I'm putting back to the browser and the fleet:**
+| Question | Resolution | Where |
+|---|---|---|
+| Identity anchor | `session_id`, not PID→dir (harness-minted, unforgeable, resume-stable) | §3.4 |
+| Delivery mechanism | 3 harness read points (SessionStart / UserPromptSubmit / **Stop-reason**); injection is a mere wake-trigger | §2.3 |
+| Stop `reason` visible to model? | **Yes** — settled by live test on Skippy (Claude Code 2.1.207) | §2.3 |
+| Unbound-`session_id` default | Peer *in the compat window* → adoption card + interim tightening → **ratchet to Observer** | §3.4 |
+| Stop-latch hostage risk | cursor-keyed (≤1 block per message ID); "Kyle here" derived from focus | §2.3 |
+| Read-only enforcement | launch-profile ships; **tested bwrap wrapper on the shelf**; UID only if ever needed | §3.4 |
+| Canary blast radius | canary the **referee** (synthetic-on-deploy + cron) + heartbeat-absence for wiring; **zero** real-session acts | Part 6 |
+| Fencing tokens | boards only (irreversible); not GPU | §2.6 |
+| Where roles are set | grant Trusted PC-only; revoke from anywhere (reversibility rubric) | §3.3–3.4 |
+| Service vs. Peer | attenuated Peer, keeps its UI name | §3.3 |
+| Control-plane scope | only planes that have actually bitten us (offsets, leases, grants/roles) | §2.2 |
+| Efficiency cost | default-Peer is byte-for-byte today; watch only Stop-hook + role-file hot paths | §2.3, §3.4 |
 
-1. **Default role for an *unbound* `session_id`.** Fail-safe (Observer, but breaks hand-launched
-   work) vs. backward-compat (Peer, but unregistered = full local authority). Current lean: Peer + a
-   loud unregistered warning. Is that the right direction, and is the warning enough?
-2. **The Stop-hook latch vs. a session you *want* parked.** The "don't idle with unread directed
-   mail" latch must not yank a session out of a wait Kyle intends (he's about to type at it). Is
-   "directed-only + the >4-cc announcement exemption + honor the existing autonomy/attended guard"
-   sufficient, or does the latch need an explicit "Kyle is here" suppression?
-3. **The OS-level Observer floor** — separate UID vs. bwrap/landlock vs. "launch-profile is enough."
-   This is an effort/complexity call for Kyle: how strong does read-only need to *actually* be —
-   a posture, or a kernel-enforced guarantee?
-4. **Canary blast radius.** A canary that deliberately attempts denied acts every session-start adds
-   traffic and, if mis-built, could itself trip gates or spam the queue. Worth it fleet-wide, or only
-   on a schedule / only for the highest-privilege gates (settings.json, push)?
+**The one standing discipline** (not an open question — a rule): every hook-contract assumption is
+re-verified against the *installed* harness with a 5-minute behavioral test before it's built on. v2
+learned this the hard way; the process now bakes it in (Part 6, suite 1).
+
+*Round 2 verdict from the browser: "fold these in and I think v3 is ready for the fleet." Done — this
+is v3.*
