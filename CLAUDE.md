@@ -23,6 +23,27 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.34.1: 🔒🐛 **The persistence gate shipped ARMED with a live hole — its OWN bug #1,
+  re-shipped a second time.** Arming it (finally) and testing every path form revealed the fast-path
+  prefilter keyed on the **expanded** `$CLAUDE_HOME/bin`, so a **tilde** write (`> ~/.claude/bin/x`)
+  didn't match it, the gate **exited at the prefilter, and the real check NEVER RAN** — *an armed
+  gate let writes into `~/.claude/bin` straight through* (while still gating `settings.json`, caught
+  by a different path-agnostic branch — so it *looked* like it worked). That is FAILURE_MODES' own
+  documented bug #1 for this file — *"a gate that did not run looks exactly like a gate that found
+  nothing"* — re-shipped **after the comment describing it was written.** The live gate was *also*
+  false-positiving on non-writes (`cd …`, `SB=/path` env assignments — flagged because the path
+  string contains "claude"), so it was failing **both directions at once**: open on tilde-writes,
+  closed on harmless commands. Permanent fix: **the prefilter matches BROAD NOUNS only, never a
+  path** (`claude` appears in `~/.claude/…` and `/home/kyle/.claude/…` alike). Original suite missed
+  it (only tested EXPANDED paths + the Edit tool); `test_persist_gate_tilde.py` forces the tilde-Bash
+  form. Repo copy verified **airtight (17/17: Bash redirect/cp/sed/install × tilde+expanded,
+  settings.json, systemd, crontab, Edit/Write tool path, reads-stay-free); 15 gate tests.**
+  ⚠️ **The armed live gate could not be fixed by the agent** — editing `~/.claude/bin` is (correctly)
+  gated; I refused to self-approve or to use the hole to patch the hole (that establishes exactly the
+  "walk around the gate when inconvenient" pattern this whole effort condemns). **Kyle installs the
+  verified fix from a plain terminal** — the escape hatch, documented in `docs/PERSISTENCE_GATE.md`.
+  *A security control with a known hole that also blocks its own repair is precisely why the
+  plain-terminal escape hatch had to exist before arming.*
 - ✅ v2.34.0: 📮 **`bus.sh waiting` — thread visibility (the fleet's converged read-receipt
   Part 2, honest core).** Kyle: *"Claudes send msgs and sit waiting, then say they haven't gotten
   a reply."* The fleet designed the fix across five reviewers, and this builds its core: a session

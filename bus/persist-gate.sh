@@ -51,13 +51,20 @@ INPUT="$(cat 2>/dev/null || true)"
 # Exit instantly if the payload mentions none of the dangerous nouns. This runs on EVERY
 # Bash/Edit/Write in EVERY session, so the common case must cost one grep and nothing else.
 #
-# ⚠️ THIS IS A SECOND MATCHER AND IT MUST NOT BE ABLE TO DISAGREE WITH THE REAL ONE.
-# My first version hardcoded the literal string `.claude/bin` while the real check derived the
-# path from $CLAUDE_CONFIG_DIR — so under any other config dir the fast path silently exited 0
-# and THE REAL CHECK NEVER RAN. A gate that did not run looks exactly like a gate that found
-# nothing. I built that bug into a security control, on the day the fleet found it in five
-# other tools. So the prefilter is derived from the SAME variable the real check uses.
-printf '%s' "$INPUT" | grep -qE "settings[^/]*\.json|${CLAUDE_HOME}/bin|${CLAUDE_HOME}/commands|${CLAUDE_HOME}/hooks|systemctl|crontab|bashrc|bash_profile|\.profile|zshrc|autostart|systemd/user" || exit 0
+# ⚠️⚠️ SUPERSET ONLY. This prefilter must let through EVERYTHING the real check would catch. It
+# is allowed to over-match (a few ms of wasted python); it must NEVER under-match.
+#
+# THIS BUG SHIPPED, ARMED, TWICE. Both times it keyed on a PATH (`${CLAUDE_HOME}/bin`) — but the
+# real check expands `~` and `$CLAUDE_CONFIG_DIR` while the payload does not, so a command
+# written `> ~/.claude/bin/x` did NOT match this line, the gate exited HERE, and the real check
+# NEVER RAN. Writes into ~/.claude/bin sailed straight through an ARMED gate. "A gate that did
+# not run looks exactly like a gate that found nothing" — FAILURE_MODES' own bug #1 for this
+# file, and I re-shipped it after writing that sentence.
+#
+# The permanent fix is to match BROAD NOUNS ONLY — no paths, nothing that can be spelled two
+# ways. `claude` matches every ~/.claude/* target in any form (tilde OR expanded both contain
+# the literal string "claude"). A path in a prefilter is the bug; the noun is the fix.
+printf '%s' "$INPUT" | grep -qiE 'claude|settings|systemctl|crontab|bashrc|bash_profile|profile|zshrc|autostart|systemd|commands|hooks' || exit 0
 
 read -r -d '' _PY <<'PY' || true
 import json, os, re, sys
