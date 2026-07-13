@@ -1,11 +1,24 @@
 # Conductor + the Bus — Architecture Vision
 
-> **Status: DRAFT v4 — two browser rounds + a full fleet review incorporated.** Written from first
-> principles plus four research threads (object-capability security, actor/OTP supervision, durable-log
-> messaging, human-approver UX), hardened across two fresh-Claude browser reviews and two live
-> behavioral tests on the installed harness, then **attacked by a 9-session fleet review, each session
-> assigned the plane whose failure it had lived.** Every blocker below is grounded in an incident that
-> actually happened, most of them *tonight*. Next stop: back to the browser, then implementation.
+> **Status: v4 — APPROVED FOR IMPLEMENTATION** (browser round-4 sign-off, three implementation-level
+> sharpenings folded in; no v5 review round). Written from first principles plus four research threads
+> (object-capability security, actor/OTP supervision, durable-log messaging, human-approver UX),
+> hardened across **three** fresh-Claude browser reviews and **two live behavioral tests on the
+> installed harness**, then attacked by a **9-session fleet review, each session assigned the plane
+> whose failure it had lived** (10 blockers, none hypothetical, most measured that night).
+> **Round-4 sharpenings folded:** the two-phase commit fires on the turn's *own* `Stop`, not the next
+> hook (§2.3.2 — closes a false-positive where mail commits to a turn that died); each migration step
+> ships its own tests as definition-of-done (Part 5 — the commit-point tests land with the
+> commit-point code); the watch-the-watcher chain ends at a **positive daily heartbeat a human learns
+> to expect** (§6.2). Next stop: implementation, in the Part 5 order.
+>
+> **Concession ledger (it runs both directions, which is what makes the discipline a discipline):**
+> v2 wrongly said the `Stop` `reason` isn't model-visible → a live test proved it is (the browser was
+> right). Round-1 review wrongly said `session_id` is ephemeral across `--continue` → a live test
+> proved it stable (I was right). *The rule — re-verify on the installed harness before building — beat
+> each party once. The member-keyed cursor survived even its own worst argument: it's right because
+> durable state belongs on the durable principal, not because of the ephemerality claim that motivated
+> it.*
 >
 > **⚠️ The fleet review found that v3's delivery design was wrong at its core, and it proved it by
 > eating its own review requests.** Three separate directed review requests were lost by the delivery
@@ -290,15 +303,31 @@ Three parts, all cheap:
    advance **only to K**, and *say so*: `"330 new · showing 40 · cursor at <ts> · 290 REMAIN — run
    check again."` A truncated read becomes a resumable one. *A read that does not report how much it
    delivered is asserting an inbox it never emptied* (mcxn's coverage rule, one rung down).
-3. **Two-phase commit for the hook read points.** The deliverer writes `delivered(msg_ids, point,
-   turn_id)` and **does not advance the read cursor.** The cursor advances only when the **next** hook
-   invocation on that `session_id` fires — because **turn N+1 existing is proof that turn N's context
-   was assembled and consumed.** A crash, an API error, a context-overflow rejection, a killed turn
-   between the two → **re-delivered.** That is the at-least-once §2.3 always claimed and never had.
-   (Kyle's own session crashed mid-turn during this review; it is not a hypothetical.)
+3. **Two-phase commit for the hook read points — committed by the turn's OWN `Stop`, not the next
+   hook (browser round-4 sharpening).** The deliverer writes `delivered(msg_ids, point, turn_id)` and
+   **does not advance the read cursor.** The naive "advance when the next hook fires" has the 91 bug's
+   ghost one layer up: if turn N's context was *assembled* (mail injected at `UserPromptSubmit(N)`) but
+   the turn then *died* — API error, context-overflow rejection, a kill — the next hook (whenever Kyle
+   types again) would commit a delivered-set to a turn that **never ran**: a receipt for a false fact,
+   recreated. The tighter signal is already in the toolbox — **a turn's own `Stop` event, which fires
+   only when the model finishes responding, proving turn N ran to completion with the injected context
+   in it:**
+   - mail delivered at `SessionStart(N)` or `UserPromptSubmit(N)` → commits when **`Stop(N)`** fires;
+   - mail delivered in a `Stop(N)` block-reason → is consumed by the continuation turn → commits at
+     **that continuation's `Stop`**;
+   - **no `Stop` (crash, interrupt, error) → no commit → re-delivered**, and the member-keyed cursor
+     makes re-delivery idempotent, so errors land on the safe side *by construction*.
+   **Ordering rule for the implementer:** on any delivery point, **first commit any confirmed prior
+   `delivered`-set, then select new mail beyond the committed cursor** — so an uncommitted in-flight
+   set is never re-selected as "new" within the same window. (Kyle's own session crashed mid-turn
+   during this review; the crash path is not a hypothetical, which is exactly why the commit signal
+   must be completion, not mere existence.)
 
-Net: the read-event **downgrades to claiming `delivered` only**; `consumed` is provable *only* by the
-next turn existing, never asserted by the emitter. The manufactured receipt is killed at the root.
+Net: the read-event **downgrades to claiming `delivered` only**; `consumed` is attested *only* by the
+turn's own `Stop`, never asserted by the emitter. The manufactured receipt is killed at the root.
+(The `Stop`-as-completion-signal is itself a harness-contract assumption — so per the standing
+discipline it is verified on the installed harness *in the same change* that builds the commit, not
+before; see §6.5 and Part 5.)
 
 #### 2.3.3 The cursor is keyed on the MEMBER, and it advances over RECEIVED bytes
 
@@ -747,9 +776,17 @@ control plane.
    this agent" as a card verb. *Guarantee preserved:* every existing approval path keeps working while
    the surface consolidates.
 
-6. **Harden last:** fencing tokens (boards only), the formal delivery ladder, version-skew stamping +
-   canonical install path, and the canary/regression test suite (Part 6) — these harden rather than
-   restructure, and several are near-free once the planes are separated.
+6. **Harden last — but *only* the genuinely orthogonal items:** fencing tokens (boards only),
+   version-skew stamping + canonical install path, and the coverage-ratchet *infrastructure*. **The
+   test suite does NOT wait here (browser round-4 sharpening).**
+
+**Definition-of-done rule (across all steps):** each migration step ships with its own
+`FAILURE_MODES` tests *in the same change as the code* — shipping the two-phase commit in step ★ and
+its falsifier ("truncate a `check` emission, assert the cursor did not advance past what was
+received") three steps later would contradict the doc's loudest lesson (*this system punishes untested
+confidence*) and Part 6's own rule (*a control must be able to fail*). The commit-point tests in
+particular land with the commit-point code — that is the one place v4's sequencing otherwise still
+permitted the sin Part 6 abolishes. "Harden last" keeps only what is orthogonal to a specific step.
 
 ---
 
@@ -814,6 +851,15 @@ a watcher with a failure mode independent of Conductor** — a cron/systemd time
 process) that pages if *either* a registered hook *or Conductor itself* goes silent. (§2.4 holds: a
 dead Conductor doesn't disable a *live* gate; the hole is that it can't notice a gate that went
 *missing*.)
+
+**End the regress at a human habit, with a POSITIVE terminal signal (browser round-4 sharpening).**
+"Who watches the timer?" recurses forever unless the chain terminates somewhere a machine can't
+silently fail — so terminate it at Kyle. The independent watcher posts **one daily line to the Needs
+You queue's silent tier**: *"controls: green · coverage 9/9 asserted · watcher alive."* The signal is
+**positive and its ABSENCE is what's monitored** — a dead-man's switch whose final observer is a human
+with a habit, the way you notice the morning paper *not* arriving. A negative-only chain ("alarm if
+something breaks") always has an unwatched top link; a positive daily heartbeat that a human learns to
+expect closes it. One line of cron, one card a day, regress terminated.
 
 #### 6.3 Capture the payloads; don't author them (image_gen)
 
@@ -899,5 +945,7 @@ closed by "advance to what was selected, not the file's newest."
    fallback the alarm.** The three axes the fleet converged on — identity, delivery, testing — are one
    rule at three layers.
 
-*This is v4. Next: back to the browser with the fleet's blockers folded in, then implementation in the
-Part 5 migration order.*
+*This is v4, approved for implementation (browser round-4 sign-off; sharpenings 1–3 folded above).
+Four versions, three browser rounds, nine fleet reviewers, two live harness tests, one measured
+self-demonstration, and a concession ledger that runs in both directions. Next: build it, in the
+Part 5 order, each step landing with its own tests.*
