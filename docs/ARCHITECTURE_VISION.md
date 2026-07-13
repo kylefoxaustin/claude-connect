@@ -1,10 +1,19 @@
 # Conductor + the Bus — Architecture Vision
 
-> **Status: DRAFT v1, complete and ready for review.** Written from first principles plus four
+> **Status: DRAFT v2 — round-1 review incorporated.** Written from first principles plus four
 > parallel research threads (object-capability security, actor/OTP supervision, durable-log
-> messaging, and human-approver UX). It is meant to be torn apart — by Kyle, then by a fresh Claude
-> in the browser, then by the fleet — before any of it is built. The "Open questions" section at the
-> end lists the forks I deliberately left open.
+> messaging, and human-approver UX), then revised against a fresh-Claude browser review and a
+> verification of the actual Claude Code hook contracts. It is meant to keep being torn apart — Kyle,
+> the browser again, then the fleet. The "Open questions — round 2" section lists what's still open.
+>
+> **What changed in v2 (from round-1 review):** identity now keys on the harness-minted `session_id`,
+> not a directory (Finding 1 — v1 repeated the tag-drift failure class); the delivery plane is
+> *shrunk* via harness-native hooks rather than *hardened* (§2.3, corrected against the real hook
+> contract — a Stop hook's `reason` is **not** shown to the model, so delivery rides `UserPromptSubmit`
+> + `SessionStart`); the Observer role gains a construction-time + OS-level floor (§3.4); a new
+> **Part 3.5** names inter-agent message forgery as the largest unmodeled risk (Finding 5); §2.7 adds
+> version-skew defenses and one canonical install path; §2.2 adds log segmentation; and **Part 6**
+> makes the controls *tested* (canary self-tests + FAILURE_MODES-as-regression) rather than believed.
 >
 > **The one-paragraph version:** the bus was born to carry a conversation and has quietly been drafted
 > into two more jobs — holding coordination state and delivering messages — with contradictory
@@ -176,44 +185,74 @@ mechanically.
 ### 2.2 Control plane as a tiny event log + projections (CQRS-lite, no broker)
 
 The research is blunt and useful here: for machine state, **one append-only events file is the
-source of truth; queryable state is a *projection* rebuilt from it.** Concretely, at the scale of one
-workstation and ~15 agents:
+source of truth; queryable state is a *projection* rebuilt from it.** (Scale note: the draft said
+"~15 agents"; the reality is **tens of live sessions over ~50 project histories** — so "keep it
+simple" and "keep it O(new)" are both load-bearing, not aspirational.) Concretely:
 
 - **`control.jsonl`** — append-only, one validated record per line (schema-on-write: malformed →
-  rejected at the boundary, not silently stored). This is where leases, grants, retractions,
-  offsets, and role changes are *recorded as events*. We already proved clean JSONL beats markdown
-  (the injection ledger, `bus.sh mine`).
-- **Projected snapshots** — `state/offsets/<tag>`, `state/leases/<name>`, `state/roles/<project>` —
-  pure functions of the log, rebuildable by replay under the same `flock` we already hold. If one is
+  rejected at the boundary, not silently stored; every record stamped with `schema_version` — see
+  §2.7). This is where leases, grants, retractions, offsets, and role changes are *recorded as
+  events*. We already proved clean JSONL beats markdown (the injection ledger, `bus.sh mine`).
+- **Projected snapshots** — `state/offsets/<member>`, `state/leases/<name>`, `state/roles/…` — pure
+  functions of the log, rebuildable by replay under the same `flock` we already hold. If one is
   corrupt, drop and rebuild it. No Kafka, no daemon; the value is the *model*, not the machinery.
+- **Segment the conversation log now, while offsets are being redesigned anyway (Finding).** At tens
+  of sessions, `messages.md` is unbounded and `check` must stay O(new), not O(history). Roll to dated
+  segment files (`messages-YYYY-MM-DD.md`); an offset becomes `(segment, line)`. Segments are never
+  rewritten, only closed — immutability preserved — and every reader and every replay stays fast.
+  Doing it during the offset migration avoids a *second* cursor migration later.
 
-**This is not a broker and must not become one.** For 15 agents on one box, a real message broker is
-pure overhead. We adopt the *discipline* (immutable log, explicit cursors, schema-on-write, replay)
-without the infrastructure.
+**This is not a broker and must not become one.** For tens of agents on one box, a real message
+broker is pure overhead. We adopt the *discipline* (immutable log, explicit cursors, schema-on-write,
+replay) without the infrastructure.
 
-### 2.3 Delivery: at-least-once + idempotency, and an honest acknowledgment ladder
+### 2.3 Delivery: make injection *rare*, not merely honest (revised after hook-contract verification)
 
-Exactly-once delivery is provably impossible (any ack can itself be lost). The industry answer — and
-therefore ours — is **at-least-once delivery plus idempotent processing keyed on a stable message
-ID.** This is precisely the fix the fleet already reached for the storm (dedup keyed on read
-position) and the void (never treat `xdotool` exit-0 as arrival); we just make it the *rule*, not a
-patch:
+The v1 draft tried to make keystroke injection *honest*. The better move — from the round-1 review,
+then corrected against the actual Claude Code hook contracts — is to make it *rare*, by using the
+harness's own lifecycle hooks as the read path so that "did the keystroke land?" (unknowable) stops
+being the question that matters.
 
-- **Every message carries a stable ID.** Every injector/consumer dedups on it. A re-scan can never
-  double-inject. (The storm, closed by construction.)
+**What the harness actually guarantees (verified, not assumed):**
+- **`UserPromptSubmit` injects `additionalContext` alongside every submitted prompt.** Our
+  `prompt-check` hook already lives here — so **any session that takes another turn reads its unread
+  mail, guaranteed, with zero dependency on a keystroke landing.** Promote this from "surfaces bus
+  lines" to *the* read path.
+- **`SessionStart` injects context on start and on resume** (`source:"resume"`), so a relaunched
+  dormant session reads its mail on the way back up.
+- **A `Stop` hook can prevent a session going idle** while it has unread *directed* mail (guarded by
+  `stop_hook_active`, which the harness force-releases after 8 blocks). ⚠️ **Correction to the review:
+  a Stop hook's `reason` is NOT shown to the model** — `block` keeps the session from idling, but it
+  does *not* deliver content. Content delivery is the two context-injection hooks above; the Stop
+  hook is only the "don't fall asleep with mail waiting" latch.
+
+**What this does to the failure modes:** keystroke injection shrinks from *the delivery mechanism* to
+*one trigger that makes an idle session take a turn* — and if the trigger fails, the mail still lands
+the instant the session next does anything. So:
+- **The storm becomes idempotent noise.** A double-wake re-reads a cursor that has already advanced —
+  nothing is re-delivered. (Dedup is the cursor, not a heuristic.)
+- **The void becomes a delay, not a loss.** A wake that's swallowed by a busy session just means the
+  mail is read on that session's next `UserPromptSubmit` instead. It cannot vanish.
+
+**The rules that still hold, now on a firmer base:**
+- **At-least-once + idempotency, keyed on the cursor.** Exactly-once is provably impossible; the
+  cursor being authoritative and atomically advanced is what makes re-triggering safe.
 - **The read-offset is explicit, committed deliberately, and means exactly one rung.** No operation
   advances another operation's cursor. (The `send`-ate-your-mail bug, impossible.)
-- **The acknowledgment ladder is layered and never promoted.** These are four different facts and
-  the UI must never let one masquerade as a higher one:
+- **The acknowledgment ladder is layered and never promoted** — and one rung is now a *fact*, not an
+  inference: "read" = *the `UserPromptSubmit`/`SessionStart` hook returned this message as context in
+  turn N*, an event the hook itself appends to `control.jsonl`. No transcript-mtime forensics.
 
-  > **composed → delivered (the transcript demonstrably moved) → read (cursor passed) → acted-on (an
-  > observable reply with content).**
+  > **composed → delivered (a lifecycle hook fed it to the loop) → read (the hook logged that it did)
+  > → acted-on (an observable reply with content).**
 
   "Delivered" is not "read"; "read" is not "acted-on." The only trustworthy proof of *acted-on* is a
-  reply with content — which is exactly what `bus.sh waiting`'s close-by-reply already encodes.
+  reply with content — exactly what `bus.sh waiting`'s close-by-reply already encodes.
   *"'read' is to a watermark what 'root' was to systemctl --user."*
-- **Redeliver only on evidence of loss:** the transcript moved but the watermark didn't (proof a
-  keystroke was dropped), never on a timer. This is v2.26.1's fix, promoted to principle.
+- **The one honest cost:** the Stop hook runs on *every* turn-end and blocks the user-visible loop, so
+  the mail check there must be a single flock'd cursor read, single-digit milliseconds — measured,
+  not hoped. A slow Stop hook is friction on the common path, which is the exact resentment we're
+  trying to avoid.
 
 ### 2.4 The observer is a monitor, never a supervisor
 
@@ -249,12 +288,33 @@ The governing rule from the research: **the more irreversible the act, the close
 it.** A push and a `settings.json` write are in-the-loop *because* they're irreversible; a nudge is
 on-the-loop *because* it isn't. Every future control gets placed by asking "how reversible is this?"
 
-### 2.6 Add fencing tokens to leases (the one real gap)
+### 2.6 Add fencing tokens to leases — but only where the blast radius earns it (Open Q3)
 
 Our dead-owner detection is heuristic (idle time, `owner_pid` liveness). The distributed-systems
 answer to "a paused owner wakes up after its lease expired and writes anyway" is a **fencing token**:
-a monotonic counter minted per acquisition and *validated at the point of use* (the GPU op, the board
-flash). It's the one primitive we're missing that closes a split-brain `owner_pid` alone cannot.
+a monotonic counter minted per acquisition and *validated at the point of use*. Split by
+reversibility (round-1 review):
+- **Boards: yes.** A stale owner flashing a board is irreversible-ish, and quarantine only helps
+  *after* the damage. A token checked by the flash wrapper is ~20 lines. Enforce it with a
+  `PreToolUse` match on the flash commands ("must carry the current token"), so it isn't merely
+  cooperative.
+- **GPU: no.** A stale CUDA job is annoying, reversible, and already covered by reaping. Point-of-use
+  validation would need every GPU op to flow through a wrapper — not worth it.
+
+### 2.7 Version skew: schema-on-write is only as good as the oldest running writer (Finding 4)
+
+With tens of long-lived sessions, a new deploy does **not** stop the old code — old `bus.sh` keeps
+emitting events after a newer one lands. (We *already* have the dual-copy hazard: a live
+`~/.claude/bin/` copy and the repo copy, whose divergence caused the tag-map splice.) Three cheap
+defenses:
+- Every `control.jsonl` event carries `schema_version` + the emitting script's version.
+- Projections **quarantine** unknown-version/malformed lines into a visible sidecar — **never silently
+  skip**, because a partial projection that resembles a complete one is failure class #1 all over
+  again.
+- **One canonical install path.** The repo is the source of truth; `~/.claude/bin` is a checksummed
+  deploy (or a symlink), and the `SessionStart` hook warns loudly if the running copy's hash doesn't
+  match what the registry expects. This is the structural end of the dual-copy divergence we've been
+  hand-managing all week.
 
 ---
 
@@ -296,32 +356,59 @@ role explosion:
 | **Peer** (default worker) | full local edit + commit, resource reservation, bus send/retract | `git push` (gated), persistent-location writes (gated) — *the current two hard gates remain, as the peer ceiling* |
 | **Trusted** (autonomy-whitelisted) | peer + a **time-boxed** self-approval window for pushes/persistent writes | still expires; still revocable; still logged |
 
-The **read-only role is a genuinely new safety primitive**: not "a Claude we remembered to gate," but
-one that *cannot* push, reserve, or install *by construction* — so a task handed to it has a blast
-radius bounded before it starts.
+The **read-only role is a genuinely new safety primitive** — but only if it's enforced at
+construction, not just at the referee (see §3.4). Done right it *cannot* push, reserve, or install
+*by construction*, so a task handed to it has a blast radius bounded before it starts.
 
-### 3.4 How it's set, enforced, and revoked
+### 3.4 Identity, enforcement, revocation — three layers, not one
 
-- **Set** — the phone/PC UI writes `{project, role, expires?}` into `state/roles/<project>` (a data
-  file the hook reads first — the `tag-map` pattern, so no script migration can touch it). Roles are
-  **durable** (survive relaunch — the thing short-expiry can't give you). *Elevations within a role*
-  (a Trusted window, a JIT push grant) are short-TTL and auto-reap.
-- **Enforced** — one enrichment to the existing `PreToolUse(Bash|Edit|Write|MultiEdit|NotebookEdit)`
-  hook: before the act-specific gates run, resolve the *caller's own PID → project dir → role*, then
-  check the act against the role's capability set. The referee **derives identity from the OS**, never
-  from a label in the message. Fail-closed on Edit/Write (exact), best-effort on Bash (honest) — the
-  split we already ship.
-- **Revoked** — the UI shows each session's current role + any live elevation as its own visible
-  state (like the push-grant "Approved, waiting…" row), with a Revoke button. Revoke
-  downgrades/deletes; the next tool call re-reads and is denied.
+**Identity keys on `session_id`, never on a directory (round-1 review, Finding 1).** The v1 draft
+proposed resolving identity by PID → project dir — which is *directory-derived identity*, the exact
+failure class (tag drift on `cd`) we already paid for. The harness mints an unforgeable, session-life
+identity: **every hook payload carries `session_id`**, assigned by Claude Code, not writable by the
+agent, and *verified stable across `--continue`/`--resume`*. We already key the decision queue on it.
+So:
+
+- **Registry:** `session_id → member → role`, stored in `state/roles/` (a data file the referee reads
+  first — the `tag-map` pattern, so no script migration can touch it).
+- **Binding:** Conductor registers the `session_id` against a member at launch/adoption (it already
+  knows which sessions it spawned). Project dir stays a *display hint* and a fallback for foreign
+  sessions, never the credential.
+- **The unregistered-session question (open — see Open Questions):** what role does the referee apply
+  to a `session_id` it hasn't bound yet (a hand-launched session, or the instant before Conductor
+  registers)? Fail-safe (default **Observer**) is safest but breaks a manually-launched session's
+  ability to work; backward-compat (default **Peer**) preserves today but means unregistered = full
+  local authority. Current lean: **Peer + a loud unregistered-session warning** (matches the
+  migration's backward-compat rule and the existing tag-warning), but this is a genuine fork.
+
+**Enforcement is three layers, and the hook is only the middle one (Finding 3):**
+
+1. **Construction (the ceiling)** — an Observer launches with Write/Edit/MultiEdit/NotebookEdit
+   *absent from its tool set* (`--disallowedTools`/permission-deny), not merely gated. What isn't in
+   the toolbox can't be reached by a clever prompt.
+2. **OS (the floor, for Bash)** — if read-only must be a *guarantee* not a posture, run Observer
+   sessions under a separate UID (or a bwrap/landlock sandbox with read-only binds outside a scratch
+   dir). *Permissions belong in the kernel, not in grep* — one `observer` user closes every
+   exotic-Bash hole at once, forever, with zero pattern-matching. (Effort call flagged for Kyle.)
+3. **Hook (the dial)** — the `PreToolUse` role check remains, but its job is **mid-flight revocation
+   and elevation**, the thing launch profiles can't do — not primary enforcement. Fail-closed on
+   Edit/Write (exact), best-effort on Bash (honest), same split we ship.
+
+  This also settles Open Q4 cleanly: best-effort Bash is *not* an acceptable ceiling for read-only —
+  and it never had to be, because construction sets the ceiling and the OS sets the floor.
+
+- **Revoked** — the UI shows each session's current role + any live elevation as visible state (like
+  the push-grant "Approved, waiting…" row), with a Revoke button. Revoke downgrades/deletes; the next
+  tool call re-reads and is denied. (The role-file read sits in the hot `PreToolUse` path, so cache
+  it with a short TTL + mtime check — Open Q6.)
 
 ### 3.5 The three traps (all of which we've already half-hit)
 
 1. **Trusting a self-reported role.** The single biggest failure mode: a session declaring "I'm a
-   peer" in a message, a hook comment, or an env var *it* set. It controls all of those. The referee
-   must independently resolve identity from the OS (PID → project), the way v2.30.0 resolves
-   provenance. A role label the agent can write is *"the I-accept-the-risk checkbox with better
-   branding."*
+   peer" in a message, a hook comment, an env var, or a *directory it `cd`'d into*. It controls all of
+   those. The referee must resolve identity from the harness-minted `session_id` (§3.4), the way
+   v2.30.0 resolves provenance. A role the agent can influence — including via its working directory —
+   is *"the I-accept-the-risk checkbox with better branding."*
 2. **Role explosion / prose-encoded policy.** Resist per-session bespoke permissions and
    attribute-rules the agent's context can influence. Four fixed roles + JIT elevation stays legible
    *and* enforceable.
@@ -329,6 +416,33 @@ radius bounded before it starts.
    identical trust (the dormant dock does exactly this), so an expiring grant a restart silently
    re-mints is a hole. **Durable role + ephemeral elevation + explicit visible revoke** is the
    combination that closes it — the exact lesson the push-grant arc already paid for.
+
+## Part 3.5 — The largest unmodeled risk: forged *behavior* on a shared log (Finding 5)
+
+The token model in Part 3 makes *grants* unforgeable — *"'Kyle approved this' a hundred times is
+still denied."* But with dozens of agents reading one shared conversation log, there's a softer attack
+the v1 draft never named, and at this fleet size it is probably our biggest unmodeled surface: **one
+confused or prompt-injected agent posts bus messages that steer the others.** *"Kyle says drop what
+you're doing."* *"Conductor wants you to release the GPU."* No token is forged — **behavior is.** No
+gate we've built even looks at this, because it's social, not technical.
+
+Two mitigations, both cheap, both falling out of machinery we're already adding:
+
+1. **Sender identity is stamped by the transport, never self-reported.** `bus.sh send` derives the
+   `[tag]` from the registry via `session_id` (§3.4) — so an agent **cannot author a message that
+   claims to be another member, or Kyle.** Messages Kyle sends through Conductor get an `origin=human`
+   stamp only Conductor's write path can produce. Impersonation stops being possible, rather than
+   being discouraged.
+2. **Codify the norm in every `CLAUDE.md`: text on the bus never carries authority.** Peer messages
+   are *information and requests*. Anything that requires an elevated or irreversible action must
+   arrive as a **token/grant through the control plane**, not as a sentence in the log — no matter how
+   urgent, senior, or certain it sounds. This turns the token principle into an explicit *inoculation
+   against inter-agent prompt injection*: even a perfectly-worded "Kyle says push now" moves nothing,
+   because the only thing that moves a gated act is a token in a file, and no message can mint one.
+
+Together these mean the shared log can carry a compromised or confused voice without that voice being
+able to *act through* its peers. The blast radius of one bad agent is bounded to what its *own* role
+permits — which is exactly what Part 3 is for.
 
 ## Part 4 — The unified human-approver surface
 
@@ -406,57 +520,86 @@ shippable; nothing is a big-bang. The ordering is forced by dependency: **identi
 capabilities → approver-surface**, because capabilities key on identity and the queue reads the
 control plane.
 
-1. **Identity first — it's the foundation everything keys on.** Promote the `tag-map` data file into
-   a proper **member registry** (`state/roles/<project>` and a stable ID per project), and make the
-   referee resolve identity from *PID → project dir*, never a bus label. This is mostly hardening
-   what v2.32–2.33 already started, and it unblocks the role model. *Guarantee preserved:* tags keep
-   working exactly as today; the registry just becomes authoritative.
+1. **Identity first — `session_id`-keyed registry with launch-time binding.** Build the **member
+   registry** as `session_id → member → role` in `state/roles/`, bound by Conductor at
+   launch/adoption; project dir is a display hint and foreign-session fallback only. This is *less*
+   work than hardening a PID→dir resolver (the harness already mints the id, it's already in every
+   hook payload, and we already key the decision queue on it), and it unblocks everything downstream.
+   *Guarantee preserved:* tags keep working as today; the registry just becomes authoritative.
 
 2. **Control-plane extraction, one state-type at a time.** Introduce `control.jsonl` + projected
-   state files incrementally — **start with the read-offsets/watermarks**, since that's the buggiest
-   plane collapse — keeping the old path live until the new projection is proven equal, then cut
-   over. Then leases, then grants. Each is a small, testable, reversible step. *Guarantee preserved:*
-   the human log is untouched; a projection can be rebuilt by replay if wrong.
+   state files incrementally — **start with the read-offsets/watermarks** (the buggiest plane
+   collapse) and **segment the conversation log at the same time** (§2.2), keeping the old path live
+   until the new projection is proven equal, then cut over. Then leases, then grants/roles. Each is a
+   small, reversible step. *Guarantee preserved:* the human log is untouched; a projection rebuilds by
+   replay if wrong.
 
-3. **Capability/role model — backward-compatible by default.** Add the role file + the one hook
-   enrichment, and **default every session to `Peer` — which is byte-for-byte today's behavior**
-   (full local work; push and persist gated). Then introduce `Observer`, `Service`, `Trusted` as
-   opt-in profiles set from the UI. Absence of a role = Peer = no change. *Guarantee preserved:* a
-   fleet that sets no roles behaves identically to now.
+3. **★ Hook-native delivery — do this early, right after offsets move.** Promote `prompt-check`
+   (`UserPromptSubmit`) + `SessionStart` into *the* read path and add the Stop-hook "don't idle with
+   unread directed mail" latch, so keystroke injection drops to a mere wake-trigger. Sequenced here,
+   ahead of capabilities, **because it removes the buggiest plane rather than hardening it** — every
+   week injection stays the primary read path is a week the storm/void failure modes stay live.
+   *Guarantee preserved:* injection still works as a fallback; if a wake is lost, mail lands on the
+   next turn.
 
-4. **Unified approver queue — presentation-first.** Unify the four existing inboxes into one typed
-   queue in the *frontend* first, reading the same backends, then converge the backends behind it.
-   Add "Talk to this agent" as a card verb. *Guarantee preserved:* every existing approval path keeps
-   working while the surface consolidates.
+4. **Capability/role model — backward-compatible by default.** Add the role file + the one hook
+   enrichment, and **default every session to `Peer` — byte-for-byte today's behavior** (full local
+   work; push and persist gated). Then introduce `Observer` (launch-profile + optional OS floor),
+   `Service`, `Trusted` as opt-in profiles. Absence of a role = Peer = no change. *Guarantee
+   preserved:* a fleet that sets no roles behaves identically to now.
 
-5. **Fencing tokens + the formal delivery ladder** — last, because they harden rather than restructure:
-   a monotonic token per lease acquisition validated at point-of-use, and the composed→delivered→
-   read→acted-on ladder made explicit in the delivery code (most of it already exists as ad-hoc
-   checks; this names and tests it).
+5. **Unified approver queue — presentation-first.** Unify the four existing inboxes into one typed
+   queue in the *frontend* first, reading the same backends, then converge the backends. Add "Talk to
+   this agent" as a card verb. *Guarantee preserved:* every existing approval path keeps working while
+   the surface consolidates.
+
+6. **Harden last:** fencing tokens (boards only), the formal delivery ladder, version-skew stamping +
+   canonical install path, and the canary/regression test suite (Part 6) — these harden rather than
+   restructure, and several are near-free once the planes are separated.
 
 ---
 
-## Open questions for review (for Kyle, then a fresh Claude, then the fleet)
+## Part 6 — Testing the controls (the defense v1 lacked)
 
-These are the decisions I don't want to make unilaterally — the forks where reasonable people
-differ:
+The doc creates several *new* referees, and failure class #1 — *a control that partly works looks
+exactly like one that works* — applies to every one of them. This whole week is the proof: every gate
+hole was found by **walking into it**, not by a test. Two mechanisms make that discipline structural:
 
-1. **Role granularity.** Four roles (Observer / Service / Peer / Trusted) — too few, too many, or
-   wrong cut points? Is "Service" distinct enough from "Peer with a narrow worktree," or should
-   service-ness be a *capability flag* on a Peer rather than its own role?
-2. **How much control-plane to extract.** Full CQRS-lite (`control.jsonl` + projections for
-   everything) is clean but is a real second write-path. Is the right scope *only* the planes that
-   have actually bitten us (offsets, leases), leaving the rest as-is? Where's the line between
-   principled and over-engineered for one workstation?
-3. **Fencing tokens** — worth it? The split-brain they close (a paused owner waking after expiry) is
-   real but rare here. Is `owner_pid` liveness + quarantine *enough* in practice?
-4. **The read-only role's enforcement surface.** Bash is best-effort by construction — an Observer
-   determined to write via an exotic Bash incantation might slip a specific case. Is "best-effort
-   Bash + exact Edit/Write" an acceptable ceiling for read-only, or does read-only need a stronger
-   mechanism (e.g. a restricted tool-allowlist at the harness level)?
-5. **Where roles are set from** — is the phone the right place to *grant Trusted*, or should
-   elevation-to-Trusted be PC-only (a bigger decision deserving a bigger screen), with the phone able
-   to *revoke* but not *grant*?
-6. **Does any of this reduce efficiency enough to matter?** The whole point is strong controls that
-   don't get resented. Which of these, if any, adds friction to the common path — and is the
-   default-Peer posture genuinely zero-cost for existing work?
+1. **Canary self-tests.** At `SessionStart` (or on a schedule), each gate is deliberately made to
+   attempt one representative *denied* act, and denial is asserted. **A canary that the gate lets
+   *through* pages Kyle at the top tier of the Needs You queue.** A gate that has never been walked
+   into is one you *believe in*, not one you've *verified* — and belief is what shipped three holes.
+2. **`FAILURE_MODES.md` becomes a regression suite, not a memoir.** Each named class → a test against
+   the new architecture: *kill Conductor mid-delivery, assert zero message loss; corrupt a projection,
+   assert replay reconstructs it; splice the registry, assert the referee still resolves identity;
+   post a forged "Kyle says…" message, assert it moves no gated act.* The doc's central promises
+   ("Conductor down never loses a message," "a corrupt projection is recoverable") are currently
+   *asserted*; they're cheap to make *tested* — and this system has already demonstrated it punishes
+   untested confidence.
+
+---
+
+## Open questions — round 2
+
+**Resolved by round 1 + the hook-contract check** (folded into the doc above): identity keys on
+`session_id` not PID→cwd (§3.4); read-only is enforced by launch-profile + OS floor, not best-effort
+Bash (§3.4, was Q4); fencing tokens for boards only (§2.6, was Q3); grant Trusted from PC, revoke from
+anywhere (Q5 — reversibility rubric); Service is Peer-attenuated but keeps its UI name (Q1);
+control-plane extraction scoped to planes that have actually bitten us (Q2); default-Peer is genuinely
+zero-cost, watch only the Stop-hook and role-file hot paths (Q6).
+
+**Still genuinely open — the questions I'm putting back to the browser and the fleet:**
+
+1. **Default role for an *unbound* `session_id`.** Fail-safe (Observer, but breaks hand-launched
+   work) vs. backward-compat (Peer, but unregistered = full local authority). Current lean: Peer + a
+   loud unregistered warning. Is that the right direction, and is the warning enough?
+2. **The Stop-hook latch vs. a session you *want* parked.** The "don't idle with unread directed
+   mail" latch must not yank a session out of a wait Kyle intends (he's about to type at it). Is
+   "directed-only + the >4-cc announcement exemption + honor the existing autonomy/attended guard"
+   sufficient, or does the latch need an explicit "Kyle is here" suppression?
+3. **The OS-level Observer floor** — separate UID vs. bwrap/landlock vs. "launch-profile is enough."
+   This is an effort/complexity call for Kyle: how strong does read-only need to *actually* be —
+   a posture, or a kernel-enforced guarantee?
+4. **Canary blast radius.** A canary that deliberately attempts denied acts every session-start adds
+   traffic and, if mis-built, could itself trip gates or spam the queue. Worth it fleet-wide, or only
+   on a schedule / only for the highest-privilege gates (settings.json, push)?
