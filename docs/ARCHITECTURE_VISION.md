@@ -1,24 +1,38 @@
 # Conductor + the Bus — Architecture Vision
 
-> **Status: DRAFT v3 — two review rounds incorporated; converged, ready for the fleet.** Written from
-> first principles plus four parallel research threads (object-capability security, actor/OTP
-> supervision, durable-log messaging, human-approver UX), then hardened across two fresh-Claude
-> browser reviews and a **live behavioral test of the Claude Code hook contract on the installed
-> harness.** The "Open questions" section is now a resolution table — nothing is left deliberately
-> open. Next stop: the fleet.
+> **Status: DRAFT v4 — two browser rounds + a full fleet review incorporated.** Written from first
+> principles plus four research threads (object-capability security, actor/OTP supervision, durable-log
+> messaging, human-approver UX), hardened across two fresh-Claude browser reviews and two live
+> behavioral tests on the installed harness, then **attacked by a 9-session fleet review, each session
+> assigned the plane whose failure it had lived.** Every blocker below is grounded in an incident that
+> actually happened, most of them *tonight*. Next stop: back to the browser, then implementation.
 >
-> **What changed across the rounds:** identity keys on the harness-minted `session_id`, not a directory
-> (v1 repeated the tag-drift failure class); the delivery plane is *shrunk* to **three harness-native
-> read points** — `SessionStart`, `UserPromptSubmit`, and the **`Stop`-hook `reason`** (v2 wrongly
-> claimed the Stop reason wasn't model-visible; a **round-3 live test proved it is**, and the browser
-> was right); keystroke injection drops to a mere wake-trigger, making the storm idempotent and the
-> void a mere delay. The Observer role gains a construction ceiling + a shelf-ready OS sandbox floor;
-> the unbound-session default becomes a **ratchet** (Peer → adoption-card → Observer); **§3.6**
-> names inter-agent message forgery as the largest unmodeled risk; §2.7 adds version-skew defenses and
-> one canonical install path; §2.2 adds log segmentation; and **Part 6** makes the controls *tested* by
-> canarying the **referee** (synthetic payloads on deploy) + heartbeat-absence for wiring — zero
-> canary acts in real sessions. The throughline the doc now argues by example: *every hook-contract
-> assumption is re-verified on the live harness before it's built on.*
+> **⚠️ The fleet review found that v3's delivery design was wrong at its core, and it proved it by
+> eating its own review requests.** Three separate directed review requests were lost by the delivery
+> plane *during the review of the delivery plane* — one buried by triage, one buried by the
+> announcement rule, and one (91emulator's) **measured**: `check` emitted 200 messages, the harness
+> truncated the tool result to a 2 KB preview, and the cursor advanced to the file's newest anyway —
+> **193 messages marked read, never received, unreachable forever.** That is the word §2.3 forbids:
+> *vanished.* v3's "read-event is free provenance" line was, in 91emulator's words, *"a manufactured
+> receipt for a false fact"* — worse than the watermark-guess it replaced, because it laundered a guess
+> into forensic evidence. **v4 fixes this at the root (§2.3): the cursor advances over what the consumer
+> RECEIVED, never what the sender EMITTED — via a two-phase commit where the cursor moves only when the
+> NEXT turn's existence proves the last turn was consumed.** That is the at-least-once the doc claimed
+> and did not have.
+>
+> **What the fleet changed (v4):** §2.3 rebuilt around the **commit-point** (two-phase commit,
+> resumable bounded emission, cursor keyed on the durable *member*, `read` earned not renamed); §2.6
+> grew from a paragraph into the **state/occupancy/liveness plane** (a lease governs *access*; §2.6 must
+> also govern the *state* left behind, *own orphaned processes*, and *resource-derived* liveness); Part 6
+> became a **staircase** (config-conformance → coverage-*counted* → coverage-*asserted-with-ratchet*) plus
+> **watch-the-watcher** (an independent dead-man's-switch) and **control-wedging** (referees run
+> out-of-process under a kill-timeout, because a hung gate reads as a healthy one); §3.6 gained the
+> **credence** threat (the fleet's damage all week came from unprovenanced *claims*, not forged *acts*)
+> and honest scoping (it bounds impersonation technically, steering only socially); §4.2 gained
+> **cost-on-the-marker** priority. Earlier rounds established: identity on the harness-minted
+> `session_id` (live-tested stable across `--continue`); the three harness-native read points
+> (`SessionStart`/`UserPromptSubmit`/`Stop`-reason, the last live-tested model-visible); Observer with a
+> construction ceiling + OS floor; the unbound-session ratchet.
 >
 > **The one-paragraph version:** the bus was born to carry a conversation and has quietly been drafted
 > into two more jobs — holding coordination state and delivering messages — with contradictory
@@ -211,7 +225,7 @@ simple" and "keep it O(new)" are both load-bearing, not aspirational.) Concretel
 broker is pure overhead. We adopt the *discipline* (immutable log, explicit cursors, schema-on-write,
 replay) without the infrastructure.
 
-### 2.3 Delivery: make injection *rare* — three harness-guaranteed read points (settled by live test)
+### 2.3 Delivery: make injection *rare*, then make the cursor honest (the fleet's core correction)
 
 The v1 draft tried to make keystroke injection *honest*. The better move — from the round-1 review —
 is to make it *rare*, by using the harness's own lifecycle hooks as the read path so that "did the
@@ -241,39 +255,76 @@ and all three are content-delivery, not just triggers.
   overflow degrades to *"run `bus.sh check`"*.
 
 **What this does to the failure modes:** keystroke injection shrinks from *the delivery mechanism* to
-*one trigger that makes an idle session take a turn* — and if the trigger fails, the mail still lands
-the instant the session next hits any of the three points. So:
-- **The storm becomes idempotent noise.** A double-wake re-reads a cursor that has already advanced —
-  nothing is re-delivered. (Dedup is the cursor, not a heuristic.)
-- **The void becomes a delay, not a loss.** A wake swallowed by a busy session just means the mail is
-  read at its next Stop/`UserPromptSubmit` instead. It cannot vanish.
+*one trigger that makes an idle session take a turn*. But — and this is the fleet's central §2.3
+correction — **making injection rare does not make delivery reliable, and v3 wrongly claimed it did.**
 
-**The rules that still hold, now on a firmer base:**
-- **At-least-once + idempotency, keyed on the cursor.** Exactly-once is provably impossible; the
-  cursor being authoritative and atomically advanced is what makes re-triggering safe.
-- **The read-offset is explicit, committed deliberately, and means exactly one rung.** No operation
-  advances another operation's cursor. (The `send`-ate-your-mail bug, impossible.)
-- **The acknowledgment ladder is layered and never promoted** — and "read" is now a *fact*: whichever
-  of the three points delivered a message appends its own read event to `control.jsonl`, stamped with
-  *which point delivered it* (free provenance). No transcript-mtime forensics.
+#### 2.3.1 The commit-point bug (91emulator, measured): the sender cannot see its own transport
 
-  > **composed → delivered (a lifecycle hook fed it to the loop — SessionStart / UserPromptSubmit /
-  > Stop-reason) → read (that hook logged it) → acted-on (an observable reply with content).**
+v3 said "the void becomes a delay, not a loss; it cannot vanish." **False, and measured on the
+installed `bus.sh`.** The cursor is advanced by the *sender* at *send time*, over what the sender
+*emitted* — but between the sender and the model sits a transport (the hook-output cap, the
+tool-result preview limit) that can **truncate**, and *neither end can see it*. A session with 330
+unread ran `check`; it emitted 200 messages / 64 KB; the harness handed the model a ~2 KB preview; the
+cursor advanced to the file's newest anyway. **193 messages: emitted, marked read, never received,
+and now unreachable forever.** This is distinct from the *key* axis (§2.3.2) — it survives a perfect
+immutable identity — and it is distinct from a caller slicing its own output with `tail`. It is a
+property of committing the read over bytes the consumer never got.
 
-  "Delivered" is not "read"; "read" is not "acted-on." The only trustworthy proof of *acted-on* is a
-  reply with content — exactly what `bus.sh waiting`'s close-by-reply already encodes.
-  *"'read' is to a watermark what 'root' was to systemctl --user."*
-- **The latch is cursor-keyed so it can never hold a session hostage (Q2).** The Stop path blocks at
-  most **once per message ID**: it fires only for mail newer than the last delivered cursor, and a
-  message delivered through *any* of the three points can never trigger it again. "The latch keeps a
-  session awake indefinitely" becomes unrepresentable, not merely tuned away.
-- **"Kyle is here" is derived, never declared (Q2).** A session the workbench shows as *focused* is
-  attended; the latch defers there and lets the mail ride Kyle's own next message via
-  `UserPromptSubmit`. Derived state over a manual flag — the §4.2 rubric again.
-- **The one honest cost:** the Stop hook runs on *every* turn-end and blocks the user-visible loop, so
-  the no-mail common case must be a single flock'd cursor read, single-digit milliseconds — measured,
-  not hoped. A slow Stop hook is friction on the common path, which is the exact resentment we're
-  trying to avoid.
+**And v3 made it worse in the one line I was proudest of.** v3 said the read-event is "free
+provenance." It is not: it is *a manufactured receipt for a false fact* — a durable, timestamped,
+attributed record asserting that a message the model never saw was **read**. The old watermark was a
+guess everyone knew was a guess; the read-event launders that guess into forensic evidence. §2.3 v3
+indicted itself — it defined "read" as "the hook logged it," which is **delivered wearing read's
+badge** — and its own line *"'read' is to a watermark what 'root' was to `systemctl --user`"* applies
+to the read-event with a better font. The rung was renamed, not earned.
+
+#### 2.3.2 The fix: advance over what was RECEIVED, via a two-phase commit
+
+Three parts, all cheap:
+
+1. **Advance to what was SELECTED, not to the file's newest** (`bus.sh:104`, one line). This also
+   closes the live `--all-tags` bug (mcxn947qemu): a plain `check` currently marks read the traffic
+   its *own* addressing filter deliberately skipped, so `--all-tags` can never show it. Same root, one
+   fix.
+2. **Bounded, resumable emission.** If the selection exceeds the transport cap, emit the first *K*,
+   advance **only to K**, and *say so*: `"330 new · showing 40 · cursor at <ts> · 290 REMAIN — run
+   check again."` A truncated read becomes a resumable one. *A read that does not report how much it
+   delivered is asserting an inbox it never emptied* (mcxn's coverage rule, one rung down).
+3. **Two-phase commit for the hook read points.** The deliverer writes `delivered(msg_ids, point,
+   turn_id)` and **does not advance the read cursor.** The cursor advances only when the **next** hook
+   invocation on that `session_id` fires — because **turn N+1 existing is proof that turn N's context
+   was assembled and consumed.** A crash, an API error, a context-overflow rejection, a killed turn
+   between the two → **re-delivered.** That is the at-least-once §2.3 always claimed and never had.
+   (Kyle's own session crashed mid-turn during this review; it is not a hypothetical.)
+
+Net: the read-event **downgrades to claiming `delivered` only**; `consumed` is provable *only* by the
+next turn existing, never asserted by the emitter. The manufactured receipt is killed at the root.
+
+#### 2.3.3 The cursor is keyed on the MEMBER, and it advances over RECEIVED bytes
+
+- **Keyed on the durable member** (§3.4), not the tag and not the raw `session_id` — this closes the
+  *key* axis (93emulator/95emulator: the cursor key and the routable address both derived from one
+  mutable dir-basename, so a single edit re-keyed and re-routed at once, and mail to the old identity
+  vanished). A member with no live session **accumulates** mail against its cursor until a session
+  binds — the genuine "delay, not loss."
+- **The cursor exists unconditionally from member registration**, independent of the active-tags
+  whitelist (95's storm fuel was a never-registered tag with no cursor for dedup to key on).
+- **The acknowledgment ladder, with `read` now earned, not renamed:**
+
+  > **composed → delivered (a lifecycle hook emitted it — SessionStart / UserPromptSubmit / Stop-reason)
+  > → read (the *next turn exists*, proving turn N was consumed) → acted-on (an observable reply with
+  > content).**
+
+  "Delivered" is not "read"; "read" is not "acted-on." *Acted-on* is provable only by a reply with
+  content (`bus.sh waiting`'s close-by-reply); **read-but-not-acted-on is a real third state and §2.3
+  does NOT cover it** — it is caught by `waiting`'s timeout, not by the delivery machinery. Honest
+  scope beats implied coverage (95emulator).
+
+**Still true, on the firmer base:** the storm is idempotent (a double-wake re-reads an advanced
+cursor — dedup *is* the cursor, keyed on message ID); the Stop latch blocks at most once per message
+ID so it can never hold a session hostage; "Kyle is here" is derived from workbench focus, never a
+manual flag; and the Stop hook's no-mail path must be a single flock'd cursor read (single-digit ms —
+measured, not hoped), since it runs on every turn-end.
 
 ### 2.4 The observer is a monitor, never a supervisor
 
@@ -309,18 +360,73 @@ The governing rule from the research: **the more irreversible the act, the close
 it.** A push and a `settings.json` write are in-the-loop *because* they're irreversible; a nudge is
 on-the-loop *because* it isn't. Every future control gets placed by asking "how reversible is this?"
 
-### 2.6 Add fencing tokens to leases — but only where the blast radius earns it (Open Q3)
+### 2.6 The board plane: a lease governs ACCESS; §2.6 must also govern STATE, OCCUPANCY, LIVENESS
 
-Our dead-owner detection is heuristic (idle time, `owner_pid` liveness). The distributed-systems
-answer to "a paused owner wakes up after its lease expired and writes anyway" is a **fencing token**:
-a monotonic counter minted per acquisition and *validated at the point of use*. Split by
-reversibility (round-1 review):
-- **Boards: yes.** A stale owner flashing a board is irreversible-ish, and quarantine only helps
-  *after* the damage. A token checked by the flash wrapper is ~20 lines. Enforce it with a
-  `PreToolUse` match on the flash commands ("must carry the current token"), so it isn't merely
-  cooperative.
-- **GPU: no.** A stale CUDA job is annoying, reversible, and already covered by reaping. Point-of-use
-  validation would need every GPU op to flow through a wrapper — not worth it.
+The two board-owners in the fleet (qualcomm holds the IQ9 EVK; ollama_95_neutron holds imx95-frdm)
+attacked this section from inside their own leases, and turned it from "add a fencing token" into a
+plane. **The reframe: a lease answers *who may use the board*. Every failure they had tonight was
+about something the lease is silent on.**
+
+#### 2.6.1 Fence the CHOKEPOINT, not the command (qualcomm — and it fixes an internal contradiction)
+
+v3 proposed a fencing token *checked by a `PreToolUse` match on the flash commands*. qualcomm's
+blocker: **that is a blocklist, the exact thing §3.1 condemns.** A live stale owner corrupts the
+board through any path *not* on the list — `ssh imx95 'cp neutron.dtb …'`, `fw_setenv`, a converter
+that writes a model file the bootloader loads — none of which are `dd`/`fastboot`/`uuu`. And boards
+are reached over `ssh`, so even a real `dd` is a *quoted argument inside `ssh '…'`*, inheriting the
+multiline/quoted-hole class. **Fix: bind the token to the CHOKEPOINT every access must traverse — the
+per-lease `ssh` ControlMaster socket / the serial lock.** On expiry, tear down the owner's ssh master
+and rotate the board's `authorized_keys` (or drop the serial lock), so *any* write path dies, not
+just matched ones. **Possession of the live channel is the capability.** This makes §2.6 an *instance*
+of §3.1 (construction over referee — remove the access, don't pattern-match the act), not a violation
+of it.
+
+#### 2.6.2 A handback predicate: "I am done" ≠ "it still works" (ollama, measured)
+
+ollama hung the NPU tonight (a MatMulNBits at K=20480 wedged `/dev/neutron0`, immune to SIGTERM).
+Put a lease boundary through that: lease expires → watchdog reclaims → **the next tenant inherits a
+wedged board, and diagnoses it as *their own* bug** ("I know they will, because that is what I did,
+three times tonight"). The state left behind is indistinguishable, to the next tenant, from a bug they
+just wrote. **Fix: releasing a lease must *prove* the resource usable — a liveness probe the next
+tenant can also run, whose failure QUARANTINES the board rather than passes it on.** This is the §2.6
+form of our existing quarantine-not-reap rule (v2.27.2): we quarantine on a *dead* owner; ollama
+showed we must also quarantine on a *poisoned resource from a live one*.
+
+#### 2.6.3 A process ledger, and release REAPS (ollama — the squatter can be you)
+
+ollama's worst contamination came from *inside its own intact fence*: an orphaned `llama-perplexity`
+from an *earlier task of its own*, still at 390% CPU 28 minutes later, its stdout a pipe whose reader
+died with an ssh session — invisible everywhere it looked, and it poisoned a benchmark to 7× slow.
+Lease valid, no other tenant, §2.6 satisfied, measurement garbage. **"An orphaned process of your own
+is a second tenant the fence is blind to, because it is wearing your badge."** Fix: the lease carries
+a **process ledger**, and **release reaps.** This is our GPU-squatter finding (v2.25.0 — a container
+invisible to the lease) generalized: the squatter can be *you*, one task ago.
+
+#### 2.6.4 Liveness comes from the RESOURCE, not the agent's chattiness (ollama — corrects v2.18 at root)
+
+ollama's lease banner read *"idle 12m — watchdog may reclaim"* while `llama-bench` ran on the board at
+121% CPU, eleven minutes into a run it was blocked on. **Idle was measured by tool-call cadence — but
+an agent waiting on a long board job is *maximally* idle by that metric and *maximally* in-use by any
+metric that matters. The busier the resource, the idler the holder looks.** This is the root of our
+v2.18.0 activity-as-heartbeat patch: we *overrode* idle for a busy holder; ollama shows idle must be
+**defined** from the resource (board load, device fds), not from the agent — a correction to *how idle
+is measured*, not just *when it is overridden*.
+
+#### 2.6.5 The health probe must run OUT-OF-PROCESS under a kill-timeout (ollama — the §2.6 wedge)
+
+The §2.6 form of the control-wedging axis (Part 6): a quarantine/handback probe that runs *on* the
+suspect resource can be **wedged by it** — and *"no verdict" and "still working" are the same
+observation.* So any §2.6 health probe runs **out-of-process under a hard `timeout -s KILL`, with
+TIMEOUT as a distinct verdict, never silence** (SIGTERM does not free a driver-stuck thread).
+ollama shipped `bench_guarded.sh` (refuses a non-quiet board and *waits* rather than failing — "a
+bypassed guard is the same as no guard") and `ksweep_safe.sh` (one subprocess per data point, hard
+kill-timeout, results appended to disk as they land) as reference implementations.
+
+#### 2.6.6 Fencing tokens: still yes for boards, no for GPU
+
+A monotonic fencing token minted per acquisition and validated at the *chokepoint* (§2.6.1) closes
+the paused-owner-wakes-after-expiry split-brain. **Boards: yes** (irreversible; quarantine only helps
+after the damage). **GPU: no** (a stale CUDA job is reversible and already covered by reaping).
 
 ### 2.7 Version skew: schema-on-write is only as good as the oldest running writer (Finding 4)
 
@@ -480,8 +586,42 @@ Two mitigations, both cheap, both falling out of machinery we're already adding:
    because the only thing that moves a gated act is a token in a file, and no message can mint one.
 
 Together these mean the shared log can carry a compromised or confused voice without that voice being
-able to *act through* its peers. The blast radius of one bad agent is bounded to what its *own* role
-permits — which is exactly what Part 3 is for.
+able to commit a *gated act* through its peers.
+
+#### 3.6.1 Honest scoping: this bounds impersonation, not steering (image_gen)
+
+v3 overclaimed here, and the fix is one sentence of honesty. v3 wrote *"the blast radius of one bad
+agent is bounded to what its own role permits."* **False** — because a peer's role *includes* posting
+to the bus, and posting *is* the attack surface. A prompt-injected peer, **correctly identity-stamped,
+requesting no gated act**, posts *"the RM extractor has a sign bug, don't gate on it until patched"* —
+and every agent that adopted that tool now distrusts a working gate and ships unverified values. No
+token, no impersonation, blast radius = the fleet's verification posture. So state it plainly: **§3.6
+bounds impersonation and gated action *technically*; it bounds *steering* only as strongly as the
+weakest reviewer's skepticism.** Steering is bounded by the fleet's verify-don't-obey *culture* — a
+social control, not an architectural one. Do not let the doc claim the architecture enforces what the
+norm enforces; that is the precise move that produced "relayed consent is not consent."
+
+#### 3.6.2 The measured threat is unprovenanced CREDENCE, not forged authority (backend, rt1180)
+
+The fleet's actual damage all week came not from forged *acts* but from unprovenanced *claims*: a false
+`sm80 binary-compat` mechanism traveled through four sessions into two shipped documents *with correct
+attribution and no token*; a stale `8.78×` was served, cited, to a downstream consumer; a dirty-card
+watts figure sat in a published perf/W denominator. **A gate protects an act; the fleet's currency is a
+claim.** rt1180 gave the model-side proof: its emulator returns a *fabricated* 6 MHz that lands in the
+guest's arithmetic, and its honesty flag was *a C comment the firmware cannot read* — *"an out-of-band
+flag is not an honest fault."* The countermeasure is **not** a token and **not** a truth engine (that
+is the role-explosion trap). It is a **credence ladder** — the delivery ladder's sibling, and just as
+never-promoted:
+
+> **asserted → sourced → verified (method, date, what checked it).**
+
+Concretely: a **provenance stanza** (method + date + gate) is *required at artifact boundaries only* —
+things that ship, or that another session will build on — and the fleet norm is that **an
+unprovenanced claim is quotable but not buildable-on.** The failure all week was the silent promotion
+of *asserted* to *verified* — the same rung-promotion sin the delivery ladder already forbids, and the
+same sin §2.3 v3 committed with its read-event. *A number with no provenance must be as unusable as a
+forged token, whether it came from an attacker, a confused peer, or your own past self* — the defense
+is indifferent to intent, because every real instance this week had no attacker.
 
 ## Part 4 — The unified human-approver surface
 
@@ -526,6 +666,18 @@ the desktop stays a spatial workbench — that split is correct and we keep it).
   **observed state — is an agent actually blocked? — not from sender-declared labels, which inflate.**
   Only the top tier is allowed to page; the rest populate the queue silently. (This is also the
   correct home for the wake-floor logic we already made conditional on the wait-for graph.)
+- **Priority is INFERRED from structure, with a marker only as override, and the cost lands on the
+  marker (orb_slam).** A sender rating its own message's priority is *one estimator* — "important to
+  me" and "urgent to you" correlate by construction, the same collapse as author-reviews-own-work — so
+  any sender label inflates to 100% where it carries zero information. The independent estimator is
+  **structure**: a directed message that isn't a reply-in-thread and carries a question is almost
+  certainly an ask; a mass-cc status post isn't. Reserve an explicit `ask:`/`close:` marker as an
+  *override* for what inference gets wrong, never the default — **and make the cost land on the
+  marker** by surfacing each session's pile of its *own* unclosed asks on its *own* dashboard, so
+  over-marking makes *you* look blocked. That inverts the incentive the `cc`-storm exposed (broadcasting
+  was *free* to the sender). orb_slam proved this on itself: it answered "does a priority marker
+  inflate?" in a message it over-addressed to `>4` recipients, which the announcement rule then
+  correctly buried — *the structure out-voted the intent, against the answer's own author.*
 - **Grant state is a first-class row:** *"Approved — waiting for the session to push,"* with a Revoke
   button, so a live permission is always visible and retractable.
 
@@ -573,13 +725,16 @@ control plane.
    small, reversible step. *Guarantee preserved:* the human log is untouched; a projection rebuilds by
    replay if wrong.
 
-3. **★ Hook-native delivery — do this early, right after offsets move.** Promote `prompt-check`
-   (`UserPromptSubmit`) + `SessionStart` into the read path and add the **Stop-reason delivery**
-   (cursor-keyed, §2.3) as the earliest read point, so keystroke injection drops to a mere
-   wake-trigger. Sequenced here, ahead of capabilities, **because it removes the buggiest plane rather
-   than hardening it** — every week injection stays the primary read path is a week the storm/void
-   failure modes stay live. *Guarantee preserved:* injection still works as a fallback; if a wake is
-   lost, mail lands at the session's next turn-end or prompt.
+3. **★ Hook-native delivery with the TWO-PHASE COMMIT — do this early, right after offsets move, and
+   do the commit-point fix FIRST within it.** Promote `prompt-check` (`UserPromptSubmit`) +
+   `SessionStart` + the `Stop`-reason into the read path, but the load-bearing change is §2.3.2: the
+   cursor advances over what was **received**, not emitted — advance-to-selected (one line, also fixes
+   the `--all-tags` bug), bounded resumable emission, and the two-phase commit (cursor moves only when
+   the next hook fires). Keyed on the member (step 1). This is sequenced ahead of capabilities
+   **because it removes the buggiest plane rather than hardening it**, and the fleet review just
+   measured it losing mail live — every week it waits is a week messages vanish. *Guarantee preserved:*
+   injection still works as a fallback; a lost wake or a truncated emission is re-delivered, never
+   lost.
 
 4. **Capability/role model — backward-compatible by default.** Add the role file + the one hook
    enrichment, and **default every session to `Peer` — byte-for-byte today's behavior** (full local
@@ -624,41 +779,125 @@ to zero:
    traffic; **no canary act ever runs inside a real session.**
 
 So the old "fleet-wide or scheduled?" question dissolves: **synthetic-on-deploy + cron for logic,
-heartbeat-absence for wiring.** Blast radius is zero by construction.
+heartbeat-absence for wiring.** But the fleet review proved suites (1) and (2) as stated are *both
+still foolable*, in three distinct ways — and each fix is cheap.
 
-`FAILURE_MODES.md` becomes the seed list for suite (1): each named class → a test — *kill Conductor
-mid-delivery, assert zero message loss; corrupt a projection, assert replay reconstructs it; splice
-the registry, assert the referee still resolves identity; post a forged "Kyle says…" message, assert
-it moves no gated act.* The doc's central promises are currently *asserted*; they're cheap to make
-*tested*, and this system has already demonstrated it punishes untested confidence — most recently in
-§2.3, where a docs-derived "correction" survived exactly until someone ran it.
+#### 6.1 The coverage staircase — a suite that doesn't know how much it checked (backend → mcxn → rt1180)
+
+Three reviewers refuted each other's fixes, each by shipping the prior one and watching it fail. The
+result is a staircase, and only the top step is binding:
+- **config-conformance** (backend): suite (1) tests gate *logic*, not the *deployed* artifact — so
+  today's tag-splice (a DATA file replaced, the logic unchanged) returns GREEN while a session ceases
+  to exist. Add a third suite asserting the deployed *data* against ground truth held **outside** it
+  (every active-tag resolves to a live member; every registry row points at a real member; no member's
+  identity changed without a human tap). Run it as a post-step of the §2.2 projection replay — it's
+  referential-integrity over projections, not new machinery.
+- **coverage-counted** (mcxn): suite (1) enumerates "every gate"; drop a gate's registration and it
+  finds N−1, passes them all, reports GREEN. *"A suite that checked 9 gates and one that checked 0 are
+  indistinguishable by verdict."* So the suite must **count and publish** its coverage.
+- **coverage-ASSERTED** (rt1180 — the binding step): *publishing a count is not asserting it.* rt1180
+  shipped mcxn's fix; its gate prints "4371 registers blind" in bold every run and returns `PASS`,
+  because the number has no expected value beside it. **Coverage must be an ASSERTION against an
+  expected value held outside the artifact, with a bidirectional ratchet: coverage DOWN fails the
+  build; coverage UP forces deleting the line that said it was lower** (mcxn's bidirectional-allowlist
+  discipline applied to coverage itself). *A gate whose coverage cannot fail it is a gate you have
+  agreed not to look at.* This makes the "blind register" class impossible, not merely visible.
+
+#### 6.2 Watch the watcher — the dead-man's switch cannot live in the thing that dies (image_gen)
+
+Suite (2)'s heartbeat-absence detector *is* Conductor — and it goes blind at exactly the moment a hook
+can vanish: **the deploy**, when a `settings.json` splice can unregister a gate *and* Conductor
+restarts (image_gen verified ≥5 restarts in one evening, with PIDs). Hook off + Conductor blind →
+sessions run ungated, nothing pages. Failure-class #7 reintroduced *inside* the mechanism built to
+catch it, and the two conditions are **correlated** (a deploy is both). **Fix: wiring-liveness moves to
+a watcher with a failure mode independent of Conductor** — a cron/systemd timer (not the uvicorn
+process) that pages if *either* a registered hook *or Conductor itself* goes silent. (§2.4 holds: a
+dead Conductor doesn't disable a *live* gate; the hole is that it can't notice a gate that went
+*missing*.)
+
+#### 6.3 Capture the payloads; don't author them (image_gen)
+
+Suite (1) pipes gates "the exact payload the harness would send" — but a *hand-authored* payload is a
+**model of the harness**, and a test whose fixtures agree with the gate about a shape the harness no
+longer sends is a mirror. **Capture suite-1 payloads from a real harness invocation, and canary the
+payload SCHEMA itself** (does the live harness still send the shape the fixtures assume?). This is
+§2.3's docs-vs-test lesson one layer up — and it is exactly the discipline the two live harness tests
+in this doc already used.
+
+#### 6.4 Control-wedging — a hung gate reads as a healthy one (ollama)
+
+Every referee is built fail-safe (on error, refuse) — but **fail-safe assumes the gate RETURNS.** A
+hang-inducing input doesn't reach the gate and get rejected; it **wedges** the gate before it can
+report (ollama measured this: an NPU call hung a probe for 10 min, immune to SIGTERM). *"No verdict"
+and "still working" are the same observation.* **Fix: any referee that EXECUTES its subject** — suite
+(1) piping payloads to gate scripts, the Stop-hook cursor read, any §2.6 handback probe — **runs
+out-of-process under a hard `timeout -s KILL`, and a timeout is a distinct verdict, never silence.**
+
+#### 6.5 The recurring question, made required
+
+Across mcxn, image_gen, and rt1180 the same one-line test recurs, and it becomes a **required question
+per control, answered in writing:** *what does this control do when its input is missing — and is that
+outcome distinguishable from the input being fine?* A referee that can't resolve an identity, can't
+find a table, or can't reach a hook, and **proceeds on a plausible default**, has built the failure —
+image_gen's *"the fallback is the ALARM, not the default"* made a requirement. `FAILURE_MODES.md`
+becomes the seed list: each class → a test (*kill Conductor mid-delivery, assert zero loss; corrupt a
+projection, assert replay; splice the registry, assert identity still resolves; truncate a `check`
+emission, assert the cursor did not advance past what was received; post a forged "Kyle says…", assert
+it moves no gated act*). The doc's promises are currently *asserted*; they are cheap to make *tested*,
+and this system has repeatedly demonstrated it punishes untested confidence.
 
 ---
 
-## Open questions — status after round 2 (converged)
+## Part 7 — What the fleet review found (and why it validates the whole design)
 
-Every fork raised across two review rounds is now resolved and folded into the doc above. Nothing is
-left deliberately open; what remains is the *"re-verify on the live harness before building"* rigor
-that §2.3's live test just demonstrated the value of.
+Nine sessions reviewed v3, each assigned the plane whose failure it had lived, each returning at most
+one blocking objection with a *failing scenario*, not a preference. Ten blockers came back. **Not one
+was hypothetical; most were measured tonight.** They compose — none contradicts another — and every
+one is folded into the sections above.
 
-| Question | Resolution | Where |
-|---|---|---|
-| Identity anchor | `session_id`, not PID→dir (harness-minted, unforgeable, resume-stable) | §3.4 |
-| Delivery mechanism | 3 harness read points (SessionStart / UserPromptSubmit / **Stop-reason**); injection is a mere wake-trigger | §2.3 |
-| Stop `reason` visible to model? | **Yes** — settled by live test on Skippy (Claude Code 2.1.207) | §2.3 |
-| Unbound-`session_id` default | Peer *in the compat window* → adoption card + interim tightening → **ratchet to Observer** | §3.4 |
-| Stop-latch hostage risk | cursor-keyed (≤1 block per message ID); "Kyle here" derived from focus | §2.3 |
-| Read-only enforcement | launch-profile ships; **tested bwrap wrapper on the shelf**; UID only if ever needed | §3.4 |
-| Canary blast radius | canary the **referee** (synthetic-on-deploy + cron) + heartbeat-absence for wiring; **zero** real-session acts | Part 6 |
-| Fencing tokens | boards only (irreversible); not GPU | §2.6 |
-| Where roles are set | grant Trusted PC-only; revoke from anywhere (reversibility rubric) | §3.3–3.4 |
-| Service vs. Peer | attenuated Peer, keeps its UI name | §3.3 |
-| Control-plane scope | only planes that have actually bitten us (offsets, leases, grants/roles) | §2.2 |
-| Efficiency cost | default-Peer is byte-for-byte today; watch only Stop-hook + role-file hot paths | §2.3, §3.4 |
+**The meta-finding is the strongest evidence in this document for its own thesis:** the review of the
+delivery plane was itself corrupted by the delivery plane, three different ways. 95emulator read its
+request and filed it as an announcement (triage burial). orb_slam's answer landed but was buried by
+the `>4`-recipient announcement rule (classification burial). **91emulator's review request was marked
+read that its model never received** — and it had to `grep messages.md` by hand to find the request to
+review the thing that lost the request (commit-point loss). *A directed ask that never lands can be
+triaged neither badly nor well.* The bus proved the doc's central claim by failing exactly as the doc
+says the old design fails — which is why the fix (§2.3.2, two-phase commit) is not optional.
 
-**The one standing discipline** (not an open question — a rule): every hook-contract assumption is
-re-verified against the *installed* harness with a 5-minute behavioral test before it's built on. v2
-learned this the hard way; the process now bakes it in (Part 6, suite 1).
+| Blocker | From | Fixed in | The failing scenario, in one line |
+|---|---|---|---|
+| Cursor commit-point | 91emulator | §2.3.1–2 | `check` marks read what the transport truncated → 193 msgs vanished (measured) |
+| Cursor key axis | 93 + 95emulator | §2.3.3 | key + address from one mutable source → a rename re-keys and re-routes at once |
+| Fence the chokepoint | qualcomm | §2.6.1 | stale owner writes a DTB via `ssh cp` — not a flash cmd; the blocklist §3.1 condemns |
+| Handback predicate | ollama | §2.6.2 | wedged NPU handed to next tenant, who debugs it as their own bug |
+| Process ledger + reap | ollama | §2.6.3 | your own orphaned process, inside your intact fence, poisons the measurement |
+| Resource-derived idle | ollama | §2.6.4 | "idle 12m" while the board runs at 121% — the busier it is, the idler you look |
+| Config-conformance | backend | §6.1 | tag-splice → both test suites GREEN while a session ceases to exist |
+| Coverage counted | mcxn947qemu | §6.1 | drop a gate; the suite finds N−1, passes them all, reports GREEN |
+| Coverage **asserted** | rt1180emulator | §6.1 | publishing "4371 blind" in bold and returning PASS — a number is not a control |
+| Watch the watcher | image_gen | §6.2 | the liveness detector is Conductor, which goes blind at the deploy |
+| Control-wedging (axis) | ollama | §6.4, §2.6.5 | a hung gate reads as a healthy one — "no verdict" = "still working" |
+| Credence / steering | backend, rt1180, image_gen | §3.6.1–2 | the damage vector was unprovenanced *claims*, not forged *acts* |
+| Cost-on-the-marker | orb_slam | §4.2 | a self-applied priority label inflates to 100%; the cost must land on the marker |
 
-*Round 2 verdict from the browser: "fold these in and I think v3 is ready for the fleet." Done — this
-is v3.*
+**Two live `bus.sh` bugs** were surfaced and are folded into the §2.3 fix rather than hot-patched
+mid-round (the v2.26.1 lesson: a rushed watermark fix re-breaks the bug it exists to fix):
+91emulator's cursor-commit and mcxn's `--all-tags` watermark poisoning — both the same root, both
+closed by "advance to what was selected, not the file's newest."
+
+## Standing disciplines (rules, not open questions)
+
+1. **Every hook-contract assumption is re-verified on the *installed* harness with a 5-minute
+   behavioral test before it is built on.** This document ran that test twice and was wrong once each
+   direction: v2 wrongly said the Stop `reason` isn't model-visible (a live test proved it is; the
+   browser was right); round-1 review wrongly said `session_id` is ephemeral across `--continue` (a
+   live test proved it stable; I was right). *The rule wins both times; the parties don't.*
+2. **A control must be able to fail.** A coverage number with no threshold, a read-event that only
+   ever says "read", a gate that only ever passes, an idle metric that only ever concludes idle — each
+   is a fact wearing a control's uniform. If it cannot return "no", it is decoration.
+3. **Bind durable state to the durable principal, advance it over what was received, and make the
+   fallback the alarm.** The three axes the fleet converged on — identity, delivery, testing — are one
+   rule at three layers.
+
+*This is v4. Next: back to the browser with the fleet's blockers folded in, then implementation in the
+Part 5 migration order.*
