@@ -344,9 +344,19 @@ function persistCard(p) {
     btn.addEventListener("click", async () => {
       [go, no].forEach((b) => (b.disabled = true));
       btn.innerHTML = '<span class="spin"></span> …';
+      // Do NOT swallow the failure. A dead button that silently does nothing is exactly the
+      // failure this whole project is about: the card sat with a malformed key the backend
+      // 400'd, and the empty catch turned that into "Deny does nothing." Surface it instead.
       try {
-        await api(`/api/persist/${encodeURIComponent(p.key)}/${act}`, { method: "POST" });
-      } catch { /* refresh shows the truth */ }
+        const r = await api(`/api/persist/${encodeURIComponent(p.key)}/${act}`, { method: "POST" });
+        if (r && r.ok === false) throw new Error(r.result || "gate refused");
+      } catch (e) {
+        [go, no].forEach((b) => (b.disabled = false));
+        btn.textContent = act === "deny" ? "Deny" : "Allow once";
+        el.querySelector(".card-q")?.insertAdjacentHTML(
+          "afterend", `<div class="row-sub" style="color:var(--bad,#ff6b6b)">couldn't ${act}: ${esc(String(e.message || e))} — tap again or clear from a terminal</div>`);
+        return;
+      }
       refresh();
     });
   }

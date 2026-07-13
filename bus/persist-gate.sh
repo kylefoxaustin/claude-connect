@@ -203,7 +203,11 @@ _hit="$(printf '%s' "$INPUT" | python3 -c "$_PY" 2>/dev/null || true)"
 KIND="$(printf '%s' "$_hit" | head -1 | cut -f1)"
 TARGET="$(printf '%s' "$_hit" | head -1 | cut -f2)"
 DETAIL="$(printf '%s' "$_hit" | head -1 | cut -f3- | tr '\n\r\t' '   ')"
-KEY="$(printf '%s' "$TARGET" | tr '/ ' '__' | sed 's/^_*//')"
+# KEY is the request/token FILENAME and travels to the phone as the POST key, which the
+# backend validates against [A-Za-z0-9._-] and 400s on anything else — so a key with a
+# backtick/quote/paren (from a mis-parsed target) makes Deny a silent no-op on the phone.
+# Sanitize EVERY other byte to '_' at the source: the filename is always backend-safe.
+KEY="$(printf '%s' "$TARGET" | tr -cs 'A-Za-z0-9._-' '_' | sed 's/^_*//;s/_*$//')"
 now="$(date +%s)"
 
 # ---- a valid token allows it, and is CONSUMED (one act per approval) ---------------------

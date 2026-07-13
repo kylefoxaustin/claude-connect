@@ -71,3 +71,23 @@ def test_reads_and_normal_work_stay_free(env):
     assert gate("git commit -m x", env) == ALLOWED
     assert gate("echo done", env) == ALLOWED
     assert gate("grep -E 'a|settings|crontab|b' f.txt", env) == ALLOWED  # word, not invocation
+
+
+def test_request_filename_is_backend_safe(env, tmp_path):
+    """The request FILENAME becomes the phone's POST key, which the backend validates against
+    [A-Za-z0-9._-] and 400s on anything else — a 400 the phone UI swallowed, turning Deny into a
+    silent no-op. So a target with a quote/backtick/paren (from a mis-parsed command) MUST NOT
+    leak those bytes into the filename. This is the actual "Deny does nothing" bug."""
+    # The gate files requests under $HOME/.claude/bus-state/coord (COORD default), which is
+    # distinct from CLAUDE_CONFIG_DIR (the fixture's gated dir). HOME is tmp_path.
+    reqdir = tmp_path / ".claude" / "bus-state" / "coord" / "persist-requests"
+    for cmd in ["echo x > ~/claude/bin/probe.sh'",
+                "cp a b ~/claude/bin/x`)",
+                "echo x >> ~/claude/commands/z.md',"]:
+        assert gate(cmd, env) == DENIED
+    filed = list(reqdir.iterdir()) if reqdir.is_dir() else []
+    assert filed, "a denied act must file a request"
+    ok = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+    for f in filed:
+        bad = [c for c in f.name if c not in ok]
+        assert not bad, f"request filename {f.name!r} has backend-illegal chars {bad}"
