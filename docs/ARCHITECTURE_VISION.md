@@ -825,10 +825,29 @@ Three reviewers refuted each other's fixes, each by shipping the prior one and w
 result is a staircase, and only the top step is binding:
 - **config-conformance** (backend): suite (1) tests gate *logic*, not the *deployed* artifact — so
   today's tag-splice (a DATA file replaced, the logic unchanged) returns GREEN while a session ceases
-  to exist. Add a third suite asserting the deployed *data* against ground truth held **outside** it
-  (every active-tag resolves to a live member; every registry row points at a real member; no member's
-  identity changed without a human tap). Run it as a post-step of the §2.2 projection replay — it's
-  referential-integrity over projections, not new machinery.
+  to exist. Add a third suite asserting the deployed *data* against ground truth held **outside** it.
+  **But backend then killed its own first version of this suite by testing it against the real
+  incident, and the correction is load-bearing:** checking that *every present row is valid* (every
+  active-tag resolves to a live member; every registry row points at a real member) **passes the
+  splice green**, because the *missing* row is invisible — "a coverage check that cannot detect a
+  coverage hole." The expected set must come from an oracle the splice *cannot touch*, and there is
+  exactly one such artifact on the network: **the append-only bus log.** So the assertion is *"are any
+  rows MISSING,"* not *"are the present rows valid"*:
+
+  > **For every identity that has ever posted a message in the log, assert the deployed config can
+  > still reproduce it. The set of producible identities must never SHRINK without an explicit
+  > retirement.**
+
+  The log is the right oracle for three reasons the config can't match: it is **not derived from the
+  config** (sessions write it; no migration can splice it — every recovery this week hung off it); it
+  carries an **expected value with a threshold** (the producible-identity set is monotonic-or-alarm);
+  and it is an **independent estimator** in 93emulator's sense (the config claims *"these are the
+  sessions"*; the log proves *"these sessions SPOKE"* — a tag map cannot lie about who talked
+  yesterday). Run it as a post-step of the §2.2 projection replay — still referential-integrity over
+  projections, just with the *right* reference. *(This is rt1180's "assert against an expected value
+  held outside the artifact" applied to config, and it landed as backend's own fourth
+  coverage-failure-in-the-coverage-fix of the day: having found the unchecked term, it checked the
+  term it found and never asked what its own check couldn't see.)*
 - **coverage-counted** (mcxn): suite (1) enumerates "every gate"; drop a gate's registration and it
   finds N−1, passes them all, reports GREEN. *"A suite that checked 9 gates and one that checked 0 are
   indistinguishable by verdict."* So the suite must **count and publish** its coverage.
