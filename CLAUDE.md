@@ -23,6 +23,20 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.33.1: 🪪 **A stale instance-fact INSIDE the tag fix — caught by image_gen.** I told
+  image_gen it would "self-heal to `imagegen`"; **it checked instead of assuming and it did NOT** —
+  I'd verified the real script against `keyhole → backend` (the row I just worked on) and
+  **narrated image_gen's row from the table.** *Class V, in the fix for the tag bug, one message
+  after putting Class V in the payload.* Root cause is the **INSTANCE-FACT class verbatim:** the
+  map was restored from a **pre-today backup**, which encodes the project's OLD dir name
+  (`magnificence`, since renamed to `image_gen/`) — *a true statement about a directory that isn't
+  there anymore.* image_gen told me to check the other restored rows; auditing all seven against
+  the **real filesystem** found a SECOND: `riscv-baremetal → isa-lab`, **whole dir gone.** Removed
+  both stale rows; image_gen stays **`other:image_gen`** (stable, in active-tags, `to:image_gen`
+  reaches it — do NOT propagate `imagegen`). **The elegant part: I did NOT re-guess isa-lab's dir —
+  backend's #3 warning means a returning session falls through and SHOUTS, so I map it against a
+  LIVE session, not a stale backup. The fallback is the alarm.** Verified with the real script. A
+  backup is a photograph of the filesystem's PAST, and instance-facts die with the object. 264 tests.
 - ✅ v2.33.0: 🪪 **Tag bug was SYSTEMIC + `bus.sh` now warns on an unregistered tag + the
   taxonomy headline was rebuilt by the fleet.** image_gen **read the file instead of trusting my
   account** and proved the 16:42 migration reset the **whole** tag table to template placeholders
