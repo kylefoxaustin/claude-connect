@@ -654,6 +654,25 @@ function createSessionShell() {
 // Update a session tile in place: refresh class/style/dataset and rebuild its
 // inner content on the existing node. The node identity is preserved so the
 // end-fade transition, drag handlers and resize observer all survive.
+// Member-role selector (v4 §3.4). A tiny <select> on the tile: Observer (read-only) / Service /
+// Peer (default) / Trusted. Changing it POSTs to /api/members/<member>/role; the referee enforces on
+// the session's next tool call. stopPropagation so picking a role never triggers the tile's
+// drag/focus handlers. Rebuilt from state on every render (never painted-and-hoped) — the v2.24.3 rule.
+const MEMBER_ROLES = ["observer", "service", "peer", "trusted"];
+function roleSelect(s) {
+  if (!s.member) return null;
+  const cur = s.role || "peer";
+  const sel = el("select", {
+    class: "tile-role role-" + cur,
+    title: "member role — observer: read-only · service · peer: default (=today) · trusted: self-approve window",
+    onclick: (e) => e.stopPropagation(),
+    onchange: (e) => { e.stopPropagation(); window.setMemberRole(s.member, e.target.value); },
+  }, ...MEMBER_ROLES.map((r) =>
+    el("option", r === cur ? { value: r, selected: "selected" } : { value: r }, r)));
+  sel.value = cur;
+  return sel;
+}
+
 function fillSessionTile(tile, s, state) {
   const key = tileKeyForSession(s);
   const group = groupForKey(key);
@@ -759,6 +778,7 @@ function fillSessionTile(tile, s, state) {
     el("div", { class: "tile-footer" },
       el("span", {}, `msgs: ${s.message_count}`),
       el("span", {}, `⏱ ${ago(s.last_activity_at)}`),
+      roleSelect(s),
     ),
   ].filter(Boolean);
   tile.replaceChildren(...children);

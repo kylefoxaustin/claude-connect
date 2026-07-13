@@ -29,6 +29,8 @@ from .activity import ActivityWatcher
 from .auth import path_requires_auth, resolved_token, token_ok
 from .autonomy import close_window, open_window, peers_in_window, read_windows
 from .decisions import plan_keystrokes, read_decisions, reap_decision
+from .members import ROLES as _MEMBER_ROLES
+from .members import ensure_bound, members_summary, read_members, set_role
 from .provenance import attest, prune as prune_ledger
 from .webpush import (
     add_sub,
@@ -273,6 +275,12 @@ class AppState:
         # settings.json is the RCE — a hook there is arbitrary code on every tool
         # call in every session, and it looks like editing a config file.
         self._persist_requests: list[dict[str, Any]] = []
+        # THE MEMBER REGISTRY (v4 §3.4): Conductor is the registrar. It binds each live session's
+        # unforgeable session_id -> a durable member ONCE (never re-derived from a drifting tag),
+        # and the referee (persist-gate via member-registry.sh) reads the same file to enforce roles.
+        self.bus_state = settings.bus.state_dir_resolved
+        self._members: list[dict[str, Any]] = []              # member -> role summary for the UI
+        self._role_by_session: dict[str, str] = {}            # session_id -> role, for the tiles
         # 'tell this session its push was approved' — delivered only when it's QUIET,
         # because a busy session swallows injected keystrokes without a trace.
         self._push_notices: dict[str, dict[str, Any]] = {}
@@ -370,6 +378,11 @@ class AppState:
         for r in self.sessions.values():
             if r.tag:
                 r.pending_count = self._pending_for(r.tag)
+
+        # MEMBER REGISTRY (v4 §3.4): bind each live session's session_id -> a durable member ONCE
+        # (the member is set from the tag at first sighting and NEVER re-derived, so it can't drift
+        # with a `cd`). Off-thread — it may write a small file. Roles are only ever RAISED by Kyle.
+        await asyncio.to_thread(self._sync_members)
 
         # Directed-unread (messages addressed `to:<tag>` that the session hasn't
         # read) drives auto-delivery — one log parse for all live tags.
@@ -913,6 +926,30 @@ class AppState:
 
     # --- helpers -------------------------------------------------------------
 
+    def _sync_members(self) -> None:
+        """Bind every live session's session_id -> a durable member (v4 §3.4). Runs off-thread.
+
+        The member is set ONCE, from the bare tag at first sighting, and never re-derived — so a
+        session that `cd`s keeps its identity, and a role Kyle set is never reset by a later scan
+        (``ensure_bound`` is a no-op once bound). Conductor is the registrar; the referee reads the
+        same file. A brand-new fleet that has never had a role set still gets a members file of all
+        ``peer`` rows — which is byte-for-byte today, because the referee adds no denial for peer.
+        """
+        try:
+            for r in self.sessions.values():
+                sid = getattr(r, "session_id", "") or ""
+                if not sid or r.status == Status.ENDED or not r.tag:
+                    continue
+                member = _bare_tag(r.tag)
+                if member:
+                    ensure_bound(self.bus_state, sid, member, project=member)
+            self._members = members_summary(self.bus_state)
+            self._role_by_session = {
+                sid: rec["role"] for sid, rec in read_members(self.bus_state).items()
+            }
+        except Exception:
+            log.exception("member sync failed (non-fatal)")
+
     def _pending_for(self, tag: str) -> int:
         """Pending count for a tag. For the markdown bus, computed live from the
         log; for other adapters, falls back to reading <tag>.pending."""
@@ -1070,6 +1107,9 @@ class AppState:
             ret = self._active_retraction_for(r.tag)  # unacknowledged pull-back → red banner
             if ret:
                 d["retraction"] = {"sender": ret["sender"], "text": ret["text"]}
+            sid = getattr(r, "session_id", "") or ""
+            d["role"] = self._role_by_session.get(sid, "peer")   # member registry role (v4 §3.4)
+            d["member"] = _bare_tag(r.tag)
             sessions.append(d)
         parked = []
         for p in self.parked:
@@ -1081,6 +1121,7 @@ class AppState:
         return {
             "sessions": sessions,
             "parked": parked,
+            "members": self._members,        # member registry (v4 §3.4): member -> role summary
             "fadeout_seconds": self.settings.ui.end_fadeout_seconds,
             "wmctrl_available": wmctrl_available(),
         }
@@ -1806,6 +1847,36 @@ async def decide_persist(key: str, action: str, request: Request) -> dict[str, A
                                        "persist": state._persist_requests})
     log.info("persist %s [%s]: %s", action, name, (proc.stdout or "").strip() or proc.returncode)
     return {"ok": ok, "result": (proc.stdout or "").strip()}
+
+
+@app.post("/api/members/{member}/role")
+async def set_member_role(member: str, request: Request) -> dict[str, Any]:
+    """Set a member's role (v4 §3.4) — the deliberate human act. Observer *lowers* authority,
+    Trusted *raises* it, so it is always Kyle's tap and never inferred. The referee reads the same
+    file on its next tool call and enforces; there is no push to the sessions, and nothing is
+    consumed — a role is durable state, visible and revocable (set it back to peer to revoke)."""
+    body = await request.json()
+    role = (body or {}).get("role", "")
+    if not member or not all(c.isalnum() or c in "._:-" for c in member):
+        raise HTTPException(status_code=400, detail="bad member")
+    state: AppState = request.app.state.cond
+    try:
+        changed = await asyncio.to_thread(set_role, state.bus_state, member, role)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    state._members = await asyncio.to_thread(members_summary, state.bus_state)
+    state._role_by_session = {
+        sid: rec["role"] for sid, rec in (await asyncio.to_thread(read_members, state.bus_state)).items()
+    }
+    log.info("member role set: %s -> %s (%d session(s))", member, role, changed)
+    await state.hub.broadcast("members", {"members": state._members})
+    return {"ok": True, "member": member, "role": role, "sessions_changed": changed}
+
+
+@app.get("/api/members")
+async def get_members(request: Request) -> dict[str, Any]:
+    state: AppState = request.app.state.cond
+    return {"members": state._members, "roles": list(_MEMBER_ROLES)}
 
 
 @app.get("/api/ops")

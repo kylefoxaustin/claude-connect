@@ -299,6 +299,13 @@ function handleMessage({ kind, payload }) {
       renderPushInbox(state);
       break;
     }
+    case "members": {
+      state.members = (payload && payload.members) || [];
+      // roles ride on each session in the sessions payload; a members broadcast just refreshes the
+      // registry summary. Re-render so any open role selectors reflect a change made elsewhere.
+      renderGrid(state);
+      break;
+    }
     case "autonomy": {
       state.autonomy = payload || { windows: [] };
       renderAutonomyBar();
@@ -629,6 +636,29 @@ window.toggleBusActive = async function toggleBusActive(tag, makeActive) {
     requestAnimationFrame(() => redrawLines(state));
   } catch (e) {
     console.warn("active toggle error", e);
+  }
+};
+
+// Member registry (v4 §3.4): set a session's member ROLE. Observer LOWERS authority (read-only),
+// Trusted RAISES it — so this is always Kyle's deliberate tap. The referee reads the members file on
+// its next tool call; nothing is pushed to the session.
+window.setMemberRole = async function setMemberRole(member, role) {
+  if (!member) return;
+  try {
+    const r = await fetch(`/api/members/${encodeURIComponent(member)}/role`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role }),
+    });
+    if (!r.ok) { console.warn("role set failed", r.status); return; }
+    const body = await r.json();
+    // optimistic: stamp the role onto every live session of this member so the tiles update at once
+    for (const s of (state.ops && state.ops.sessions) || state.sessions || []) {
+      if (s.member === member) s.role = role;
+    }
+    renderGrid(state);
+  } catch (e) {
+    console.warn("role set error", e);
   }
 };
 
