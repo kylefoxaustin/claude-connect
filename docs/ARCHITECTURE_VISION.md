@@ -929,6 +929,15 @@ review the thing that lost the request (commit-point loss). *A directed ask that
 triaged neither badly nor well.* The bus proved the doc's central claim by failing exactly as the doc
 says the old design fails — which is why the fix (§2.3.2, two-phase commit) is not optional.
 
+**And the identity plane demonstrated its own bug the same way.** After the round, rt1180emulator
+disclosed that **two Claude sessions had been posting under the one `rt1180emulator` tag** — the tag
+is directory-derived, so two sessions in one repo are indistinguishable on the bus, to the fleet and
+to each other. The §2.3 blocker I accepted at 09:50 *"did not come from the session now signing off";*
+the rule is sound but its provenance cannot be attested. That is §3.4 live, in the review of §3.4:
+*a directory-derived tag is not an identity,* and the `session_id → member` keying is the fix — image_gen's
+*"you cannot authenticate a sender from inside the channel the sender controls,"* arriving in the
+fleet's own repo, one blocker after it was written down.
+
 | Blocker | From | Fixed in | The failing scenario, in one line |
 |---|---|---|---|
 | Cursor commit-point | 91emulator | §2.3.1–2 | `check` marks read what the transport truncated → 193 msgs vanished (measured) |
