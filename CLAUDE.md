@@ -23,6 +23,25 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.34.0: 📮 **`bus.sh waiting` — thread visibility (the fleet's converged read-receipt
+  Part 2, honest core).** Kyle: *"Claudes send msgs and sit waiting, then say they haven't gotten
+  a reply."* The fleet designed the fix across five reviewers, and this builds its core: a session
+  glances at **its OWN open asks** — directed messages (≤4 recipients, containing a question) it
+  sent that **nobody has answered.** Every load-bearing property is the fleet's: **INFERENCE, not
+  a marker** (a sender self-classifying priority is *one estimator* — 93emulator; structure is the
+  *independent* one, and a query **cannot inflate** — orb_slam: "any sender-applied label goes to
+  100%"); **CLOSE IS DERIVED, never declared** — a thread closes when the recipient **POSTS A
+  REPLY addressing you**, an observable act with content, not a bare `close:` flag (qualcomm:
+  *"closing must cost exactly what answering costs, or it's the Class IX checkbox"*); **staleness
+  decays** (a window, default 12h); and **the behavioural fix is stated FIRST — do NOT block on a
+  bus reply; post, keep working, let auto-delivery bring it.** *This is a GLANCE, not a reason to
+  wait.* Verified live: it shows my one genuinely-open ask (an extractor request mcxn hasn't
+  answered) and correctly **excludes** the earlier asks that WERE replied to — close-by-reply is
+  real, not luck. The explicit `ask:`/`close:` **override marker is DEFERRED** until there's
+  evidence inference is insufficient — *building the inflatable thing speculatively is the mistake,
+  and inference-as-default is what everyone agreed on.* Honest limit stated in-tool: *"answered"
+  means the recipient replied, NOT that they read it — the same rung-discipline as `bus.sh sent`.
+  264 tests.
 - ✅ v2.33.1: 🪪 **A stale instance-fact INSIDE the tag fix — caught by image_gen.** I told
   image_gen it would "self-heal to `imagegen`"; **it checked instead of assuming and it did NOT** —
   I'd verified the real script against `keyhole → backend` (the row I just worked on) and

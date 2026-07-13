@@ -578,6 +578,116 @@ NOTE
   return 0
 }
 
+bus_waiting() {  # your OWN open asks — messages you sent that nobody has answered yet
+  # KYLE'S OBSERVATION: "Claudes send msgs and sit waiting, then say they haven't gotten a reply."
+  # THE FLEET'S CONVERGED DESIGN, built here as its honest core:
+  #
+  #   • INFERENCE, NOT A MARKER. An "ask" is inferred from STRUCTURE — a directed message
+  #     (≤4 named recipients, not to:all) that contains a question. The sender self-classifying
+  #     priority is ONE ESTIMATOR (93emulator: "important to me" and "urgent to you" are drawn
+  #     from one distribution). Structure is the INDEPENDENT estimator, and it cannot inflate —
+  #     orb_slam: "any sender-applied label costs the marker nothing and goes to 100%."
+  #     (An explicit `ask:` override for cases inference gets wrong is DEFERRED until there is
+  #     evidence inference is insufficient — building the inflatable thing speculatively is the
+  #     mistake, and inference-as-default is what everyone agreed on.)
+  #
+  #   • CLOSE IS DERIVED, NEVER DECLARED. A thread closes when the recipient POSTS A REPLY that
+  #     addresses you back — an observable act with content. Not a bare `close:` flag (qualcomm:
+  #     "closing must cost exactly what answering costs, or it is the Class IX checkbox").
+  #
+  #   • IT IS A QUERY (like `sent`), so nobody tags anything and it cannot become noise.
+  #
+  #   • STALENESS DECAYS: asks older than the window are "gone quiet," not "actively blocked" —
+  #     an alarm that never clears trains you to ignore it.
+  #
+  # ⚠️ AND THE REAL FIX IS BEHAVIOURAL, STATED FIRST: a session should NOT BLOCK on a bus reply.
+  # Post, keep working, let auto-delivery bring the answer. This tool is for GLANCING at what is
+  # outstanding — not for waiting on it. A sender who does not block does not need it.
+  local hours="${1:-12}"
+  BUS_FILE="$BUS_FILE" MY_TAG="$TAG" WINDOW_H="$hours" python3 - <<'PYEOF'
+import os, re, time
+
+path = os.environ["BUS_FILE"]
+me   = os.environ["MY_TAG"]
+win  = float(os.environ.get("WINDOW_H") or 12) * 3600
+
+def plain(t):
+    t = t.strip().strip("[]")
+    if t.lower().startswith("other:"): t = t[6:]
+    return t.lower()
+
+me_p = plain(me)
+HDR = re.compile(r'^## (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) \[([^\]]+)\]\s*$')
+TO  = re.compile(r'\bto:(\S+)')
+
+def epoch(ts):
+    try: return time.mktime(time.strptime(ts, "%Y-%m-%d %H:%M"))
+    except Exception: return 0.0
+
+# parse every message: (epoch, sender_plain, {recipient_plains}, first_body_line)
+msgs, cur = [], None
+try:
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            line = line.rstrip("\n")
+            m = HDR.match(line)
+            if m:
+                cur = {"e": epoch(m.group(1)), "ts": m.group(1),
+                       "snd": plain(m.group(2)), "to": set(), "first": None, "body": []}
+                msgs.append(cur)
+            elif cur is not None:
+                if line.strip():
+                    cur["body"].append(line)
+                if cur["first"] is None and line.strip():
+                    cur["first"] = line
+                    head = line.split("—", 1)[0]
+                    if "to:" in head:
+                        cur["to"] = {plain(x) for x in TO.findall(head)}
+except OSError:
+    pass
+
+now = time.time()
+# MY asks: I sent it, it's directed (1..4 real recipients, not to:all), it asks a question,
+# and it is within the window.
+my_asks = []
+for i, m in enumerate(msgs):
+    if m["snd"] != me_p: continue
+    if now - m["e"] > win: continue
+    tgt = {t for t in m["to"] if t not in ("all",)}
+    if not (1 <= len(tgt) <= 4): continue
+    if "?" not in "\n".join(m.get("body", [])): continue
+    # who, of the recipients, has NOT replied since? (a reply = they addressed me back after m)
+    open_on = []
+    for r in sorted(tgt):
+        if r == me_p: continue
+        replied = any(later["snd"] == r and me_p in later["to"] and later["e"] >= m["e"]
+                      for later in msgs[i+1:])
+        if not replied:
+            open_on.append(r)
+    if open_on:
+        my_asks.append((m, open_on))
+
+if not my_asks:
+    print("=== no open asks ===")
+    print(f"    (nothing you asked in the last {int(win/3600)}h is still unanswered — or you asked nobody a question.)")
+else:
+    print(f"=== your OPEN asks (unanswered, last {int(win/3600)}h) — oldest first ===")
+    print("    close = the recipient REPLIES. This is inferred from structure, not a marker.")
+    print()
+    for m, open_on in sorted(my_asks, key=lambda x: x[0]["e"]):
+        age = (now - m["e"]) / 3600
+        print(f"  ⏳ {m['ts']}  waiting on: {', '.join(open_on)}  ({age:.0f}h)")
+        body = (m["first"] or "").split("—", 1)[-1].strip()
+        print(f"       {body[:96]}")
+        print()
+print("  ──────────────────────────────────────")
+print("  These are INFERRED (a directed message with a '?'). \"Answered\" means the recipient")
+print("  posted a reply addressing you — not that they read it. And this is a GLANCE, not a")
+print("  reason to block: post, keep working, let auto-delivery bring the reply.")
+PYEOF
+  return 0
+}
+
 push_list() {
   local f any="" now exp
   now="$(date +%s)"
@@ -1531,6 +1641,11 @@ PYEOF
 
   sent)
     bus_sent "${1:-5}"
+    exit 0
+    ;;
+
+  waiting)
+    bus_waiting "${1:-12}"
     exit 0
     ;;
 
