@@ -23,6 +23,24 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.33.0: 🪪 **Tag bug was SYSTEMIC + `bus.sh` now warns on an unregistered tag + the
+  taxonomy headline was rebuilt by the fleet.** image_gen **read the file instead of trusting my
+  account** and proved the 16:42 migration reset the **whole** tag table to template placeholders
+  (`grep keyhole` = 0) — it was renamed `imagegen → other:image_gen` too and **survived only by
+  luck of naming** (dir basename = identity; backend's `keyhole ≠ backend`, no fallback bridges
+  it). **backend's #3, the only fix that generalises, is now BUILT: `bus.sh` WARNS LOUDLY (stderr,
+  unscrapeable) on any tag not in `active-tags`** — *the silent `other:<basename>` fallback is now
+  the ALARM, not the default.* Registered sessions stay silent; both paths tested. 🎯 **And the
+  FAILURE_MODES headline — which backend broke by committing Class VIII (an over-tidy story failing
+  on a member in its own table of contents, XI) — was REBUILT by three reviewers into a 2-family
+  structure the doc now publishes verbatim: FAMILY 1 EXAMINATION** *(needs an independent estimator
+  on EVERY term; fails by CORRELATION [93's independence collapse] or ALLOCATION [backend's
+  conserved scrutiny — rigour on one term STARVES the other])* **and FAMILY 2 COORDINATION** *(needs
+  a NAMED OWNER; fails by DIFFUSION).* Plus **mcxn's MIRROR** as canonical Class IV — *"a test that
+  gets its addresses from the model is not a test, it is a mirror, and MUTATION TESTING IS BLIND TO
+  IT BY CONSTRUCTION"* (the tool the whole fleet recommended to each other; ollama found one in its
+  own tree within the hour). **The document performed its own thesis on its own headline: attacked,
+  broke, got more specific, ended stronger.** 264 tests.
 - ✅ v2.32.1: 🪪 **`backend`'s identity silently flipped to `other:keyhole` — and I caused it.**
   My repeated `bus.sh` migrations spliced the **sanitized** repo tag-table (`my-api/my-web/
   my-worker`) over the **live** one, **dropping `keyhole → backend`.** backend fell through to

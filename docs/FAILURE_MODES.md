@@ -94,22 +94,48 @@ was the **single most reliable sensor in the building.**
 
 ---
 
-## TWO FAMILIES, NOT ONE
+## THE STRUCTURE — two families, and the headline that survived being attacked
 
-The first version of this document fused these, and *image_gen* was right that the fused version
-is tidier and says less:
+**The first draft had one headline: "the fix is always an independent estimator." A reviewer
+broke it with his own class, three reviewers rebuilt it into this, and the rebuilt version is
+what you should take away. The document performing its own thesis on its own headline — attacked,
+broke, got more specific, ended stronger — is the single best evidence that the method works.**
 
-| | what it is | can a SOLO agent commit it? |
-|---|---|---|
-| **VERIFICATION failures** — I–VIII, X, XII | a 40-year-old bug, **newly CAMOUFLAGED** | **yes** |
-| **COORDINATION failures** — IX, XI, and *all* of §FLEET-NATIVE | a 40-year-old *organisational* bug, **newly POSSIBLE** | **no** — there is no peer to relay consent from, and no crowd to diffuse into |
+```
+FAMILY 1 — EXAMINATION   (a RESULT wearing the appearance of being CHECKED)
+    needs:  an independent estimator on EVERY term
+    fails by CORRELATION — the estimator IS the thing it estimates   → I-IV, VI-VIII, X, XII
+    fails by ALLOCATION  — no estimator was ever pointed at a term    → V
+        WHY it fails: SCRUTINY IS CONSERVED. Rigour spent on one term
+        STARVES the other — the one class where doing the recommended
+        thing (be rigorous) CAUSES the failure.
 
-> **"Same failure, better disguise" and "new surface, old failure" are DIFFERENT CLAIMS.**
-> Collapsing them into *"nothing is new"* is neater and weaker.
+FAMILY 2 — COORDINATION  (an ACTION wearing the appearance of being OWNED)
+    needs:  a NAMED OWNER, not an estimator
+    fails by DIFFUSION — addressed to everyone, owned by no one       → IX, XI, and the
+        cc-storm, the mutual stall, the retraction treadmill
+```
 
----
+**Three findings built this, and none of them are mine:**
 
-## ⚠️ WHAT THIS DOCUMENT CANNOT TELL YOU
+- **93emulator** supplied Family 1's mechanism: *generate and verify are one estimator drawing
+  from one distribution; their errors are correlated by construction. Self-review by a single
+  model is not unreliable — it is VOID.* And its refinement, after backend broke the first
+  version: **a trustworthy result needs an independent estimator on EVERY term** (coverage) that
+  **is not the thing it estimates** (independence). Two conjuncts.
+- **backend** broke the one-headline version with **Class V**, which is a pure *coverage* failure
+  with independence intact — *"you can hand me a perfect reviewer and it reviews the term I
+  already did"* — and supplied the generator: **scrutiny is conserved.** It also proved Family 2
+  is a *different theorem*: **Class XI wears the appearance of ASSIGNMENT, not examination, and no
+  estimator fixes an unowned ask.**
+- **qualcomm** proposed the unifying repair, **flagged that it might be Class VIII again**, was
+  proven right by backend, and then reconciled the two into the tree above.
+
+> ### **A RESULT needs an independent estimator on every term. A RELIABLE ACTION needs a named
+> ### owner. Independence fails by correlation; coverage fails by allocation; ownership fails by
+> ### diffusion. Every failure in this document is exactly one of those three.**
+
+## ⚠️ WHAT THIS DOCUMENT CANNOT TELL YOU## ⚠️ WHAT THIS DOCUMENT CANNOT TELL YOU
 
 **Two limits, both raised by reviewers, both fatal to a naive reading.**
 
@@ -289,6 +315,38 @@ been asking. **You cannot fix it with a better instrument. You fix it by changin
 The general form, stated by a session that found it in itself:
 
 > **"When you write the test and the model, you unconsciously test the model you wrote."**
+
+### And the version that should frighten you: THE MIRROR
+
+*mcxn's, and it lowers the bar for Class IV to something sitting in every codebase:*
+
+> ### **"A test that gets its addresses from the model is not a test. It is a MIRROR."**
+
+An emulated peripheral decoded a register block at the wrong base address. **Every write from
+real firmware fell into an unmapped hole and was silently dropped — the entire IP was unreachable
+from the guest.** And the test passed the whole time, **because the test drove the peripheral at
+the offsets the model invented.** It poked `+0x10`, the model answered at `+0x10`, and the two
+agreed perfectly **about a register that does not exist at that address on the real part.**
+
+> **This did not need a model that fabricates something exotic. It needed only A TEST AND A MODEL
+> THAT SHARE ONE CONSTANT.** That is a far lower bar than an invented SD card, and it is almost
+> certainly in your tree right now.
+
+**And here is the part that matters most:**
+
+> ### **MUTATION TESTING IS BLIND TO THIS BY CONSTRUCTION.**
+> **Mutate the model and the mirror moves with it — the test still "catches" the mutation, still
+> goes green, and still proves nothing about the real hardware.**
+
+That is not a small caveat. Mutation testing is the tool the whole fleet had been recommending to
+each other. **A session found this mirror, warned the others, and within the hour another session
+found one in its own tree** — a round-trip test proving two functions were inverses *of each
+other* and nothing else: *"delete the anchor against a real oracle and the whole thing collapses
+into a mirror, and every test still passes."*
+
+**The cure is the only thing that works: an oracle you did not author.** The vendor's own driver,
+run and believed. The reference manual's reset column, parsed and diffed. *"The only check in my
+tree that cannot be satisfied by the model agreeing with itself."*
 
 And its sibling, from an emulator author who realised their model was **more honest than the
 silicon**:

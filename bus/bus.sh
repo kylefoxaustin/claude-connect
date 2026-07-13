@@ -78,6 +78,20 @@ is_whitelisted() {
   fi
 }
 
+# ⚠️ WARN-ON-UNREGISTERED-TAG — backend's #3, the only fix that generalises.
+# A bus.sh migration on 2026-07-12 reset the tag table to placeholders; sessions fell through
+# to `other:<dirname>`, became unaddressable with orphaned watermarks and dead auto-delivery,
+# and NOTHING said so. A silent `other:<basename>` fallback is a sensor reporting a name nobody
+# is calling — so make the fallback the ALARM, not the default. Warn on stderr (can't be
+# scraped), once, and never from the silent hooks.
+_warn_if_unregistered() {
+  is_whitelisted "$TAG" && return 0
+  case "${BUS_ACTION:-}" in session-start|prompt-check) return 0 ;; esac
+  printf '⚠️  bus.sh: your tag is "%s" — NOT registered for auto-delivery.\n' "$TAG" >&2
+  printf '    Directed mail may reach nobody and auto-delivery will not fire. cwd=%s\n' "$PWD" >&2
+  printf '    If that is wrong, your project dir is missing from the tag-map — tell claude-connect.\n' >&2
+}
+
 # Helper: after a read/send/session-start, mark the newest message as "seen"
 # for THIS session tag so prompt-check doesn't re-flag it. No-op outside bus tags.
 mark_seen_if_bus_tag() {
@@ -1266,6 +1280,10 @@ asset_dispatch() {
 
 cmd="${1:-help}"
 shift || true
+BUS_ACTION="$cmd"
+
+# Surface an unregistered-tag warning on the interactive verbs (never the silent hooks).
+case "$cmd" in send|check|all|mine|sent) _warn_if_unregistered ;; esac
 
 case "$cmd" in
   send)
