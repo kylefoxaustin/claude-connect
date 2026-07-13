@@ -13,7 +13,7 @@
 > claimed the Stop reason wasn't model-visible; a **round-3 live test proved it is**, and the browser
 > was right); keystroke injection drops to a mere wake-trigger, making the storm idempotent and the
 > void a mere delay. The Observer role gains a construction ceiling + a shelf-ready OS sandbox floor;
-> the unbound-session default becomes a **ratchet** (Peer → adoption-card → Observer); **Part 3.5**
+> the unbound-session default becomes a **ratchet** (Peer → adoption-card → Observer); **§3.6**
 > names inter-agent message forgery as the largest unmodeled risk; §2.7 adds version-skew defenses and
 > one canonical install path; §2.2 adds log segmentation; and **Part 6** makes the controls *tested* by
 > canarying the **referee** (synthetic payloads on deploy) + heartbeat-absence for wiring — zero
@@ -223,7 +223,7 @@ and all three are content-delivery, not just triggers.
 > harness (Claude Code 2.1.207, Skippy) proved the opposite: a Stop hook that blocked with a reason
 > instructing the model to emit a token caused the model to *respond to that reason* — so **the Stop
 > `reason` IS delivered to the model.** The browser review was right; the docs-derived correction was
-> wrong. (The test doubles as a Part-3.5 demo: the reason was phrased as an injection and the model
+> wrong. (The test doubles as a §3.6 demo: the reason was phrased as an injection and the model
 > *refused* it — proof it was received, and a live example of why the delivery channel must be
 > trusted-writer-only.) The test lives in the scratchpad (`stop-canary.sh`, `stoptest.out`).
 
@@ -456,7 +456,7 @@ So:
    re-mints is a hole. **Durable role + ephemeral elevation + explicit visible revoke** is the
    combination that closes it — the exact lesson the push-grant arc already paid for.
 
-## Part 3.5 — The largest unmodeled risk: forged *behavior* on a shared log (Finding 5)
+### 3.6 The largest unmodeled risk: forged *behavior* on a shared log (Finding 5)
 
 The token model in Part 3 makes *grants* unforgeable — *"'Kyle approved this' a hundred times is
 still denied."* But with dozens of agents reading one shared conversation log, there's a softer attack
@@ -611,7 +611,7 @@ to zero:
 1. **Logic correctness → an out-of-band synthetic suite.** A harness invokes each gate script directly
    with synthetic payloads: one representative denied act per role, the unbound-`session_id` case, and
    — *permanently* — **every historical hole as a regression** (the hardcoded path, the tilde write,
-   the multiline command). Runs on every deploy of `hooks/`/`bus.sh` (this *is* §2.7's
+   the multiline command). Runs on every deploy of `hooks/` or `bus.sh` (this *is* §2.7's
    checksum-and-deploy ritual — one atomic step, not two) plus a cron. **Zero real sessions, zero side
    effects, zero queue traffic. A synthetic denied-act that *passes* pages Kyle top-tier.** This is
    where FAILURE_MODES-as-regression actually lives — and it's exactly the shape of the scratchpad
