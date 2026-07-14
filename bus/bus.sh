@@ -21,18 +21,51 @@ CWD="${PWD:-$(pwd)}"
 # identity, so the tag fallback below names the PROJECT, not the current dir.
 BUS_PROJECTS_ROOT="${BUS_PROJECTS_ROOT:-$HOME/Documents/GitHub}"
 
-_proj_root() {
-  local rel root=""
+_proj_root_of() {
+  # The project root a given cwd belongs to (same rule the tag uses). Takes an explicit
+  # dir so it can be asked about ANOTHER session's cwd, not just this process's.
+  local dir="$1" rel root=""
   # 1) Directly under the projects root -> that project dir wins.
-  case "$CWD" in
+  case "$dir" in
     "$BUS_PROJECTS_ROOT"/?*)
-      rel="${CWD#"$BUS_PROJECTS_ROOT"/}"; rel="${rel%%/*}"
+      rel="${dir#"$BUS_PROJECTS_ROOT"/}"; rel="${rel%%/*}"
       if [ -n "$rel" ]; then printf '%s\n' "$BUS_PROJECTS_ROOT/$rel"; return; fi ;;
   esac
-  # 2) Else the enclosing git repo, if any. 3) Else the cwd itself.
-  root="$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null || true)"
-  [ -n "$root" ] || root="$CWD"
+  # 2) Else the enclosing git repo, if any. 3) Else the dir itself.
+  root="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true)"
+  [ -n "$root" ] || root="$dir"
   printf '%s\n' "$root"
+}
+_proj_root() { _proj_root_of "$CWD"; }
+
+# IDENTITY-COLLISION detection (holobench, 2026-07-13). The bus tag is derived from the
+# working directory, so TWO Claude sessions started in one repo post under one tag and are
+# indistinguishable — a reply lands on whichever reads it first. A live session is exactly
+# one `comm=claude` process whose cwd is the project; so counting `claude` processes rooted
+# at the SAME project is an unambiguous test (>=2 == collision). It counts by cwd, never by
+# matching our own command line, so it cannot self-match the way a `pgrep -f` monitor does.
+sibling_claude_pids() {
+  local mine p comm cwd root
+  mine="$(_proj_root)"
+  for p in /proc/[0-9]*; do
+    [ -r "$p/comm" ] || continue
+    IFS= read -r comm < "$p/comm" 2>/dev/null || continue
+    [ "$comm" = "claude" ] || continue
+    cwd="$(readlink "$p/cwd" 2>/dev/null || true)"
+    [ -n "$cwd" ] || continue
+    root="$(_proj_root_of "$cwd")"
+    [ "$root" = "$mine" ] && printf '%s\n' "${p#/proc/}"
+  done
+}
+sibling_hook_lines() {
+  local pids n root
+  pids="$(sibling_claude_pids 2>/dev/null || true)"
+  [ -n "$pids" ] || return 0
+  n="$(printf '%s\n' "$pids" | grep -c . || true)"
+  [ "${n:-0}" -ge 2 ] || return 0
+  root="$(_proj_root)"
+  printf '⚠️ IDENTITY COLLISION: %s Claude sessions are running in %s and ALL post to the bus as [%s]. A reader CANNOT tell you apart — a reply may reach the wrong one, and work queued "for whoever holds this tree" is addressed to your own doppelganger. Check with the operator whether a second session was opened here; close it or coordinate explicitly. (claude pids: %s)' \
+    "$n" "$root" "$TAG" "$(printf '%s' "$pids" | tr '\n' ' ' | sed 's/ *$//')"
 }
 
 # TAG RESOLUTION. An optional data file (`$BUS_STATE/tag-map`, "glob<TAB>tag" per line) wins
@@ -1721,8 +1754,39 @@ PYEOF
     #
     # Scoped: only fires for whitelisted tags so the bus doesn't
     # pollute unrelated Claude Code sessions.
-    is_whitelisted "$TAG" || exit 0   # Anywhere else — no-op silently
+    #
+    # BUT an identity collision (a second session in a repo that already has one) is a
+    # cross-cutting hazard that matters regardless of whitelist — it is exactly the case
+    # nobody notices — so it's computed FIRST and can shout even for an un-whitelisted tag.
+    SIBLING_LINES="$(sibling_hook_lines 2>/dev/null || true)"
+    if ! is_whitelisted "$TAG"; then
+      # Not on the auto-hook whitelist -> normally a silent no-op. Still shout a collision.
+      if [ -n "$SIBLING_LINES" ]; then
+        SS_ESC="$(printf '%s' "$SIBLING_LINES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"
+        cat <<EOF
+{
+  "hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": $SS_ESC
+  }
+}
+EOF
+      fi
+      exit 0
+    fi
     if [ ! -s "$BUS_FILE" ]; then
+      # Empty bus: still surface a collision if there is one (fold it into the context).
+      if [ -n "$SIBLING_LINES" ]; then
+        SS_ESC="$(printf '%s' "$SIBLING_LINES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"
+        cat <<EOF
+{
+  "hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": $SS_ESC
+  }
+}
+EOF
+      fi
       mark_seen_if_bus_tag
       exit 0
     fi
@@ -1743,12 +1807,21 @@ PYEOF
     SS_HAD_WATERMARK=0
     [ -f "$SS_STATE_DIR/$TAG.last-seen" ] && SS_HAD_WATERMARK=1
     LATEST="$(tail -60 "$BUS_FILE")"
-    ESCAPED="$(printf '%s' "$LATEST" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"
+    # Build the whole additionalContext as one string, then JSON-encode it ONCE. (This replaces
+    # the old `sed 's/^"//;s/"$//'` quote-strip trick, which was fragile; a collision warning with
+    # parens/brackets in it must not be able to break the JSON.) A collision leads, before the bus.
+    SS_CTX="Claude Bus — recent messages from the cross-session log (your tag: [$TAG]). Read these before responding so you know what the OTHER session has been saying while you were offline:
+
+$LATEST"
+    [ -n "$SIBLING_LINES" ] && SS_CTX="$SIBLING_LINES
+
+$SS_CTX"
+    SS_ESC="$(printf '%s' "$SS_CTX" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"
     cat <<EOF
 {
   "hookSpecificOutput": {
     "hookEventName": "SessionStart",
-    "additionalContext": "Claude Bus — recent messages from the cross-session log (your tag: [$TAG]). Read these before responding so you know what the OTHER session has been saying while you were offline:\n\n$(echo "$ESCAPED" | sed 's/^"//;s/"$//')"
+    "additionalContext": $SS_ESC
   }
 }
 EOF
@@ -1805,15 +1878,20 @@ EOF
     RES_LINES="$(res_hook_lines 2>/dev/null || true)"
     # Retractions aimed at me — loud, and FIRST (safety before everything else).
     RETRACT_LINES="$(retract_hook_lines "$(_coord_plain "$TAG")" "$LAST_SEEN" 2>/dev/null || true)"
+    # Identity collision — a second session sharing my tag. Even more foundational than a
+    # retraction: if there are two of me, I can't trust that a retraction addressed to my tag
+    # was even meant for this session. So it leads everything.
+    SIBLING_LINES="$(sibling_hook_lines 2>/dev/null || true)"
 
-    # Nothing pending, no retraction, and every resource free -> stay silent.
-    if [ -z "$NOTE" ] && [ -z "$RES_LINES" ] && [ -z "$RETRACT_LINES" ]; then
+    # Nothing pending, no retraction, no collision, and every resource free -> stay silent.
+    if [ -z "$NOTE" ] && [ -z "$RES_LINES" ] && [ -z "$RETRACT_LINES" ] && [ -z "$SIBLING_LINES" ]; then
       exit 0
     fi
 
     NL=$'\n'
     FULL=""
-    [ -n "$RETRACT_LINES" ] && FULL="$RETRACT_LINES"   # retractions lead
+    [ -n "$SIBLING_LINES" ] && FULL="$SIBLING_LINES"   # identity first — who am I talking as?
+    if [ -n "$RETRACT_LINES" ]; then FULL="${FULL:+$FULL$NL}$RETRACT_LINES"; fi   # then retractions
     if [ -n "$NOTE" ]; then FULL="${FULL:+$FULL$NL}$NOTE"; fi
     if [ -n "$RES_LINES" ]; then FULL="${FULL:+$FULL$NL}$RES_LINES"; fi
     ESCAPED="$(printf '%s' "$FULL" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"
