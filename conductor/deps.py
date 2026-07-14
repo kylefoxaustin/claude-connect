@@ -49,7 +49,77 @@ qualcomm is the fleet's critical path and that's where a human minute is worth m
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import Any
+
+from .bus import _HEADER_RE, _WAKE_MAX_RECIPIENTS, _address_targets
+
+
+def open_ask_edges(
+    markdown_path: Path,
+    live_tags: set[str],
+    *,
+    now: float | None = None,
+    window_h: float = 12.0,
+) -> list[dict[str, Any]]:
+    """Wait-for edges from OPEN ASKS, not unread counts (image_gen, 2026-07-13).
+
+    An edge ``A -> B`` ("A is waiting on B") exists iff **A sent B a DIRECTED message (1..N named
+    recipients, not a broadcast) containing a ``?`` that B has NOT REPLIED to** — B has not since
+    posted a message addressing A. This is exactly ``bus.sh waiting``'s rule, so the stall graph and
+    the glance-tool agree and *no phantom edge threads through a node that merely has unread cc'd
+    mail*. "B has N unread" is "B is behind on reading," never "B owes A a reply."
+    """
+    now = time.time() if now is None else now
+    live = {_plain(t) for t in (live_tags or set())}
+    try:
+        lines = Path(markdown_path).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    # Parse messages: {ep, snd, to(recipients), body-has-question}.
+    msgs: list[dict[str, Any]] = []
+    cur: dict[str, Any] | None = None
+    for line in lines:
+        m = _HEADER_RE.match(line)
+        if m:
+            cur = {"ep": _ts_to_epoch(f"{m.group(1)} {m.group(2)}", now),
+                   "snd": _plain(m.group(3)), "first": None, "q": False, "to": frozenset()}
+            msgs.append(cur)
+        elif cur is not None and line.strip():
+            if cur["first"] is None:
+                cur["first"] = line
+            if "?" in line:
+                cur["q"] = True
+    for mm in msgs:
+        mm["to"] = {t for t in _address_targets(mm["first"] or "")
+                    if t not in ("all", "p:wake", "p:low")}
+
+    # Latest time each responder addressed each addressee — the "did B reply to A?" index (O(N)).
+    last_reply: dict[tuple[str, str], float] = {}
+    for mm in msgs:
+        for addressee in mm["to"]:
+            k = (mm["snd"], addressee)
+            if mm["ep"] > last_reply.get(k, -1.0):
+                last_reply[k] = mm["ep"]
+
+    edges: dict[tuple[str, str], float] = {}   # (src,dst) -> oldest still-open ask
+    horizon = now - window_h * 3600
+    for mm in msgs:
+        src = mm["snd"]
+        if src not in live or mm["ep"] < horizon or not mm["q"]:
+            continue
+        if not (1 <= len(mm["to"]) <= _WAKE_MAX_RECIPIENTS):     # directed, not a mass-cc announcement
+            continue
+        for dst in mm["to"]:
+            if dst == src:
+                continue
+            if last_reply.get((dst, src), -1.0) >= mm["ep"]:   # B replied to A after the ask
+                continue
+            if (src, dst) not in edges or mm["ep"] < edges[(src, dst)]:
+                edges[(src, dst)] = mm["ep"]
+    return [{"src": s, "dst": d, "kind": "mail", "hard": False,
+             "why": "open question — no reply yet", "since": ep, "age": max(0.0, now - ep)}
+            for (s, d), ep in edges.items()]
 
 
 def _plain(tag: str) -> str:
@@ -102,7 +172,7 @@ def _find_cycles(adj: dict[str, set[str]]) -> list[list[str]]:
 
 def build_wait_graph(
     *,
-    directed_unread: dict[str, dict[str, Any]],
+    mail_edges: list[dict[str, Any]],
     services: list[dict[str, Any]],
     resources: list[dict[str, Any]],
     live_tags: set[str],
@@ -112,21 +182,12 @@ def build_wait_graph(
     now = time.time() if now is None else now
     edges: list[dict[str, Any]] = []
 
-    # 1. Directed mail. B has unread mail from A -> A is waiting on B to read/answer.
-    for tag, info in (directed_unread or {}).items():
-        if not info or not info.get("count"):
-            continue
-        dst = _plain(tag)
-        since = _ts_to_epoch(info.get("latest_ts", ""), now)
-        for sender in info.get("senders") or []:
-            src = _plain(sender)
-            if src == dst:
-                continue
-            edges.append({
-                "src": src, "dst": dst, "kind": "mail", "hard": False,
-                "why": f"{info['count']} unread message(s) — awaiting a reply",
-                "since": since, "age": max(0.0, now - since),
-            })
+    # 1. Directed mail — an OPEN ASK, not an unread count (image_gen, 2026-07-13). ``mail_edges`` is
+    #    open_ask_edges(): A asked B a question B hasn't replied to. "B has unread cc'd mail" is NOT
+    #    a wait-for edge, so a node that owes nobody a reply can never be a phantom link in a stall.
+    for e in (mail_edges or []):
+        if _plain(e["src"]) != _plain(e["dst"]):
+            edges.append(dict(e))
 
     # 2. Service queue. A job with image_gen -> the requester is waiting on the service.
     for svc in services or []:

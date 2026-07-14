@@ -11,18 +11,35 @@ from __future__ import annotations
 
 import time
 
-from conductor.deps import build_wait_graph
+from conductor.deps import build_wait_graph, open_ask_edges
 
 NOW = 1_800_000_000.0
 
 
+def _bare(tag):
+    t = tag.strip("[]")
+    return t[6:] if t.startswith("other:") else t
+
+
 def _g(**kw):
-    kw.setdefault("directed_unread", {})
+    # Existing tests express mail intent as directed_unread; translate to the mail_edges the graph
+    # now consumes (an open-ask edge sender->recipient), so they keep testing the graph/cycle logic.
+    du = kw.pop("directed_unread", {})
+    mail = kw.pop("mail_edges", None)
+    if mail is None:
+        mail = []
+        for tag, info in du.items():
+            dst = _bare(tag)
+            ts = info.get("latest_ts") or "2026-07-11 10:00"
+            since = time.mktime(time.strptime(ts, "%Y-%m-%d %H:%M"))
+            for s in info.get("senders", []):
+                mail.append({"src": _bare(s), "dst": dst, "kind": "mail", "hard": False,
+                             "why": "open question", "since": since, "age": max(0.0, NOW - since)})
     kw.setdefault("services", [])
     kw.setdefault("resources", [])
     kw.setdefault("live_tags", set())
     kw.setdefault("now", NOW)
-    return build_wait_graph(**kw)
+    return build_wait_graph(mail_edges=mail, **kw)
 
 
 # --- edges from each source --------------------------------------------------
@@ -178,3 +195,58 @@ def test_a_resource_wait_IS_a_block():
     assert g["blocked_count"] == 1        # `a` genuinely cannot proceed
     assert g["awaiting_count"] == 0
     assert g["edges"][0]["hard"] is True
+
+
+# --- open_ask_edges: the phantom-stall fix (image_gen, 2026-07-13) --------------------
+def _bus(tmp_path, msgs):
+    """msgs = [(ts, sender, body)] -> a markdown bus file path."""
+    p = tmp_path / "messages.md"
+    p.write_text("".join(f"## {ts} [{snd}]\n{body}\n\n" for ts, snd, body in msgs), encoding="utf-8")
+    return p
+
+
+def _edges(path, live, now):
+    return {(e["src"], e["dst"]) for e in open_ask_edges(path, live, now=now)}
+
+
+def test_open_ask_directed_question_unreplied_makes_an_edge(tmp_path):
+    now = time.mktime(time.strptime("2026-07-13 12:00", "%Y-%m-%d %H:%M"))
+    path = _bus(tmp_path, [("2026-07-13 11:00", "other:a", "to:other:b — got a sec? what's the offset?")])
+    assert _edges(path, {"other:a", "other:b"}, now) == {("a", "b")}   # a waits on b
+
+
+def test_open_ask_REPLIED_question_makes_NO_edge(tmp_path):
+    now = time.mktime(time.strptime("2026-07-13 12:00", "%Y-%m-%d %H:%M"))
+    path = _bus(tmp_path, [
+        ("2026-07-13 11:00", "other:a", "to:other:b — what's the offset?"),
+        ("2026-07-13 11:30", "other:b", "to:other:a — it's 0x1000"),   # b replied to a
+    ])
+    assert _edges(path, {"other:a", "other:b"}, now) == set()          # closed by reply
+
+
+def test_open_ask_NON_question_directed_mail_makes_NO_edge(tmp_path):
+    # "b has unread from a" but a asked nothing -> NOT a wait-for edge. The core of the bug.
+    now = time.mktime(time.strptime("2026-07-13 12:00", "%Y-%m-%d %H:%M"))
+    path = _bus(tmp_path, [("2026-07-13 11:00", "other:a", "to:other:b — fyi, shipped the fix.")])
+    assert _edges(path, {"other:a", "other:b"}, now) == set()
+
+
+def test_open_ask_BROADCAST_question_makes_NO_edge(tmp_path):
+    now = time.mktime(time.strptime("2026-07-13 12:00", "%Y-%m-%d %H:%M"))
+    path = _bus(tmp_path, [("2026-07-13 11:00", "other:a", "to:all — anyone know the offset?")])
+    assert _edges(path, {"other:a", "other:b"}, now) == set()          # broadcast != directed ask
+
+
+def test_the_image_gen_phantom_a_cc_recipient_is_not_a_link(tmp_path):
+    # image_gen is cc'd on a small directed msg but never ASKS orb_slam -> no image_gen->orb_slam edge.
+    now = time.mktime(time.strptime("2026-07-13 20:10", "%Y-%m-%d %H:%M"))
+    path = _bus(tmp_path, [
+        ("2026-07-13 20:00", "other:holobench", "to:other:image_gen to:other:orb_slam — status ping, no q here"),
+    ])
+    assert ("image_gen", "orb_slam") not in _edges(path, {"other:image_gen", "other:orb_slam", "other:holobench"}, now)
+
+
+def test_open_ask_stale_beyond_window_makes_NO_edge(tmp_path):
+    now = time.mktime(time.strptime("2026-07-14 12:00", "%Y-%m-%d %H:%M"))   # >12h later
+    path = _bus(tmp_path, [("2026-07-13 11:00", "other:a", "to:other:b — what's the offset?")])
+    assert _edges(path, {"other:a", "other:b"}, now) == set()

@@ -71,7 +71,7 @@ from .coord import (
     read_wake_state,
     write_wake_state,
 )
-from .deps import build_wait_graph
+from .deps import build_wait_graph, open_ask_edges
 from .models import BusEvent, BusTopology, ParkedSession, SessionRecord, Status
 from .resources import resources_state, touch_lease_activity
 from .services import read_services
@@ -472,12 +472,17 @@ class AppState:
         # Who is blocked on whom. Every input is already in hand — this is a VIEW over
         # state we collect anyway (directed mail, service queues, resource queues), which
         # is why it's cheap enough to rebuild every scan.
+        _live_tags = {r.tag for r in self.sessions.values() if r.tag and r.status != Status.ENDED}
+        # Wait-for edges come from OPEN ASKS (a directed, unreplied question) — bus.sh waiting's
+        # rule — NOT unread counts, so a node with unread cc'd mail is never a phantom stall link.
+        _mail_edges = await asyncio.to_thread(
+            open_ask_edges, self.settings.bus.markdown_path_resolved, _live_tags)
         waiting = await asyncio.to_thread(
             build_wait_graph,
-            directed_unread=self._directed_unread,
+            mail_edges=_mail_edges,
             services=self.services.get("services", []),
             resources=self.resources.get("resources", []),
-            live_tags={r.tag for r in self.sessions.values() if r.tag and r.status != Status.ENDED},
+            live_tags=_live_tags,
         )
         if waiting != self.waiting:
             self.waiting = waiting
