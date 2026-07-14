@@ -569,9 +569,28 @@ function renderFleet() {
       `<div class="row-title">${esc(s.name)} ${badges}</div>` +
       `<div class="row-sub">${esc(s.preview || s.status)}</div>` +
       `</div>` +
+      roleSelectHTML(s) +
       `<span class="row-age">${ago(s.idle_seconds)}</span>`;
+    const sel = el.querySelector(".mrole");
+    if (sel) sel.addEventListener("change", (e) => { e.stopPropagation(); setMemberRole(s.member, e.target.value); });
     return el;
   }));
+}
+
+// Member-role control (v4 §3.4): observer=read-only · service · peer=default · trusted.
+const MROLES = ["observer", "service", "peer", "trusted"];
+function roleSelectHTML(s) {
+  if (!s.member) return "";
+  const cur = s.role || "peer";
+  const opts = MROLES.map((r) => `<option value="${r}"${r === cur ? " selected" : ""}>${r}</option>`).join("");
+  return `<select class="mrole role-${esc(cur)}" title="role — observer:read-only  peer:default">${opts}</select>`;
+}
+async function setMemberRole(member, role) {
+  if (!member) return;
+  try {
+    await api(`/api/members/${encodeURIComponent(member)}/role`, { method: "POST", body: JSON.stringify({ role }) });
+  } catch (e) { /* refresh shows the truth */ }
+  refresh();
 }
 
 /* ---- UNATTENDED ------------------------------------------------------- */

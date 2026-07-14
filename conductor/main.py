@@ -1944,6 +1944,9 @@ def _ops_session_of(state: AppState, r: SessionRecord) -> dict[str, Any]:
             dd.get("cwd") and os.path.realpath(dd["cwd"]) == target
             for dd in state.decisions
         ),
+        # Member registry (v4 §3.4): the durable member + its role, so the phone can set roles too.
+        "member": _bare_tag(r.tag),
+        "role": state._role_by_session.get(getattr(r, "session_id", "") or "", "peer"),
     }
 
 
