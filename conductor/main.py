@@ -754,12 +754,20 @@ class AppState:
         subject = vapid_subject(socket.gethostname())
         now = time.time()
         for item in pending:
+            # Claim-and-check BEFORE the send awaits — same concurrency discipline as the wake
+            # paths. `pending` was computed once up top, so two concurrent passes both see the
+            # item as due; re-checking _notified here (and marking before send_one yields) means
+            # only the first pass rings, the rest skip. (The double-start guard makes this single
+            # today; this keeps the whole class uniformly safe.) Failure behaviour is unchanged —
+            # it was marked regardless of `ok` before — and due() re-rings hourly.
+            if item["key"] in self._notified:
+                continue                   # a concurrent pass already claimed it
+            self._notified[item["key"]] = now
             for sub in list(subs):
                 ok = await asyncio.to_thread(send_one, sub, item, keys, subject)
                 if ok is None:         # 410/404: that device is gone for good, not retrying
                     await asyncio.to_thread(drop_sub, self.coord_root, sub["endpoint"])
                     subs.remove(sub)
-            self._notified[item["key"]] = now
             log.info("notified: %s", item["title"])
 
     _NOTICE_TTL_S = 3600.0

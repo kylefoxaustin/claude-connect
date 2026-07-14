@@ -124,6 +124,30 @@ def test_concurrent_wake_passes_do_not_storm_a_floor_exempt_holder(monkeypatch):
     assert len(qc) == 1, f"STORM: woke qualcomm {len(qc)}x under concurrency"
 
 
+def test_an_over_cc_announcement_does_not_wake(monkeypatch):
+    """cc-suppression: a message naming >4 recipients is an ANNOUNCEMENT — it shows in the
+    badge but must not wake anyone (the emulator cluster cc's to:all + 5-7 tags on nearly every
+    message; without this the whole fleet would storm itself). The wake gate keys on the
+    `wakeable` count the directed-unread computation sets to 0 for a mass-cc."""
+    f = Fleet(monkeypatch)
+    f.session("[other:qualcomm]")
+    # count=1 (it IS unread and badged) but wakeable=0 (mass-cc -> announcement)
+    f.app._directed_unread["[other:qualcomm]"] = {
+        "count": 1, "wakeable": 0, "senders": ["holobench"], "latest_ts": "2026-07-12 02:00"}
+    f.app._last_seen["[other:qualcomm]"] = "2026-07-11 20:00"
+    asyncio.run(f.app._wake_unread_recipients())
+    assert f.injects == [], "an over-cc announcement woke a session"
+
+
+def test_a_directed_message_still_wakes(monkeypatch):
+    """Control for the above: a genuinely directed message (wakeable>0) DOES wake."""
+    f = Fleet(monkeypatch)
+    f.session("[other:qualcomm]")
+    f.unread("[other:qualcomm]")               # wakeable defaults to count
+    asyncio.run(f.app._wake_unread_recipients())
+    assert len(f.injects) == 1
+
+
 def test_concurrent_retraction_wakes_fire_once(monkeypatch):
     """Same race on the retraction path — qualcomm got 4 duplicate RETRACTION wakes in the
     live burst. One retraction record, concurrent passes, must inject once."""
@@ -168,6 +192,35 @@ def test_push_notice_is_kept_when_the_inject_fails(monkeypatch):
     monkeypatch.setattr(f.app, "_inject_text", fail_inject)
     asyncio.run(f.app._deliver_push_notices())
     assert "cc" in f.app._push_notices, "a failed notice must be kept for retry"
+
+
+def test_concurrent_notify_rings_the_phone_once(monkeypatch):
+    """The webpush path is the same class as the wake dedup: `pending` is computed once, so two
+    concurrent _notify passes both see an item as due. Claim-and-check before send_one's await
+    means only the first rings the phone — no duplicate push."""
+    app = AppState(load_settings())
+    app._notified = {}
+    app.decisions = []
+    app._push_requests = []
+    app._silent = []
+    sent = []
+    item = {"key": "q1", "title": "a question"}
+    monkeypatch.setattr("conductor.main.notifiable", lambda *a: [item])
+    monkeypatch.setattr("conductor.main.due", lambda items, n: [i for i in items if i["key"] not in n])
+    monkeypatch.setattr("conductor.main.prune_sent", lambda n, items: n)
+    monkeypatch.setattr("conductor.main.read_subs", lambda root: [{"endpoint": "e"}])
+    monkeypatch.setattr("conductor.main.load_or_create_keys", lambda root: object())
+    monkeypatch.setattr("conductor.main.vapid_subject", lambda h: "mailto:x@example.com")
+
+    def slow_send(sub, it, keys, subj):    # sync — it runs via asyncio.to_thread
+        sent.append(it["key"])
+        return True
+    monkeypatch.setattr("conductor.main.send_one", slow_send)
+
+    async def stormy():
+        await asyncio.gather(*(app._notify() for _ in range(4)))
+    asyncio.run(stormy())
+    assert sent.count("q1") == 1, f"double-rang the phone: {sent}"
 
 
 def test_start_is_idempotent_no_second_scan_loop(monkeypatch):
