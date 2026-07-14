@@ -1,25 +1,20 @@
-"""Keystroke MIS-DELIVERY — Conductor typed mcxn's push verdict into 91's terminal.
+"""Keystroke targeting — Conductor must type into the RIGHT tilix tile, or none.
 
-CONFIRMED from the transcripts, not theorized: the verdict "✅ Kyle says PUSH — the approval
-is already armed for mcxn947qemu" was ENQUEUED into 91emulator's session (a `queue-operation`
-record, sessionId d6e5aa65 = 91) two seconds after Conductor attested typing it into mcxn
-(pid 54912). The ledger recorded the INTENT (mcxn); the keys landed in 91.
+CONFIRMED live: Conductor typed mcxn's push verdict into 91's terminal. The cause, pinned by
+the simtest X11 smoke test (Kyle's simulator): the code activated the target's tilix tile, then
+read `xdotool getactivewindow` and `windowactivate`-d whatever it returned — but getactivewindow
+was stale (the previous window) AND returns a CLIENT window id that never matches wmctrl's frame
+ids, and `windowactivate` on a tilix window doesn't focus the tile's input at all. So that layer
+caused BOTH the mis-delivery (typed into the stale window) and, once guarded, silent non-delivery
+(typed into an unfocused tile).
 
-MECHANISM (from the code + the ledger timeline):
-  send_keys_to_session() calls tilix_activate_terminal() — an ASYNC D-Bus activate with no
-  sync — then sleeps a fixed 0.25s and reads xdotool getactivewindow, trusting whatever window
-  is focused. When the activate hasn't landed within the sleep, getactivewindow returns the
-  PREVIOUSLY focused window and it types THERE. Conductor had focused 91's window 20s earlier
-  (to answer 91's picker), so 91 was the stale-active window. mcxn got the verdict 12x, 91 got
-  it 2x — the split IS the race.
+The fix, verified live (inject for A while B is force-focused -> lands in A, never B): trust
+tilix's own activate-terminal addressed by the tile UUID — the UUID comes from the target's
+/proc/<pid>/environ, so it is the RIGHT tile by construction. Wait for focus to move (async),
+settle, type. No getactivewindow identity-matching, no windowactivate.
 
-  For tilix, every window shares one PID (one terminal server), so PID can't distinguish them.
-  The reliable distinguisher is the per-session WINDOW TITLE. The fix: after focusing, VERIFY
-  the window we're about to type into actually belongs to the target session, and if it does
-  not, DO NOT TYPE — retry later. A keystroke typed into the wrong terminal is unrecoverable.
-
-This test encodes the exact race and asserts the fixed behaviour. It is RED against the
-pre-fix code (which types into the stale window) and GREEN after.
+The title verify (_window_belongs_to_target) remains for the NON-tilix fallback, where we do
+resolve by title — and it must not false-positive on a token two sessions share.
 """
 
 from __future__ import annotations
@@ -32,105 +27,94 @@ import conductor.windows as W
 
 
 @pytest.fixture
-def stub(monkeypatch):
-    """Simulate the environment: tilix present, the target's tile activates 'successfully'
-    (the async D-Bus call returns 0), but the ACTIVE window is still the previously-focused
-    one — the stale-focus race. Records every xdotool 'type'/'key' so the test can see whether
-    (and where) we typed."""
-    typed: list[str] = []
-    activated: list[int] = []
+def env(monkeypatch):
+    calls = {"activated_uuid": None, "typed": [], "windowactivated": []}
+    seq = {"vals": [0x1, 0x1, 0x2]}      # active window: before=0x1, moves to 0x2 on 3rd read
+    state = {"i": 0}
+    clock = {"t": 0.0}
+
+    def active():
+        v = seq["vals"][min(state["i"], len(seq["vals"]) - 1)]
+        state["i"] += 1
+        return v
+
+    def activate(uuid):
+        calls["activated_uuid"] = uuid
+        return calls.get("_activate_ok", True)
+
+    def run(cmd, *a, **k):
+        if len(cmd) >= 2 and cmd[0] == "xdotool":
+            if cmd[1] == "type":
+                calls["typed"].append(cmd[-1])
+            elif cmd[1] == "windowactivate":
+                calls["windowactivated"].append(cmd[-1])
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(W, "xdotool_available", lambda: True)
     monkeypatch.setattr(W, "wmctrl_available", lambda: True)
-    monkeypatch.setattr(W, "tilix_id_for_pid", lambda pid: "TILE-MCXN")
-    monkeypatch.setattr(W, "tilix_activate_terminal", lambda uuid: True)  # D-Bus call "succeeds"
-
-    # THE RACE: getactivewindow returns 91's window (0x5B = 91), not mcxn's tile.
-    WRONG_WID = 0x5B          # 91emulator's window (stale focus)
-    RIGHT_WID = 0xAC          # mcxn's window
-    monkeypatch.setattr(W, "_active_window_id", lambda: WRONG_WID)
-
-    # Title map so a verifier can tell whose window each id is.
-    titles = {WRONG_WID: "Project 91qemu", RIGHT_WID: "Project mcxqemu"}
-    monkeypatch.setattr(W, "list_windows",
-                        lambda: [(wid, 4321, t) for wid, t in titles.items()])
-
-    def fake_run(cmd, *a, **k):
-        # cmd like ["xdotool","windowactivate","--sync","91"] / ["xdotool","type",...,text]
-        if len(cmd) >= 2 and cmd[0] == "xdotool":
-            if cmd[1] == "windowactivate":
-                activated.append(int(cmd[-1]))
-            elif cmd[1] == "type":
-                typed.append(cmd[-1])
-            elif cmd[1] == "key" and cmd[-1] not in ("ctrl+u", "Return"):
-                typed.append(cmd[-1])
-        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
-
-    monkeypatch.setattr(W.subprocess, "run", fake_run)
-    monkeypatch.setattr(W.time, "sleep", lambda *_: None)
-    return types.SimpleNamespace(typed=typed, activated=activated,
-                                 WRONG_WID=WRONG_WID, RIGHT_WID=RIGHT_WID)
+    monkeypatch.setattr(W, "tilix_id_for_pid", lambda pid: "TILE-A")
+    monkeypatch.setattr(W, "tilix_activate_terminal", activate)
+    monkeypatch.setattr(W, "_active_window_id", active)
+    monkeypatch.setattr(W.subprocess, "run", run)
+    monkeypatch.setattr(W.time, "sleep", lambda s: clock.__setitem__("t", clock["t"] + s))
+    monkeypatch.setattr(W.time, "monotonic", lambda: clock["t"])
+    return calls
 
 
-def test_never_types_into_the_wrong_window_when_focus_is_stale(stub):
-    """THE INVARIANT the incident violated: mcxn's keystrokes must NEVER land in 91's window.
+def _send(**over):
+    kw = dict(text="/msg-check", pid=54912, terminal_pid=4321,
+              title="mcxqemu", window_title="Project mcxqemu")
+    kw.update(over)
+    return W.send_keys_to_session(**kw)
 
-    The active window is 91's (stale focus), but the target is mcxn. The fix rejects the
-    unverified active window and recovers via reliable title-resolution, so it delivers to
-    mcxn's window — but the load-bearing assertion is the harm one: 91 is never typed into."""
-    ok = W.send_keys_to_session(
-        text="✅ Kyle says PUSH — armed for mcxn947qemu",
-        pid=54912, terminal_pid=4321,
-        title="mcxqemu", window_title="Project mcxqemu",
-    )
-    assert stub.WRONG_WID not in stub.activated, "typed into 91's window — the exact bug"
-    # Recovery is the good outcome: it found mcxn's window by title instead of the stale one.
+
+def test_tilix_activates_the_right_tile_by_uuid_and_types(env):
+    """The UUID from the target's own /proc environ IS the identity — activate it, wait for
+    focus to move, type. Never windowactivate (which doesn't focus a tilix tile's input)."""
+    ok = _send()
     assert ok is True
-    assert stub.activated and stub.activated[-1] == stub.RIGHT_WID
+    assert env["activated_uuid"] == "TILE-A", "did not activate the target's own tile"
+    assert env["typed"] == ["/msg-check"]
+    assert env["windowactivated"] == [], "used windowactivate on a tilix tile (breaks input)"
 
 
-def test_aborts_rather_than_type_when_it_cannot_confirm_any_window(monkeypatch, stub):
-    """When the stale-focus window is wrong AND title-resolution can't find the target either
-    (no window matches), we must ABORT — not fall back to typing into the stale window."""
-    # Only 91's window exists in the world; mcxn's is gone. Nothing matches the mcxn hints.
-    monkeypatch.setattr(W, "list_windows",
-                        lambda: [(stub.WRONG_WID, 4321, "Project 91qemu")])
-    ok = W.send_keys_to_session(
-        text="/msg-check",
-        pid=54912, terminal_pid=4321,
-        title="mcxqemu", window_title="Project mcxqemu",
-    )
+def test_tilix_refuses_when_the_tile_activate_fails(env):
+    """If tilix can't activate the tile, we must not type into whatever happens to be focused."""
+    env["_activate_ok"] = False
+    ok = _send()
     assert ok is False
-    assert stub.typed == [], f"typed into an unconfirmed window: {stub.typed}"
+    assert env["typed"] == []
 
 
-def test_guard_does_not_false_positive_on_a_SHARED_token(monkeypatch):
-    """Found live by the simtest smoke test: two sessions whose titles share a token
-    ("Project simtest-a" / "Project simtest-b" both contain "simtest"; likewise
-    "keyhole"/"keyhole-sizer") must NOT verify as each other. A stale-focused simtest-b was
-    verified as the target simtest-a via the shared "simtest" token, and simtest-a's keys were
-    about to be typed into simtest-b — the exact mis-delivery the guard exists to prevent."""
-    import conductor.windows as W
+def test_non_tilix_path_verifies_title_before_typing(monkeypatch, env):
+    """Non-tilix terminal: no tile UUID, so resolve by title, windowactivate, and verify the
+    window really is the target's before typing."""
+    monkeypatch.setattr(W, "tilix_id_for_pid", lambda pid: None)     # not a tilix session
+    monkeypatch.setattr(W, "_resolve_window", lambda **k: 0xAC)
+    monkeypatch.setattr(W, "_raise_window", lambda wid: True)
+    monkeypatch.setattr(W, "list_windows", lambda: [(0xAC, 4321, "Project mcxqemu")])
+    ok = _send()
+    assert ok is True
+    assert env["windowactivated"] == ["172"]    # 0xAC == 172: raised the resolved window
+    assert env["typed"] == ["/msg-check"]
+
+
+def test_non_tilix_refuses_a_title_mismatch(monkeypatch, env):
+    monkeypatch.setattr(W, "tilix_id_for_pid", lambda pid: None)
+    monkeypatch.setattr(W, "_resolve_window", lambda **k: 0xBAD)
+    monkeypatch.setattr(W, "_raise_window", lambda wid: True)
+    monkeypatch.setattr(W, "list_windows", lambda: [(0xBAD, 4321, "Project 91qemu")])  # wrong window
+    assert _send() is False
+    assert env["typed"] == []
+
+
+def test_verify_guard_does_not_false_positive_on_a_SHARED_token(monkeypatch):
+    """Found live: two sessions whose titles share a token ("simtest-a"/"simtest-b" both contain
+    "simtest"; "keyhole"/"keyhole-sizer" both contain "keyhole") must not verify as each other."""
     windows = [(0xA, 4321, "kyle@skippy: ~/Documents/GitHub/simtest-a"),
                (0xB, 4321, "kyle@skippy: ~/Documents/GitHub/simtest-b")]
     monkeypatch.setattr(W, "list_windows", lambda: windows)
-    # target is simtest-a; the (stale-focused) window under test is simtest-b's
     assert W._window_belongs_to_target(0xB, "simtest-a",
                                        "kyle@skippy: ~/Documents/GitHub/simtest-a") is False
-    # and the target's own window still verifies
     assert W._window_belongs_to_target(0xA, "simtest-a",
                                        "kyle@skippy: ~/Documents/GitHub/simtest-a") is True
-
-
-def test_DOES_type_when_the_focused_window_is_the_right_one(monkeypatch, stub):
-    """Control: when the activate lands and getactivewindow returns mcxn's own window, we type
-    normally — the guard must not break the happy path."""
-    monkeypatch.setattr(W, "_active_window_id", lambda: stub.RIGHT_WID)
-    ok = W.send_keys_to_session(
-        text="/msg-check",
-        pid=54912, terminal_pid=4321,
-        title="mcxqemu", window_title="Project mcxqemu",
-    )
-    assert ok is True
-    assert "/msg-check" in stub.typed
-    assert stub.activated and stub.activated[-1] == stub.RIGHT_WID

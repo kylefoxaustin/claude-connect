@@ -28,6 +28,11 @@ _PRE_RETURN_S = 0.15
 # re-renders on every key (toggling a checkbox, switching tabs); pressing faster
 # than it redraws is how you end up submitting a selection you never made.
 _KEY_STEP_S = 0.35
+# tilix's activate-terminal (D-Bus) is ASYNC. We watch getactivewindow only to detect that
+# focus MOVED off the previous window (measured live: ~0.5–0.75s), then settle before typing.
+_FOCUS_POLL_TIMEOUT_S = 2.0
+_FOCUS_POLL_STEP_S = 0.1
+_TILE_SETTLE_S = 0.4
 
 
 def wmctrl_available() -> bool:
@@ -395,46 +400,62 @@ def send_keys_to_session(
     """
     if not xdotool_available():
         return False
-    # Exact path: focus the precise tilix tile by TILIX_ID, then type into the
-    # window it just raised — so the keystrokes can't land in a stray same-named
-    # terminal the way title matching might. Falls back to wmctrl resolution.
-    wid: int | None = None
     tilix_id = tilix_id_for_pid(pid)
-    if tilix_id and tilix_activate_terminal(tilix_id):
-        time.sleep(_FOCUS_SETTLE_S)  # let the tile take focus before we read it
-        cand = _active_window_id()
-        # ONLY trust getactivewindow if the focused window is actually the target's. When the
-        # async activate hasn't landed, this is the PREVIOUSLY focused window (a different
-        # session) — the mis-delivery that typed mcxn's verdict into 91. If it doesn't verify,
-        # fall through to explicit title resolution below rather than typing into it.
-        if cand is not None and _window_belongs_to_target(cand, title, window_title):
-            wid = cand
-    if wid is None:
-        if not wmctrl_available():
+
+    if tilix_id:
+        # TILIX — and the mechanism is subtle enough that the obvious approaches all fail (each
+        # confirmed live on real tiles):
+        #   * `getactivewindow` returns the CLIENT window id, which is NOT the frame id wmctrl
+        #     lists — so verifying the focused window by id/title is impossible; it never matches.
+        #   * `windowactivate` raises the WINDOW but does not give the tilix TILE keyboard focus,
+        #     so keys typed after it vanish.
+        #   * a fixed short sleep reads focus before the async activate lands — the ORIGINAL
+        #     mis-delivery (it typed into whatever getactivewindow said, which was stale).
+        # What DOES work: tilix's own activate-terminal, addressed by the tile's UUID — and the
+        # UUID comes from the target session's /proc/<pid>/environ, so it is the RIGHT tile by
+        # construction (no title/window ambiguity, no mis-delivery vector). Trust it. We only
+        # need to wait out the async focus change, then a settle, then type. We watch
+        # getactivewindow purely to detect that focus MOVED (not to identify where) — adaptive
+        # timing without depending on an id we can't match.
+        before = _active_window_id()
+        if not tilix_activate_terminal(tilix_id):
             return False
-        wid = _resolve_window(
-            terminal_pid=terminal_pid, title=title, window_title=window_title,
-        )
-        if wid is None or not _raise_window(wid):
-            return False
-    # FINAL GUARD: never type into a window we cannot confirm is the target's. A keystroke in
-    # the wrong terminal is unrecoverable; refusing here just means a retry on the next scan.
+        deadline = time.monotonic() + _FOCUS_POLL_TIMEOUT_S
+        while time.monotonic() < deadline:
+            if _active_window_id() != before:
+                break                       # focus has moved off the previous window
+            time.sleep(_FOCUS_POLL_STEP_S)
+        time.sleep(_TILE_SETTLE_S)          # let the tile's widget start accepting input
+        return _type_into_focused_window(text)
+
+    # NON-TILIX terminal (terminator/kitty/gnome-terminal/…): resolve the window by title,
+    # raise + windowactivate it, then type. Same FINAL GUARD against a title mismatch.
+    if not wmctrl_available():
+        return False
+    wid = _resolve_window(terminal_pid=terminal_pid, title=title, window_title=window_title)
+    if wid is None or not _raise_window(wid):
+        return False
     if not _window_belongs_to_target(wid, title, window_title):
         log.warning("refusing to type into window 0x%x — its title does not match the target "
                     "session (%s / %s); not delivering to avoid a mis-typed keystroke",
                     wid, window_title, title)
         return False
     try:
-        # windowactivate --sync blocks until the WM reports the window focused;
-        # the settle pause then lets the terminal widget actually start accepting
-        # input, so no leading characters of `text` are dropped.
         subprocess.run(
             ["xdotool", "windowactivate", "--sync", str(wid)],
             check=True, capture_output=True, timeout=3.0,
         )
-        time.sleep(_FOCUS_SETTLE_S)
-        # Clear any stray text on the input line first (Ctrl-U = kill-line), so a
-        # partial/garbled command can't be assembled from leftover characters.
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
+        log.debug("windowactivate failed: %s", e)
+        return False
+    return _type_into_focused_window(text)
+
+
+def _type_into_focused_window(text: str) -> bool:
+    """Ctrl-U (clear the line), type ``text``, then Return — into whatever window currently has
+    keyboard focus. The caller is responsible for having focused the RIGHT window/tile first."""
+    try:
+        time.sleep(_FOCUS_SETTLE_S)  # let the widget start accepting input (no dropped leaders)
         subprocess.run(
             ["xdotool", "key", "--clearmodifiers", "ctrl+u"],
             check=True, capture_output=True, timeout=3.0,
@@ -450,5 +471,5 @@ def send_keys_to_session(
         )
         return True
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
-        log.debug("send_keys_to_session failed: %s", e)
+        log.debug("type-into-focused failed: %s", e)
         return False
