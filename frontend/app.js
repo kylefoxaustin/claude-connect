@@ -1322,6 +1322,13 @@ function fmtSilence(sec) {
   if (h >= 1) return `silent ${Math.floor(h)}h`;
   return `silent ${Math.max(1, Math.floor(sec / 60))}m`;
 }
+function fmtAgo(sec) {
+  if (sec == null) return "unknown";
+  const h = sec / 3600;
+  if (h >= 24) return `${Math.floor(h / 24)}d ago`;
+  if (h >= 1) return `${Math.floor(h)}h ago`;
+  return `${Math.max(1, Math.floor(sec / 60))}m ago`;
+}
 function renderFleetAlerts(state) {
   const box = document.getElementById("fleet-alerts");
   if (!box) return;
@@ -1337,11 +1344,17 @@ function renderFleetAlerts(state) {
   for (const c of collisions) {
     const row = document.createElement("div");
     row.className = "alert-row alert-collision";
-    const names = (c.sessions || []).map((s) => s.name || s.session_id).join(", ");
+    // Show WHAT each colliding session is doing (last activity + preview) so Kyle can tell which to
+    // keep — "reshirt, reshirt" is useless; "one active 9m ago building X, one 29m ago on Y" is not.
+    const recent = (c.recent || []).map((t, i) =>
+      `<div class="alert-sess"><span class="alert-sess-tag">#${i + 1} · active ${fmtAgo(t.age)}</span> `
+      + `<span class="alert-sub">${escapeHtml((t.preview || t.title || "(no preview)").slice(0, 120))}</span></div>`
+    ).join("");
     row.innerHTML =
       `<strong>⚠️ Identity collision:</strong> ${c.count} live sessions post as `
-      + `<code>[${escapeHtml(c.member)}]</code> — a reply can reach the wrong one. `
-      + `<span class="alert-sub">${escapeHtml(names)}. Close the extra session or coordinate explicitly.</span>`;
+      + `<code>[${escapeHtml(c.member)}]</code> — a reply can reach the wrong one.`
+      + recent
+      + `<div class="alert-sub" style="margin-top:4px">Both are live. Keep the one doing the work you want, close the other — or coordinate explicitly if the split is deliberate.</div>`;
     rows.push(row);
   }
   for (const s of dead) {

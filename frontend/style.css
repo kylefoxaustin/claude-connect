@@ -465,6 +465,8 @@ body.link-mode .tile-actions { display: none; }
 .alert-row { font-size: 12px; color: var(--text); padding: 3px 0; line-height: 1.4; }
 .alert-row code { background: rgba(255,255,255,0.08); padding: 0 4px; border-radius: 3px; }
 .alert-row .alert-sub { color: var(--text-dim); font-weight: 400; }
+.alert-sess { margin: 4px 0 0 12px; font-size: 11px; }
+.alert-sess-tag { color: #e5c07b; font-weight: 600; }
 .alert-collision strong { color: #e06c75; }   /* collision = red, it can misroute replies */
 .alert-dead strong { color: #e06c75; }
 .alert-quiet strong { color: #e5c07b; }

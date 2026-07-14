@@ -88,6 +88,7 @@ from .scanner import (
     extract_session_detail,
     last_recorded_cwd,
     newest_jsonl,
+    parse_session_meta,
     tag_to_state_basename,
 )
 from .settings import DEFAULT_SETTINGS_PATH, Settings, dump_settings, load_settings
@@ -521,6 +522,12 @@ class AppState:
             for tag, procs in self.scanner.proc_groups.items()
             for p in procs
         ])
+        # "reshirt, reshirt" tells Kyle nothing about WHICH to close. Attach the repo's most-recent
+        # transcripts (one per live session) with each one's last-activity + a preview, so the two
+        # are distinguishable by the only thing that matters — what each is actually working on.
+        for col in collisions:
+            cwd = (col.get("sessions") or [{}])[0].get("project", "")
+            col["recent"] = await asyncio.to_thread(self._recent_transcripts, cwd, col["count"])
         if collisions != self._collisions:
             self._collisions = collisions
             await self.hub.broadcast("collisions", {"collisions": collisions})
@@ -996,6 +1003,29 @@ class AppState:
             }
         except Exception:
             log.exception("member sync failed (non-fatal)")
+
+    def _recent_transcripts(self, cwd: str, count: int) -> list[dict[str, Any]]:
+        """The ``count`` most-recently-active transcripts in ``cwd``'s project dir, each with its
+        session_id, last-activity age, and a preview — so a collision card can show WHAT each of the
+        colliding sessions is doing (the two live sessions are the two freshest transcripts here)."""
+        out: list[dict[str, Any]] = []
+        if not cwd:
+            return out
+        try:
+            pdir = self.settings.scanner.claude_home_path / "projects" / encode_cwd(cwd)
+            files = sorted(pdir.glob("*.jsonl"), key=lambda f: f.stat().st_mtime, reverse=True)
+        except OSError:
+            return out
+        now = time.time()
+        for f in files[:max(1, count)]:
+            try:
+                sid, title, _ = parse_session_meta(f)
+                age = max(0.0, now - f.stat().st_mtime)
+                out.append({"session_id": sid, "age": age,
+                            "title": title or "", "preview": extract_preview(f)})
+            except OSError:
+                continue
+        return out
 
     def _pending_for(self, tag: str) -> int:
         """Pending count for a tag. For the markdown bus, computed live from the

@@ -713,11 +713,16 @@ function renderBlocked() {
   for (const c of ops.collisions || []) {
     const el = document.createElement("div");
     el.className = "card card-hot";
-    const names = (c.sessions || []).map((s) => s.name || s.session_id).join(", ");
+    // Show what each session is doing (last-active + preview) so Kyle can tell which to keep.
+    const recent = (c.recent || []).map((t, i) =>
+      `<div class="row-sub" style="white-space:normal;margin-top:6px">` +
+      `<b style="color:#e5c07b">#${i + 1} · active ${ago(t.age)} ago</b> — ${esc((t.preview || t.title || "(no preview)").slice(0, 110))}</div>`
+    ).join("");
     el.innerHTML =
       `<div class="card-who">⚠️ Identity collision</div>` +
       `<div class="row-sub" style="white-space:normal">${c.count} live sessions post as [${esc(c.member)}] — a reply can reach the wrong one.</div>` +
-      `<div class="row-sub" style="white-space:normal;margin-top:6px">${esc(names)}. Close the extra session or coordinate explicitly.</div>`;
+      recent +
+      `<div class="row-sub" style="white-space:normal;margin-top:6px">Both are live. Keep the one doing the work you want, close the other — or coordinate explicitly if the split is deliberate.</div>`;
     bits.push(el);
   }
   for (const s of (ops.silent || []).filter((x) => x.dead)) {
