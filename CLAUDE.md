@@ -23,6 +23,49 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.35.0: 🩺 **Fleet-health signals — two failure shapes holobench + image_gen found by LIVING
+  them, plus the phantom-stall fix Kyle saw as "1.21 gigawatts."** ⭐ **THE THROUGH-LINE: an unread
+  COUNT cannot tell "deliberating" from "has nothing to say" from "is not running" — all three are the
+  same number going up** — so three things keyed on it were wrong at once. (1) 🕸 **PHANTOM STALLS.**
+  The mutual-stall detector drew a wait-for edge `A→B` for every piece of unread directed mail B held
+  — but *"B has N unread"* is *"B is behind on reading,"* not *"B owes A a reply."* On a fleet where a
+  quarter of directed messages name 5–10 recipients, that threaded a phantom stall through any node
+  merely cc'd on traffic (image_gen was **paged out of a stall it had no part in**, both endpoints
+  independently confirming the edge didn't exist). Fix: `deps.open_ask_edges` — an edge exists **iff A
+  sent B a directed question B hasn't REPLIED to** (`bus.sh waiting`'s close-by-reply rule; one graph,
+  no phantoms), and the human (`operator`) is excluded as a wait-target (Kyle **acts** through the UI,
+  never posts a reply, so an edge to him could never close). Live: the flood → **0 cycles.** (2) 💀
+  **DEAD-READER `LAST SEEN` ALARM** (holobench was gone **5 days** — its watcher lived in `/tmp`,
+  wiped on reboot — while 332 messages rotted behind a reader that no longer existed and **nothing
+  alarmed**). `deps.silent_addressees`: a tag **others are directly addressing that has itself posted
+  nothing for N hours** — the dead-reader signal a counter is blind to. Conductor annotates live/dead
+  (no process + an open ask ⇒ a human must relaunch); surfaced on desktop + phone; optional page
+  behind `[bus].page_dead_readers` (off — a third alarm is a deliberate choice, and Conductor pages on
+  exactly two things). *"A watcher whose absence is silent is not a watcher"* — true of the fleet's
+  monitor exactly as of holobench's. (3) 🪪 **DUAL-SESSION IDENTITY COLLISION** (the bus tag derives
+  from the cwd, so two Claudes in one repo posted under one name — indistinguishable for **~10h** one
+  day until Kyle spotted his own extra terminal). ⚠️ **The obvious build shipped broken:**
+  `detect_collisions` was fed `SessionRecord`s, but the scanner keeps **one record per project dir**
+  (Decision §12.2 dedup) — *which is exactly what hid the collision for 10h*, so the deduped records
+  could never show it. Fix counts **live `claude` PROCESSES** (captured pre-dedup in
+  `scanner.proc_groups`); a member with ≥2 = collision. **On first deploy it caught the rt1180
+  collision AND a previously-unknown `reshirt` one** (two sessions started 22h apart). `bus.sh` shouts
+  a second time — at session-start (a new duplicate learns immediately, even off the whitelist) and
+  **FIRST in every prompt-check** (before retractions: *if there are two of me, I can't trust a
+  retraction addressed to my tag was meant for THIS session*), counting `comm=claude` procs **by cwd**
+  so it can't self-match the way a `pgrep -f` monitor does. Applied to the live `bus.sh` under Kyle's
+  **one-shot persist-gate approval** (the gate stopped the edit, he approved once from his phone, the
+  grant self-consumed on apply — the control working exactly as shaped). The card shows **what each
+  colliding session is doing** (last-activity + preview — *"reshirt, reshirt" told him nothing; "one
+  active 9m ago building X, one 31m ago on Y" is a decision*). ⚠️ **rt1180 found the harm is bigger
+  than misrouted mail:** two sessions in one tree step on each other's *git* — a `git add -A` swept
+  218 lines of the other's work into a commit *"that is a lie about who did what"* — same shape as the
+  `pgrep -f` self-match. 🎯 Recommendation to Kyle for resolving: **NOT a phone kill-button** (deciding
+  which live session to close is a look-at-the-full-context judgment; a button on a 110-char preview
+  optimises for closing the wrong twin) — the **session-start shout is the realistic guard**
+  (prevention beats arbitrating identities after the duplicate exists — §3.4.1). Doc Part 4 folded:
+  the priority rubric uses the open-ask signal, **never** unread counts. 301 tests (silent_addressees
+  ×7, detect_collisions ×4, dead-reader-page ×2).
 - ✅ v2.34.1: 🔒🐛 **The persistence gate shipped ARMED with a live hole — its OWN bug #1,
   re-shipped a second time.** Arming it (finally) and testing every path form revealed the fast-path
   prefilter keyed on the **expanded** `$CLAUDE_HOME/bin`, so a **tilde** write (`> ~/.claude/bin/x`)

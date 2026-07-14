@@ -564,6 +564,14 @@ arbitrating identities after the duplicate exists. *(Added to the build list; se
 > on first run. Still to build: the *pre-launch* guard (warn before starting a second session into a
 > live repo) and optional tag disambiguation (`[rt1180#2]`). *An identity derived from a location is
 > not an identity — it is an address, and two things can stand at one address (holobench).*
+>
+> **The harm is bigger than misrouted mail (rt1180, living it):** two sessions in one working tree
+> also step on each other's *git*. One ran `git add -A` and swept 218 lines of the other session's
+> work into a commit whose message was about something else — *"a commit that is a lie about who did
+> what,"* and a `git log` reader never learns. rt1180's framing ties it to the night's spine: *"`git
+> add -A` in a shared tree is the same bug as `pgrep -f` matching its own command line — the operation
+> put itself in the set it was operating on."* So a collision isn't only a routing problem; it's a
+> shared-mutable-state problem, and the fix is the same — one identity, one owner, per location.
 - **The unregistered-session question — resolved by round 2 into a ratchet, not a permanent posture.**
   A `session_id` the referee hasn't bound yet (hand-launched, or the instant before Conductor
   registers) defaults to **Peer** *for the migration window only* — because "unregistered = full local

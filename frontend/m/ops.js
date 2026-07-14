@@ -722,7 +722,7 @@ function renderBlocked() {
       `<div class="card-who">⚠️ Identity collision</div>` +
       `<div class="row-sub" style="white-space:normal">${c.count} live sessions post as [${esc(c.member)}] — a reply can reach the wrong one.</div>` +
       recent +
-      `<div class="row-sub" style="white-space:normal;margin-top:6px">Both are live. Keep the one doing the work you want, close the other — or coordinate explicitly if the split is deliberate.</div>`;
+      `<div class="row-sub" style="white-space:normal;margin-top:6px">Both are live. Keep the one doing the work you want, close the other — or coordinate explicitly if deliberate. In a shared repo a git add -A can also sweep the other's work into your commit.</div>`;
     bits.push(el);
   }
   for (const s of (ops.silent || []).filter((x) => x.dead)) {

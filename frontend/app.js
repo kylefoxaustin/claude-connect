@@ -1354,7 +1354,7 @@ function renderFleetAlerts(state) {
       `<strong>⚠️ Identity collision:</strong> ${c.count} live sessions post as `
       + `<code>[${escapeHtml(c.member)}]</code> — a reply can reach the wrong one.`
       + recent
-      + `<div class="alert-sub" style="margin-top:4px">Both are live. Keep the one doing the work you want, close the other — or coordinate explicitly if the split is deliberate.</div>`;
+      + `<div class="alert-sub" style="margin-top:4px">Both are live. Keep the one doing the work you want, close the other — or coordinate explicitly if the split is deliberate. In a shared repo a <code>git add -A</code> can also sweep the other session's work into your commit.</div>`;
     rows.push(row);
   }
   for (const s of dead) {
