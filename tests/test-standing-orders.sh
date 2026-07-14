@@ -28,7 +28,8 @@ c="$(BUS_FILE="$BUS" bash "$BUSSH" session-start 2>&1 | ctx)" \
   && ok "whitelisted: valid JSON" || bad "whitelisted: invalid JSON"
 grep -q 'LAW 1' <<<"$c" && ok "whitelisted: standing orders present" || bad "whitelisted: no law"
 grep -q 'Claude Bus' <<<"$c" && ok "whitelisted: bus digest present" || bad "whitelisted: no bus digest"
-grep -qi 'report a number you have not measured' <<<"$c" && ok "law 1 headline present" || bad "law 1 headline missing"
+grep -q 'PROVENANCE TAG' <<<"$c" && ok "law 1 (provenance tag) present" || bad "law 1 headline missing"
+grep -q 'MAY NEVER BE COMPARED AGAINST A MEASURED ONE' <<<"$c" && ok "the load-bearing clause present" || bad "comparison clause missing"
 grep -q 'HONOR THE RESERVATION' <<<"$c" && ok "law 2 present" || bad "law 2 missing"
 rm -rf "$SB"
 
