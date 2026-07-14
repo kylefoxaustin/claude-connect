@@ -10,6 +10,7 @@ import time
 from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import psutil
 
@@ -747,11 +748,18 @@ class SessionScanner:
         self.settings = settings
         self._tag_map = tag_map or {}
         self._cpu_samples: dict[int, float] = {}
+        # Live claude processes grouped by derived tag; a group of >=2 is an identity collision.
+        self.proc_groups: dict[str, list[dict[str, Any]]] = {}
 
     def scan(self) -> dict[str, SessionRecord]:
         projects_root = self.settings.claude_home_path / "projects"
         out: dict[str, SessionRecord] = {}
         cwd_index: dict[str, Path] | None = None  # built lazily on first miss
+        # Every live claude PROCESS grouped by its derived tag — captured BEFORE the one-per-dir
+        # dedup below, because that dedup is exactly what hid the rt1180 double-session for 10h. A
+        # tag with >=2 processes here is an identity collision (holobench); the SessionRecord map
+        # cannot show it because it keeps one record per dir. Keyed off the process, not the record.
+        proc_groups: dict[str, list[dict[str, Any]]] = {}
 
         for proc in self._iter_claude_processes():
             try:
@@ -759,6 +767,10 @@ class SessionScanner:
                 cwd = proc.cwd()
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
+
+            ptag = derive_tag(cwd, self._tag_map)
+            proc_groups.setdefault(ptag, []).append(
+                {"pid": pid, "cwd": cwd, "name": Path(cwd).name, "tag": ptag})
 
             # Fast path: current cwd -> encoded project dir.
             session_dir = projects_root / encode_cwd(cwd)
@@ -806,6 +818,7 @@ class SessionScanner:
             if existing is None or record.last_activity_at > existing.last_activity_at:
                 out[cwd] = record
 
+        self.proc_groups = proc_groups
         return out
 
     def _iter_claude_processes(self) -> Iterable[psutil.Process]:

@@ -510,14 +510,16 @@ class AppState:
             self._silent = silent
             await self.hub.broadcast("silent", {"silent": silent})
 
-        # DUAL-SESSION COLLISION (holobench): two live sessions bound to one member — a tag that
-        # points at two Claudes because it's derived from the cwd. Reliable here (Conductor sees
-        # every live session_id); bus.sh shouts a second time at session-start.
+        # DUAL-SESSION COLLISION (holobench): two live Claude PROCESSES under one tag — a tag that
+        # points at two sessions because it's derived from the cwd. This MUST count processes, not
+        # SessionRecords: the scanner keeps one record per dir (its dedup is exactly what hid the
+        # 10h rt1180 collision), so the process groups it captured pre-dedup are the only place the
+        # second session is visible. pid is the distinguishing credential here. bus.sh shouts too.
         collisions = detect_collisions([
-            {"member": _bare_tag(r.tag), "session_id": getattr(r, "session_id", "") or "",
-             "name": Path(r.project_dir).name, "project": r.project_dir, "status": r.status.value}
-            for r in self.sessions.values()
-            if r.tag and r.status != Status.ENDED
+            {"member": _bare_tag(tag), "session_id": str(p["pid"]),
+             "name": p.get("name", ""), "project": p.get("cwd", "")}
+            for tag, procs in self.scanner.proc_groups.items()
+            for p in procs
         ])
         if collisions != self._collisions:
             self._collisions = collisions
