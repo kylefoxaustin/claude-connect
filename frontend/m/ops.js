@@ -100,9 +100,10 @@ function render() {
   if (!ops) return;
   const c = ops.counts;
 
+  const health = (c.collisions || 0) + (c.dead || 0);   // holobench alerts also land in Blocked
   $("counts").innerHTML = [
     c.needs_you ? `<span class="hot"><b>${c.needs_you}</b> need you</span>` : "",
-    c.blocked ? `<span class="hot"><b>${c.blocked}</b> stuck</span>` : "",
+    (c.blocked + health) ? `<span class="hot"><b>${c.blocked + health}</b> stuck</span>` : "",
     `<span><b>${c.working}</b> working</span>`,
     `<span><b>${c.idle}</b> idle</span>`,
   ].filter(Boolean).join("");
@@ -114,7 +115,7 @@ function render() {
   renderBlocked();
 
   setBadge("inbox", c.needs_you, "badge");
-  setBadge("blocked", c.blocked, "badge badge-warn");
+  setBadge("blocked", c.blocked + health, "badge badge-warn");
   setBadge("auto", ops.autonomy.length, "badge badge-ok");
   $("inbox-n").textContent = c.needs_you ? `· ${c.needs_you}` : "";
 }
@@ -693,11 +694,42 @@ $("grant-go").addEventListener("click", async (e) => {
 });
 
 /* ---- BLOCKED ---------------------------------------------------------- */
+function silenceLabel(sec) {
+  if (sec == null) return "has never posted";
+  const h = sec / 3600;
+  if (h >= 24) return `silent ${Math.floor(h / 24)}d`;
+  if (h >= 1) return `silent ${Math.floor(h)}h`;
+  return `silent ${Math.max(1, Math.floor(sec / 60))}m`;
+}
+
 function renderBlocked() {
   const host = $("blocked");
   const w = ops.waiting || {};
   const hard = (w.edges || []).filter((e) => e.hard);
   const bits = [];
+
+  // Fleet health FIRST (holobench): an identity collision or a dead reader is a "a human must
+  // act" condition, more urgent than a soft stall. Both were invisible for hours until now.
+  for (const c of ops.collisions || []) {
+    const el = document.createElement("div");
+    el.className = "card card-hot";
+    const names = (c.sessions || []).map((s) => s.name || s.session_id).join(", ");
+    el.innerHTML =
+      `<div class="card-who">⚠️ Identity collision</div>` +
+      `<div class="row-sub" style="white-space:normal">${c.count} live sessions post as [${esc(c.member)}] — a reply can reach the wrong one.</div>` +
+      `<div class="row-sub" style="white-space:normal;margin-top:6px">${esc(names)}. Close the extra session or coordinate explicitly.</div>`;
+    bits.push(el);
+  }
+  for (const s of (ops.silent || []).filter((x) => x.dead)) {
+    const el = document.createElement("div");
+    el.className = "card card-hot";
+    const who = (s.open_ask_from || s.addressed_by || []).join(", ") || "someone";
+    el.innerHTML =
+      `<div class="card-who">💀 ${esc(s.tag)} isn't running</div>` +
+      `<div class="row-sub" style="white-space:normal">${esc(who)} has ${s.open_ask_count} open question${s.open_ask_count === 1 ? "" : "s"} waiting on it (${silenceLabel(s.silent_for)}).</div>` +
+      `<div class="row-sub" style="white-space:normal;margin-top:6px">Relaunch it or it stays stuck.</div>`;
+    bits.push(el);
+  }
 
   for (const c of w.cycles || []) {
     const el = document.createElement("div");

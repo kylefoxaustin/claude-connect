@@ -216,3 +216,22 @@ def test_the_vapid_subject_never_leaks_a_real_email():
     from conductor.webpush import vapid_subject
     assert "@gmail" not in vapid_subject("skippy")
     assert vapid_subject("skippy").startswith("mailto:conductor@")
+
+
+# --- dead-reader page (holobench), opt-in only -------------------------------
+def _dead():
+    return {"tag": "rt1180", "open_ask_count": 2, "open_ask_from": ["holobench"],
+            "addressed_by": ["holobench", "mcxn"], "dead": True, "live": False}
+
+
+def test_dead_reader_absent_by_default():
+    # notifiable's default two: passing no dead_readers means no third page.
+    assert notifiable([], []) == []
+
+
+def test_dead_reader_pages_when_passed():
+    items = notifiable([], [], [_dead()])
+    assert len(items) == 1
+    it = items[0]
+    assert it["key"] == "dead:rt1180" and it["tag"] == "deadreader"
+    assert "holobench" in it["title"] and "isn't running" in it["title"]

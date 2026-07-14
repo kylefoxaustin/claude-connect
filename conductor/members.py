@@ -159,6 +159,37 @@ def forget(bus_state: Path, session_id: str) -> bool:
     return False
 
 
+def detect_collisions(live_bindings: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Two live sessions under one member (holobench, 2026-07-13). *"An identity derived from a
+    LOCATION is not an identity — it is an ADDRESS, and two things can stand at one address."*
+
+    The bus tag is derived from the working directory, so two Claude sessions started in the SAME
+    repo post under one tag and are indistinguishable — for ~10 hours one day, two ``rt1180emulator``
+    sessions with different memories shared a name and nobody noticed until Kyle spotted his own extra
+    terminal. This is the ``orin``/``orin-agx`` split with the arrow reversed: there two names pointed
+    at one board; here one name points at two sessions. Both are a non-injective identity, both silent.
+
+    The invariant is clean because ``member`` binds to the unforgeable ``session_id``: a member with
+    **two or more distinct live ``session_id``s** is a collision. Conductor is the reliable detector —
+    it always sees every live session — so it shouts in the UI; ``bus.sh`` shouts a second time at
+    session-start (the "even with Conductor off" path). Input: one dict per live session with
+    ``member``/``session_id`` (extra keys like ``name``/``project`` are carried through for the UI).
+    """
+    by_member: dict[str, dict[str, dict[str, str]]] = {}
+    for b in live_bindings:
+        member = (b.get("member") or "").strip()
+        sid = (b.get("session_id") or "").strip()
+        if not member or not sid:
+            continue
+        by_member.setdefault(member, {})[sid] = b   # dedup by session_id — one session, one entry
+    out: list[dict[str, Any]] = []
+    for member, sessions in sorted(by_member.items()):
+        if len(sessions) >= 2:
+            out.append({"member": member, "count": len(sessions),
+                        "sessions": list(sessions.values())})
+    return out
+
+
 def _valid_role(role: str) -> str:
     role = (role or "").strip().lower()
     if role not in ROLES:

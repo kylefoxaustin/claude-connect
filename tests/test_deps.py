@@ -260,3 +260,73 @@ def test_open_ask_to_operator_makes_NO_edge(tmp_path):
     # but a co-addressed peer still gets an edge; operator is just dropped
     path2 = _bus(tmp_path, [("2026-07-13 20:00", "other:a", "to:other:b to:operator — offset? and fyi Kyle")])
     assert _edges(path2, {"other:a", "other:b"}, now) == {("a", "b")}
+
+
+# --- dead-reader alarm (holobench) -------------------------------------------
+from conductor.deps import silent_addressees
+
+
+def _silent(path, **kw):
+    kw.setdefault("silence_h", 4.0)
+    kw.setdefault("addressed_window_h", 12.0)
+    return {s["tag"]: s for s in silent_addressees(path, **kw)}
+
+
+def test_silent_addressee_addressed_but_quiet_is_flagged(tmp_path):
+    # b was addressed 1h ago, last posted 6h ago (> 4h silence) -> a silent addressee.
+    now = time.mktime(time.strptime("2026-07-13 20:00", "%Y-%m-%d %H:%M"))
+    path = _bus(tmp_path, [
+        ("2026-07-13 14:00", "other:b", "to:all — shipping now"),          # b's last post, 6h ago
+        ("2026-07-13 19:00", "other:a", "to:other:b — you there? status?"),  # addressed 1h ago
+    ])
+    s = _silent(path, now=now)
+    assert "b" in s
+    assert s["b"]["open_ask_count"] == 1 and s["b"]["addressed_by"] == ["a"]
+    assert s["b"]["ever_posted"] and abs(s["b"]["silent_for"] - 6 * 3600) < 120
+
+
+def test_a_session_that_HAS_been_posting_is_not_silent(tmp_path):
+    now = time.mktime(time.strptime("2026-07-13 20:00", "%Y-%m-%d %H:%M"))
+    path = _bus(tmp_path, [
+        ("2026-07-13 19:00", "other:a", "to:other:b — status?"),
+        ("2026-07-13 19:50", "other:b", "to:all — still grinding, no news"),  # posted 10m ago
+    ])
+    assert "b" not in _silent(path, now=now)                                  # talking, not silent
+
+
+def test_a_session_nobody_addresses_is_not_flagged(tmp_path):
+    now = time.mktime(time.strptime("2026-07-13 20:00", "%Y-%m-%d %H:%M"))
+    path = _bus(tmp_path, [("2026-07-13 09:00", "other:b", "to:all — hello")])  # quiet 11h, unaddressed
+    assert _silent(path, now=now) == {}                                        # no one waiting on it
+
+
+def test_never_posted_but_addressed_is_the_worst_case(tmp_path):
+    # holobench's dead /tmp watcher: addressed directly, has NEVER posted -> silent_for=None, severe.
+    now = time.mktime(time.strptime("2026-07-13 20:00", "%Y-%m-%d %H:%M"))
+    path = _bus(tmp_path, [("2026-07-13 19:30", "other:a", "to:other:ghost — you alive? answer?")])
+    s = _silent(path, now=now)
+    assert s["ghost"]["silent_for"] is None and s["ghost"]["ever_posted"] is False
+
+
+def test_stale_addressing_outside_the_window_does_not_flag(tmp_path):
+    # addressed 20h ago (> 12h window) -> nobody's tried recently, so not surfaced.
+    now = time.mktime(time.strptime("2026-07-13 20:00", "%Y-%m-%d %H:%M"))
+    path = _bus(tmp_path, [("2026-07-13 00:00", "other:a", "to:other:b — ping?")])
+    assert _silent(path, now=now) == {}
+
+
+def test_broadcast_is_not_addressing(tmp_path):
+    # being cc'd on a to:all is not "being addressed" -> a quiet session cc'd on broadcasts is fine.
+    now = time.mktime(time.strptime("2026-07-13 20:00", "%Y-%m-%d %H:%M"))
+    path = _bus(tmp_path, [
+        ("2026-07-13 10:00", "other:b", "to:all — hi"),
+        ("2026-07-13 19:00", "other:a", "to:all — big announcement everyone should see?"),
+    ])
+    assert _silent(path, now=now) == {}
+
+
+def test_operator_is_never_a_silent_addressee(tmp_path):
+    # Kyle never posts bus replies, so he'd always look "silent" — excluded like the wait-graph.
+    now = time.mktime(time.strptime("2026-07-13 20:00", "%Y-%m-%d %H:%M"))
+    path = _bus(tmp_path, [("2026-07-13 19:00", "other:a", "to:operator — should I push?")])
+    assert "operator" not in _silent(path, now=now)

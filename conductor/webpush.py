@@ -143,9 +143,14 @@ def drop_sub(coord_root: Path, endpoint: str) -> None:
 
 # --- what is worth interrupting a human for ---------------------------------
 def notifiable(decisions: list[dict[str, Any]],
-               push_requests: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The only two things that page. Each carries a stable ``key`` so we can tell "still
-    unanswered" from "new" — the difference between a reminder and a nag."""
+               push_requests: list[dict[str, Any]],
+               dead_readers: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    """The things that page. The default two — a blocked question, a gated push — plus, ONLY when the
+    operator has opted in (``[bus].page_dead_readers``), a DEAD reader: a session that isn't running
+    while someone has an open question waiting on it. That is the third case where work has stopped and
+    a human is the only unblocker (they must relaunch it); it stays off by default because a third
+    alarm is a deliberate choice, not a default. Each item carries a stable ``key`` so we can tell
+    "still unanswered" from "new" — the difference between a reminder and a nag."""
     out: list[dict[str, Any]] = []
     for d in decisions:
         q = (d.get("questions") or [{}])[0]
@@ -164,6 +169,16 @@ def notifiable(decisions: list[dict[str, Any]],
             "body": (p.get("cmd") or "git push")[:140],
             "url": "/m?pane=inbox",
             "tag": "gitpush",
+        })
+    for s in dead_readers or []:
+        who = ", ".join(s.get("open_ask_from") or s.get("addressed_by") or []) or "someone"
+        out.append({
+            "key": f"dead:{s['tag']}",
+            "title": f"💀 {s['tag']} isn't running — {who} is waiting on it",
+            "body": (f"No live session and {s.get('open_ask_count', 0)} open question(s) directed "
+                     "at it. Relaunch it or it stays stuck."),
+            "url": "/m?pane=fleet",
+            "tag": "deadreader",
         })
     return out
 

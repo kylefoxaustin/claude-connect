@@ -103,3 +103,41 @@ def test_format_is_readable_by_the_shell_referee(tmp_path: Path):
     assert "member=backend" in out
     assert "role=observer" in out
     assert "unbound=peer" in out  # the referee's unbound default
+
+
+# --- dual-session collision detection (holobench) ----------------------------
+def test_no_collision_when_each_member_has_one_session():
+    live = [
+        {"member": "other:a", "session_id": "sid-1", "name": "a"},
+        {"member": "other:b", "session_id": "sid-2", "name": "b"},
+    ]
+    assert members.detect_collisions(live) == []
+
+
+def test_two_live_sessions_one_member_is_a_collision():
+    live = [
+        {"member": "other:rt1180", "session_id": "sid-1", "name": "rt1180"},
+        {"member": "other:rt1180", "session_id": "sid-2", "name": "rt1180"},
+        {"member": "other:solo", "session_id": "sid-3", "name": "solo"},
+    ]
+    got = members.detect_collisions(live)
+    assert len(got) == 1
+    assert got[0]["member"] == "other:rt1180" and got[0]["count"] == 2
+    assert {s["session_id"] for s in got[0]["sessions"]} == {"sid-1", "sid-2"}
+
+
+def test_same_session_id_seen_twice_is_NOT_a_collision():
+    # one session appearing twice in the input (dedup) must not read as two — count DISTINCT sids.
+    live = [
+        {"member": "other:a", "session_id": "sid-1", "name": "a"},
+        {"member": "other:a", "session_id": "sid-1", "name": "a"},
+    ]
+    assert members.detect_collisions(live) == []
+
+
+def test_blank_member_or_session_id_is_ignored():
+    live = [
+        {"member": "", "session_id": "sid-1"},
+        {"member": "other:a", "session_id": ""},
+    ]
+    assert members.detect_collisions(live) == []

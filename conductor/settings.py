@@ -57,6 +57,18 @@ class BusSettings:
     # Sender tag stamped on messages you compose from the dashboard, so they're
     # distinguishable from any session (e.g. "operator" -> "[operator]").
     sender_tag: str = "operator"
+    # Dead-reader alarm (holobench, 2026-07-13). A tag that OTHERS are directly
+    # addressing (to:<tag>) but that has POSTED NOTHING itself for this many hours
+    # is surfaced as a silent addressee — the "dead watcher" signal an unread
+    # counter cannot see. `addressed_window_hours` is how recently someone must
+    # have tried to reach it to count as "being addressed".
+    silent_reader_silence_hours: float = 4.0
+    silent_reader_addressed_window_hours: float = 12.0
+    # Page the phone about a DEAD reader (no live process + an open ask directed
+    # at it) — someone is blocked on a session that isn't running, which only a
+    # human can relaunch. OFF by default: Conductor pages on exactly two things
+    # (a blocked question, a gated push), and a third alarm is a deliberate choice.
+    page_dead_readers: bool = False
     # Optional pretty-tag mapping: directory path -> bare tag name (e.g.
     # "~/code/my-api" = "api"). Mirrors the case-table in your bus.sh so
     # Conductor labels tiles with the same tag the bus uses. Anything not
@@ -176,6 +188,9 @@ def dump_settings(settings: Settings, path: Path | str | None = None) -> None:
             # doesn't drop them.
             "autodeliver": settings.bus.autodeliver,
             "autodeliver_exempt": settings.bus.autodeliver_exempt,
+            "silent_reader_silence_hours": settings.bus.silent_reader_silence_hours,
+            "silent_reader_addressed_window_hours": settings.bus.silent_reader_addressed_window_hours,
+            "page_dead_readers": settings.bus.page_dead_readers,
         },
         "ui": {"end_fadeout_seconds": settings.ui.end_fadeout_seconds},
         "relaunch": {

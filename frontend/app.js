@@ -260,11 +260,23 @@ function handleMessage({ kind, payload }) {
       state.parked = payload.parked || [];
       state.fadeoutSeconds = payload.fadeout_seconds ?? 30;
       state.wmctrlAvailable = !!payload.wmctrl_available;
+      if (payload.members) state.members = payload.members;
+      state.silent = payload.silent || [];
+      state.collisions = payload.collisions || [];
       sessionCountEl.textContent = `${state.sessions.length} session${state.sessions.length === 1 ? "" : "s"}`;
       renderGrid(state);
+      renderFleetAlerts(state);
       applyLinkClasses();
       requestAnimationFrame(() => redrawLines(state));
       refresh3D();
+      break;
+    case "silent":
+      state.silent = (payload && payload.silent) || [];
+      renderFleetAlerts(state);
+      break;
+    case "collisions":
+      state.collisions = (payload && payload.collisions) || [];
+      renderFleetAlerts(state);
       break;
     case "session": {
       const idx = state.sessions.findIndex((s) => s.session_id === payload.session_id);
@@ -1297,6 +1309,70 @@ function renderPushInbox(state) {
   box.replaceChildren(title, ...rows, ...grantRows);
 }
 window.renderPushInbox = renderPushInbox;
+
+// Fleet-health alerts (holobench). Two failure shapes of "a session's identity/reachability is
+// wrong and nobody would otherwise notice":
+//   • COLLISION — two live sessions posting under one tag (identity derived from the cwd).
+//   • DEAD READER — a session others are directly waiting on that isn't running (silent + open ask).
+// Both went unnoticed for hours/days because no signal surfaced them; this is that signal.
+function fmtSilence(sec) {
+  if (sec == null) return "has never posted";
+  const h = sec / 3600;
+  if (h >= 24) return `silent ${Math.floor(h / 24)}d`;
+  if (h >= 1) return `silent ${Math.floor(h)}h`;
+  return `silent ${Math.max(1, Math.floor(sec / 60))}m`;
+}
+function renderFleetAlerts(state) {
+  const box = document.getElementById("fleet-alerts");
+  if (!box) return;
+  const collisions = state.collisions || [];
+  const silent = state.silent || [];
+  const dead = silent.filter((s) => s.dead);
+  const quiet = silent.filter((s) => !s.dead);   // addressed + silent but a process is still alive
+  if (!collisions.length && !dead.length && !quiet.length) {
+    box.hidden = true; box.replaceChildren(); return;
+  }
+  box.hidden = false;
+  const rows = [];
+  for (const c of collisions) {
+    const row = document.createElement("div");
+    row.className = "alert-row alert-collision";
+    const names = (c.sessions || []).map((s) => s.name || s.session_id).join(", ");
+    row.innerHTML =
+      `<strong>⚠️ Identity collision:</strong> ${c.count} live sessions post as `
+      + `<code>[${escapeHtml(c.member)}]</code> — a reply can reach the wrong one. `
+      + `<span class="alert-sub">${escapeHtml(names)}. Close the extra session or coordinate explicitly.</span>`;
+    rows.push(row);
+  }
+  for (const s of dead) {
+    const row = document.createElement("div");
+    row.className = "alert-row alert-dead";
+    const who = (s.open_ask_from || s.addressed_by || []).join(", ") || "someone";
+    row.innerHTML =
+      `<strong>💀 ${escapeHtml(s.tag)} isn't running</strong> — ${escapeHtml(who)} has `
+      + `${s.open_ask_count} open question${s.open_ask_count === 1 ? "" : "s"} waiting on it `
+      + `(${fmtSilence(s.silent_for)}). <span class="alert-sub">Relaunch it or it stays stuck.</span>`;
+    rows.push(row);
+  }
+  for (const s of quiet) {
+    const row = document.createElement("div");
+    row.className = "alert-row alert-quiet";
+    const who = (s.addressed_by || []).join(", ") || "someone";
+    row.innerHTML =
+      `<strong>🕰 ${escapeHtml(s.tag)}</strong> is being addressed by ${escapeHtml(who)} but has `
+      + `${fmtSilence(s.silent_for)}. <span class="alert-sub">Its process is alive — maybe deep in a task, maybe not reading its mail.</span>`;
+    rows.push(row);
+  }
+  const title = document.createElement("div");
+  title.className = "fleet-alerts-title";
+  const parts = [];
+  if (collisions.length) parts.push(`${collisions.length} identity collision${collisions.length > 1 ? "s" : ""}`);
+  if (dead.length) parts.push(`${dead.length} dead reader${dead.length > 1 ? "s" : ""}`);
+  if (quiet.length) parts.push(`${quiet.length} unresponsive`);
+  title.textContent = `🩺 Fleet health — ${parts.join(" · ")}`;
+  box.replaceChildren(title, ...rows);
+}
+window.renderFleetAlerts = renderFleetAlerts;
 
 window.decidePush = async function decidePush(key, action, btn) {
   if (btn) { btn.disabled = true; btn.textContent = action === "approve" ? "approving…" : "…"; }

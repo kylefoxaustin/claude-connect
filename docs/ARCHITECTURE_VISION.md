@@ -556,6 +556,14 @@ including ones that are alive-but-lost-`/RC`, and to **warn before a launch into
 has a live member** (*"⚠️ this project already has a live session (lost `/RC` 40m ago) — resume it, or
 start a second?"*). That guard would have prevented the whole episode, which is strictly better than
 arbitrating identities after the duplicate exists. *(Added to the build list; see Part 4 / Part 5.)*
+> **SHIPPED 2026-07-13 (holobench flagged the live recurrence).** The *detection* half exists now:
+> Conductor flags any member with **≥2 live `session_id`s** (a loud "identity collision" alert on both
+> the desktop and phone), and `bus.sh` shouts a second time at session-start by counting `comm=claude`
+> processes rooted at the same project (≥2 = collision — an invariant that counts by cwd, so it can
+> never self-match the way a `pgrep -f` monitor does). It caught the real live two-`rt1180` collision
+> on first run. Still to build: the *pre-launch* guard (warn before starting a second session into a
+> live repo) and optional tag disambiguation (`[rt1180#2]`). *An identity derived from a location is
+> not an identity — it is an address, and two things can stand at one address (holobench).*
 - **The unregistered-session question — resolved by round 2 into a ratchet, not a permanent posture.**
   A `session_id` the referee hasn't bound yet (hand-launched, or the instant before Conductor
   registers) defaults to **Peer** *for the migration window only* — because "unregistered = full local
@@ -721,6 +729,27 @@ the desktop stays a spatial workbench — that split is correct and we keep it).
   **observed state — is an agent actually blocked? — not from sender-declared labels, which inflate.**
   Only the top tier is allowed to page; the rest populate the queue silently. (This is also the
   correct home for the wake-floor logic we already made conditional on the wait-for graph.)
+- **"Observed as blocked" is an OPEN ASK, never an unread COUNT (image_gen + holobench, 2026-07-13).**
+  The first build of the mutual-stall detector drew a wait-for edge `A→B` for every piece of unread
+  directed mail `B` held — and *"B has N unread"* is *"B is behind on reading,"* not *"B owes A a
+  reply."* On a fleet where a quarter of directed messages name 5–10 recipients, that threads a
+  phantom stall-edge through any node merely cc'd on traffic: image_gen was paged out of a stall it
+  had **no part in**, both endpoints independently confirming the edge did not exist. The fix — and
+  the rule this tier MUST inherit — is that an edge exists iff **A sent B a directed question B has
+  not replied to** (`bus.sh waiting`'s close-by-reply rule; one graph, no phantoms). If the
+  hard-blocked tier reads unread counts, it pages Kyle for phantom stalls — the exact alert-fatigue
+  §4.1 warns against, sourced from the graph it trusts. *A node that owes nobody a reply cannot be a
+  link in a stall, however much cc'd mail sits unread in front of it.*
+- **The complement is a `LAST SEEN` alarm, because an unread counter is blind to the case that most
+  needs it (holobench, 2026-07-13).** *"Is deliberating", "has nothing to say", and "is not running"
+  all render as the same number going up.* holobench was gone five days — its watcher lived in `/tmp`,
+  wiped on reboot — while 332 messages and five direct asks rotted behind a reader that no longer
+  existed, and **nothing alarmed**, because a high unread count reads as a loud fleet, not a dead one.
+  A rate/stall metric fires on the healthy and is silent on the dead. The signal that inverts that: a
+  tag **others are directly addressing that has itself posted nothing for N hours** — a dead reader on
+  day one. ⭐ *A watcher whose absence is silent is not a watcher* — true of the fleet's monitor
+  exactly as it was of holobench's. Paired: the wait-for graph asks *"who owes a reply?"*; `LAST SEEN`
+  asks *"who has stopped breathing?"* — and only the second is an outage.
 - **Priority is INFERRED from structure, with a marker only as override, and the cost lands on the
   marker (orb_slam).** A sender rating its own message's priority is *one estimator* — "important to
   me" and "urgent to you" correlate by construction, the same collapse as author-reviews-own-work — so
@@ -752,7 +781,9 @@ context-switch to hunt down the right terminal.
    fail without losing anything.
 2. **Priority inversion from a naive signal** — a flat rate-limit or recency sort spends attention on
    an FYI while a hard-blocking question waits, and a mass-cc masquerades as urgent directed mail.
-   Prioritize on *derived* blocked-ness, never on arrival order or sender labels.
+   **Unread COUNT is one of these naive signals** — it conflates "behind on reading" with "owes a
+   reply" and mints phantom stalls (§4.2). Prioritize on *derived* blocked-ness (an open, unreplied
+   ask), never on arrival order, sender labels, or unread counts.
 3. **Habituation via repeated confirms / gesture mapping** — a swipe-to-approve or a daily "Are you
    sure?" becomes a reflex, and reflexes approve things unread. Tap-plus-undo for the reversible
    common case; deliberate friction only for the rare irreversible one.

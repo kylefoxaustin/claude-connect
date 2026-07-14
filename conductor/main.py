@@ -30,7 +30,7 @@ from .auth import path_requires_auth, resolved_token, token_ok
 from .autonomy import close_window, open_window, peers_in_window, read_windows
 from .decisions import plan_keystrokes, read_decisions, reap_decision
 from .members import ROLES as _MEMBER_ROLES
-from .members import ensure_bound, members_summary, read_members, set_role
+from .members import detect_collisions, ensure_bound, members_summary, read_members, set_role
 from .provenance import attest, prune as prune_ledger
 from .webpush import (
     add_sub,
@@ -71,7 +71,7 @@ from .coord import (
     read_wake_state,
     write_wake_state,
 )
-from .deps import build_wait_graph, open_ask_edges
+from .deps import build_wait_graph, open_ask_edges, silent_addressees
 from .models import BusEvent, BusTopology, ParkedSession, SessionRecord, Status
 from .resources import resources_state, touch_lease_activity
 from .services import read_services
@@ -288,6 +288,8 @@ class AppState:
         self.services: dict[str, Any] = {"services": []}      # service Claudes (image_gen…)
         self.waiting: dict[str, Any] = {"edges": [], "cycles": [], "bottlenecks": [],
                                         "blocked_count": 0}   # who is blocked on whom
+        self._silent: list[dict[str, Any]] = []               # dead-reader alarm (holobench)
+        self._collisions: list[dict[str, Any]] = []           # two live sessions, one member (holobench)
         # Questions a Claude is BLOCKED ON, captured by the PreToolUse hook. Doubles as
         # the guard for keystroke injection: a session sitting on a picker must never be
         # typed at, because the picker swallows typed text into its free-text option.
@@ -487,6 +489,40 @@ class AppState:
         if waiting != self.waiting:
             self.waiting = waiting
             await self.hub.broadcast("waiting", waiting)
+
+        # DEAD-READER ALARM (holobench): a tag others are directly addressing that has posted
+        # nothing for hours. Pure-bus signal; we annotate each with whether a live process
+        # exists — no live session + an open ask = a near-certain outage a human must clear.
+        live_plain = {_plain_name(r.tag) for r in self.sessions.values()
+                      if r.tag and r.status != Status.ENDED}
+        silent = await asyncio.to_thread(
+            silent_addressees,
+            self.settings.bus.markdown_path_resolved,
+            silence_h=self.settings.bus.silent_reader_silence_hours,
+            addressed_window_h=self.settings.bus.silent_reader_addressed_window_hours,
+        )
+        for s in silent:
+            s["live"] = s["tag"] in live_plain
+            # "dead" = nobody's running it AND someone has an open question waiting on it. That is
+            # the case only a human can fix; a live-but-quiet session is merely unresponsive.
+            s["dead"] = (not s["live"]) and s["open_ask_count"] > 0
+        if silent != self._silent:
+            self._silent = silent
+            await self.hub.broadcast("silent", {"silent": silent})
+
+        # DUAL-SESSION COLLISION (holobench): two live sessions bound to one member — a tag that
+        # points at two Claudes because it's derived from the cwd. Reliable here (Conductor sees
+        # every live session_id); bus.sh shouts a second time at session-start.
+        collisions = detect_collisions([
+            {"member": _bare_tag(r.tag), "session_id": getattr(r, "session_id", "") or "",
+             "name": Path(r.project_dir).name, "project": r.project_dir, "status": r.status.value}
+            for r in self.sessions.values()
+            if r.tag and r.status != Status.ENDED
+        ])
+        if collisions != self._collisions:
+            self._collisions = collisions
+            await self.hub.broadcast("collisions", {"collisions": collisions})
+
         decisions = await asyncio.to_thread(read_decisions, self.coord_root)
         # Drop records whose session is gone — a session killed mid-picker leaves its
         # file behind, and a dead question in the queue is a false alarm.
@@ -657,14 +693,18 @@ class AppState:
                      if _bare_tag(s.tag) == _bare_tag(owner) and s.status != Status.ENDED), None)
 
     async def _notify(self) -> None:
-        """Ring Kyle's phone about the only two things that stop work dead: a Claude blocked
-        on a question, and a gated ``git push``.
+        """Ring Kyle's phone about the things that stop work dead: a Claude blocked on a question,
+        a gated ``git push``, and — only if ``[bus].page_dead_readers`` is on — a DEAD reader
+        (a session that isn't running while someone has an open question waiting on it).
 
         Everything else — idle leases, queue depth, mutual stalls, unread mail — resolves
         itself or waits, and notifying about it would train him to swipe us away. **If the
-        fix is robotic, it isn't a page.**
+        fix is robotic, it isn't a page.** The dead-reader page is off by default for exactly
+        that reason: a third alarm is a deliberate choice, and it only fires on the case a human
+        genuinely must clear (relaunch the session).
         """
-        items = notifiable(self.decisions, self._push_requests)
+        dead = [s for s in self._silent if s.get("dead")] if self.settings.bus.page_dead_readers else []
+        items = notifiable(self.decisions, self._push_requests, dead)
         # Forget items that are no longer pending FIRST, so the same question asked again
         # later rings immediately rather than being suppressed by a stale timestamp.
         self._notified = prune_sent(self._notified, items)
@@ -1127,6 +1167,8 @@ class AppState:
             "sessions": sessions,
             "parked": parked,
             "members": self._members,        # member registry (v4 §3.4): member -> role summary
+            "silent": self._silent,          # dead-reader alarm (holobench)
+            "collisions": self._collisions,  # two live sessions, one member (holobench)
             "fadeout_seconds": self.settings.ui.end_fadeout_seconds,
             "wmctrl_available": wmctrl_available(),
         }
@@ -1913,12 +1955,18 @@ async def get_ops(request: Request) -> dict[str, Any]:
         # lying, and this is the one screen that tells Kyle the fleet is unattended.
         "autonomy": state._autonomy,
         "waiting": state.waiting,
+        # Dead-reader alarm + dual-session collisions (holobench). Both are "something is wrong
+        # with a session's REACHABILITY that only a human resolves" — surfaced on the phone too.
+        "silent": state._silent,
+        "collisions": state._collisions,
         "services": state.services.get("services", []),
         "resources": state.resources.get("resources", []),
         "counts": {
             "needs_you": (len(state.decisions) + len(state._push_requests)
                           + len(state._push_proposals) + len(state._persist_requests)),
             "blocked": state.waiting.get("blocked_count", 0),
+            "dead": sum(1 for s in state._silent if s.get("dead")),
+            "collisions": len(state._collisions),
             "working": len(busy),
             "live": len(live),
             "idle": len(live) - len(busy),
@@ -2292,6 +2340,8 @@ async def websocket(ws: WebSocket) -> None:
         await ws.send_text(json.dumps({"kind": "autonomy", "payload": {"windows": state._autonomy}}))
         await ws.send_text(json.dumps({"kind": "services", "payload": state.services}))
         await ws.send_text(json.dumps({"kind": "waiting", "payload": state.waiting}))
+        await ws.send_text(json.dumps({"kind": "silent", "payload": {"silent": state._silent}}))
+        await ws.send_text(json.dumps({"kind": "collisions", "payload": {"collisions": state._collisions}}))
         await ws.send_text(json.dumps({"kind": "decisions", "payload": {"decisions": state.decisions}}))
         while True:
             # We don't expect messages from the client right now; await any to detect close.

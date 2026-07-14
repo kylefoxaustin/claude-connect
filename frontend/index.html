@@ -54,6 +54,10 @@
     <!-- Push-approval inbox: appears only when a gated `git push` awaits Kyle. -->
     <div id="push-inbox" class="push-inbox" hidden></div>
 
+    <!-- Fleet-health alerts: identity collisions (two sessions, one tag) + dead readers
+         (a session others are waiting on that isn't running). Shown only when non-empty. -->
+    <div id="fleet-alerts" class="fleet-alerts" hidden></div>
+
     <!-- Live autonomy windows: who is allowed to wake whom right now, and for how long. -->
     <div id="autonomy-bar" class="autonomy-bar" hidden></div>
 

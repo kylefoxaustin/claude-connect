@@ -93,8 +93,8 @@ def open_ask_edges(
     # The human (operator) NEVER posts a bus reply — Kyle reads through the UI and ACTS — so an edge
     # TO operator could never close and would dangle as a phantom "waiting on Kyle." bus.sh waiting
     # excludes the human for exactly this reason; the stall graph must too. (A session that needs
-    # Kyle is the DECISION QUEUE's job, not a stall.)
-    _NONPOSTING = {"operator", "human", "kyle"}
+    # Kyle is the DECISION QUEUE's job, not a stall.) ``_NONPOSTING`` is module-level (shared with
+    # silent_addressees).
     for mm in msgs:
         mm["to"] = {t for t in _address_targets(mm["first"] or "")
                     if t not in ("all", "p:wake", "p:low") and t not in _NONPOSTING}
@@ -125,6 +125,111 @@ def open_ask_edges(
     return [{"src": s, "dst": d, "kind": "mail", "hard": False,
              "why": "open question — no reply yet", "since": ep, "age": max(0.0, now - ep)}
             for (s, d), ep in edges.items()]
+
+
+def silent_addressees(
+    markdown_path: Path,
+    *,
+    now: float | None = None,
+    silence_h: float = 4.0,
+    addressed_window_h: float = 12.0,
+) -> list[dict[str, Any]]:
+    """The dead-reader alarm (holobench, 2026-07-13): *"X has POSTED NOTHING for N hours while being
+    ADDRESSED DIRECTLY."*
+
+    holobench was gone for **five days** — its bus watcher lived in ``/tmp``, wiped on reboot — and
+    332 messages piled up behind a reader that no longer existed while **nothing alarmed.** An unread
+    *counter* cannot see that: "is deliberating", "has nothing to say", and "is not running" all render
+    as the same number going up. A high unread count is evidence of a LOUD FLEET or a DEAD READER, and
+    the second is the only one that needs an alarm and the one the counter cannot distinguish.
+
+    The signal that CAN: a tag that **others are directly addressing** (a ``to:<tag>`` message, not a
+    broadcast, not a mass-cc) but that has **posted nothing itself for ``silence_h`` hours** (or ever).
+    A session nobody is talking to being quiet is fine; a session people are trying to reach that has
+    gone silent is either dead or ignoring its mail — both worth surfacing. This is a pure function of
+    the bus log; the caller annotates each hit with whether a live process currently exists (no live
+    process + an open ask ⇒ a near-certain outage a human must clear).
+
+    Returns, per silent addressee (most-severe first): ``tag``, ``last_post_ep`` (None = never posted),
+    ``silent_for`` seconds (None = never posted), ``addressed_by`` senders, ``last_addressed_ep``,
+    ``open_ask_count`` (directed unanswered questions to it) and ``open_ask_from``.
+    """
+    now = time.time() if now is None else now
+    try:
+        lines = Path(markdown_path).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    msgs: list[dict[str, Any]] = []
+    cur: dict[str, Any] | None = None
+    for line in lines:
+        m = _HEADER_RE.match(line)
+        if m:
+            cur = {"ep": _ts_to_epoch(f"{m.group(1)} {m.group(2)}", now),
+                   "snd": _plain(m.group(3)), "first": None, "q": False, "to": frozenset()}
+            msgs.append(cur)
+        elif cur is not None and line.strip():
+            if cur["first"] is None:
+                cur["first"] = line
+            if "?" in line:
+                cur["q"] = True
+    for mm in msgs:
+        mm["to"] = {t for t in _address_targets(mm["first"] or "")
+                    if t not in ("all", "p:wake", "p:low") and t not in _NONPOSTING}
+
+    # Last time each tag POSTED anything (any message from it), and the reply index for open-asks.
+    last_post: dict[str, float] = {}
+    last_reply: dict[tuple[str, str], float] = {}
+    for mm in msgs:
+        if mm["ep"] > last_post.get(mm["snd"], -1.0):
+            last_post[mm["snd"]] = mm["ep"]
+        for addressee in mm["to"]:
+            k = (mm["snd"], addressee)
+            if mm["ep"] > last_reply.get(k, -1.0):
+                last_reply[k] = mm["ep"]
+
+    # Per addressee: who addressed it (directed only), most-recent such time, and how many still-open
+    # questions point at it. A broadcast / mass-cc is NOT "addressing" — being cc'd is not a debt.
+    addressed: dict[str, dict[str, Any]] = {}
+    for mm in msgs:
+        if not (1 <= len(mm["to"]) <= _WAKE_MAX_RECIPIENTS):
+            continue
+        for dst in mm["to"]:
+            if dst == mm["snd"]:
+                continue
+            info = addressed.setdefault(dst, {"senders": set(), "last_ep": -1.0,
+                                              "ask_ct": 0, "open_from": set()})
+            info["senders"].add(mm["snd"])
+            info["last_ep"] = max(info["last_ep"], mm["ep"])
+            if mm["q"] and last_reply.get((dst, mm["snd"]), -1.0) < mm["ep"]:
+                info["ask_ct"] += 1
+                info["open_from"].add(mm["snd"])
+
+    addr_horizon = now - addressed_window_h * 3600
+    silence_s = silence_h * 3600
+    out: list[dict[str, Any]] = []
+    for tag, info in addressed.items():
+        if info["last_ep"] < addr_horizon:            # nobody has tried to reach it recently
+            continue
+        lp = last_post.get(tag)
+        silent_for = None if lp is None else max(0.0, now - lp)
+        if silent_for is not None and silent_for < silence_s:
+            continue                                  # it HAS been talking — not silent
+        out.append({
+            "tag": tag,
+            "last_post_ep": lp,
+            "silent_for": silent_for,
+            "addressed_by": sorted(info["senders"]),
+            "last_addressed_ep": info["last_ep"],
+            "open_ask_count": info["ask_ct"],
+            "open_ask_from": sorted(info["open_from"]),
+            "ever_posted": lp is not None,
+        })
+    # Most-severe first: an open ask outranks none; never-posted (None) sorts as the longest silence.
+    out.sort(key=lambda d: (-d["open_ask_count"], -(d["silent_for"] if d["silent_for"] is not None else 1e18)))
+    return out
+
+
+_NONPOSTING = {"operator", "human", "kyle"}
 
 
 def _plain(tag: str) -> str:
