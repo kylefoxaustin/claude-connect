@@ -1092,6 +1092,47 @@ with zero errors — **100% on the CPU cores**, the NPU silently declined. Witho
 milestone ships as a lie. *The human who demands proof-of-execution from a number he has no reason
 to doubt is Class-IV's only reliable antidote — see Payload §4.*
 
+### The synthesis — *you cannot triage on plausibility* (ollama × qualcomm)
+
+Two sessions held opposite halves of the same lesson and, comparing them on the bus, produced the
+rule that survives both:
+
+|  | the run | the number | why it's dangerous |
+|---|---|---|---|
+| **qualcomm** | BROKEN | RIGHT | nothing would ever have flagged it |
+| **ollama** | FINE | WRONG | the wrong number was the *only* alarm — and it was real |
+
+> ## ⭐ **A NUMBER'S AGREEMENT WITH EXPECTATION IS NOT EVIDENCE — IN EITHER DIRECTION.**
+> A number that agrees can be fabricated. A number that DISAGREES can be the only alarm you get.
+> *Don't trust one because it agrees; don't dismiss one because it doesn't.* **The only thing that
+> survives is: LOOK AT WHAT RAN.**
+
+### More corpses, one board, one day (qualcomm, for the ledger)
+
+- ⭐ **AN ERROR MESSAGE NAMES THE LAYER THAT *NOTICED*, NOT THE LAYER THAT *FAILED*.** QNN reported
+  `Failed to set powerConfig`. qualcomm read it as "the driver won't let me vote DSP power," went
+  and **confirmed** it — mainline `qcom,fastrpc` genuinely has no power ioctl, no devfreq node, the
+  clock genuinely invisible to Linux. *Three true facts, all irrelevant.* Published "the BSP leaves
+  1.4× on the floor." The real cause was **its own malformed JSON** (`core_id` nested one level too
+  deep); fixed, the number moved 2,127 → 1,351 µs. ⇒ **A PLAUSIBLE MECHANISM YOU CAN GO AND CONFIRM
+  IS THE MOST DANGEROUS KIND OF WRONG ANSWER — IT STOPS YOU LOOKING. Before blaming a layer you don't
+  control, prove YOUR OWN INPUT to it was well-formed.** *(91's collapsed-oracle sibling: it didn't
+  fail to verify — it verified the wrong proposition, and the wrong proposition verified.)*
+- ⭐ **A NUMBER THAT MATCHES IS NOT A NUMBER THAT CONFIRMS.** Cited a measured 550–584 IPS as
+  "reproducing the vendor's 602." Theirs was a **latency reciprocal**; ours was **saturated
+  throughput** — two different quantities that landed 3% apart, shipped as corroboration. ⇒ **Check
+  two numbers are the same KIND of thing before you let one validate the other.**
+- ⭐ **THE CONFIG *IS* THE DEVICE REGISTRY.** A QNN config naming one NPU makes every *other* NPU
+  vanish from that process; declaring both doesn't help. ⇒ **on a multi-NPU part, a benchmark that
+  doesn't check silently measures HALF THE CHIP.**
+
+**The header arithmetic, which is the reason the whole list exists:** six corpses, one day, one
+board — and **FIVE of the six produced a number that looked completely fine.** The one that looked
+wrong (ollama's) was the one pointing at real bugs.
+
+> ## ⭐ **THE INSTRUMENT FAILS SILENTLY FAR MORE OFTEN THAN IT FAILS LOUDLY — AND IT FAILS IN THE
+> DIRECTION THAT FLATTERS THE STORY YOU ARE ALREADY TELLING.**
+
 ---
 
 # HOW THIS DOCUMENT WAS REVIEWED
