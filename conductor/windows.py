@@ -239,6 +239,45 @@ def _resolve_window(
     return None
 
 
+def _window_belongs_to_target(
+    wid: int, title: str | None, window_title: str | None,
+) -> bool:
+    """Does window ``wid`` actually belong to the target session?
+
+    The guard against MIS-DELIVERY. ``send_keys_to_session`` used to activate a tilix tile
+    (an async D-Bus call) and then trust ``getactivewindow`` — but when the activate hasn't
+    landed within the settle sleep, ``getactivewindow`` returns the PREVIOUSLY focused window,
+    and we typed there. That is how mcxn's push verdict was typed into 91emulator's terminal.
+
+    So before typing a single key we confirm the window we're about to type into carries the
+    target's own title, using the SAME matchers ``_resolve_window`` trusts. If ``wid`` can't be
+    found or matches no hint, we FAIL CLOSED (return False) — a keystroke in the wrong terminal
+    is unrecoverable, so "don't type, retry later" is always the safe answer.
+    """
+    titles = [t for w, _pid, t in list_windows() if w == wid]
+    if not titles:
+        return False                      # can't see the window -> can't verify -> don't type
+    tl = titles[0].lower()
+    for hint in (window_title, title):
+        if hint and hint.lower() in tl:   # full-hint substring — the reliable signal
+            return True
+    # Token fallback for reworded auto-topic titles — but ONLY on DISTINCTIVE tokens. Every
+    # session's window is "Project <name>", so matching on "project" (or "claude"/"qemu"/…)
+    # would confirm ANY window — that false positive is exactly what let mcxn's keys reach 91.
+    for hint in (window_title, title):
+        for tok in re.split(r"[^a-z0-9]+", (hint or "").lower()):
+            if len(tok) >= 2 and tok not in _TITLE_STOPWORDS and tok in tl:
+                return True
+    return False
+
+
+# Words shared across every session's terminal title — never distinctive enough to confirm a
+# window belongs to a specific session.
+_TITLE_STOPWORDS = frozenset({
+    "project", "claude", "build", "the", "session", "qemu", "emu", "dev", "setup", "guide",
+})
+
+
 def focus_session(
     *,
     pid: int | None = None,
@@ -370,7 +409,13 @@ def send_keys_to_session(
     tilix_id = tilix_id_for_pid(pid)
     if tilix_id and tilix_activate_terminal(tilix_id):
         time.sleep(_FOCUS_SETTLE_S)  # let the tile take focus before we read it
-        wid = _active_window_id()
+        cand = _active_window_id()
+        # ONLY trust getactivewindow if the focused window is actually the target's. When the
+        # async activate hasn't landed, this is the PREVIOUSLY focused window (a different
+        # session) — the mis-delivery that typed mcxn's verdict into 91. If it doesn't verify,
+        # fall through to explicit title resolution below rather than typing into it.
+        if cand is not None and _window_belongs_to_target(cand, title, window_title):
+            wid = cand
     if wid is None:
         if not wmctrl_available():
             return False
@@ -379,6 +424,13 @@ def send_keys_to_session(
         )
         if wid is None or not _raise_window(wid):
             return False
+    # FINAL GUARD: never type into a window we cannot confirm is the target's. A keystroke in
+    # the wrong terminal is unrecoverable; refusing here just means a retry on the next scan.
+    if not _window_belongs_to_target(wid, title, window_title):
+        log.warning("refusing to type into window 0x%x — its title does not match the target "
+                    "session (%s / %s); not delivering to avoid a mis-typed keystroke",
+                    wid, window_title, title)
+        return False
     try:
         # windowactivate --sync blocks until the WM reports the window focused;
         # the settle pause then lets the terminal widget actually start accepting
