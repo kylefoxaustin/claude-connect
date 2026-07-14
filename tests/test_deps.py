@@ -250,3 +250,13 @@ def test_open_ask_stale_beyond_window_makes_NO_edge(tmp_path):
     now = time.mktime(time.strptime("2026-07-14 12:00", "%Y-%m-%d %H:%M"))   # >12h later
     path = _bus(tmp_path, [("2026-07-13 11:00", "other:a", "to:other:b — what's the offset?")])
     assert _edges(path, {"other:a", "other:b"}, now) == set()
+
+
+def test_open_ask_to_operator_makes_NO_edge(tmp_path):
+    # You don't "stall waiting on Kyle" — he acts, he doesn't post replies. Excluded like bus.sh waiting.
+    now = time.mktime(time.strptime("2026-07-13 20:10", "%Y-%m-%d %H:%M"))
+    path = _bus(tmp_path, [("2026-07-13 20:00", "other:a", "to:operator — should I push?")])
+    assert _edges(path, {"other:a"}, now) == set()
+    # but a co-addressed peer still gets an edge; operator is just dropped
+    path2 = _bus(tmp_path, [("2026-07-13 20:00", "other:a", "to:other:b to:operator — offset? and fyi Kyle")])
+    assert _edges(path2, {"other:a", "other:b"}, now) == {("a", "b")}

@@ -90,9 +90,14 @@ def open_ask_edges(
                 cur["first"] = line
             if "?" in line:
                 cur["q"] = True
+    # The human (operator) NEVER posts a bus reply — Kyle reads through the UI and ACTS — so an edge
+    # TO operator could never close and would dangle as a phantom "waiting on Kyle." bus.sh waiting
+    # excludes the human for exactly this reason; the stall graph must too. (A session that needs
+    # Kyle is the DECISION QUEUE's job, not a stall.)
+    _NONPOSTING = {"operator", "human", "kyle"}
     for mm in msgs:
         mm["to"] = {t for t in _address_targets(mm["first"] or "")
-                    if t not in ("all", "p:wake", "p:low")}
+                    if t not in ("all", "p:wake", "p:low") and t not in _NONPOSTING}
 
     # Latest time each responder addressed each addressee — the "did B reply to A?" index (O(N)).
     last_reply: dict[tuple[str, str], float] = {}
