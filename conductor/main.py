@@ -781,7 +781,14 @@ class AppState:
                 continue
             rec = self._session_for_cwd(note["cwd"])
             if rec is None or rec.status in _BUSY_STATUSES:
-                continue                           # busy -> the keystrokes would vanish
+                continue                           # busy -> keep it, retry once quiet
+            # CLAIM the notice before the await, restore it only if the inject fails. Deleting
+            # after the await (as this did) let a concurrent pass re-send it — that is how "Kyle
+            # approved your git push" was delivered 3x with no grant behind it, long after the
+            # grant it referred to had been consumed. Claiming first makes it deliver at most
+            # once; restore-on-failure keeps the retry for a genuinely missed keystroke.
+            if self._push_notices.pop(key, None) is None:
+                continue                           # another pass already claimed it
             sent = await self._inject_text(
                 rec,
                 note.get("text") or (
@@ -789,8 +796,8 @@ class AppState:
                     "you're ready. The approval waits for you; it covers exactly one push."),
                 f"push verdict for {note['repo']}",
             )
-            if sent:
-                del self._push_notices[key]
+            if not sent:
+                self._push_notices[key] = note     # inject failed -> put it back to retry
 
     def _is_blocking_someone(self, tag: str | None) -> bool:
         """Is another session HARD-blocked on this one right now?

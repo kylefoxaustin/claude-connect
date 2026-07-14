@@ -138,6 +138,38 @@ def test_concurrent_retraction_wakes_fire_once(monkeypatch):
     assert len([i for i in f.injects if "RETRACTION" in i[1]]) == 1
 
 
+def test_concurrent_push_notice_delivers_once(monkeypatch):
+    """The phantom-approval bug: 'Kyle approved your git push' was injected 3x with no grant
+    behind it, because the notice was deleted only AFTER the inject's await. Concurrent passes
+    must deliver it exactly once."""
+    f = Fleet(monkeypatch, slow=True)
+    rec = f.session("[other:claude-connect]", cwd="/proj/cc")
+    f.app._push_notices = {"cc": {"cwd": "/proj/cc", "repo": "claude-connect",
+                                  "queued": NOW, "text": "✅ approved"}}
+    monkeypatch.setattr(f.app, "_session_for_cwd", lambda cwd: rec)
+
+    async def stormy():
+        await asyncio.gather(*(f.app._deliver_push_notices() for _ in range(3)))
+    asyncio.run(stormy())
+    assert len([i for i in f.injects if "push verdict" in i[1]]) == 1
+    assert f.app._push_notices == {}          # delivered -> gone, can't re-fire
+
+
+def test_push_notice_is_kept_when_the_inject_fails(monkeypatch):
+    """Restore-on-failure: if the keystroke didn't land, the notice must stay for a retry."""
+    f = Fleet(monkeypatch)
+    rec = f.session("[other:cc]", cwd="/proj/cc")
+    f.app._push_notices = {"cc": {"cwd": "/proj/cc", "repo": "cc", "queued": NOW, "text": "x"}}
+    monkeypatch.setattr(f.app, "_session_for_cwd", lambda cwd: rec)
+
+    async def fail_inject(rec, text, why):
+        f.injects.append((rec.tag, why))
+        return False                          # keystroke didn't land
+    monkeypatch.setattr(f.app, "_inject_text", fail_inject)
+    asyncio.run(f.app._deliver_push_notices())
+    assert "cc" in f.app._push_notices, "a failed notice must be kept for retry"
+
+
 def test_start_is_idempotent_no_second_scan_loop(monkeypatch):
     """The storm's SOURCE: start() had no guard, so a second call spawned a second scan loop
     (create_task doesn't cancel the overwritten one) — two loops => concurrent scans. A second
