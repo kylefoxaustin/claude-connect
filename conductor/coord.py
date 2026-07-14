@@ -221,6 +221,56 @@ def read_persist_requests(coord_root: Path) -> list[dict[str, Any]]:
     return out
 
 
+INFLIGHT_TTL = 24 * 3600  # bound directory growth; the transcript-advance check is the real clear
+
+
+def read_inflight(coord_root: Path, *, now: float | None = None) -> dict[str, dict[str, Any]]:
+    """Sessions with a tool in flight — a Bash/Edit/… call that may be sitting on a
+    permission prompt right now, keyed by realpath(cwd) so it matches how the picker guard
+    resolves a session.
+
+    Written by the ``tool-inflight.sh`` PreToolUse hook, cleared by PostToolUse. Each record
+    carries ``started_epoch`` so the choke-point guard can self-clear: once the session's
+    transcript has advanced past that time the tool has resolved, and a marker orphaned by a
+    denied tool (PostToolUse may not fire) can never wedge the guard shut.
+
+    Keyed by cwd, not session_id, because a cwd hosts at most one live session and that is the
+    join key the injection guard already has (``SessionRecord.project_dir``). The newest marker
+    for a cwd wins.
+    """
+    now = time.time() if now is None else now
+    idir = coord_root / "inflight"
+    if not idir.is_dir():
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    try:
+        files = list(idir.iterdir())
+    except OSError:
+        return {}
+    for f in files:
+        if not f.is_file() or f.name.endswith(".tmp"):
+            continue
+        d = _parse(f)
+        cwd = (d.get("cwd") or "").strip()
+        started = d.get("started_epoch", "")
+        if not cwd or not started.isdigit():
+            continue
+        started_i = int(started)
+        if now - started_i > INFLIGHT_TTL:
+            continue                        # ancient; the tool is long gone
+        key = os.path.realpath(cwd)
+        prev = out.get(key)
+        if prev is None or started_i > prev["started_epoch"]:
+            out[key] = {
+                "session_id": d.get("session_id", ""),
+                "cwd": cwd,
+                "tool": d.get("tool", ""),
+                "started_epoch": started_i,
+                "transcript": d.get("transcript", ""),
+            }
+    return out
+
+
 def read_push_grants(coord_root: Path, *, now: float | None = None) -> list[dict[str, Any]]:
     """Approvals Kyle has GIVEN that the session hasn't used yet.
 

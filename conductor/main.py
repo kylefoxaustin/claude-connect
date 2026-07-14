@@ -63,6 +63,7 @@ from .bus import (
 from .bus import _plain_name, _read_last_seen
 from .coord import (
     clear_push_proposal,
+    read_inflight,
     read_push_grants,
     read_persist_requests,
     read_push_proposals,
@@ -295,6 +296,11 @@ class AppState:
         # the guard for keystroke injection: a session sitting on a picker must never be
         # typed at, because the picker swallows typed text into its free-text option.
         self.decisions: list[dict[str, Any]] = []
+        # Second half of that same guard: a session with a tool in flight may be sitting on a
+        # permission prompt (transcript-identical to idle), where a typed Return = "Yes".
+        # Keyed by realpath(cwd). Written by the tool-inflight.sh hook; self-clears once the
+        # transcript advances past the marker.
+        self._inflight: dict[str, dict[str, Any]] = {}
         # Web Push. `_notified` maps a pending item's stable key -> when we last rang
         # about it, so a still-unanswered question gets a reminder (hourly) and not a
         # nag (every scan tick).
@@ -539,6 +545,9 @@ class AppState:
         if decisions != self.decisions:
             self.decisions = decisions
             await self.hub.broadcast("decisions", {"decisions": decisions})
+        # Tool-in-flight markers (the permission-prompt guard). Internal — not broadcast; it
+        # only gates our own keystroke injection.
+        self._inflight = await asyncio.to_thread(read_inflight, self.coord_root)
         autonomy = await asyncio.to_thread(read_windows, self.coord_root)
         if autonomy != self._autonomy:
             self._autonomy = autonomy
@@ -808,16 +817,47 @@ class AppState:
             for d in self.decisions
         )
 
+    def _tool_in_flight(self, rec: SessionRecord) -> bool:
+        """Is this session on a tool that may be blocked at a permission prompt right now?
+
+        A session sitting on ``Dangerous rm … — 1. Yes / 2. No`` (cursor on Yes) stops writing
+        its transcript, so its status decays to IDLE/WAITING and it looks wakeable — but a
+        typed Return there confirms *Yes*. We can't see the prompt from the transcript (Claude
+        Code doesn't flush the tool until it completes), so we rely on the marker the
+        tool-inflight hook wrote at PreToolUse.
+
+        The marker alone isn't enough — a denied tool may not fire PostToolUse, so we also
+        require that the session's transcript has NOT advanced past the marker. Once it has,
+        the tool resolved (ran or was denied) and the session is back at a real prompt: safe.
+        ``last_activity_at`` is the newest transcript mtime — the ground-truth signal, so a
+        stale marker can never wedge the guard shut.
+        """
+        if not self._inflight:      # common case — nothing in flight anywhere
+            return False
+        target = os.path.realpath(getattr(rec, "project_dir", "") or "")
+        m = self._inflight.get(target) if target else None
+        if m is None:
+            return False
+        # Transcript advanced past the tool start ⇒ resolved ⇒ safe. Equal/behind ⇒ still
+        # pending (conservative: refuse). last_activity_at is seconds; a 1s margin absorbs
+        # clock granularity between the hook's clock and the transcript's.
+        return rec.last_activity_at <= m["started_epoch"] + 1
+
     async def _inject_text(self, rec: SessionRecord, text: str, why: str) -> bool:
         """Type ``text`` into a live session's terminal (raises its window).
 
-        THE CHOKE POINT. Attestation lives here, not at the five call sites — a sixth
-        injection path added next month cannot forget to attest if it cannot inject without
-        passing through here. Call-site attestation is the version that rots.
+        THE CHOKE POINT. Attestation lives here, not at the call sites — a new injection path
+        added next month cannot forget to attest, OR to honour the modal guards, if it cannot
+        inject without passing through here. Call-site guarding is the version that rots (the
+        ping paths bypassed this and were exactly the ones that could type into a prompt).
         """
         if self._has_open_picker(rec):
             log.info("NOT typing at [%s] (%s) — it has a question open and the picker "
                      "would eat the keystrokes", rec.tag, why)
+            return False
+        if self._tool_in_flight(rec):
+            log.info("NOT typing at [%s] (%s) — a tool is in flight (possibly a permission "
+                     "prompt); a Return here could confirm it", rec.tag, why)
             return False
         # ATTEST BEFORE TYPING. Kyle said "I didn't type that /msg-check" — he was right, and
         # neither he nor the receiving Claude had any way to know. The keystrokes arrive as a
@@ -1313,14 +1353,11 @@ async def check_bus(session_id: str, request: Request) -> dict[str, Any]:
     rec = next((r for r in state.sessions.values() if r.session_id == session_id), None)
     if rec is None:
         raise HTTPException(status_code=404, detail="session not found")
-    injected = await asyncio.to_thread(
-        send_keys_to_session,
-        text="/msg-check",
-        pid=rec.pid,
-        terminal_pid=rec.terminal_pid,
-        title=rec.title,
-        window_title=rec.window_title,
-    )
+    # Through the choke point, not straight to send_keys_to_session — so the manual ping
+    # button honours the picker / tool-in-flight guards and attests, exactly like every
+    # autonomous wake. This path used to bypass both, and it was one of the ways a keystroke
+    # could land in a permission prompt.
+    injected = await state._inject_text(rec, "/msg-check", "manual ping (check bus)")
     return {
         "injected": injected,
         "tag": rec.tag,
@@ -2272,14 +2309,8 @@ async def send_bus_message(payload: BusMessage, request: Request) -> dict[str, A
         wanted = set(recipients)
         for rec in state.sessions.values():
             if rec.tag in wanted and rec.status != Status.ENDED:
-                ok = await asyncio.to_thread(
-                    send_keys_to_session,
-                    text="/msg-check",
-                    pid=rec.pid,
-                    terminal_pid=rec.terminal_pid,
-                    title=rec.title,
-                    window_title=rec.window_title,
-                )
+                # Choke point, not a raw send — same guard/attest as every other wake.
+                ok = await state._inject_text(rec, "/msg-check", "compose ping")
                 if ok:
                     pinged.append(rec.tag)
 
