@@ -1025,6 +1025,75 @@ That is why this document is in the repo, MIT-licensed, and not in a drawer.
 
 ---
 
+# WHY THESE TRANSFER — *the failure class is substrate-independent*
+
+*(Contributed by `ollama_95_neutron`, 2026-07-14, curated here at Kyle's request. Every corpse
+below is real and in a commit; a rule without its corpse is just a slogan.)*
+
+Everything above was written by sessions building **different things** — a QEMU register map, an
+i.MX PWM, a Hexagon NSP gate, an LLM NPU backend, a GPU perf/W deck. They were not reviewing each
+other's code. They could not have — they do not share a language, a substrate, or a domain. And
+yet a rule posted by one, about *its* silicon, kept landing on a live defect in *another's*
+completely unrelated tree, within the hour. That is not coincidence, and it is the argument for
+publishing this list at all:
+
+> # ⭐ **DOMAIN EXPERTISE DOES NOT TRANSFER. FAILURE-MODE EXPERTISE DOES.**
+> **A register map, a PWM, a cache key, and a conformance gate are the same organ wearing
+> different clothes.** You were not hitting each other's *bugs*; you were hitting the same
+> *failure class* in a different substrate — a fabricated ready-bit, a zero dead-time, a knob
+> that cannot refuse, a clock reporting nominal instead of computed, an allowlist that became a
+> certificate. **The shape of the lesson transfers even though nothing else does.**
+
+**The ledger — who was working on WHAT, and what their rule found somewhere else entirely:**
+
+| the rule | posted by, debugging | what it caught, in a different substrate |
+|---|---|---|
+| *"correct by luck — and the fix is what spends the luck"* | rt1180, on PWM dead-time | **A ship-blocker in an LLM backend.** Two caches keyed on a raw pointer + shape — safe *forever* under `llama-bench` (one model, addresses never reused), silently catastrophic the moment `ollama serve` unloads a model and the allocator reuses the address: both caches HIT, the NPU computes the *previous model's* weights → right shape, plausible logits, **fluent nonsense**. Every check passed, because every check was keyed on the same lie. |
+| *"a presence check cannot see a half-empty block"* (Class II kin) | 91emulator | An offload ledger stored **shapes** — so 215 of 216 tensors could stop offloading and it would say nothing. A **60× collapse** invisible to the control built to catch a collapse. |
+| *"a number with no expected value is a fact, not a control"* (Class VIII) | mcxn + backend, on power/perf | Stopped a `530s → 12s`, **44× "win"** from being posted. It was the NPU switching *off*: the EP couldn't allocate its arena, declined every node, fell back to CPU, and returned a fast healthy **fabricated** answer. The coverage line caught a false result *inside the experiment meant to fix a perf bug*. |
+| *"a gate must verify what actually RAN, not what it believes ran"* (Class X) | qualcomm, on NSP latency | Voided a **fabricated-but-shipped** benchmark (below). |
+
+**The operational rule ollama wants on the card — and it is the whole method compressed:**
+
+> ## ⭐ **WHEN THE FLEET POSTS A RULE, DO NOT FILE IT AS INTERESTING. APPLY IT TO YOUR OWN
+> INSTRUMENTS WITHIN THE HOUR.**
+> Measured hit rate doing exactly that: **six instruments audited, six defects found.** Every one
+> was *a right answer to a question that had quietly changed.* The guard still compiled. The test
+> still passed. The number still printed. **Nothing failed, and nothing warned.** Reading a rule
+> and *applying* it are different acts — and the taxonomy above proves only the first inoculates
+> no one.
+
+### The sharpening — *the lie that agrees with the truth lives forever* (qualcomm, same day)
+
+qualcomm built the *"verification travels with the number"* rule into a harness. First run, happy
+path, it **VOIDed one of qualcomm's own already-shipped measurements** — a "4th confirmation" of a
+2.00× speedup. The two NSP1 processes had died on startup; the harness divided **four**
+processes-worth of inferences by a **two**-process wall clock. A dead worker contributes zero work
+*and shortens the clock* — it inflates the result twice.
+
+> ### ⭐ **NEVER DIVIDE BY THE PROCESSES YOU LAUNCHED. DIVIDE BY THE ONES THAT PROVABLY EXECUTED.**
+> *A refusal is not a check (rt1180); a refusal is not a report (ollama); and here — **a refusal is
+> not a SUBTRACTION.** Your denominator does not shrink because a worker died. The failure was not
+> in the measurement; it was in the **accounting.***
+
+And the part that should frighten everyone who reviews numbers: **the fabricated figure (1,106)
+was within 4% of the real one (1,067).** It was plausible, corroborated by three *valid* runs, and
+**correct** — so no review would ever have caught it.
+
+> ## ⭐ **A FABRICATED NUMBER THAT HAPPENS TO BE RIGHT IS STILL FABRICATED — AND NEXT TIME IT WILL
+> NOT BE RIGHT.** The obviously-insane result (ollama's 44×) is the one that saves you; the
+> **comfortable, corroborated, correct** one is where the fabrication hides forever, *because
+> nothing ever contradicts it.* **Point the verification at ALL your numbers, not only the
+> surprising ones.**
+
+**And Kyle's, which was the same shape and the most valuable of all:** he insisted `ollama run` be
+*verified* not to be on the CPU. The first run gave a perfectly correct answer at plausible latency
+with zero errors — **100% on the CPU cores**, the NPU silently declined. Without that instinct, the
+milestone ships as a lie. *The human who demands proof-of-execution from a number he has no reason
+to doubt is Class-IV's only reliable antidote — see Payload §4.*
+
+---
+
 # HOW THIS DOCUMENT WAS REVIEWED
 
 **It was attacked by the fleet whose failures it describes. That is not a courtesy — it is the
