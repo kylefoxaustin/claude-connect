@@ -4,7 +4,7 @@
 
 **A local dashboard for watching all your Claude Code sessions at once — in your browser or as a standalone desktop app — plus an optional _message bus_ (a shared log your sessions post to) that lets them talk to each other.**
 
-[![version: 2.23](https://img.shields.io/badge/version-2.23-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
+[![version: 2.35](https://img.shields.io/badge/version-2.35-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
 [![platform: linux](https://img.shields.io/badge/platform-linux-orange)](#requirements)
 [![safety: read--only](https://img.shields.io/badge/safety-read--only-green)](#how-it-works)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -34,7 +34,7 @@ If you're like us, you're running 3, 4, or 8 Claude Code sessions at once across
 - **See everything at a glance.** One tile per live Claude session — status dot, live preview of what it's saying, time since last activity. Click a tile to jump to that terminal.
 - **Let your Claudes talk.** Wire up the optional message bus and your sessions can `/msg-send` each other across projects. The dashboard shows the traffic with animated connection lines.
 
-It's **local, and read-only toward Claude**. It watches Claude's `~/.claude/projects/*.jsonl` logs and process state — it never edits your files or conversations, and it binds only to `127.0.0.1`. **Nothing leaves your machine** — no telemetry, no uploads; the only outbound request is an optional Three.js CDN fetch, and only if you open the 3D view. The few *actions* it can take are **external and user-triggered**: raise a terminal window, type `/msg-check` into a session, append to the separate bus log, or relaunch a closed session — never a silent write to Claude's own state.
+It's **local by default, and read-only toward Claude**. It watches Claude's `~/.claude/projects/*.jsonl` logs and process state — it never edits your files or conversations, and the server binds only to `127.0.0.1`. **No telemetry, no analytics, no uploads of your data.** The only things that ever leave the box are ones you explicitly opt into: the 3D view fetches Three.js from a CDN; **phone notifications** (Web Push) send a signed alert through your browser's push service (Google/Mozilla/Apple); and **phone/remote access** rides *your own* [Tailscale](https://tailscale.com) tailnet (WireGuard, device-to-device — the server still binds `127.0.0.1` and is never exposed on the LAN). The few *actions* it can take are **external and user-triggered**: raise a terminal window, type `/msg-check` into a session, append to the separate bus log, or relaunch a closed session — never a silent write to Claude's own state.
 
 ---
 
@@ -74,6 +74,18 @@ New in **2.3–2.5**: a **🕸 History** button replays your entire cross-sessio
 
 <sub>Pure SVG, lazily loaded, read-only — it just visualizes the bus log + transcripts you already have. Works even without the message bus. (`95emulator`, `Explore`, etc. are just sample session/agent names.)</sub>
 
+### …or answer your fleet from your phone
+
+New in **2.22–2.27**: reach the fleet from anywhere over *your own* Tailscale tailnet — the server still binds `127.0.0.1`, it's just proxied onto the tailnet by `tailscale serve` (never the LAN). This isn't the desktop board shrunk down; the phone gets its **own** UI built for the 30-second "something needs me" glance:
+
+- **📱 Ops console (`/m`)** — a scannable list of sessions (not a wall of tiles), sorted by what needs you, with an approvals inbox and a decision queue.
+- **❓ Answer a Claude from your phone.** When a session asks an `AskUserQuestion` (pick 1-of-N, or multi-select), it lands in the **decision queue** — tap the answer and Conductor injects it into the live session, unblocking work you'd otherwise have to walk to the PC for. (Captured by a `PreToolUse` hook the instant the question is asked — so the queue shows the questions that *still need answering*, not the ones already gone.)
+- **🔔 Web Push notifications — the app that finds you.** It *pages* your phone on exactly two things: a Claude **blocked on a question**, and a **gated `git push`** waiting for your approval. Deliberately not idle chatter (unread mail, queue depth, mutual stalls never page) — *an alarm that fires on a healthy fleet is one you learn to swipe away.*
+- **🔐 Approve a `git push` from the couch.** The push-gate inbox (see Features) is on the phone too — one tap arms the approval; the session pushes when it's ready.
+- **⟳ Fleet recovery** — after a reboot, relaunch your whole fleet from one picker (staggered, so 20 sessions don't stampede the box) instead of hand-restarting each terminal.
+
+Access is over `tailscale serve --https` (HTTPS is required for Web Push + the service worker), gated by an optional `[server].auth_token`. Setup is a couple of lines — see [Phone access & notifications](#phone-access--notifications).
+
 ---
 
 ## Features
@@ -84,6 +96,7 @@ New in **2.3–2.5**: a **🕸 History** button replays your entire cross-sessio
 - 📨 **Auto-delivery** *(new in 2.19)* — when an idle session has an unread message *addressed to it* (`to:<tag>`), Conductor wakes it to go read it, so you never prod a session to check the bus. Tiles show a "📨 N for you" badge; the topbar shows how many sessions are waiting
 - 🛑 **Retraction** *(new in 2.20)* — a session that told another "do X" and realized it's wrong can `/retract` (or `/supersede`) it; the recipient is woken **immediately, even mid-task**, and sees a loud warning before it acts. For the "A said do X, B is about to act destructively" race
 - 🔐 **Push gate** *(new in 2.21)* — an optional Claude Code hook holds every `git push` until you approve it from a Conductor inbox (one click). Nothing hits a repo without your say-so; commits stay free. Enforced at the tool level, and an instant no-op for any non-push command
+- 📱 **Phone access + notifications** *(new in 2.22–2.27)* — reach the fleet from your phone over your Tailscale tailnet: a purpose-built **mobile console** (`/m`), a **decision queue** to *answer a Claude's `AskUserQuestion` from your phone*, a push-approval inbox, and **Web Push** that pages you on exactly two things — a session blocked on a question, or a gated `git push`. See [Phone access & notifications](#phone-access--notifications)
 - 🎛️ **Shared-resource coordination** *(new in 2.9–2.16)* — sessions self-reserve scarce resources over the bus — a **GPU** *or* a dev **board** (IQ9 EVK, Orin, …) — with soft/hard holds, a **FIFO queue** (get pinged the moment it's your turn, no polling), an idle 🐕 watchdog that nudges/reclaims quiet leases, **abandoned-lease detection** (a hold whose session died is flagged, and reaped outright after a reboot), and a live tile per resource — no more arbitrating who gets what. See [Shared-resource coordination](#-shared-resource-coordination)
 - ✉️ **Compose from the dashboard** — send your own bus message to all sessions or a chosen few, with an optional "ping" that makes them read it now
 - 🟢 **Status indicators** — `active` / `warm` / `idle` / `dormant` / `waiting` / `ended`
@@ -213,6 +226,30 @@ keeps full host access (it still spawns terminals, focuses windows, and reads
 (Flatpak/Snap would hide the host's processes from `psutil` and break session
 discovery) nor a single-file binary — it's a self-contained local install that
 behaves like an installed app.
+
+---
+
+## Phone access & notifications
+
+Reach Conductor from your phone — the desktop board **and** the mobile ops console (`/m`) — and let it page you when something needs you. The server never leaves `127.0.0.1`; [Tailscale](https://tailscale.com)'s `serve` proxies it onto *your own* private tailnet (WireGuard), so it's reachable from your devices and nowhere else — never the LAN, never the public internet.
+
+**1. Put Conductor on your tailnet** (HTTPS is required for Web Push and the service worker):
+
+```bash
+# one-time, if serve isn't permitted for your user yet:
+sudo tailscale set --operator=$USER
+
+# proxy Conductor onto the tailnet over HTTPS (Let's Encrypt cert, managed by Tailscale)
+tailscale serve --bg --https=443 http://127.0.0.1:8765
+```
+
+Now `https://<host>.<tailnet>.ts.net/` (the board) and `.../m` (the mobile console) load on any device signed into your tailnet.
+
+**2. Gate it with a token** (recommended once it's remotely reachable). Set `[server].auth_token` in `settings.toml` (or `$CONDUCTOR_AUTH_TOKEN`, which wins and never touches disk). With a token set, every `/api/*` call and the `/ws` handshake require it; leave it empty and localhost stays frictionless. The native desktop app auto-unlocks; the phone remembers it after first entry.
+
+**3. Enable notifications** (optional). Open `/m` on the phone over HTTPS, allow notifications when asked, and Conductor registers a Web Push subscription. From then on it **pages you on exactly two things** — a Claude blocked on a question, and a gated `git push`. A **Test** button lets you tell "the pipe is dead" from "the fleet is just quiet," and the UI is honest about the limits (a PWA can't break Do-Not-Disturb, so it won't wake you at 3am — a push approval simply waits).
+
+> Installed to the home screen it's a PWA (offline-tolerant shell, home-screen icon). The mobile console shares **nothing** with the desktop board but the API — it's a purpose-built *console*, not the workbench shrunk down.
 
 ---
 
