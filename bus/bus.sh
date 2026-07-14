@@ -1902,34 +1902,34 @@ PYEOF
     # cross-cutting hazard that matters regardless of whitelist — it is exactly the case
     # nobody notices — so it's computed FIRST and can shout even for an un-whitelisted tag.
     SIBLING_LINES="$(sibling_hook_lines 2>/dev/null || true)"
+
+    # One JSON emitter for the SessionStart additionalContext (was three copy-pasted heredocs).
+    _ss_emit() {   # $1 = context string
+      local esc
+      esc="$(printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"
+      printf '{\n  "hookSpecificOutput": {\n    "hookEventName": "SessionStart",\n    "additionalContext": %s\n  }\n}\n' "$esc"
+    }
+
+    # What LEADS every session's context, UNSCOPED: an active identity collision (urgent, right
+    # now) first, then Kyle's FLEET STANDING ORDERS (measure-don't-claim; honor-the-reservation).
+    # These lead even for an un-whitelisted tag — the law is not scoped to the bus whitelist, and
+    # reaches every session: running, idle, stopped, or not yet created.
+    SO_FILE="${BUS_STANDING_ORDERS:-$HOME/.claude/bus-state/standing-orders.md}"
+    SS_LEAD="$SIBLING_LINES"
+    if [ -s "$SO_FILE" ]; then
+      SS_LEAD="${SS_LEAD:+$SS_LEAD
+
+}$(cat "$SO_FILE")"
+    fi
+
     if ! is_whitelisted "$TAG"; then
-      # Not on the auto-hook whitelist -> normally a silent no-op. Still shout a collision.
-      if [ -n "$SIBLING_LINES" ]; then
-        SS_ESC="$(printf '%s' "$SIBLING_LINES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"
-        cat <<EOF
-{
-  "hookSpecificOutput": {
-    "hookEventName": "SessionStart",
-    "additionalContext": $SS_ESC
-  }
-}
-EOF
-      fi
+      # Not on the auto-hook whitelist -> no bus digest. But the standing orders (and any active
+      # collision) still lead: the law reaches every session, whitelisted or not.
+      [ -n "$SS_LEAD" ] && _ss_emit "$SS_LEAD"
       exit 0
     fi
     if [ ! -s "$BUS_FILE" ]; then
-      # Empty bus: still surface a collision if there is one (fold it into the context).
-      if [ -n "$SIBLING_LINES" ]; then
-        SS_ESC="$(printf '%s' "$SIBLING_LINES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"
-        cat <<EOF
-{
-  "hookSpecificOutput": {
-    "hookEventName": "SessionStart",
-    "additionalContext": $SS_ESC
-  }
-}
-EOF
-      fi
+      [ -n "$SS_LEAD" ] && _ss_emit "$SS_LEAD"
       mark_seen_if_bus_tag
       exit 0
     fi
@@ -1956,18 +1956,11 @@ EOF
     SS_CTX="Claude Bus — recent messages from the cross-session log (your tag: [$TAG]). Read these before responding so you know what the OTHER session has been saying while you were offline:
 
 $LATEST"
-    [ -n "$SIBLING_LINES" ] && SS_CTX="$SIBLING_LINES
+    # Collision + standing orders lead, then the bus digest.
+    [ -n "$SS_LEAD" ] && SS_CTX="$SS_LEAD
 
 $SS_CTX"
-    SS_ESC="$(printf '%s' "$SS_CTX" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"
-    cat <<EOF
-{
-  "hookSpecificOutput": {
-    "hookEventName": "SessionStart",
-    "additionalContext": $SS_ESC
-  }
-}
-EOF
+    _ss_emit "$SS_CTX"
     # Only on first contact. See above: never mark mail read that we did not show.
     [ "$SS_HAD_WATERMARK" -eq 1 ] || mark_seen_if_bus_tag
     ;;
