@@ -258,24 +258,17 @@ def _window_belongs_to_target(
     if not titles:
         return False                      # can't see the window -> can't verify -> don't type
     tl = titles[0].lower()
+    # FULL-HINT substring ONLY. A partial/token match is unsafe here: two sessions can share a
+    # token ("simtest-a"/"simtest-b" both contain "simtest"; "keyhole"/"keyhole-sizer" both
+    # contain "keyhole"), and a shared token would confirm the WRONG window — which the live
+    # smoke test caught doing exactly that (a stale-focused simtest-b verified as simtest-a).
+    # For a safety verify, a false negative just means "refuse and retry"; a false positive
+    # means a keystroke in the wrong terminal. So require the whole hint to appear. Conductor's
+    # stored window_title IS the real X11 title, so the full hint matches in the normal case.
     for hint in (window_title, title):
-        if hint and hint.lower() in tl:   # full-hint substring — the reliable signal
+        if hint and hint.lower() in tl:
             return True
-    # Token fallback for reworded auto-topic titles — but ONLY on DISTINCTIVE tokens. Every
-    # session's window is "Project <name>", so matching on "project" (or "claude"/"qemu"/…)
-    # would confirm ANY window — that false positive is exactly what let mcxn's keys reach 91.
-    for hint in (window_title, title):
-        for tok in re.split(r"[^a-z0-9]+", (hint or "").lower()):
-            if len(tok) >= 2 and tok not in _TITLE_STOPWORDS and tok in tl:
-                return True
     return False
-
-
-# Words shared across every session's terminal title — never distinctive enough to confirm a
-# window belongs to a specific session.
-_TITLE_STOPWORDS = frozenset({
-    "project", "claude", "build", "the", "session", "qemu", "emu", "dev", "setup", "guide",
-})
 
 
 def focus_session(

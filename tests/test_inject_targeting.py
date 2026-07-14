@@ -104,6 +104,24 @@ def test_aborts_rather_than_type_when_it_cannot_confirm_any_window(monkeypatch, 
     assert stub.typed == [], f"typed into an unconfirmed window: {stub.typed}"
 
 
+def test_guard_does_not_false_positive_on_a_SHARED_token(monkeypatch):
+    """Found live by the simtest smoke test: two sessions whose titles share a token
+    ("Project simtest-a" / "Project simtest-b" both contain "simtest"; likewise
+    "keyhole"/"keyhole-sizer") must NOT verify as each other. A stale-focused simtest-b was
+    verified as the target simtest-a via the shared "simtest" token, and simtest-a's keys were
+    about to be typed into simtest-b — the exact mis-delivery the guard exists to prevent."""
+    import conductor.windows as W
+    windows = [(0xA, 4321, "kyle@skippy: ~/Documents/GitHub/simtest-a"),
+               (0xB, 4321, "kyle@skippy: ~/Documents/GitHub/simtest-b")]
+    monkeypatch.setattr(W, "list_windows", lambda: windows)
+    # target is simtest-a; the (stale-focused) window under test is simtest-b's
+    assert W._window_belongs_to_target(0xB, "simtest-a",
+                                       "kyle@skippy: ~/Documents/GitHub/simtest-a") is False
+    # and the target's own window still verifies
+    assert W._window_belongs_to_target(0xA, "simtest-a",
+                                       "kyle@skippy: ~/Documents/GitHub/simtest-a") is True
+
+
 def test_DOES_type_when_the_focused_window_is_the_right_one(monkeypatch, stub):
     """Control: when the activate lands and getactivewindow returns mcxn's own window, we type
     normally — the guard must not break the happy path."""
