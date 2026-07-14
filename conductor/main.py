@@ -315,6 +315,14 @@ class AppState:
         self._bus_task: asyncio.Task | None = None
 
     async def start(self) -> None:
+        # Idempotent: a second start() must NOT spawn a second scan loop. create_task doesn't
+        # cancel the old task when the attribute is overwritten, so two loops would run forever,
+        # offset by their sleeps — concurrent _do_scan -> concurrent wakes -> the /msg-check
+        # storm. (The per-path dedup is now concurrency-safe too, but the loops themselves must
+        # be single.)
+        if self._scan_task is not None and not self._scan_task.done():
+            log.warning("AppState.start() called again while already running — ignoring")
+            return
         await self.activity.start()
         # Seed bus state from the historical log so the Bus tile reflects past
         # activity instead of starting at zero. The adapter itself tails from
@@ -573,8 +581,11 @@ class AppState:
                         and s.status != Status.ENDED), None)
             if rec is None:
                 continue  # target not live -> the hook surfaces it on its next prompt
-            await self._inject_msg_check(rec, f"RETRACTION from [{r['sender']}] (busy-guard overridden)")
+            # Mark it woken BEFORE the await — same concurrency race as _wake_unread_recipients
+            # (qualcomm got 4 duplicate retraction wakes in one burst). The inject yields; a
+            # concurrent pass must see the id already claimed and skip.
             self._retraction_woken.add(r["id"])
+            await self._inject_msg_check(rec, f"RETRACTION from [{r['sender']}] (busy-guard overridden)")
         active = {r["id"] for r in self._retractions}
         self._retraction_woken &= active  # forget expired records
 
@@ -674,10 +685,17 @@ class AppState:
                     allowed = True
             if not allowed:
                 continue  # busy, or attended and not in a window — retry once quiet
-            await self._inject_msg_check(r, f"{info['count']} unread addressed to it")
+            # Reserve the dedup slot BEFORE the inject, not after. _inject_msg_check awaits
+            # (it runs xdotool in a thread), and a floor-exempt holder — a session others are
+            # hard-blocked on — has no rate limit behind it. So if we recorded this only after
+            # the await, concurrent scan passes would each read an empty slot and re-wake it:
+            # qualcomm saw 11 /msg-check in ~200ms exactly this way. Reserving first makes any
+            # later pass see it and skip. A reserved-but-unsent wake is harmless — a queued
+            # check drains the whole backlog, and the retry path re-arms a genuinely lost one.
             self._wake_outstanding[r.tag] = (seen_now, now, r.last_activity_at)
             self._woke_at[r.tag] = now
             changed = True
+            await self._inject_msg_check(r, f"{info['count']} unread addressed to it")
         if changed:
             await asyncio.to_thread(write_wake_state, self.coord_root, self._wake_outstanding)
 
@@ -917,8 +935,10 @@ class AppState:
             rec = self._live_session_for(owner)
             if rec is None or rec.status in _BUSY_STATUSES:
                 continue  # gone (orphan logic covers it), or mid-task — retry next scan
-            await self._inject_msg_check(rec, f"watchdog nudge on {r['name']} (idle)")
+            # Claim the episode BEFORE the await — same race as the other wake paths (qualcomm
+            # got 2 duplicate nudges in one burst).
             self._nudge_woken.add(key)
+            await self._inject_msg_check(rec, f"watchdog nudge on {r['name']} (idle)")
         self._nudge_woken &= current  # a new idle episode gets a fresh wake
 
     def _annotate_orphans(self) -> None:
@@ -972,8 +992,8 @@ class AppState:
             rec = self._live_session_for(owner)
             if rec is None or rec.status in _BUSY_STATUSES:
                 continue  # gone/untracked, or mid-task -> bus fallback; retry next scan
+            self._pinged_offers.add(key)      # claim before the await (concurrency race)
             await self._inject_msg_check(rec, f"offered {r['name']}")
-            self._pinged_offers.add(key)
         self._pinged_offers &= current  # forget offers that have resolved (bounded)
 
     async def _activity_loop(self) -> None:
