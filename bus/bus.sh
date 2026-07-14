@@ -1637,7 +1637,8 @@ for m in sel:
 
 label = "new" if mode == "new" else "new (all tags)"
 if remaining:
-    print("--- %d of %d unread shown (oldest first) · %d REMAIN — run `check` again. ---"
+    print("--- %d of %d unread shown (oldest first) · %d REMAIN — run `check` again, "
+          "or `bus.sh catchup` to digest them all at once. ---"
           % (len(sel), total_unread, remaining))
 else:
     print("--- %d %s message(s). `--all-tags` for traffic addressed to others · "
@@ -1659,6 +1660,148 @@ if os.environ.get("WL") == "1":
         pass
 PYEOF
     fi
+    ;;
+
+  catchup)
+    # Get CURRENT in one shot after an absence — without `check`'s ~28-page slog and
+    # without the blind skip (post-once / send used to stamp the cursor at newest and
+    # mark hundreds read unread; that is already gone, this makes the honest path cheap).
+    #
+    # holobench (2026-07-14): a returning session had two exits, both wrong — burn ~28 turns
+    # paging 20 full bodies at a time, or advance the cursor without reading. The tension is
+    # real and structural: a single high-water mark plus a lossy transport means you can only
+    # advance the cursor to a point below which everything was actually SHOWN. A 64 KB full-body
+    # dump gets truncated and then advances anyway (91emulator lost 193 messages exactly so).
+    #
+    # So catchup shows a ONE-LINE DIGEST per unread message — small enough not to truncate —
+    # OLDEST-first (so advancing the cursor to the last line shown is always sound), and clears
+    # a bounded page of ~200 per call instead of 20. Every message is at minimum digested: this
+    # is a cheap read, never a silent skip. Full bodies stay one `check --all` / read away.
+    #
+    #   catchup            digest all unread (mine or broadcast), advance fully
+    #   catchup -n <N>     cap this page to N (default 200)
+    LIMIT=0
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -n)   shift; LIMIT="${1:-200}" ;;
+        -n*)  LIMIT="${1#-n}" ;;
+      esac
+      shift
+    done
+    STATE_DIR="$HOME/.claude/bus-state"
+    LAST_SEEN=""
+    [ -f "$STATE_DIR/$TAG.last-seen" ] && LAST_SEEN="$(cat "$STATE_DIR/$TAG.last-seen" 2>/dev/null || true)"
+    if is_whitelisted "$TAG"; then WL=1; else WL=0; fi
+
+    echo "=== Catch-up for [$TAG] — digest of unread, oldest-first ==="
+    echo
+
+    BUS_FILE="$BUS_FILE" MY_TAG="$TAG" LAST_SEEN="$LAST_SEEN" LIMIT="$LIMIT" WL="$WL" \
+    python3 - <<'PYEOF'
+import os, re, sys
+
+path  = os.environ["BUS_FILE"]
+me    = os.environ["MY_TAG"]
+last  = os.environ.get("LAST_SEEN", "") or ""
+limit = int(os.environ.get("LIMIT") or 0)
+CAP   = limit if limit else 200          # digests are tiny; a page of 200 stays well under
+                                         # the transport's truncation point (unlike full bodies)
+
+def plain(t):
+    t = t.strip().strip("[]")
+    if t.lower().startswith("other:"):
+        t = t[6:]
+    return t.lower()
+
+me_p = plain(me)
+HDR  = re.compile(r'^## (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) \[([^\]]+)\]\s*$')
+TO   = re.compile(r'\bto:(\S+)')
+
+msgs, cur = [], None
+try:
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            line = line.rstrip("\n")
+            m = HDR.match(line)
+            if m:
+                if cur: msgs.append(cur)
+                cur = {"ts": m.group(1), "sender": m.group(2), "lines": [line]}
+            elif cur is not None:
+                cur["lines"].append(line)
+    if cur: msgs.append(cur)
+except OSError:
+    sys.exit(0)
+
+def first_body(msg):
+    for ln in msg["lines"][1:]:
+        if ln.strip():
+            return ln.strip()
+    return ""
+
+def targets(line):
+    if line.startswith("@to "):
+        return {plain(t) for t in re.findall(r'\[([^\]]+)\]', line)}
+    head = line.split("—", 1)[0]
+    return {plain(t) for t in TO.findall(head)}
+
+def subject(line):
+    # Strip the address prefix (`to:a to:b … —`) and the leading [sender] tag, and markdown
+    # bold, to leave the human gist. Falls back to the whole line for plain broadcasts.
+    s = line.split("—", 1)[1] if "—" in line else line
+    s = re.sub(r'^\s*\[[^\]]+\]\s*', '', s)     # drop a leading [sender]
+    s = s.replace("**", "").strip()
+    return s
+
+sel = []
+for m in msgs:
+    if plain(m["sender"]) == me_p:                 # never my own posts
+        continue
+    if last and not (m["ts"] > last):              # already read
+        continue
+    fb = first_body(m)
+    tg = targets(fb)
+    if tg and me_p not in tg and "all" not in tg:  # addressed only to others
+        continue
+    m["_wake"] = "p:wake" in fb
+    m["_subj"] = subject(fb)
+    sel.append(m)
+
+total = len(sel)
+if total == 0:
+    print("Already current — no unread since your last check (%s)." % (last or "ever"))
+    sys.exit(0)
+
+page = sel[:CAP]                                   # OLDEST-first slice: advancing to page[-1]
+remaining = total - len(page)                      # is always sound (all below it was shown)
+
+for m in page:
+    hhmm = m["ts"][11:]                             # "YYYY-MM-DD HH:MM" -> "HH:MM"
+    bell = "🔔 " if m["_wake"] else ""
+    subj = m["_subj"]
+    if len(subj) > 96:
+        subj = subj[:95] + "…"
+    print("%s  %s[%s] %s" % (hhmm, bell, plain(m["sender"]), subj))
+
+print()
+if remaining:
+    print("--- %d of %d unread digested (oldest-first) · %d REMAIN — run `catchup` again. ---"
+          % (len(page), total, remaining))
+else:
+    print("--- caught up: %d message(s) digested. Full body: `bus.sh check --all`. ---" % total)
+
+# Advance the cursor to the newest message we DIGESTED — never past it. Sound because the page
+# is oldest-first and contiguous from the old watermark: everything at or below page[-1] was shown.
+if os.environ.get("WL") == "1":
+    sd = os.path.expanduser("~/.claude/bus-state")
+    try:
+        os.makedirs(sd, exist_ok=True)
+        with open(os.path.join(sd, me + ".last-seen"), "w") as f:
+            f.write(page[-1]["ts"] + "\n")
+        with open(os.path.join(sd, me + ".pending"), "w") as f:
+            f.write("0\n")
+    except OSError:
+        pass
+PYEOF
     ;;
 
   all)
@@ -1962,7 +2105,8 @@ HEADER
     cat <<EOF
 Claude Bus
   bus.sh send <text>         Append a message to the bus
-  bus.sh check               Print the last 80 lines (used by /msg-check)
+  bus.sh check               New messages addressed to you since last check
+  bus.sh catchup [-n N]      Digest ALL unread at once (oldest-first) & get current
   bus.sh all                 Print the entire log (used by /msg-all)
   bus.sh rotate [YYYY-MM]    Archive to messages-YYYY-MM.md, start fresh
   bus.sh session-start       Hook output: emit additionalContext JSON
