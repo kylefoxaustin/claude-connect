@@ -91,11 +91,22 @@ if [ -f "$TOK" ]; then
   exp="$(grep -E '^expires=' "$TOK" 2>/dev/null | head -1 | cut -d= -f2-)"
   if [ -z "$exp" ]; then exp="$(head -1 "$TOK" 2>/dev/null || echo 0)"; fi
   case "$exp" in ''|*[!0-9]*) exp=0 ;; esac
-  rm -f "$TOK"                                   # consume — one push per approval
+  # Check expiry BEFORE consuming. The old order rm'd the token FIRST, so an EXPIRED token was
+  # silently burned and the push fell through to the generic "needs approval" message — Kyle was
+  # never told his approval had LAPSED, only that he needed to approve, which reads as "it didn't
+  # work" on the one control he relies on. A consumed-but-unreported approval is the worst thing
+  # this gate can do.
   if [ "$now" -lt "$exp" ]; then
+    rm -f "$TOK"                                 # consume a VALID token — one push per approval
     rm -f "$REQUESTS/$KEY" 2>/dev/null || true   # clear the (now-satisfied) request
     exit 0                                       # ALLOW (proceeds via normal perms)
   fi
+  # Expired. Grab when it was granted (for an honest message), remove the stale token, and DENY
+  # below — but with a message that says it LAPSED, so Kyle re-approves instead of thinking the
+  # gate is broken.
+  EXPIRED_AT="$(grep -E '^approved_at=' "$TOK" 2>/dev/null | head -1 | cut -d= -f2-)"
+  rm -f "$TOK"
+  EXPIRED=1
 fi
 
 # The line Kyle actually approves on. `$CMD` is the WHOLE tool call and is multi-line —
@@ -113,5 +124,9 @@ PUSHCMD="$(printf '%s' "$CMD" \
 mkdir -p "$REQUESTS" 2>/dev/null || true
 { echo "repo=$REPO"; echo "repo_name=$NAME"; echo "cwd=$CWD"
   echo "cmd=$PUSHCMD"; echo "epoch=$now"; echo "created=$(date '+%Y-%m-%d %H:%M')"; } > "$REQUESTS/$KEY" 2>/dev/null || true
-echo "🛑 Push to '$NAME' needs Kyle's approval (commits are fine — only pushes are gated). Requested in Conductor's push inbox; approve there or Kyle runs 'bus.sh push approve $NAME', then re-run this push." >&2
+if [ "${EXPIRED:-0}" = 1 ]; then
+  echo "🛑 Your approval for '$NAME'${EXPIRED_AT:+ (granted $EXPIRED_AT)} EXPIRED before this push ran — it did NOT go through, and it was NOT silently reused. A fresh request is filed: re-approve in Conductor's inbox (or 'bus.sh push approve $NAME'), then re-run this push." >&2
+else
+  echo "🛑 Push to '$NAME' needs Kyle's approval (commits are fine — only pushes are gated). Requested in Conductor's push inbox; approve there or Kyle runs 'bus.sh push approve $NAME', then re-run this push." >&2
+fi
 exit 2
