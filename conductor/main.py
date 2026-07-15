@@ -549,7 +549,7 @@ class AppState:
         decisions = await asyncio.to_thread(read_decisions, self.coord_root)
         # Drop records whose session is gone — a session killed mid-picker leaves its
         # file behind, and a dead question in the queue is a false alarm.
-        decisions = [d for d in decisions if self._session_for_cwd(d.get('cwd', ''))]
+        decisions = [d for d in decisions if self._session_for_decision(d)]
         if decisions != self.decisions:
             self.decisions = decisions
             await self.hub.broadcast("decisions", {"decisions": decisions})
@@ -926,6 +926,27 @@ class AppState:
              if s.status != Status.ENDED and os.path.realpath(s.project_dir) == target),
             None,
         )
+
+    def _session_for_decision(self, d: dict[str, Any]) -> SessionRecord | None:
+        """Map a captured AskUserQuestion back to its live session — for surfacing it AND for
+        injecting the answer.
+
+        Join on ``session_id`` FIRST: the capture hook names each record ``<session_id>.json`` and
+        that id is the transcript stem, the exact id Conductor derives for the same live session.
+        We used to match on cwd alone, and it silently dropped questions off the phone: the hook
+        records the session's launch cwd while Conductor stores ``proc.cwd()``, and the two diverge
+        (a symlinked path, a chdir, a subdir launch) — a mismatch there made the ask never appear.
+        cwd stays as a fallback for any record written before this join existed."""
+        sid = (d.get("session_id") or "").strip()
+        if sid:
+            rec = next(
+                (s for s in self.sessions.values()
+                 if s.status != Status.ENDED and s.session_id == sid),
+                None,
+            )
+            if rec is not None:
+                return rec
+        return self._session_for_cwd(d.get("cwd", ""))
 
     async def _wake_nudged_owners(self) -> None:
         """Make the watchdog's idle nudge actually reachable.
@@ -1646,7 +1667,7 @@ async def answer_decision(session_id: str, payload: DecisionAnswer,
         raise HTTPException(status_code=409,
                             detail="that question is no longer pending — it was already answered")
 
-    session = state._session_for_cwd(rec_dec.get("cwd", ""))
+    session = state._session_for_decision(rec_dec)
     if session is None:
         raise HTTPException(status_code=409,
                             detail="the session that asked is no longer running")

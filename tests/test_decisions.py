@@ -180,10 +180,39 @@ def _app(tmp_path):
     return s
 
 
-def _rec(project_dir):
+def _rec(project_dir, session_id="s1"):
     return types.SimpleNamespace(
         tag="[other:x]", status=Status.IDLE, pid=1, terminal_pid=2,
-        title="t", window_title="w", project_dir=project_dir)
+        title="t", window_title="w", project_dir=project_dir, session_id=session_id)
+
+
+def test_decision_matches_by_session_id_even_when_cwd_differs(tmp_path):
+    """The bug: a session that cd'd (or whose launch cwd != proc.cwd) has a decision cwd that
+    does NOT equal its project_dir, so a cwd-only join dropped the question off the phone.
+    session_id is the exact join key — the record is literally named <session_id>.json."""
+    app = _app(tmp_path)
+    rec = _rec(str(tmp_path / "proj"), session_id="abc123")
+    app.sessions = {"k": rec}
+    d = {"session_id": "abc123", "cwd": str(tmp_path / "proj" / "sub" / "deeper")}
+    assert app._session_for_decision(d) is rec
+
+
+def test_decision_falls_back_to_cwd_when_no_session_id(tmp_path):
+    app = _app(tmp_path)
+    rec = _rec(str(tmp_path / "proj"), session_id="abc123")
+    app.sessions = {"k": rec}
+    d = {"session_id": "", "cwd": str(tmp_path / "proj")}
+    assert app._session_for_decision(d) is rec
+
+
+def test_decision_for_a_dead_session_is_dropped(tmp_path):
+    """No live session with that id and no cwd match -> None, so a session killed mid-picker
+    leaves no phantom question in the queue."""
+    app = _app(tmp_path)
+    rec = _rec(str(tmp_path / "proj"), session_id="abc123")
+    app.sessions = {"k": rec}
+    d = {"session_id": "GONE", "cwd": str(tmp_path / "elsewhere")}
+    assert app._session_for_decision(d) is None
 
 
 def test_never_types_at_a_session_with_a_question_open(tmp_path, monkeypatch):

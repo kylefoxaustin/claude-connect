@@ -108,6 +108,45 @@ def test_non_tilix_refuses_a_title_mismatch(monkeypatch, env):
     assert env["typed"] == []
 
 
+def _send_keys(**over):
+    kw = dict(keys=["1", "Return"], pid=54912, terminal_pid=4321,
+              title="mcxqemu", window_title="Project mcxqemu")
+    kw.update(over)
+    return W.send_key_sequence(**kw)
+
+
+def test_picker_answer_uses_the_same_uuid_focus_and_types_the_keys(env):
+    """The AskUserQuestion picker driver (a phone answer to a decision) must focus the tile the
+    SAME correct way as the text path — by UUID, never windowactivate. This is the exact drift
+    that made a submitted phone answer vanish: Conductor logged it sent, it never reached the tile.
+
+    `env` records typed *text* (xdotool type); here we count the raw `xdotool key` dispatches."""
+    dispatched = {"keys": []}
+    orig_run = W.subprocess.run
+
+    def run(cmd, *a, **k):
+        if len(cmd) >= 2 and cmd[0] == "xdotool" and cmd[1] == "key":
+            dispatched["keys"].append(cmd[-1])
+        return orig_run(cmd, *a, **k)
+
+    W.subprocess.run = run
+    try:
+        ok = _send_keys()
+    finally:
+        W.subprocess.run = orig_run
+    assert ok is True
+    assert env["activated_uuid"] == "TILE-A", "picker path did not activate the target's own tile"
+    assert env["windowactivated"] == [], "picker path used windowactivate on a tilix tile"
+    assert dispatched["keys"] == ["1", "Return"], "picker keystrokes not dispatched in order"
+
+
+def test_picker_answer_refuses_when_the_tile_activate_fails(env):
+    """If the tile can't be focused, the picker answer must NOT be typed into whatever is focused —
+    a mis-delivered picker keystroke submits an answer Kyle never gave."""
+    env["_activate_ok"] = False
+    assert _send_keys() is False
+
+
 def test_verify_guard_does_not_false_positive_on_a_SHARED_token(monkeypatch):
     """Found live: two sessions whose titles share a token ("simtest-a"/"simtest-b" both contain
     "simtest"; "keyhole"/"keyhole-sizer" both contain "keyhole") must not verify as each other."""
