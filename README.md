@@ -95,9 +95,12 @@ Access is over `tailscale serve --https` (HTTPS is required for Web Push + the s
 - 📬 **Cross-session messaging** with an animated bus tile showing live traffic
 - 📨 **Auto-delivery** *(new in 2.19)* — when an idle session has an unread message *addressed to it* (`to:<tag>`), Conductor wakes it to go read it, so you never prod a session to check the bus. Tiles show a "📨 N for you" badge; the topbar shows how many sessions are waiting
 - 🛑 **Retraction** *(new in 2.20)* — a session that told another "do X" and realized it's wrong can `/retract` (or `/supersede`) it; the recipient is woken **immediately, even mid-task**, and sees a loud warning before it acts. For the "A said do X, B is about to act destructively" race
-- 🔐 **Push gate** *(new in 2.21)* — an optional Claude Code hook holds every `git push` until you approve it from a Conductor inbox (one click). Nothing hits a repo without your say-so; commits stay free. Enforced at the tool level, and an instant no-op for any non-push command
+- 🔐 **Push gate** *(new in 2.21)* — an optional Claude Code hook holds every `git push` until you approve it from a Conductor inbox (one click). Nothing hits a repo without your say-so; commits stay free. Enforced at the tool level, and an instant no-op for any non-push command. A session can also **propose** a push (`/push-propose` — *"ready to push, or keep digging?"*, v2.27), so you approve it *with* the commits and its reasoning in front of you, in a single tap
+- 🔒 **Persistence gate** *(new in 2.31)* — your **second** hard control, for acts whose consequences **outlive the session**: writes to `~/.claude/bin`, `settings.json` (a hook there is fleet-wide code on every tool call), systemd units, crontabs. A Claude Code hook gates them the way the push gate holds a push — and the grant is bound to the **action**, not conveyed in prose, so *"Kyle approved this"* is never enough on its own. Ships **disarmed**, with a plain-terminal escape hatch so a hook can never lock you out. See [`docs/PERSISTENCE_GATE.md`](docs/PERSISTENCE_GATE.md)
+- 🩺 **Fleet-health signals** *(new in 2.35)* — three failure shapes an unread-message *count* can't distinguish: an **identity collision** (two Claudes in one repo posting under one bus tag — the card shows what each is doing, not just the clashing name), a **dead-reader alarm** (a tag others keep addressing that has itself gone silent for hours — mail rotting behind a reader that no longer exists), and a **phantom-stall fix** so the mutual-stall detector only draws an edge when *A asked B a question B hasn't answered*, never merely because *B has unread mail* — a session that's only cc'd is no longer threaded into a stall it has no part in
+- 🔗 **Autonomy windows** *(new in 2.23)* — *"I'm away from these keyboards for a few hours — let them wake each other."* Grant a chosen set of sessions a **time-boxed** permission to auto-deliver directed mail among themselves without your click. It lifts the *attended* guard, never the *working* one (a busy Claude is still never interrupted), only **directed** mail wakes anyone, and it **expires** — the time-box is the safety property. Draw the window by clicking tiles on the board, or pick members from the phone
 - 📱 **Phone access + notifications** *(new in 2.22–2.27)* — reach the fleet from your phone over your Tailscale tailnet: a purpose-built **mobile console** (`/m`), a **decision queue** to *answer a Claude's `AskUserQuestion` from your phone*, a push-approval inbox, and **Web Push** that pages you on exactly two things — a session blocked on a question, or a gated `git push`. See [Phone access & notifications](#phone-access--notifications)
-- 🎛️ **Shared-resource coordination** *(new in 2.9–2.16)* — sessions self-reserve scarce resources over the bus — a **GPU** *or* a dev **board** (IQ9 EVK, Orin, …) — with soft/hard holds, a **FIFO queue** (get pinged the moment it's your turn, no polling), an idle 🐕 watchdog that nudges/reclaims quiet leases, **abandoned-lease detection** (a hold whose session died is flagged, and reaped outright after a reboot), and a live tile per resource — no more arbitrating who gets what. See [Shared-resource coordination](#-shared-resource-coordination)
+- 🎛️ **Shared-resource coordination** *(new in 2.9–2.23)* — sessions self-reserve scarce resources over the bus — a **GPU** *or* a dev **board** (IQ9 EVK, Orin, …) — with soft/hard holds, a **FIFO queue** (get pinged the moment it's your turn, no polling), an idle 🐕 watchdog that nudges/reclaims quiet leases, **abandoned-lease detection** (a hold whose session died is flagged, and reaped outright after a reboot), and a live tile per resource. It also covers **service Claudes** (a single-holder *service* — say a local image generator — takes jobs off a queue and returns each result as mail, v2.23) and a **fleet registry** where every asset carries an onboarding **card** that travels with it to whoever reserves it. No more arbitrating who gets what. See [Shared-resource coordination](#-shared-resource-coordination)
 - ✉️ **Compose from the dashboard** — send your own bus message to all sessions or a chosen few, with an optional "ping" that makes them read it now
 - 🟢 **Status indicators** — `active` / `warm` / `idle` / `dormant` / `waiting` / `ended`
 - 🪙 **Token usage** *(new in 2.12)* — each tile shows its tokens used (`tokens: 617K out · 103M total`, from the transcript), a **global sum** sits by the title, and a `scripts/token-usage.py` CLI reports any session/project. See [Token usage](#-token-usage)
@@ -413,6 +416,76 @@ shows the GPU name + `nvidia-smi` utilization bar + memory (it appears whenever
 
 > Full command reference + install (the daemon, the slash-commands, thresholds)
 > is in the bus docs: [**Resource reservation**](bus/README.md#resource-reservation-shared-gpu-boards-any-single-holder-rig).
+
+### 🔗 Autonomy windows ("let them talk")
+
+Auto-delivery (the 📨 wake) only fires when *you're not the one at the keyboard* —
+by default a quiet session parked at its prompt is treated as **attended** (you
+might be typing there), so it's left alone. That's the right call when you're
+present and exactly what forces hand-clicking when you're not. An **autonomy
+window** is a scoped, time-boxed way to say *"I'm away from these keyboards — let
+them wake each other"*:
+
+- Click **🔗 Let them talk** in the top bar, click the tiles to include (a pulsing
+  ring → a green ✓), pick a duration, and go. On the phone, tick the members from a
+  list. Green connectors show the live window on the board.
+- **What it lifts, and what it never lifts:** it lifts only the *attended* guard —
+  a **busy** Claude mid-task is still never interrupted. Only **directed** mail
+  (`to:<tag>`) wakes anyone, so even a 30-member window can't storm itself; a
+  non-member can never wake you; and the window **expires** on its own. The
+  time-box is the safety property.
+
+### 🩺 Fleet-health signals
+
+Three things a plain unread-message **count** cannot tell apart — *"deliberating"*,
+*"has nothing to say"*, and *"isn't running"* are all the same number going up — so
+Conductor surfaces each directly (all found by *running* a real fleet, v2.35):
+
+- **🪪 Identity collision** — the bus tag is derived from a session's directory, so
+  **two** Claudes in one repo post under **one** name and become indistinguishable.
+  Conductor counts live `claude` **processes** per directory (not deduped records —
+  the dedup is exactly what hid it) and, on a clash, shows a card with **what each
+  session is doing** (last activity + a preview), because *"one active 9m ago
+  building X, one 31m ago on Y"* is a decision and a bare repeated name isn't.
+- **💀 Dead-reader alarm** — a tag **others are actively addressing** that has
+  **itself posted nothing for hours** is a reader that may no longer exist, with
+  mail piling up behind it. Conductor annotates it live/dead (no process + an open
+  ask ⇒ a human must relaunch it) and surfaces it on the desktop and phone. *A
+  watcher whose absence is silent is not a watcher.*
+- **🕸 Phantom-stall fix** — the mutual-stall detector now draws a wait-for edge
+  **only** when *A asked B a question B hasn't answered* (a real open ask), never
+  merely because *B has unread mail*. On a fleet where a message often names 5–10
+  recipients, a session that's just **cc'd** is no longer threaded into a stall it
+  has no part in.
+
+Conductor pages your phone (Web Push) on exactly **two** things — a session blocked
+on a *question*, and a *gated push*. Dead-reader is a surfaced signal, not a page,
+by default (a third alarm is an opt-in — `[bus].page_dead_readers`).
+
+### 🔒 The two hard controls — push gate & persistence gate
+
+Everything else Conductor does toward Claude is a nudge; these two are enforced
+**gates**, and they guard the same property: **an act whose consequences outlive
+the session that committed it.**
+
+- **🔐 Push gate** — nothing reaches a repo without your tap. A Claude Code
+  `PreToolUse` hook denies a `git push` unless a valid one-per-push approval token
+  exists; the denial files a request into Conductor's inbox (desktop + phone), you
+  approve in one click, and the token is consumed on use. Commits stay free — only
+  pushes are gated — and it's an instant no-op for any non-push command. A session
+  can also `/push-propose` (*"ready, or keep digging?"*) so you decide **with** the
+  commits and its reasoning in front of you.
+- **🔒 Persistence gate** — the same shape for a *capability* that outlives the
+  session: writes to `~/.claude/bin`, `settings.json` (a hook there is fleet-wide
+  code on every tool call), systemd units, crontabs. The grant is bound to the
+  **action**, not conveyed in prose — *"Kyle approved this"* in a message is still a
+  deny. It ships **disarmed**, and there's a **plain-terminal escape hatch** so a
+  hook can never lock you out of your own machine. Full detail:
+  [`docs/PERSISTENCE_GATE.md`](docs/PERSISTENCE_GATE.md).
+
+A related lighter-weight control is **🛑 retraction** — a session that told another
+*"do X"* and realized it's wrong runs `/retract` (or `/supersede`); the recipient is
+woken **immediately, even mid-task**, and sees a loud warning before it acts.
 
 ### ✉ Compose
 
