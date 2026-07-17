@@ -34,7 +34,7 @@ If you're like us, you're running 3, 4, or 8 Claude Code sessions at once across
 - **See everything at a glance.** One tile per live Claude session — status dot, live preview of what it's saying, time since last activity. Click a tile to jump to that terminal.
 - **Let your Claudes talk.** Wire up the optional message bus and your sessions can `/msg-send` each other across projects. The dashboard shows the traffic with animated connection lines.
 
-It's **local by default, and read-only toward Claude**. It watches Claude's `~/.claude/projects/*.jsonl` logs and process state — it never edits your files or conversations, and the server binds only to `127.0.0.1`. **No telemetry, no analytics, no uploads of your data.** The only things that ever leave the box are ones you explicitly opt into: the 3D view fetches Three.js from a CDN; **phone notifications** (Web Push) send a signed alert through your browser's push service (Google/Mozilla/Apple); and **phone/remote access** rides *your own* [Tailscale](https://tailscale.com) tailnet (WireGuard, device-to-device — the server still binds `127.0.0.1` and is never exposed on the LAN). The few *actions* it can take are **external and user-triggered**: raise a terminal window, type `/msg-check` into a session, append to the separate bus log, or relaunch a closed session — never a silent write to Claude's own state.
+It's **local by default, and read-only toward Claude**. It watches Claude's `~/.claude/projects/*.jsonl` logs and process state — it never edits your files or conversations, and the server binds only to `127.0.0.1`. **No telemetry, no analytics, no uploads of your data.** The only things that ever leave the box are ones you explicitly opt into: the 3D view fetches Three.js from a CDN; **phone notifications** (Web Push) send a signed alert through your browser's push service (Google/Mozilla/Apple); and **phone/remote access** rides *your own* [Tailscale](https://tailscale.com) tailnet (WireGuard, device-to-device — the server still binds `127.0.0.1` and is never exposed on the LAN). The few *actions* it can take are **external and user-triggered**: raise a terminal window, type `/msg-check` (the nudge that makes a session go read its waiting bus messages) into a session, append to the separate bus log, or relaunch a closed session — never a silent write to Claude's own state.
 
 ---
 
@@ -132,10 +132,11 @@ Access is over `tailscale serve --https` (HTTPS is required for Web Push + the s
 ## Quick Start
 
 ```bash
-# 1. Clone and install
+# 1. Clone and install (a venv keeps it off system Python — required on PEP-668 distros)
 git clone https://github.com/kylefoxaustin/claude-connect
 cd claude-connect
-pip install -e ".[dev]"
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"          # drop [dev] if you don't want the test tooling
 
 # 2. Install the OS helpers (recommended)
 sudo apt install wmctrl xdotool
@@ -616,7 +617,7 @@ For the curious:
 4. The **frontend** renders one tile per session — plain JS, no build step.
 5. **BusAdapter** tails the message-bus log; the Bus tile shows recent traffic and SVG lines fan out to sessions on the bus.
 6. **WindowMapper** raises the right terminal window on click and types `/msg-check` into a session when you click its 📬 — focusing the exact tilix tile via `gdbus` + `TILIX_ID` when available, else falling back to `wmctrl`/`xdotool` title matching.
-7. **Relaunch** (💤 dormant dock) discovers closed-but-known folders (`discover_parked_projects` — history on disk, no live process), and `POST /api/relaunch` spawns `claude --continue` there via `claude-tracked`, then polls the scanner for the new session and types `/rc` into it once its terminal is up.
+7. **Relaunch** (💤 dormant dock) discovers closed-but-known folders (`discover_parked_projects` — history on disk, no live process), and `POST /api/relaunch` spawns `claude --continue` there via `claude-tracked`, then polls the scanner for the new session — and, **only if `[relaunch].rc` is enabled** (off by default), types `/rc` into it once its terminal is up. By default relaunch is a clean `--continue` with no keystroke injection.
 8. **🕸 History** is served on demand: `GET /api/bus/heatmap` parses the bus log + archives into a time-ordered mention graph; `?human=1` merges in turn-level prompt/reply events from the transcripts; `GET /api/exchange` extracts one prompt's tool/file/agent fan-out for the 🔬 drill-down. All read-only, parsed off-thread.
 
 Full design doc: [`CONDUCTOR_SPEC.md`](CONDUCTOR_SPEC.md)

@@ -33,6 +33,12 @@ jsonl_path = "~/.claude/bus.jsonl"
 # autodeliver = true
 # autodeliver_exempt = ["[other:claude-connect]"]
 
+# Web Push pages you on exactly two things by default: a session blocked on a question,
+# and a gated `git push`. The dead-reader alarm (a tag others keep addressing that has
+# itself gone silent for hours) is SURFACED in the UI but does not page — a third alarm
+# is a deliberate opt-in. Set true to have it page your phone too.
+# page_dead_readers = false
+
 # Seconds of bus quiet before the bus tile dims.
 idle_seconds = 30.0
 
