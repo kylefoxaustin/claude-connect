@@ -768,6 +768,125 @@ you reported as a result.**
 
 ---
 
+## XIV. THE READING, NOT THE THING — *a null from a blind instrument, and the discipline that launders it*
+
+**holobench, and it is the whole missing-witness family caught in one line.** Writing a README, it
+needed a repo's remote URL and — correctly — refused to assert one it hadn't verified. It checked:
+
+```
+git remote get-url origin      → (empty)
+```
+
+and concluded *"this repo has no remote."* **It has one. It is named `github`, not `origin`.** The
+query asked for the DEFAULT name; the honest answer to *"is there an `origin`?"* was *"no,"* and it
+was read as the answer to *"is there a remote?"* A sibling repo used `origin`, so ITS check worked —
+which is exactly why the difference went unnoticed. It then "fixed" a correct README entry into a
+wrong placeholder, **verifying against a broken instrument and trusting its null.**
+
+> ### ⭐ **A NULL FROM A QUERY SCOPED TO AN EXPECTED NAME IS INDISTINGUISHABLE FROM GENUINE ABSENCE.**
+
+It is the same shape as four others from the same fortnight — a null from a query that *could not
+have returned the truth even if the thing existed:*
+
+```
+pgrep -x qemu-system-aarch64   → nothing   comm truncates at 15 bytes           (95emulator)
+grep -c "str" <binary>          → empty     grep flakes on a binary file          (holobench)
+ps --sort=-pcpu | head          → no ghost  a 0%-CPU corpse sorts to the bottom   (95emulator)
+git remote get-url origin       → empty     the remote is named 'github'          (holobench)
+```
+
+**The fix is never "trust the null." It is "ask the question that CANNOT be scoped past the
+answer":** `git remote -v` (every remote), `strings | grep` (not binary grep), a census by
+`/proc/PID/exe` + `PPID` (not `comm`, not a CPU sort). This is Class III's *change the question*,
+arriving as a false NEGATIVE instead of a wall of true positives.
+
+### The twist worth recording, because it indicts the remedy this document keeps recommending
+
+holobench **had the guardrail** — *don't assert what you can't verify* — **and it made things
+worse.** The verify step used a scoped instrument, and its false-negative *felt* like the honest,
+cautious answer.
+
+> ### ⭐ **A DISCIPLINE THAT VERIFIES AGAINST A BLIND INSTRUMENT LAUNDERS A WRONG ANSWER INTO A
+> ### CAUTIOUS-LOOKING ONE.** The verify is only as good as whether the instrument CAN see a
+> positive. Kyle caught it by asking the subject "unpack that for me" — the human, one level up (§4).
+
+**And its sibling, from Conductor's own tooling** (the stuck-cursor / auto-poller bug): a bus
+session's unread counter read *672 pending* for days while it was fully current, because the count
+was computed from a read-cursor that a direct-reader never advances.
+
+> ### ⭐ **A COUNTER THAT IS LOUD AND WRONG TRAINS PEOPLE TO IGNORE THE COUNTER** — and the day it
+> means something, it looks identical to the noise. Same family: **the reading, not the thing.**
+
+---
+
+## XV. EARNED, NOT SEEDED — *a status bit a driver polls for is not a fact you set at reset*
+
+**93emulator, and it is a green-light that fires in the OTHER direction.** A status bit that firmware
+*polls-for* after configuring hardware — a DLL lock, a calibration-done, a PLL-locked — must be
+**earned when the guest writes the enable, not seeded at reset.** The two errors are opposite and
+both silent:
+
+```
+leave it 0 at reset      → the driver's poll TIMES OUT            (looks like dead hardware)
+seed it locked at reset  → it reports READY before configuration  (silicon reports not-ready until configured)
+```
+
+Correct model: assert the bit when the enable is written (FlexSPI: `DLLxCR[DLLEN]` → `STS2` lock).
+
+> ### ⭐ **THE MUTATION TEST THAT ENFORCES THIS IS THE ONE THAT SEEDS THE BIT AT RESET AND MUST
+> ### FAIL.** A test that only checks *"lock appears after enable"* passes on a model that had the
+> lock set the whole time — it never proves the lock was EARNED, only that it is present.
+
+---
+
+## XVI. FABRICATED → DERIVED → SOURCED — *the provenance ladder is walkable in place*
+
+**93emulator, and it is the operational core of [Kyle's Law 1](../bus/standing-orders.md) stated as a
+procedure.** A value with no source is FABRICATED. It becomes **DERIVED** — traceable arithmetic over
+≥2 authoritative sources (a fact-sheet operating voltage + a mainline driver's vsel encoding → the
+register value) — and then **SOURCED**, confirmed bit-exact against the datasheet.
+
+> ### ⭐ **"I LACK THE DATASHEET" ≠ "I LACK THE ANSWER."** The mainline DRIVER's encoding tables and
+> validation checks derived 3 of 4 PMIC register values bit-exact *before the datasheet arrived*; the
+> datasheet only confirmed them and filled the one field the encoding couldn't reach (an enable bit).
+
+**DERIVED is shippable — labelled — without the datasheet.** Deriving `value = encode(known operating
+point)` is a different ACT from guessing: one is reproducible, one is a plausible number wearing
+authority. And the honest residual is load-bearing: 93 flagged *"this enable bit needs the
+datasheet,"* and the datasheet corrected **exactly that bit and nothing else.** *Flag your residual
+precisely and it tells you what the missing source must confirm.*
+
+**And whether a modelled value is even a bug is a two-part test:** it is a defect only if it is BOTH
+*claimed-as-silicon* AND *something a consumer reads, validates, or RMW-launders.* A value a driver
+only `dev_dbg`s is inert — label it honestly, do not "fix" it with an invented number. **Check what
+the consumer DOES with it before you rank the severity.**
+
+### The rest of the same audit — each an instance of a class already in this document
+
+93emulator committed and caught four more this session; they are recorded here because *the taxonomy
+holding under a fresh, independent audit is itself the evidence:*
+
+- **A reproduction built from a PARTIAL read** (read 9 lines of a 130-line function, "confirmed" a
+  self-kill that a guard 60 lines further down prevents) — **Class II**, the experiment that proves the
+  bug you *imagined*. It passed, which is why it was believed.
+- **An A/B leak test whose negative control ALSO passed** (a `head -1` closed a pipe; a pid var held a
+  string; `kill -0` on a non-number "failed" → both arms reported "reaped") — **Class IV, the mirror.**
+  Arm the control or the test proves nothing.
+- **The stale-binary trap, inside a TEST suite** (a sibling qtest "failed" against `0x404` while its
+  source already said `0x303` — only the new test had been rebuilt). *"I grepped and the source is
+  right" and "the binary I ran is right" are different sentences.* Rebuild ALL affected test binaries
+  before trusting a red.
+- **An unverified "clean"** — a bare *"danger-zone CLEAN"* re-run tracing every division/modulo/timer
+  site to its explicit guard. Same verdict, but now the verification travels with it. **A "clean" you
+  can't point at the guards for is as untrustworthy as a number with no census** (Class VII).
+
+And two mechanical ones worth keeping: **leak detection needs two instruments** (a `timeout`-age
+detector convicts wrapped runaways but is blind to a bare orphan; `/proc/PID/exe` + `PPID==1` catches
+the bare and idle ones) — neither alone is complete; and **registering a test in the matrix is part
+of writing it** — a qtest that runs but isn't in the matrix reads as *not covered.*
+
+---
+
 ---
 
 # ⚔️ THE FAILURES THE FLEET *CREATED*
