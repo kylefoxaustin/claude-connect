@@ -113,10 +113,17 @@ function render() {
   renderAutonomy();
   renderPicker();
   renderBlocked();
+  renderResources();
+
+  // A resource whose owner is offline needs Kyle to reclaim it — the one resource state
+  // that a human has to resolve, so it earns the tab badge.
+  const resAlert = (ops.resources || []).filter(
+    (r) => r.lease && r.lease.orphan_suspect).length;
 
   setBadge("inbox", c.needs_you, "badge");
   setBadge("blocked", c.blocked + health, "badge badge-warn");
   setBadge("auto", ops.autonomy.length, "badge badge-ok");
+  setBadge("resources", resAlert, "badge badge-warn");
   $("inbox-n").textContent = c.needs_you ? `· ${c.needs_you}` : "";
 }
 
@@ -893,8 +900,98 @@ function renderBlocked() {
   host.replaceChildren(...bits);
 }
 
+/* ---- RESOURCES -------------------------------------------------------
+   Shared fleet resources at a glance: EVKs/boards, the GPU, and services
+   (image_gen …). For each: who holds it, in what mode, how long it has left,
+   and its reservation queue. Read-only — reserving is a session's job on the
+   bus; this is the "who has what" view Kyle asked for. */
+function renderResources() {
+  const host = $("resources");
+  if (!host) return;
+  const res = (ops && ops.resources) || [];
+  const svcs = (ops && ops.services) || [];
+  if (!res.length && !svcs.length) {
+    host.innerHTML = `<div class="empty">No shared resources defined yet.<br>` +
+      `Sessions register boards, GPUs and services on the bus.</div>`;
+    return;
+  }
+  const nodes = res.map(resourceRow);
+  if (svcs.length) {
+    const sep = document.createElement("div");
+    sep.className = "fleet-sep";
+    sep.textContent = "🛠 Services";
+    nodes.push(sep, ...svcs.map(serviceRow));
+  }
+  host.replaceChildren(...nodes);
+}
+
+function resourceRow(r) {
+  const el = document.createElement("div");
+  el.className = "row res-row";
+  const lease = r.lease;
+  let pill, detail = "";
+  if (!lease) {
+    pill = `<span class="pill pill-ok">FREE</span>`;
+  } else if (lease.offered) {
+    pill = `<span class="pill pill-offer">OFFERED</span>`;
+    detail = `→ ${esc(bare(lease.owner))} · ~${ago(lease.remaining)} to claim`;
+  } else {
+    const cls = lease.mode === "hard" ? "pill-hard" : "pill-soft";
+    pill = `<span class="pill ${cls}">${esc(String(lease.mode || "").toUpperCase())}</span>`;
+    detail = `${esc(bare(lease.owner))} · ${ago(lease.remaining)} left`;
+    if (lease.orphan_suspect) {
+      detail += ` · <span class="res-warn">⚠ owner offline ${ago(lease.owner_offline_seconds)}</span>`;
+    }
+  }
+  const q = (lease && lease.queue) || [];
+  const queueLine = q.length
+    ? `<div class="res-queue">⏳ ${q.length} queued: ${esc(q.map(bare).join(", "))}</div>` : "";
+  const jobLine = lease && lease.job ? `<div class="row-sub res-job">${esc(lease.job)}</div>` : "";
+  el.innerHTML =
+    `<div class="row-body">` +
+    `<div class="row-title">🎛 ${esc(r.label || r.name)} ${pill}</div>` +
+    (detail ? `<div class="row-sub">${detail}</div>` : "") +
+    jobLine + (r.smi ? gpuMeta(r.smi) : "") + queueLine +
+    `</div>`;
+  return el;
+}
+
+function gpuMeta(smi) {
+  const util = Math.max(0, Math.min(100, Math.round(smi.util || 0)));
+  const gb = (mb) => (mb / 1024).toFixed(mb >= 10240 ? 0 : 1);
+  return `<div class="gpu-meta">${esc(smi.name || "GPU")} · ${util}% · ` +
+    `${gb(smi.mem_used || 0)}/${gb(smi.mem_total || 0)} GB` +
+    `<div class="gpu-bar"><span style="width:${util}%"></span></div></div>`;
+}
+
+function serviceRow(s) {
+  const el = document.createElement("div");
+  el.className = "row res-row";
+  let pill, detail = "";
+  const job = (j) => (typeof j === "string" ? j : (j && (j.job || j.desc || j.tag)) || "a job");
+  if (s.held) {
+    pill = `<span class="pill pill-hard">HELD</span>`;
+    detail = esc(s.hold_reason || "held for you — will resume after the current job");
+  } else if (s.serving) {
+    pill = `<span class="pill pill-soft">SERVING</span>`;
+    detail = esc(job(s.serving));
+  } else {
+    pill = `<span class="pill pill-ok">IDLE</span>`;
+  }
+  const q = s.queue || [];
+  const queueLine = q.length
+    ? `<div class="res-queue">⏳ ${q.length} job${q.length > 1 ? "s" : ""} queued</div>` : "";
+  el.innerHTML =
+    `<div class="row-body">` +
+    `<div class="row-title">🛠 ${esc(s.name)} ${pill}</div>` +
+    (detail ? `<div class="row-sub">${detail}</div>` : "") +
+    queueLine +
+    `</div>`;
+  return el;
+}
+
 // ---------------------------------------------------------------- tabs
-const PANES = ["inbox", "fleet", "auto", "blocked"];
+const PANES = ["inbox", "fleet", "auto", "blocked", "resources"];
 
 function showPane(name) {
   if (!PANES.includes(name)) name = "inbox";

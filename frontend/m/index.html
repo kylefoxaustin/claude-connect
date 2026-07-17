@@ -130,6 +130,12 @@
         <div id="blocked"></div>
       </section>
 
+      <!-- === RESOURCES (shared EVKs, GPU, image-gen & other services) = -->
+      <section class="pane" id="pane-resources" hidden>
+        <h2 class="pane-h">Resources</h2>
+        <div id="resources"></div>
+      </section>
+
       <nav class="tabs">
         <button class="tab tab-on" data-pane="inbox">
           <span class="tab-i">📥</span><span>Inbox</span>
@@ -145,6 +151,10 @@
         <button class="tab" data-pane="blocked">
           <span class="tab-i">⏳</span><span>Blocked</span>
           <span class="badge badge-warn" id="tab-badge-blocked" hidden></span>
+        </button>
+        <button class="tab" data-pane="resources">
+          <span class="tab-i">🎛</span><span>Resources</span>
+          <span class="badge badge-warn" id="tab-badge-resources" hidden></span>
         </button>
       </nav>
 

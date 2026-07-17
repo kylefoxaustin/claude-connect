@@ -177,6 +177,19 @@ body {
              text-transform: uppercase; margin: 16px 2px 8px; }
 .row-parked { opacity: .82; }
 
+/* --- resources tab: leases, queues, GPU meter --- */
+.pill-ok    { background: #14301f; color: #6ee7a8; }               /* free / idle */
+.pill-soft  { background: #3a2d10; color: var(--warn); }           /* soft hold */
+.pill-hard  { background: #3a1f1f; color: var(--bad); }            /* hard hold / held */
+.pill-offer { background: #16263f; color: #7fb2ff; }               /* offered, awaiting claim */
+.res-row .row-title { flex-wrap: wrap; }
+.res-job    { font-style: italic; }
+.res-warn   { color: var(--bad); font-weight: 600; }
+.res-queue  { margin-top: 6px; font-size: 12px; color: var(--dim); }
+.gpu-meta   { margin-top: 6px; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.gpu-bar    { height: 5px; border-radius: 3px; background: var(--row-hi); margin-top: 4px; overflow: hidden; }
+.gpu-bar span { display: block; height: 100%; background: var(--accent); }
+
 .st { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--dim); }
 .st-active  { background: var(--ok); }
 .st-warm    { background: #7ee787; }
