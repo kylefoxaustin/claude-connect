@@ -221,21 +221,25 @@ def _mint_grant(coord_root: Path, key: str, repo_name: str, repo: str) -> None:
     )
 
 
-def _unpack_wake(v: Any) -> tuple[str, float, float]:
-    """``(seen, woke_at)`` (the old on-disk shape) or ``(seen, woke_at, activity_at)``.
+def _unpack_wake(v: Any) -> tuple[str, float, float, str]:
+    """``(seen, woke_at)`` / ``(…, activity_at)`` / ``(…, activity_at, latest_ts)`` — the tuple
+    has grown over time; older entries are read back safely.
 
-    ``coord/wake-state.json`` persists across restarts, so the first run after this change
-    reads 2-tuples. Treating a short tuple as corrupt and dropping it would re-prod every
-    session with unread mail exactly once — which is the very storm this change exists to
-    end. Default the missing activity stamp to +inf so a legacy entry can never satisfy the
-    "it has been active since we typed" retry test.
+    ``coord/wake-state.json`` persists across restarts, and only the first two fields ever reach
+    disk (see write_wake_state), so any run reads back short tuples. Treating a short one as
+    corrupt and dropping it would re-prod every session with unread mail once — the very storm
+    this machinery exists to end. Missing ``activity_at`` defaults to +inf so a legacy entry can
+    never satisfy the "active since we typed" retry test; missing ``latest_ts`` defaults to ""
+    (harmless — with activity +inf the retry is already blocked).
     """
     if isinstance(v, (list, tuple)):
-        if len(v) >= 3:
-            return str(v[0]), float(v[1]), float(v[2])
+        if len(v) >= 4:
+            return str(v[0]), float(v[1]), float(v[2]), str(v[3])
+        if len(v) == 3:
+            return str(v[0]), float(v[1]), float(v[2]), ""
         if len(v) == 2:
-            return str(v[0]), float(v[1]), float("inf")
-    return "", 0.0, float("inf")
+            return str(v[0]), float(v[1]), float("inf"), ""
+    return "", 0.0, float("inf"), ""
 
 
 class AppState:
@@ -263,7 +267,9 @@ class AppState:
         # this stops a busy conversation from injecting every few minutes.
         self._woke_at: dict[str, float] = {}
         self._unstalled: dict[str, float] = {}   # cycle-key -> when we last told it
-        self._wake_outstanding: dict[str, tuple[str, float]] = read_wake_state(
+        # In memory each value is (seen, woke_at, activity_at, latest_ts); only (seen, woke_at)
+        # persists (write_wake_state), and _unpack_wake reads any width back safely.
+        self._wake_outstanding: dict[str, tuple] = read_wake_state(
             settings.bus.state_dir_resolved / "coord")
         self._directed_unread: dict[str, dict[str, Any]] = {} # tag -> unread addressed to it
         self._retraction_woken: set[str] = set()              # retraction records we already delivered
@@ -650,7 +656,7 @@ class AppState:
             seen_now = _read_last_seen(state_dir, r.tag) or ""
             prev = self._wake_outstanding.get(r.tag)
             if prev is not None:
-                prev_seen, woke_at, prev_activity = _unpack_wake(prev)
+                prev_seen, woke_at, prev_activity, prev_latest = _unpack_wake(prev)
                 if seen_now == prev_seen:
                     # It still hasn't read. There is a /msg-check outstanding — QUEUED, not
                     # lost (Claude Code queues input typed while it's busy), and one check
@@ -665,11 +671,21 @@ class AppState:
                     # woke it, with a watermark that hasn't, is the only real evidence the
                     # keystroke went missing.
                     moved = r.last_activity_at > prev_activity + 1.0
-                    if not (moved and (now - woke_at) >= _WAKE_RETRY_SECONDS):
+                    # AND genuinely-new directed mail must have arrived since we woke it. Without
+                    # this, a DIRECT READER — a session that reads messages.md itself and never
+                    # runs `check`/`catchup`, so its watermark is permanently stuck — is
+                    # indistinguishable from a lost keystroke (active, watermark unmoved) and gets
+                    # re-woken every hour forever on a STATIC bus (holobench, 2026-07-16: ~5 fires,
+                    # zero new content between them). "Watermark stuck" alone cannot tell a lost
+                    # keystroke from a reader who will never advance it; "new mail since we woke"
+                    # can. A truly lost keystroke with no new mail still surfaces on the recipient's
+                    # next prompt-hook — the injection is an accelerator, never the only door.
+                    new_mail = (info.get("latest_ts") or "") > prev_latest
+                    if not (moved and (now - woke_at) >= _WAKE_RETRY_SECONDS and new_mail):
                         continue
-                    log.info("re-waking [%s]: it has been active for %.0fm since we typed "
-                             "and still hasn't read — the keystroke was probably lost",
-                             r.tag, (now - woke_at) / 60)
+                    log.info("re-waking [%s]: active %.0fm since we typed, watermark still stuck, "
+                             "and newer directed mail has since arrived — the keystroke was "
+                             "probably lost", r.tag, (now - woke_at) / 60)
             # WAITING = parked at its prompt. Normally we never inject there (Kyle
             # might be typing at it) — and since WAITING is the resting state of every
             # quiet session, that guard is what forces him to hand-click "check msgs"
@@ -692,7 +708,8 @@ class AppState:
             # qualcomm saw 11 /msg-check in ~200ms exactly this way. Reserving first makes any
             # later pass see it and skip. A reserved-but-unsent wake is harmless — a queued
             # check drains the whole backlog, and the retry path re-arms a genuinely lost one.
-            self._wake_outstanding[r.tag] = (seen_now, now, r.last_activity_at)
+            self._wake_outstanding[r.tag] = (seen_now, now, r.last_activity_at,
+                                             info.get("latest_ts") or "")
             self._woke_at[r.tag] = now
             changed = True
             await self._inject_msg_check(r, f"{info['count']} unread addressed to it")

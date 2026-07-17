@@ -20,6 +20,13 @@ The tell was always available: **a session grinding through a long tool call sto
 its transcript** — which is precisely why its status decays to IDLE and it looks wakeable in
 the first place. A frozen transcript means our check is still QUEUED. Only a transcript that
 has MOVED while the watermark has NOT is evidence a keystroke was actually lost.
+
+2026-07-16 — a fourth face of the same bug (holobench): a DIRECT READER reads messages.md
+itself and never runs `check`, so its watermark is *permanently* stuck; as an active poster
+its transcript always moves. That is byte-for-byte the "lost keystroke" signature, so the retry
+re-woke it every hour on a completely STATIC bus. "Watermark stuck + transcript moving" cannot
+tell a lost keystroke from a reader who will never advance the watermark — "new directed mail
+since we woke" can, so the retry now also requires that.
 """
 
 from __future__ import annotations
@@ -81,11 +88,28 @@ def test_a_BUSY_session_whose_transcript_is_FROZEN_is_never_re_woken(app, monkey
 
 def test_a_lost_keystroke_IS_retried(app, monkeypatch):
     """The one case a retry is legitimate. The session has been visibly ALIVE (its transcript
-    moved) since we typed, and it still hasn't read — so the keystroke never landed."""
+    moved) since we typed, it still hasn't read, AND newer directed mail has since arrived (the
+    fixture's latest_ts 02:00 is newer than the 01:00 we woke about) — so the keystroke never
+    landed and there is fresh mail to deliver."""
     app._wake_outstanding = {
-        "[other:x]": ("2026-07-11 20:00", NOW - _WAKE_RETRY_SECONDS - 1, NOW - 7200),
+        "[other:x]": ("2026-07-11 20:00", NOW - _WAKE_RETRY_SECONDS - 1, NOW - 7200, "2026-07-12 01:00"),
     }
     assert _run(app, monkeypatch, _sess(activity=NOW - 60)) == ["/msg-check"]
+
+
+def test_a_direct_reader_on_a_STATIC_bus_is_never_re_woken(app, monkeypatch):
+    """holobench, 2026-07-16: a session that reads messages.md directly and never runs
+    `check`/`catchup` has a permanently stuck watermark, and being an active poster its
+    transcript always moves — which is INDISTINGUISHABLE from a lost keystroke unless you also
+    require new mail. On a static bus (latest_ts unchanged since we woke it) the retry must NOT
+    fire, however long it has been active. This is the fix; the assertion is [] not ['/msg-check'].
+    """
+    app._wake_outstanding = {
+        # woke about the newest message that exists (02:00 == the fixture's latest_ts); nothing
+        # newer has arrived, yet it has been active for an hour with its watermark stuck.
+        "[other:x]": ("2026-07-11 20:00", NOW - _WAKE_RETRY_SECONDS - 1, NOW - 7200, "2026-07-12 02:00"),
+    }
+    assert _run(app, monkeypatch, _sess(activity=NOW - 60)) == []
 
 
 def test_no_retry_before_the_timeout_even_if_it_has_been_active(app, monkeypatch):
@@ -109,14 +133,16 @@ def test_legacy_two_tuple_wake_state_cannot_trigger_a_retry():
     reads the OLD 2-tuples. If a legacy entry defaulted its activity stamp to 0, every one of
     them would immediately look 'active since we typed' and re-prod the whole fleet — which is
     precisely the storm we're ending. Default to +inf instead."""
-    seen, woke, act = _unpack_wake(("2026-07-11 20:00", 123.0))
+    seen, woke, act, latest = _unpack_wake(("2026-07-11 20:00", 123.0))
     assert (seen, woke) == ("2026-07-11 20:00", 123.0)
     assert act == float("inf")           # no transcript can ever exceed this -> no retry
+    assert latest == ""                  # unknown latest_ts -> the new-mail gate defaults safe
 
 
-def test_new_three_tuple_round_trips():
-    assert _unpack_wake(("s", 1.0, 2.0)) == ("s", 1.0, 2.0)
+def test_three_and_four_tuples_round_trip():
+    assert _unpack_wake(("s", 1.0, 2.0)) == ("s", 1.0, 2.0, "")
+    assert _unpack_wake(("s", 1.0, 2.0, "2026-07-12 02:00")) == ("s", 1.0, 2.0, "2026-07-12 02:00")
 
 
 def test_garbage_wake_state_is_inert():
-    assert _unpack_wake(None) == ("", 0.0, float("inf"))
+    assert _unpack_wake(None) == ("", 0.0, float("inf"), "")
