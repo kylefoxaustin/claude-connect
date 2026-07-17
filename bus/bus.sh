@@ -1673,18 +1673,27 @@ PYEOF
     # advance the cursor to a point below which everything was actually SHOWN. A 64 KB full-body
     # dump gets truncated and then advances anyway (91emulator lost 193 messages exactly so).
     #
-    # So catchup shows a ONE-LINE DIGEST per unread message — small enough not to truncate —
-    # OLDEST-first (so advancing the cursor to the last line shown is always sound), and clears
-    # a bounded page of ~200 per call instead of 20. Every message is at minimum digested: this
-    # is a cheap read, never a silent skip. Full bodies stay one `check --all` / read away.
+    # So catchup shows a ONE-LINE DIGEST per unread message — small enough not to truncate — and
+    # digests EVERY unread message in one call (one-liners are tiny, so "one call = current" holds
+    # without the paging slog). A digest is TRIAGE, not comprehension (holobench): default order is
+    # NEWEST-first, so a returning session reaches the LIVE state first and drills DOWN into full
+    # threads (in causal order) from there — not "replay four days from the start to learn the last
+    # line obsoleted the first forty." Correctness is safe because you never ACT off the digest: it
+    # says a thread MOVED, never enough to act; you read the full thread oldest-first (--thread-order
+    # here, or `check --all`) when you actually act.
     #
-    #   catchup            digest all unread (mine or broadcast), advance fully
-    #   catchup -n <N>     cap this page to N (default 200)
+    #   catchup                 digest ALL unread (mine or broadcast), NEWEST-first, get current
+    #   catchup --thread-order  same, but OLDEST-first (a causal replay of a conversation)
+    #   catchup -n <N>          cap the digest to N (default 1000); if a backlog exceeds it, the
+    #                           omission is DISCLOSED and only the OLDEST are undisplayed — never a
+    #                           silent skip (the 91emulator-lost-193 failure was silent truncation).
     LIMIT=0
+    THREAD_ORDER=0
     while [ $# -gt 0 ]; do
       case "$1" in
-        -n)   shift; LIMIT="${1:-200}" ;;
+        -n)   shift; LIMIT="${1:-1000}" ;;
         -n*)  LIMIT="${1#-n}" ;;
+        --thread-order|--oldest) THREAD_ORDER=1 ;;
       esac
       shift
     done
@@ -1693,10 +1702,11 @@ PYEOF
     [ -f "$STATE_DIR/$TAG.last-seen" ] && LAST_SEEN="$(cat "$STATE_DIR/$TAG.last-seen" 2>/dev/null || true)"
     if is_whitelisted "$TAG"; then WL=1; else WL=0; fi
 
-    echo "=== Catch-up for [$TAG] — digest of unread, oldest-first ==="
+    [ "$THREAD_ORDER" = 1 ] && _ord="oldest-first (thread order)" || _ord="newest-first"
+    echo "=== Catch-up for [$TAG] — digest of unread, $_ord ==="
     echo
 
-    BUS_FILE="$BUS_FILE" MY_TAG="$TAG" LAST_SEEN="$LAST_SEEN" LIMIT="$LIMIT" WL="$WL" \
+    BUS_FILE="$BUS_FILE" MY_TAG="$TAG" LAST_SEEN="$LAST_SEEN" LIMIT="$LIMIT" WL="$WL" THREAD_ORDER="$THREAD_ORDER" \
     python3 - <<'PYEOF'
 import os, re, sys
 
@@ -1704,8 +1714,11 @@ path  = os.environ["BUS_FILE"]
 me    = os.environ["MY_TAG"]
 last  = os.environ.get("LAST_SEEN", "") or ""
 limit = int(os.environ.get("LIMIT") or 0)
-CAP   = limit if limit else 200          # digests are tiny; a page of 200 stays well under
-                                         # the transport's truncation point (unlike full bodies)
+CAP   = limit if limit else 1000         # digests are one line each; 1000 covers any realistic
+                                         # returning-session backlog in a single call (holobench's
+                                         # worst case was 672) and still stays well under any
+                                         # truncation point. -n overrides.
+thread_order = os.environ.get("THREAD_ORDER") == "1"
 
 def plain(t):
     t = t.strip().strip("[]")
@@ -1766,15 +1779,24 @@ for m in msgs:
     m["_subj"] = subject(fb)
     sel.append(m)
 
-total = len(sel)
+total = len(sel)                                    # sel is file-order = chronological ASCENDING
 if total == 0:
     print("Already current — no unread since your last check (%s)." % (last or "ever"))
     sys.exit(0)
 
-page = sel[:CAP]                                   # OLDEST-first slice: advancing to page[-1]
-remaining = total - len(page)                      # is always sound (all below it was shown)
+# Digest every unread message. If a pathological backlog exceeds the ceiling, keep the NEWEST CAP
+# (most useful for triage) and DISCLOSE that the oldest were marked read without display — a
+# disclosed omission, never the silent truncation-then-advance that lost 91emulator 193 messages.
+if total > CAP:
+    shown = sel[-CAP:]
+    undisplayed = total - CAP
+else:
+    shown = sel
+    undisplayed = 0
 
-for m in page:
+# Default NEWEST-first (triage: live state first); --thread-order gives the oldest-first replay.
+display = shown if thread_order else list(reversed(shown))
+for m in display:
     hhmm = m["ts"][11:]                             # "YYYY-MM-DD HH:MM" -> "HH:MM"
     bell = "🔔 " if m["_wake"] else ""
     subj = m["_subj"]
@@ -1782,21 +1804,24 @@ for m in page:
         subj = subj[:95] + "…"
     print("%s  %s[%s] %s" % (hhmm, bell, plain(m["sender"]), subj))
 
+order = "oldest-first" if thread_order else "newest-first"
 print()
-if remaining:
-    print("--- %d of %d unread digested (oldest-first) · %d REMAIN — run `catchup` again. ---"
-          % (len(page), total, remaining))
+if undisplayed:
+    print("--- digested the newest %d of %d unread (%s) · %d OLDER marked read without display — "
+          "`bus.sh check --all` for their text. Now current. ---" % (len(shown), total, order, undisplayed))
 else:
-    print("--- caught up: %d message(s) digested. Full body: `bus.sh check --all`. ---" % total)
+    print("--- caught up: %d message(s) digested (%s). Now current. Full body: `bus.sh check --all`. ---"
+          % (total, order))
 
-# Advance the cursor to the newest message we DIGESTED — never past it. Sound because the page
-# is oldest-first and contiguous from the old watermark: everything at or below page[-1] was shown.
+# Advance the cursor to the NEWEST unread (sel[-1]) — fully current in one call, the whole point of
+# catchup. Sound: when total<=CAP everything was shown; in the rare ceiling case the only
+# undisplayed messages are the OLDEST and that omission was DISCLOSED above (not a silent skip).
 if os.environ.get("WL") == "1":
     sd = os.path.expanduser("~/.claude/bus-state")
     try:
         os.makedirs(sd, exist_ok=True)
         with open(os.path.join(sd, me + ".last-seen"), "w") as f:
-            f.write(page[-1]["ts"] + "\n")
+            f.write(sel[-1]["ts"] + "\n")
         with open(os.path.join(sd, me + ".pending"), "w") as f:
             f.write("0\n")
     except OSError:
@@ -2099,7 +2124,8 @@ HEADER
 Claude Bus
   bus.sh send <text>         Append a message to the bus
   bus.sh check               New messages addressed to you since last check
-  bus.sh catchup [-n N]      Digest ALL unread at once (oldest-first) & get current
+  bus.sh catchup [-n N]      Digest ALL unread at once (newest-first) & get current
+  bus.sh catchup --thread-order   same, oldest-first (a causal replay of a conversation)
   bus.sh all                 Print the entire log (used by /msg-all)
   bus.sh rotate [YYYY-MM]    Archive to messages-YYYY-MM.md, start fresh
   bus.sh session-start       Hook output: emit additionalContext JSON

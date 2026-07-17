@@ -17,9 +17,10 @@ LIVE="$HOME/.claude/bin/bus.sh"
 [ -f "$SRC" ]  || { echo "missing repo copy: $SRC"; exit 1; }
 [ -f "$LIVE" ] || { echo "no live bus.sh at $LIVE"; exit 1; }
 
+# NOTE: this REPLACES an already-installed catchup case as well as inserting a new one, so it can
+# ship an UPDATE (e.g. the newest-first / --thread-order revision), not just a first install.
 if grep -q '^  catchup)' "$LIVE"; then
-  echo "= live bus.sh already has 'catchup' — nothing to do."
-  exit 0
+  echo "= live bus.sh already has 'catchup' — it will be REPLACED with the repo version (an update)."
 fi
 
 BK="$LIVE.bak-$(date +%Y%m%d-%H%M%S)"
@@ -31,41 +32,45 @@ import re, sys
 
 src_path, live_path = sys.argv[1], sys.argv[2]
 src  = open(src_path).read().splitlines(keepends=True)
-live = open(live_path).read()
+live = open(live_path).read().splitlines(keepends=True)
 
-# 1) Extract the `catchup)` case block from the repo copy: from the line `  catchup)` up to and
-#    including the `    ;;` that immediately precedes the `  all)` case.
-start = next(i for i, l in enumerate(src) if l.rstrip() == "  catchup)")
-end = next(i for i in range(start + 1, len(src)) if src[i].rstrip() == "  all)")
-# back up over blank lines to the `    ;;` that closes catchup
-j = end - 1
-while src[j].strip() == "":
-    j -= 1
-assert src[j].strip() == ";;", f"expected ;; before all), got {src[j]!r}"
-block = "".join(src[start:j + 1]) + "\n"
+def case_bounds(lines, label, nextlabel):
+    """(start, end_exclusive) of `  <label>)` … the `    ;;` that closes it, located as the last
+    bare `;;` before `  <nextlabel>)`. The inner flag-parse `case` uses inline `... ;;`, never a
+    bare `;;` line, so this finds the OUTER close, not an inner one."""
+    start = next(i for i, l in enumerate(lines) if l.rstrip() == f"  {label})")
+    end   = next(i for i in range(start + 1, len(lines)) if lines[i].rstrip() == f"  {nextlabel})")
+    j = end - 1
+    while lines[j].strip() == "":
+        j -= 1
+    assert lines[j].strip() == ";;", f"expected ;; before {nextlabel}), got {lines[j]!r}"
+    return start, j + 1
 
-# 2) Insert the block before the live `  all)` case.
-assert "\n  all)\n" in live, "live bus.sh has no `all)` case anchor"
-live = live.replace("\n  all)\n", "\n" + block + "  all)\n", 1)
+# Repo catchup case (the source of truth).
+s0, s1 = case_bounds(src, "catchup", "all")
+block  = src[s0:s1]
 
-# 3) Discoverability: point the check paging footer at catchup.
-old_footer = ('    print("--- %d of %d unread shown (oldest first) · %d REMAIN — run `check` again. ---"\n'
-              '          % (len(sel), total_unread, remaining))')
-new_footer = ('    print("--- %d of %d unread shown (oldest first) · %d REMAIN — run `check` again, "\n'
-              '          "or `bus.sh catchup` to digest them all at once. ---"\n'
-              '          % (len(sel), total_unread, remaining))')
-if old_footer in live:
-    live = live.replace(old_footer, new_footer, 1)
+# Replace an existing catchup case, else insert before `  all)`.
+if any(l.rstrip() == "  catchup)" for l in live):
+    l0, l1 = case_bounds(live, "catchup", "all")
+    live[l0:l1] = block + ["\n"]
+    print("   replaced the existing catchup case")
+else:
+    ai = next(i for i, l in enumerate(live) if l.rstrip() == "  all)")
+    live[ai:ai] = block + ["\n"]
+    print("   inserted the catchup case")
 
-# 4) Help text.
-old_help = "  bus.sh check               Print the last 80 lines (used by /msg-check)\n"
-new_help = ("  bus.sh check               New messages addressed to you since last check\n"
-            "  bus.sh catchup [-n N]      Digest ALL unread at once (oldest-first) & get current\n")
-if old_help in live:
-    live = live.replace(old_help, new_help, 1)
+text = "".join(live)
 
-open(live_path, "w").write(live)
-print("   spliced catchup case + footer + help")
+# Discoverability: refresh the `bus.sh catchup …` help line(s) in usage() from the repo, whatever
+# they currently say. Best-effort — cosmetic, never fails the install.
+help_lines = "".join(l for l in src if re.match(r"^  bus\.sh catchup\b", l))
+if help_lines:
+    text, n = re.subn(r"(?m)^  bus\.sh catchup\b.*(?:\n  bus\.sh catchup\b.*)*\n",
+                      help_lines, text, count=1)
+    print("   refreshed catchup help" if n else "   (no catchup help line found to refresh)")
+
+open(live_path, "w").write(text)
 PY
 
 echo "2. syntax-checking the result"
