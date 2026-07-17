@@ -73,6 +73,7 @@ from .coord import (
     write_wake_state,
 )
 from .deps import build_wait_graph, open_ask_edges, silent_addressees
+from .bridge import read_bridge
 from .models import BusEvent, BusTopology, ParkedSession, SessionRecord, Status
 from .resources import resources_state, touch_lease_activity
 from .services import read_services
@@ -292,6 +293,10 @@ class AppState:
         # 'tell this session its push was approved' — delivered only when it's QUIET,
         # because a busy session swallows injected keystrokes without a trace.
         self._push_notices: dict[str, dict[str, Any]] = {}
+        # 'reconnect this session's remote control' (/rc), queued when the target is busy —
+        # an /rc injected mid-turn queues in the TUI and silently fails to bridge, so we fire
+        # it only once the session is idle, exactly like the push notices above.
+        self._rc_pending: dict[str, dict[str, Any]] = {}
         self._autonomy: list[dict[str, Any]] = []             # live "let them talk" windows
         self.services: dict[str, Any] = {"services": []}      # service Claudes (image_gen…)
         self.waiting: dict[str, Any] = {"edges": [], "cycles": [], "bottlenecks": [],
@@ -571,6 +576,7 @@ class AppState:
         await self._wake_unread_recipients()
         await self._wake_retractions()
         await self._deliver_push_notices()
+        await self._deliver_rc_reconnects()
         await asyncio.to_thread(prune_ledger, self.settings.bus.state_dir_resolved)
         await self._notify()
 
@@ -788,6 +794,7 @@ class AppState:
             log.info("notified: %s", item["title"])
 
     _NOTICE_TTL_S = 3600.0
+    _RC_TTL_S = 1800.0        # a queued reconnect waits ≤30m for the session to go idle, then drops
 
     async def _deliver_push_notices(self) -> None:
         """Tell a session its push was approved — but only once it is actually listening.
@@ -823,6 +830,40 @@ class AppState:
             )
             if not sent:
                 self._push_notices[key] = note     # inject failed -> put it back to retry
+
+    async def _deliver_rc_reconnects(self) -> None:
+        """Fire a queued ``/rc`` reconnect the moment its session is idle.
+
+        An /rc typed into a BUSY Claude Code session queues in the TUI and never establishes
+        the remote-control bridge (found live 2026-07-17). So when the phone asks to reconnect a
+        busy session we hold it here and deliver once the session is genuinely quiet — the same
+        discipline as the push notices. We drop it when: it bridged (worked), the session went
+        away (a dead one is the relaunch path's job, not this), or 30 minutes passed.
+        """
+        if not self._rc_pending:
+            return
+        now = time.time()
+        for sid, item in list(self._rc_pending.items()):
+            if now - item["queued"] > self._RC_TTL_S:
+                del self._rc_pending[sid]
+                continue
+            rec = next((r for r in self.sessions.values()
+                        if getattr(r, "session_id", "") == sid), None)
+            if rec is None:
+                del self._rc_pending[sid]              # session gone -> relaunch, not reconnect
+                continue
+            if read_bridge(rec.pid)["bridged"]:
+                del self._rc_pending[sid]              # already connected -> done
+                continue
+            if rec.status in _BUSY_STATUSES:
+                continue                              # still mid-task -> keep waiting
+            # Claim before the await so a concurrent scan can't double-inject (the push-notice
+            # 3x-delivery lesson). Restore only if the keystroke couldn't be sent.
+            if self._rc_pending.pop(sid, None) is None:
+                continue
+            sent = await self._inject_text(rec, "/rc", "reconnect remote control (queued)")
+            if not sent:
+                self._rc_pending[sid] = item          # window unreachable -> retry next scan
 
     def _is_blocking_someone(self, tag: str | None) -> bool:
         """Is another session HARD-blocked on this one right now?
@@ -1300,6 +1341,9 @@ class AppState:
             sid = getattr(r, "session_id", "") or ""
             d["role"] = self._role_by_session.get(sid, "peer")   # member registry role (v4 §3.4)
             d["member"] = _bare_tag(r.tag)
+            # Remote-control bridge state (is it on the phone?) + a queued reconnect, if any.
+            d["bridged"] = read_bridge(r.pid)["bridged"]
+            d["rc_pending"] = sid in self._rc_pending
             sessions.append(d)
         parked = []
         for p in self.parked:
@@ -1436,6 +1480,44 @@ async def check_bus(session_id: str, request: Request) -> dict[str, Any]:
         "tag": rec.tag,
         "wmctrl_available": wmctrl_available(),
     }
+
+
+@app.post("/api/sessions/{session_id}/reconnect")
+async def reconnect_session(session_id: str, request: Request) -> dict[str, Any]:
+    """Re-establish a live session's remote-control bridge so it shows on the phone.
+
+    Injects ``/rc`` (``/remote-control``). The catch, found live: an /rc typed into a BUSY
+    session queues in the TUI and silently never bridges — so we fire it now only if the
+    session is idle, and otherwise QUEUE it to go the instant it quiets (Kyle's choice: tap
+    once, walk away). Either way the truth is the ``bridged`` field on the next scan — this
+    reports what it DID (sent / queued / already connected), never a false "done".
+    """
+    state: AppState = request.app.state.cond
+    rec = next((r for r in state.sessions.values()
+                if getattr(r, "session_id", "") == session_id), None)
+    if rec is None:
+        raise HTTPException(status_code=404, detail="session not found")
+
+    if read_bridge(rec.pid)["bridged"]:
+        state._rc_pending.pop(session_id, None)
+        return {"ok": True, "state": "connected", "tag": rec.tag,
+                "detail": "already remote-controlled — it should be on your phone"}
+
+    # Busy -> queue (an /rc mid-turn silently fails to bridge). Idle -> send now.
+    if rec.status in _BUSY_STATUSES:
+        state._rc_pending[session_id] = {"queued": time.time()}
+        return {"ok": True, "state": "queued", "tag": rec.tag,
+                "detail": "session is busy — it'll reconnect the moment it's idle"}
+
+    injected = await state._inject_text(rec, "/rc", "reconnect remote control")
+    if not injected:
+        # picker/tool-in-flight guard, or an unreachable window -> hold and retry when clear
+        state._rc_pending[session_id] = {"queued": time.time()}
+        return {"ok": True, "state": "queued", "tag": rec.tag,
+                "detail": "couldn't reach it right now — will retry when it's clear"}
+    state._rc_pending.pop(session_id, None)
+    return {"ok": True, "state": "sent", "tag": rec.tag,
+            "detail": "sent /rc — the badge turns 'connected' once it bridges"}
 
 
 @app.get("/api/bus")
@@ -2120,6 +2202,14 @@ async def get_ops(request: Request) -> dict[str, Any]:
             (_ops_session_of(state, s) for s in live),
             key=lambda d: (d["status"] != Status.ACTIVE.value, d.get("name") or ""),
         ),
+        # Dead/closed sessions the phone can relaunch (Kyle's "reawaken a disconnected one").
+        # `project` is the encoded dir the relaunch API takes; relaunch passes rc=true so a
+        # revived session comes back remote-controlled in one tap.
+        "parked": [
+            {"project": p.project, "name": Path(p.project_dir).name, "tag": p.tag,
+             "title": p.title, "last_activity_at": p.last_activity_at}
+            for p in sorted(state.parked, key=lambda p: -p.last_activity_at)
+        ],
     }
 
 
@@ -2142,6 +2232,11 @@ def _ops_session_of(state: AppState, r: SessionRecord) -> dict[str, Any]:
         # Member registry (v4 §3.4): the durable member + its role, so the phone can set roles too.
         "member": _bare_tag(r.tag),
         "role": state._role_by_session.get(getattr(r, "session_id", "") or "", "peer"),
+        # Remote-control: the phone shows "on your phone" vs "reconnect", and needs the
+        # session_id to call /check and /reconnect.
+        "session_id": getattr(r, "session_id", "") or "",
+        "bridged": read_bridge(r.pid)["bridged"],
+        "rc_pending": (getattr(r, "session_id", "") or "") in state._rc_pending,
     }
 
 

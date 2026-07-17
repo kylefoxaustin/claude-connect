@@ -550,32 +550,118 @@ if (sortSel) {
 
 function renderFleet() {
   const host = $("fleet");
-  if (!ops || !ops.sessions.length) {
-    host.innerHTML = `<div class="empty">No live sessions.</div>`;
+  const live = (ops && ops.sessions) || [];
+  const parked = (ops && ops.parked) || [];
+  if (!live.length && !parked.length) {
+    host.innerHTML = `<div class="empty">No sessions.</div>`;
     return;
   }
   // Copy before sorting: `ops.sessions` is the payload other panes read, and sorting in
   // place would quietly reorder it under them.
-  const rows = [...ops.sessions].sort(FLEET_SORTS[fleetSort] || FLEET_SORTS.attention);
-  host.replaceChildren(...rows.map((s) => {
-    const el = document.createElement("div");
-    el.className = "row";
-    const badges = [
-      s.asking ? `<span class="pill pill-ask">ASKING</span>` : "",
-      s.pending ? `<span class="pill">📬 ${s.pending}</span>` : "",
-    ].join("");
-    el.innerHTML =
-      `<span class="st st-${esc(s.status)}"></span>` +
-      `<div class="row-body">` +
-      `<div class="row-title">${esc(s.name)} ${badges}</div>` +
-      `<div class="row-sub">${esc(s.preview || s.status)}</div>` +
-      `</div>` +
-      roleSelectHTML(s) +
-      `<span class="row-age">${ago(s.idle_seconds)}</span>`;
-    const sel = el.querySelector(".mrole");
-    if (sel) sel.addEventListener("change", (e) => { e.stopPropagation(); setMemberRole(s.member, e.target.value); });
-    return el;
-  }));
+  const rows = [...live].sort(FLEET_SORTS[fleetSort] || FLEET_SORTS.attention);
+  const nodes = rows.map(fleetRow);
+  if (parked.length) {
+    const sep = document.createElement("div");
+    sep.className = "fleet-sep";
+    sep.textContent = `💤 Dormant · ${parked.length}`;
+    nodes.push(sep, ...parked.map(parkedRow));
+  }
+  host.replaceChildren(...nodes);
+}
+
+function fleetRow(s) {
+  const el = document.createElement("div");
+  el.className = "row";
+  const busy = s.status === "active" || s.status === "warm";
+  const badges = [
+    s.asking ? `<span class="pill pill-ask">ASKING</span>` : "",
+    s.pending ? `<span class="pill">📬 ${s.pending}</span>` : "",
+    s.bridged ? `<span class="pill pill-rc" title="remote-controlled — shows on your phone">📱</span>` : "",
+  ].join("");
+  el.innerHTML =
+    `<span class="st st-${esc(s.status)}"></span>` +
+    `<div class="row-body">` +
+    `<div class="row-title">${esc(s.name)} ${badges}</div>` +
+    `<div class="row-sub">${esc(s.preview || s.status)}</div>` +
+    `</div>` +
+    roleSelectHTML(s) +
+    `<span class="row-age">${ago(s.idle_seconds)}</span>`;
+  // Wake (nudge an idle session to check the bus) + Reconnect (re-bridge remote control).
+  // State-driven, never painted-and-hoped (v2.24.3): the button label reflects s.rc_pending /
+  // s.bridged, so the next refresh rebuilds the true state rather than a stale optimism.
+  const acts = document.createElement("div");
+  acts.className = "row-acts";
+  if (!busy) acts.appendChild(mkBtn("Wake", "btn btn-sm", (b) => sessionAction(s, "check", b)));
+  if (!s.bridged) {
+    const rc = mkBtn(s.rc_pending ? "Reconnecting…" : "Reconnect", "btn btn-sm btn-rc",
+                     (b) => sessionAction(s, "reconnect", b));
+    rc.disabled = !!s.rc_pending;
+    acts.appendChild(rc);
+  }
+  if (acts.children.length) el.appendChild(acts);
+  const sel = el.querySelector(".mrole");
+  if (sel) sel.addEventListener("change", (e) => { e.stopPropagation(); setMemberRole(s.member, e.target.value); });
+  return el;
+}
+
+function parkedRow(p) {
+  const el = document.createElement("div");
+  el.className = "row row-parked";
+  const age = (Date.now() / 1000) - (p.last_activity_at || 0);
+  el.innerHTML =
+    `<span class="st st-ended"></span>` +
+    `<div class="row-body">` +
+    `<div class="row-title">💤 ${esc(p.name)}</div>` +
+    `<div class="row-sub">closed · ${esc(p.title || p.tag || "")}</div>` +
+    `</div>` +
+    `<span class="row-age">${ago(age)}</span>`;
+  el.appendChild(mkBtn("Relaunch", "btn btn-sm", (b) => relaunchParked(p, b)));
+  return el;
+}
+
+function mkBtn(text, cls, onClick) {
+  const b = document.createElement("button");
+  b.className = cls;
+  b.textContent = text;
+  b.addEventListener("click", (e) => { e.stopPropagation(); onClick(b); });
+  return b;
+}
+
+// Wake (/check) or Reconnect (/reconnect) a LIVE session. Reports what the server actually did
+// (sent / queued-for-idle / already-connected), then a refresh rebuilds from the true state.
+async function sessionAction(s, verb, btn) {
+  if (!s.session_id) return;
+  btn.disabled = true;
+  btn.textContent = verb === "reconnect" ? "Reconnecting…" : "Waking…";
+  try {
+    const r = await api(`/api/sessions/${encodeURIComponent(s.session_id)}/${verb}`, { method: "POST" });
+    if (verb === "reconnect") {
+      btn.textContent = r.state === "connected" ? "On your phone ✓"
+        : r.state === "queued" ? "Waits for idle…" : "Sent — connecting…";
+    } else {
+      btn.textContent = r.injected ? "Woken ✓" : "Sent";
+    }
+  } catch (e) {
+    btn.textContent = "Failed";
+    btn.disabled = false;
+    return;
+  }
+  setTimeout(refresh, 1800);   // the bridged badge flips / rc_pending clears on the next scan
+}
+
+// Relaunch a dead/closed session, and re-bridge it (rc:true) so it comes back on your phone.
+async function relaunchParked(p, btn) {
+  btn.disabled = true;
+  btn.textContent = "Relaunching…";
+  try {
+    await api(`/api/relaunch`, { method: "POST", body: JSON.stringify({ project: p.project, rc: true }) });
+    btn.textContent = "Launching…";
+  } catch (e) {
+    btn.textContent = "Failed";
+    btn.disabled = false;
+    return;
+  }
+  setTimeout(refresh, 3000);   // the revived session appears live on a later scan
 }
 
 // Member-role control (v4 §3.4): observer=read-only · service · peer=default · trusted.
