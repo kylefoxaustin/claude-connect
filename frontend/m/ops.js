@@ -987,6 +987,29 @@ function serviceRow(s) {
     (detail ? `<div class="row-sub">${detail}</div>` : "") +
     queueLine +
     `</div>`;
+  // The control Kyle didn't have: a service sitting IDLE on a queued job (its serve-wake was
+  // lost — Conductor down when the job landed, or it was busy and never came back). Conductor
+  // now auto-re-wakes a stale head, but this is the manual override for the fresh case and for
+  // "start it NOW". Only shown when there's work AND it's idle — nothing to kick otherwise.
+  if (q.length && !s.held && !s.serving) {
+    const row = document.createElement("div");
+    row.className = "btn-row";
+    const go = document.createElement("button");
+    go.className = "btn btn-primary";
+    go.textContent = "▶ Serve next";
+    go.addEventListener("click", async () => {
+      go.disabled = true;                 // the row rebuilds on refresh; this only covers the in-flight
+      go.innerHTML = '<span class="spin"></span> Nudging…';
+      try {
+        const r = await api(`/api/services/${encodeURIComponent(s.name)}/nudge`, { method: "POST" });
+        go.textContent = r && r.ok ? "Nudged ✓" : (r && r.result) || "No live session";
+      } catch (e) {
+        go.textContent = `Failed: ${e.message}`;
+      }
+    });
+    row.appendChild(go);
+    el.appendChild(row);
+  }
   return el;
 }
 

@@ -915,6 +915,31 @@ push_revoke() {  # <repo-name-or-key> — take back an approval you already gave
 # ---------------------------------------------------------------------------
 SVC_ROOT="$COORD_ROOT/services"
 
+# A service Claude idle on its OWN queue never hears about it. The serve-wake is a
+# one-shot posted by the requester at request time, and if it's missed — Conductor down
+# when the job landed (image_gen sat 28m on tipometer's job, 2026-07-17), or the service
+# busy and never back — nothing re-fires and the queue rots silently. Conductor now
+# re-wakes a stale head, but that fails exactly when Conductor is the thing that's down.
+# So the prompt hook carries the reminder too: a channel that survives Conductor being off.
+# The notification must never be the only door.
+#
+# Fires only for a service whose name matches THIS session (other:image_gen -> image_gen;
+# an explicit-table tag matches itself), with queued jobs and not already serving/held.
+svc_hook_lines() {
+  [ -d "$SVC_ROOT" ] || return 0
+  local myname="${TAG#other:}"            # other:image_gen -> image_gen ; backend -> backend
+  local d="$SVC_ROOT/$myname"
+  [ -d "$d" ] || return 0
+  [ -s "$d/serving" ] && return 0         # already serving a job — nothing to prompt
+  [ -s "$d/hold" ] && return 0            # Kyle holds the queue — don't tell it to pull
+  # Count non-blank queue lines WITHOUT `grep -c . || echo 0` — on an empty (but existing)
+  # file grep prints "0" AND exits 1, so the `||` appends a second "0" and the integer test
+  # below blows up on "0\n0". Read-and-count in one shot instead.
+  local n; n="$(grep -c . "$d/queue" 2>/dev/null)" || true; n="${n:-0}"
+  [ "$n" -gt 0 ] || return 0
+  echo "🧾 SERVICE [$myname]: $n job(s) QUEUED and you are idle — run \`/svc-next $myname\` to serve the next."
+}
+
 _svc_setup() {  # <name>
   SVC_NAME="$1"
   [ -n "$SVC_NAME" ] || { echo "usage: bus.sh svc <verb> <service> …" >&2; return 2; }
@@ -2037,6 +2062,9 @@ $SS_CTX"
 
     # Resource-reservation awareness: a line per held resource (silent when all free).
     RES_LINES="$(res_hook_lines 2>/dev/null || true)"
+    # Service-queue awareness: if I run a service with queued jobs and I'm idle, remind me
+    # to serve them — the Conductor-independent half of the lost-wake fix (silent otherwise).
+    SVC_LINES="$(svc_hook_lines 2>/dev/null || true)"
     # Retractions aimed at me — loud, and FIRST (safety before everything else).
     RETRACT_LINES="$(retract_hook_lines "$(_coord_plain "$TAG")" "$LAST_SEEN" 2>/dev/null || true)"
     # Identity collision — a second session sharing my tag. Even more foundational than a
@@ -2044,8 +2072,9 @@ $SS_CTX"
     # was even meant for this session. So it leads everything.
     SIBLING_LINES="$(sibling_hook_lines 2>/dev/null || true)"
 
-    # Nothing pending, no retraction, no collision, and every resource free -> stay silent.
-    if [ -z "$NOTE" ] && [ -z "$RES_LINES" ] && [ -z "$RETRACT_LINES" ] && [ -z "$SIBLING_LINES" ]; then
+    # Nothing pending, no retraction, no collision, no service backlog, and every resource
+    # free -> stay silent.
+    if [ -z "$NOTE" ] && [ -z "$RES_LINES" ] && [ -z "$SVC_LINES" ] && [ -z "$RETRACT_LINES" ] && [ -z "$SIBLING_LINES" ]; then
       exit 0
     fi
 
@@ -2054,6 +2083,7 @@ $SS_CTX"
     [ -n "$SIBLING_LINES" ] && FULL="$SIBLING_LINES"   # identity first — who am I talking as?
     if [ -n "$RETRACT_LINES" ]; then FULL="${FULL:+$FULL$NL}$RETRACT_LINES"; fi   # then retractions
     if [ -n "$NOTE" ]; then FULL="${FULL:+$FULL$NL}$NOTE"; fi
+    if [ -n "$SVC_LINES" ]; then FULL="${FULL:+$FULL$NL}$SVC_LINES"; fi           # my service backlog
     if [ -n "$RES_LINES" ]; then FULL="${FULL:+$FULL$NL}$RES_LINES"; fi
     ESCAPED="$(printf '%s' "$FULL" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"
 

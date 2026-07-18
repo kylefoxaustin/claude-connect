@@ -112,6 +112,16 @@ _BUSY_STATUSES = frozenset({Status.ACTIVE, Status.WARM})
 # not ACTIVE/WARM (busy) and not WAITING (Kyle may be typing at that prompt).
 _WAKEABLE_STATUSES = frozenset({Status.IDLE, Status.DORMANT})
 
+# A service Claude is woken to serve a job by the REQUESTER at request time (svc-request
+# posts directed mail; auto-delivery injects the /msg-check). That is a ONE-SHOT wake — and
+# if Conductor is down when the job lands (image_gen, 2026-07-17: a job sat 28m while Conductor
+# was crashed), or the service was busy and never came back to it, the nudge is lost forever:
+# there is no re-wake, and the per-prompt hook carries no service-queue line to remind an idle
+# service of its backlog. So Conductor re-issues the wake for a queue HEAD older than this, once
+# per job. A queued job is a hard block on the requester, so this fires regardless of the wake
+# floor — but never at a BUSY service (it's already working; the busy-guard leaves it alone).
+_SVC_STALE_SECONDS = 180
+
 # A /msg-check the recipient hasn't run yet makes a second one pointless — one
 # check drains the whole backlog. Re-arm after this long anyway, so a session
 # that never writes a last-seen watermark isn't muted forever.
@@ -258,6 +268,7 @@ class AppState:
         self._pinged_offers: set[str] = set()                 # offers we've already woken
         self._owner_missing_since: dict[str, float] = {}      # lease -> when its owner went offline
         self._nudge_woken: set[str] = set()                   # idle episodes we already woke
+        self._svc_woken: set[str] = set()                     # service jobs we already re-woke a service for
         self.coord_root = settings.bus.state_dir_resolved / "coord"
         # tag -> (its last-seen when we woke it, when we woke it). Keeps us from
         # stacking /msg-checks on a session that hasn't run the first one yet.
@@ -573,6 +584,7 @@ class AppState:
             await self.hub.broadcast("autonomy", {"windows": autonomy})
         await self._wake_offered_sessions()
         await self._wake_nudged_owners()
+        await self._wake_stale_service_heads()
         await self._wake_unread_recipients()
         await self._wake_retractions()
         await self._deliver_push_notices()
@@ -750,6 +762,22 @@ class AppState:
     def _live_session_for(self, owner: str) -> SessionRecord | None:
         return next((s for s in self.sessions.values()
                      if _bare_tag(s.tag) == _bare_tag(owner) and s.status != Status.ENDED), None)
+
+    def _live_session_for_service(self, name: str) -> SessionRecord | None:
+        """Resolve a service by its registered NAME (``image_gen``) to the live session
+        running it. Unlike a lease owner (``bus.sh`` writes those already tag-shaped), a
+        service dir is named for the session's bare identity — the basename — while the
+        session's tag normalizes to ``other:<basename>``. So strip a leading ``other:``
+        before comparing, or the match silently never succeeds and no wake ever fires
+        (the bracket/bare mismatch that hid v2.16's orphan wake, in service form)."""
+        for s in self.sessions.values():
+            if s.status == Status.ENDED:
+                continue
+            bare = _bare_tag(s.tag)  # "other:image_gen" | "backend"
+            ident = bare.split("other:", 1)[1] if bare.startswith("other:") else bare
+            if ident == name or bare == name:
+                return s
+        return None
 
     async def _notify(self) -> None:
         """Ring Kyle's phone about the things that stop work dead: a Claude blocked on a question,
@@ -1034,6 +1062,49 @@ class AppState:
             self._nudge_woken.add(key)
             await self._inject_msg_check(rec, f"watchdog nudge on {r['name']} (idle)")
         self._nudge_woken &= current  # a new idle episode gets a fresh wake
+
+    async def _wake_stale_service_heads(self) -> None:
+        """Re-deliver a service Claude's lost wake.
+
+        A service is nudged to serve a job by the requester at request time — a one-shot.
+        If Conductor was down then (image_gen sat 28m on tipometer's job, 2026-07-17), or
+        the service was busy and never returned to it, that wake is gone: nothing re-fires,
+        and an idle service has no prompt-hook line telling it a job is waiting. So we watch
+        for a queue HEAD that has been waiting longer than ``_SVC_STALE_SECONDS`` in front of
+        an idle service and inject one /msg-check — once per job (keyed on the job id, so a
+        new head re-arms but the same job never nags). Honours the ``[bus].autodeliver``
+        off-switch, same as every other wake path.
+
+        Skipped when: the service is HELD (Kyle claimed the next opening), it's already
+        ``serving`` something, or its session is BUSY (it's working — very possibly on this
+        very job, which it can take without running /svc-next, leaving the entry queued; the
+        busy-guard is exactly what stops us prodding a service mid-render).
+        """
+        if not self.settings.bus.autodeliver:
+            return
+        now = time.time()
+        current: set[str] = set()
+        for svc in self.services.get("services", []):
+            if svc.get("held") or svc.get("serving"):
+                continue
+            queue = svc.get("queue") or []
+            if not queue:
+                continue
+            head = queue[0]
+            epoch = head.get("epoch", 0)
+            if not epoch or now - epoch < _SVC_STALE_SECONDS:
+                continue  # give the request-time wake / requester ping first crack
+            name = svc.get("name", "")
+            key = f"{name}\x00{head.get('id', '')}"
+            current.add(key)
+            if key in self._svc_woken:
+                continue
+            rec = self._live_session_for_service(name)
+            if rec is None or rec.status in _BUSY_STATUSES:
+                continue  # not live (nothing to wake), or working — retry next scan
+            self._svc_woken.add(key)  # claim before the await (same race as the other wakes)
+            await self._inject_msg_check(rec, f"stale service job for {name} (queued {int(now - epoch)}s)")
+        self._svc_woken &= current  # forget jobs that have left the queue
 
     def _annotate_orphans(self) -> None:
         """Flag leases whose owner has no live session.
@@ -1713,12 +1784,36 @@ async def service_action(name: str, action: str, request: Request) -> dict[str, 
     wasted GPU) and then WAITS for him instead of pulling the next queued job. He is
     never a queue entry — he talks to the service directly — so his priority is a hold
     on the queue, not a place in it. ``resume`` hands it back to the fleet.
+
+    ``nudge`` = "go serve your queue": the manual twin of ``_wake_stale_service_heads``.
+    A service's serve-wake is one-shot (posted by the requester at request time), and it
+    can be lost — Conductor down when the job landed, or the service busy and never back.
+    This is the phone control for exactly the case Kyle hit: a service idle on a queued
+    job he can SEE but had no way to start. It injects one /msg-check into the service's
+    live session and clears the auto-wake dedup so the two paths agree.
     """
-    if action not in ("hold", "resume"):
+    if action not in ("hold", "resume", "nudge"):
         raise HTTPException(status_code=404, detail="unknown action")
     if not name or not all(c.isalnum() or c in "._-" for c in name):
         raise HTTPException(status_code=400, detail="bad service name")
     state: AppState = request.app.state.cond
+
+    if action == "nudge":
+        rec = state._live_session_for_service(name)
+        if rec is None:
+            # No live session — a nudge has nowhere to land. Say so plainly rather than
+            # reporting a hollow success (the failure class this whole session was about).
+            return {"ok": False, "result": f"{name} has no live session to nudge — relaunch it first."}
+        if rec.status in _BUSY_STATUSES:
+            # Already working (very possibly this very job). A second /msg-check would only
+            # queue behind its current turn and stack — one check drains the backlog anyway.
+            return {"ok": True, "result": f"{name} is already working — it'll reach the queue on its own."}
+        await state._inject_msg_check(rec, "manual service nudge (phone)")
+        # Let the auto-path re-fire too if it's still stale next scan, and don't double-count.
+        state._svc_woken = {k for k in state._svc_woken if not k.startswith(f"{name}\x00")}
+        log.info("service %s nudged (phone) -> %s", name, rec.tag)
+        return {"ok": True, "result": f"Nudged {name} to check its queue."}
+
     args = [str(state.settings.bus.script_path_resolved), "svc", action, name]
     if action == "hold":
         args.append("Kyle claimed the next opening from the dashboard")
