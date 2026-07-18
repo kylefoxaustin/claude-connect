@@ -795,6 +795,46 @@ function silenceLabel(sec) {
   return `silent ${Math.max(1, Math.floor(sec / 60))}m`;
 }
 
+// The SOFT edges — "awaiting", not "stuck". Deliberately subordinate (a tap-to-expand
+// disclosure, muted), because a healthy fleet always has some of these and a pane that shouts
+// about them trains you to ignore it. But it must be HONEST and INSPECTABLE, which it wasn't:
+// it showed only a count, and lumped service jobs under "awaiting a REPLY" — wrong. An open
+// question awaits a reply; a service job awaits a RENDER and is already in flight (fire-and-forget,
+// the requester isn't blocked). Different things; different words; and now you can see WHO.
+function softAwaitingNode(w) {
+  const soft = (w.edges || []).filter((e) => !e.hard);
+  if (!soft.length) return null;
+  const askers = new Set(soft.filter((e) => e.kind === "mail").map((e) => e.src)).size;
+  const jobs = soft.filter((e) => e.kind === "service").length;
+  const parts = [];
+  if (askers) parts.push(`${askers} awaiting a reply`);
+  if (jobs) parts.push(`${jobs} job${jobs === 1 ? "" : "s"} in flight`);
+
+  const wrap = document.createElement("details");
+  wrap.className = "soft-await";
+  const sum = document.createElement("summary");
+  sum.textContent = `${parts.join(" · ")} — not a problem · tap for detail`;
+  wrap.appendChild(sum);
+
+  for (const e of soft) {
+    const row = document.createElement("div");
+    row.className = "row";
+    const isSvc = e.kind === "service";
+    // For a service edge the why is "queued job (being served): <text>" — keep only the text.
+    const jobText = isSvc ? (e.why || "").replace(/^[^:]*:\s*/, "") : "";
+    const sub = isSvc
+      ? "⚙️ job in flight — being served" + (jobText ? `: ${esc(jobText)}` : "")
+      : "💬 open question — awaiting a reply";
+    row.innerHTML =
+      `<div class="row-body">` +
+      `<div class="row-title">${esc(e.src)} → ${esc(e.dst)}</div>` +
+      `<div class="row-sub" style="white-space:normal">${sub}</div>` +
+      `</div><span class="row-age">${ago(e.age)}</span>`;
+    wrap.appendChild(row);
+  }
+  return wrap;
+}
+
 function renderBlocked() {
   const host = $("blocked");
   const w = ops.waiting || {};
@@ -886,17 +926,18 @@ function renderBlocked() {
     bits.push(el);
   }
 
+  // The soft "awaiting" edges are never trouble (a healthy fleet always has some), so they stay
+  // subordinate — but they're now visible and honestly labeled, whether or not something is stuck.
+  const soft = softAwaitingNode(w);
+
   if (!bits.length) {
-    // Deliberately does NOT count the soft "awaiting a reply" edges as trouble. A
-    // dashboard that shouts on a healthy fleet is one you learn to ignore — and then it
-    // won't be believed the night something genuinely deadlocks.
-    const awaiting = w.awaiting_count || 0;
-    host.innerHTML =
-      `<div class="empty"><div class="empty-big">👍</div>Nobody is stuck.` +
-      (awaiting ? `<br><span style="font-size:13px">${awaiting} awaiting a reply — that's a conversation, not a problem.</span>` : "") +
-      `</div>`;
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.innerHTML = `<div class="empty-big">👍</div>Nobody is stuck.`;
+    host.replaceChildren(...(soft ? [empty, soft] : [empty]));
     return;
   }
+  if (soft) bits.push(soft);
   host.replaceChildren(...bits);
 }
 

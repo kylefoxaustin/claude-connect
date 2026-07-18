@@ -329,3 +329,16 @@ body {
 }
 .pick-list input { width: 20px; height: 20px; accent-color: var(--accent); flex: none; }
 .pick-list .pick-st { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+
+/* Soft "awaiting" edges in the Blocked pane — subordinate, tap-to-expand (native <details>). */
+.soft-await { margin-top: 14px; }
+.soft-await > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  color: var(--dim); font-size: 13px; text-align: center;
+  padding: 8px; border-radius: 10px;
+}
+.soft-await > summary::-webkit-details-marker { display: none; }
+.soft-await > summary::after { content: " ▾"; opacity: .6; }
+.soft-await[open] > summary::after { content: " ▴"; }
+.soft-await > summary:hover { color: var(--text); }
+.soft-await > .row { margin-top: 8px; }
