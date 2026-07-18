@@ -96,7 +96,14 @@ def open_ask_edges(
     # Kyle is the DECISION QUEUE's job, not a stall.) ``_NONPOSTING`` is module-level (shared with
     # silent_addressees).
     for mm in msgs:
-        mm["to"] = {t for t in _address_targets(mm["first"] or "")
+        targets = _address_targets(mm["first"] or "")
+        # A message that addresses `all` is a BROADCAST — "one person telling everyone" — even
+        # when it also cc's specific tags (`to:a to:b to:all`). Those named tags are for visibility
+        # and wake, NOT a directed question each recipient owes a reply to (v2.29's rule). Without
+        # this, a fleet-wide conclusion that happens to contain a `?` mints a phantom "A is waiting
+        # on B" edge to every session it thanked (93emulator's "RESOLVED… thank you all", 2026-07-17).
+        mm["broadcast"] = "all" in targets
+        mm["to"] = {t for t in targets
                     if t not in ("all", "p:wake", "p:low") and t not in _NONPOSTING}
 
     # Latest time each responder addressed each addressee — the "did B reply to A?" index (O(N)).
@@ -112,6 +119,8 @@ def open_ask_edges(
     for mm in msgs:
         src = mm["snd"]
         if src not in live or mm["ep"] < horizon or not mm["q"]:
+            continue
+        if mm.get("broadcast"):                                  # to:all — an announcement, never a directed ask
             continue
         if not (1 <= len(mm["to"]) <= _WAKE_MAX_RECIPIENTS):     # directed, not a mass-cc announcement
             continue

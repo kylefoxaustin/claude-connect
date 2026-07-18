@@ -265,6 +265,27 @@ def test_open_ask_BROADCAST_question_makes_NO_edge(tmp_path):
     assert _edges(path, {"other:a", "other:b"}, now) == set()          # broadcast != directed ask
 
 
+def test_open_ask_MIXED_cc_plus_all_is_still_a_broadcast(tmp_path):
+    """The live false positive (93emulator, 2026-07-17): a fleet-wide CONCLUSION that cc's specific
+    tags AND `to:all`, and happens to contain a `?`, minted a phantom "waiting on B" edge to every
+    session it thanked. `to:all` is the broadcast signal even alongside named cc's — stripping it and
+    counting the 3 remaining names as "directed" was the hole. No edge from a to:all message, period."""
+    now = time.mktime(time.strptime("2026-07-13 12:00", "%Y-%m-%d %H:%M"))
+    path = _bus(tmp_path, [(
+        "2026-07-13 11:00", "other:a",
+        "to:other:b to:other:c to:all — RESOLVED. isn't that great? thank you all.")])
+    assert _edges(path, {"other:a", "other:b", "other:c"}, now) == set()
+
+
+def test_open_ask_genuine_cc_WITHOUT_all_still_makes_edges(tmp_path):
+    """The fix must not over-reach: a real directed question to a few named tags (no `to:all`) is
+    still an open ask to each until they reply."""
+    now = time.mktime(time.strptime("2026-07-13 12:00", "%Y-%m-%d %H:%M"))
+    path = _bus(tmp_path, [(
+        "2026-07-13 11:00", "other:a", "to:other:b to:other:c — which offset do you two use?")])
+    assert _edges(path, {"other:a", "other:b", "other:c"}, now) == {("a", "b"), ("a", "c")}
+
+
 def test_the_image_gen_phantom_a_cc_recipient_is_not_a_link(tmp_path):
     # image_gen is cc'd on a small directed msg but never ASKS orb_slam -> no image_gen->orb_slam edge.
     now = time.mktime(time.strptime("2026-07-13 20:10", "%Y-%m-%d %H:%M"))
