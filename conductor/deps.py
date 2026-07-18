@@ -300,16 +300,27 @@ def build_wait_graph(
             edges.append(dict(e))
 
     # 2. Service queue. A job with image_gen -> the requester is waiting on the service.
+    #
+    # HARD only if the service is DEAD. A queued/serving job is fire-and-forget: the requester
+    # posted it and went back to work, and a LIVE service is going to serve it (working now, or
+    # idle and re-woken by _wake_stale_service_heads). That is in-flight async work, not a stall —
+    # calling it "stuck" made the Blocked pane shout that image_gen was trapped while image_gen was
+    # the one WORKING (2026-07-17: it did the whole job off-book, never ran /svc-next, so the entry
+    # sat in the queue and the pane read it as a stall). The genuine stall is a queue in front of a
+    # service with NO live session — nobody is going to serve it, exactly the dead-reader signal.
+    live_plain = {_plain(t) for t in live_tags}
     for svc in services or []:
         name = _plain(svc.get("name", ""))
+        svc_live = name in live_plain
         serving = svc.get("serving")
         if serving and serving.get("requester"):
             src = _plain(serving["requester"])
             started = float(serving.get("started") or serving.get("epoch") or now)
             if src != name:
                 edges.append({
-                    "src": src, "dst": name, "kind": "service", "hard": True,
-                    "why": f"job in progress: {(serving.get('text') or '')[:70]}",
+                    "src": src, "dst": name, "kind": "service", "hard": not svc_live,
+                    "why": (f"job in progress: {(serving.get('text') or '')[:70]}" if svc_live
+                            else f"job stuck — {name} is OFFLINE: {(serving.get('text') or '')[:60]}"),
                     "since": started, "age": max(0.0, now - started),
                 })
         for job in svc.get("queue") or []:
@@ -318,8 +329,9 @@ def build_wait_graph(
                 continue
             since = float(job.get("epoch") or now)
             edges.append({
-                "src": src, "dst": name, "kind": "service", "hard": True,
-                "why": f"queued job: {(job.get('text') or '')[:70]}",
+                "src": src, "dst": name, "kind": "service", "hard": not svc_live,
+                "why": (f"queued job (being served): {(job.get('text') or '')[:60]}" if svc_live
+                        else f"queued job — {name} OFFLINE, nobody serving: {(job.get('text') or '')[:50]}"),
                 "since": since, "age": max(0.0, now - since),
             })
 
@@ -382,7 +394,7 @@ def build_wait_graph(
                 "tag": tag,
                 "blocking": sorted(set(srcs)),
                 "count": len(set(srcs)),
-                "live": tag in {_plain(t) for t in live_tags},
+                "live": tag in live_plain,
                 "worst_age": max((e["age"] for e in edges if e["dst"] == tag), default=0.0),
             }
             for tag, srcs in blocking.items()

@@ -57,10 +57,38 @@ def test_a_queued_job_makes_the_requester_wait_on_the_service():
         "name": "image_gen",
         "serving": {"requester": "[other:tipometer]", "text": "buttons", "started": NOW - 60},
         "queue": [{"requester": "[other:docs]", "text": "banner", "epoch": NOW - 300}],
-    }])
+    }], live_tags={"[other:image_gen]"})
     pairs = {(e["src"], e["dst"]) for e in g["edges"]}
     assert pairs == {("tipometer", "image_gen"), ("docs", "image_gen")}
     assert all(e["kind"] == "service" for e in g["edges"])
+
+
+def test_a_LIVE_service_is_in_flight_not_a_stall():
+    """image_gen, 2026-07-17: it did the whole job off-book (never ran /svc-next), so the entry
+    sat in the queue and the Blocked pane read it as a stall — while image_gen was the one WORKING.
+    A queued/serving job in front of a LIVE service is fire-and-forget async work, not a trap:
+    the edges exist (a real dependency) but they are SOFT (awaiting), so nobody is 'stuck'."""
+    g = _g(services=[{
+        "name": "image_gen",
+        "serving": {"requester": "[other:tipometer]", "text": "buttons", "started": NOW - 60},
+        "queue": [{"requester": "[other:docs]", "text": "banner", "epoch": NOW - 300}],
+    }], live_tags={"[other:image_gen]"})
+    assert all(e["hard"] is False for e in g["edges"])   # in-flight, not trapped
+    assert g["blocked_count"] == 0                        # the phone shows "nobody stuck"
+    assert g["awaiting_count"] == 2                       # tipometer + docs merely awaiting
+
+
+def test_a_DEAD_service_with_a_queue_IS_a_stall():
+    """The genuine stall: a queue in front of a service with NO live session — nobody is going to
+    serve it, exactly the dead-reader signal. THAT is hard/stuck (a human must relaunch it)."""
+    g = _g(services=[{
+        "name": "image_gen",
+        "serving": None,
+        "queue": [{"requester": "[other:docs]", "text": "banner", "epoch": NOW - 300}],
+    }], live_tags=set())          # image_gen not running
+    assert all(e["hard"] is True for e in g["edges"])
+    assert g["blocked_count"] == 1
+    assert "OFFLINE" in g["edges"][0]["why"]
 
 
 def test_a_resource_queue_points_at_the_HOLDER_not_the_board():
