@@ -42,6 +42,41 @@ _human() { local s=$1 h m; [ "$s" -lt 0 ] && s=0; h=$((s/3600)); m=$(((s%3600)/6
 _notify() { local ts; ts="$(date '+%Y-%m-%d %H:%M')"; { echo ""; echo "## $ts [resource-watchdog]"; echo ""; echo "$1"; } >> "$BUS_FILE"; }
 _promote() { "$BUS_SH" res promote "$1" "$2" 2>/dev/null || true; }   # race-safe; echoes freed|offered:<tag>|skip…
 
+# Normalize a bus tag for comparison: [other:x] == other:x == x (lowercased).
+_tag_plain() { local t="$1"; t="${t#[}"; t="${t%]}"; t="${t#other:}"; printf '%s' "$t" | tr '[:upper:]' '[:lower:]'; }
+
+# Is the lease OWNER running RIGHT NOW? Prints LIVE | DEAD | UNKNOWN.
+#
+# "acquired_epoch < boot" proves the ORIGINAL process died at the reboot — it does NOT prove the
+# WORK was abandoned. A relaunched session resumes the job but its lease keeps the pre-boot
+# acquired_epoch unless it stops to /keep, which a session deep in a build won't do
+# (ollama_95_neutron, 2026-07-17: reaped mid-build). So before reaping we prove DEATH. For a
+# boot-orphan the recorded owner_pid is pre-reboot (stale, and the number may be REUSED by an
+# unrelated process), so we match by TAG, not pid: enumerate live `claude` processes and derive
+# each one's bus tag with bus.sh's OWN authoritative resolution (run from that process's cwd, so
+# tag-map / case-table / proj-root all apply and cannot drift — the 2026-07-12 sanitized-map
+# lesson). We say DEAD only when we actually scanned the process table AND read every claude's
+# cwd; a scan we could not complete is UNKNOWN — and UNKNOWN never reaps. Fail safe toward the holder.
+_owner_liveness() {  # owner-tag
+  local owner="$1" op comm cwd tag ownp examined=0 unreadable=0
+  ownp="$(_tag_plain "$owner")"
+  for op in /proc/[0-9]*; do
+    [ -e "$op" ] || continue          # glob did not expand -> /proc unreadable
+    examined=1
+    [ -r "$op/comm" ] || continue
+    IFS= read -r comm < "$op/comm" 2>/dev/null || continue
+    [ "$comm" = "claude" ] || continue
+    cwd="$(readlink "$op/cwd" 2>/dev/null || true)"
+    if [ -z "$cwd" ]; then unreadable=1; continue; fi        # a claude we can't identify might BE the owner
+    tag="$(cd "$cwd" 2>/dev/null && "$BUS_SH" whoami 2>/dev/null || true)"
+    if [ -z "$tag" ]; then unreadable=1; continue; fi
+    [ "$(_tag_plain "$tag")" = "$ownp" ] && { echo LIVE; return 0; }
+  done
+  [ "$examined" = 0 ]  && { echo UNKNOWN; return 0; }         # couldn't read /proc at all
+  [ "$unreadable" = 1 ] && { echo UNKNOWN; return 0; }        # a claude went unidentified — don't risk it
+  echo DEAD
+}
+
 # A lease acquired before the last boot is orphaned: the session that took it died
 # with the reboot. Hand the resource to the next in queue (or free it) rather than
 # let a dead HARD lease block it until expiry — the watchdog can't nudge a corpse.
@@ -62,12 +97,32 @@ tick_one() {  # name
   local owner mode exp now acq; owner="$(_field owner)"; mode="$(_field mode)"; exp="$(_field expires_epoch)"; now="$(_now)"
   [ -n "$exp" ] || return 0
 
-  # ORPHAN: lease predates the last boot → its owning session is provably gone.
-  # (Grace window first, so an owner who relaunches promptly can re-anchor with /keep.)
+  # ORPHAN: lease predates the last boot → the session that TOOK it died with the reboot. But
+  # that is not the same as "the work was abandoned": a relaunched owner resumes the job and its
+  # lease still carries the pre-boot acquired_epoch unless it stops to /keep (which a build won't).
+  # So prove DEATH before reaping — reap ONLY when the owner has no live session; RE-ANCHOR when it
+  # does (its live process is the heartbeat, exactly what /keep writes); and on UNKNOWN do NOTHING,
+  # because a resource must never be yanked on a signal we cannot confirm — the lease's own expiry
+  # is the backstop. (Grace still runs first so a prompt /keep re-anchors before we even look.)
   acq="$(_field acquired_epoch)"
   if [ -n "$acq" ] && [ "$BOOT_EPOCH" -gt 0 ] && [ "$acq" -lt "$BOOT_EPOCH" ] \
      && [ $(( now - BOOT_EPOCH )) -ge $(( ORPHAN_GRACE_MIN * 60 )) ]; then
-    _reap_orphan "$name" "$owner" "$mode" "$lbl"
+    case "$(_owner_liveness "$owner")" in
+      DEAD)
+        _reap_orphan "$name" "$owner" "$mode" "$lbl" ;;
+      LIVE)
+        # The owner is running RIGHT NOW — it relaunched and is using this. Re-anchor the lease
+        # (what /keep does) so it's no longer a boot-orphan, under the flock and only if nothing
+        # changed underneath. Never yank a resource from a working session for skipping a heartbeat.
+        ( flock 9
+          [ -f "$LEASE" ] || exit 0
+          [ "$(_field owner)" = "$owner" ] || exit 0
+          [ -n "$(_field acquired_epoch)" ] && [ "$(_field acquired_epoch)" -lt "$BOOT_EPOCH" ] || exit 0
+          _set acquired_epoch "$now"
+        ) 9>"$LOCK"
+        logger -t resource-watchdog "re-anchored $name: live owner [$owner] resumed after reboot (was boot-orphan)" 2>/dev/null || true ;;
+      *)  : ;;   # UNKNOWN — cannot prove the owner is gone; do NOT reap, do NOT re-anchor. Expiry backstops.
+    esac
     return 0
   fi
 

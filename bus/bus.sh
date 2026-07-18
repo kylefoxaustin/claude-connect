@@ -119,7 +119,7 @@ is_whitelisted() {
 # scraped), once, and never from the silent hooks.
 _warn_if_unregistered() {
   is_whitelisted "$TAG" && return 0
-  case "${BUS_ACTION:-}" in session-start|prompt-check) return 0 ;; esac
+  case "${BUS_ACTION:-}" in session-start|prompt-check|whoami) return 0 ;; esac
   printf '⚠️  bus.sh: your tag is "%s" — NOT registered for auto-delivery.\n' "$TAG" >&2
   printf '    Directed mail may reach nobody and auto-delivery will not fire. cwd=%s\n' "$PWD" >&2
   printf '    If that is wrong, your project dir is missing from the tag-map — tell claude-connect.\n' >&2
@@ -1930,6 +1930,16 @@ PYEOF
     echo "=== last $n posts by [$TAG] ==="
     grep -aE "^## .* \[$TAG\]$" "$BUS_FILE" 2>/dev/null | tail -"$n" | sed 's/^/  /'
     grep -acE "^## .* \[$TAG\]$" "$BUS_FILE" 2>/dev/null | sed 's/^/  total posts: /'
+    exit 0
+    ;;
+
+  whoami)
+    # Print THIS session's derived bus tag (the identity every post/lease uses) and exit.
+    # A pure read — no state writes, no bus posts — so external tooling (the resource-watchdog's
+    # boot-orphan liveness check) can ask "what tag would a claude running in this cwd be?" using
+    # the ONE authoritative derivation instead of re-implementing it and drifting (the 2026-07-12
+    # sanitized-map lesson). Run it as `(cd "$their_cwd" && bus.sh whoami)`.
+    printf '%s\n' "$TAG"
     exit 0
     ;;
 
