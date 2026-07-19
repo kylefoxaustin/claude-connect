@@ -156,6 +156,60 @@ _cursor_put_pending() {   # <count> — dual-write the pending count (member + c
   return 0
 }
 
+# ── Two-phase commit helpers (v4 §2.3.2, impl step 5b) ────────────────────────────────────────
+# The cursor advance is a PENDING record (<member>.delivered = "ts<TAB>promptId") written when a
+# read point EMITS, and COMMITTED to .last-seen only by the turn's OWN Stop hook — because the Stop
+# firing with the SAME promptId proves the turn ran to completion and the model consumed the
+# emission. A turn that dies (crash / API error / truncation-that-errors) before its Stop never
+# commits -> the mail is re-delivered (at-least-once). 91emulator measured the failure this closes.
+# GATED behind a flag (default OFF = the step-5a behavior) so the live cutover is one reversible
+# touch AFTER the new Stop-hook contract is verified on the installed harness.
+_two_phase_on() {   # true iff two-phase commit is enabled (a flag file, or the env override)
+  if [ -n "${BUS_TWO_PHASE:-}" ]; then return 0; fi
+  if [ -f "$_CURSOR_SD/two-phase" ]; then return 0; fi
+  return 1
+}
+_my_transcript() {   # this session's transcript path, found by session_id (drift-proof), or empty
+  local sid f; sid="$(my_session_id 2>/dev/null || true)"
+  [ -n "$sid" ] || return 0
+  for f in "$HOME/.claude/projects/"*/"$sid.jsonl"; do
+    if [ -f "$f" ]; then printf '%s\n' "$f"; return 0; fi
+  done
+  return 0
+}
+_turn_marker() {   # <transcript_path> -> the promptId of the LAST user record (the current turn)
+  local tx="$1"; [ -f "$tx" ] || return 0
+  tail -n 400 "$tx" 2>/dev/null | python3 -c '
+import sys, json
+pid = ""
+for line in sys.stdin:
+    try: r = json.loads(line)
+    except Exception: continue
+    if r.get("type") == "user":
+        p = r.get("promptId")
+        if p: pid = p
+print(pid)
+' 2>/dev/null || true
+}
+# Commit a pending .delivered advance for <member> IFF it belongs to the just-ended turn. <marker>
+# is the current turn's promptId (from the Stop payload's transcript). Match -> commit + clear;
+# mismatch -> the writing turn never completed, so discard WITHOUT committing (never mark-read what
+# a dead turn emitted). Silent, best-effort.
+_cursor_commit_delivered() {   # <member> <current_marker>
+  local m="$1" cur="$2" df line ts mk
+  df="$_CURSOR_SD/$m.delivered"
+  [ -f "$df" ] || return 0
+  IFS= read -r line < "$df" 2>/dev/null || true
+  ts="${line%%$'\t'*}"; mk="${line#*$'\t'}"
+  if [ -n "$ts" ] && [ "$mk" = "$cur" ] && [ -n "$cur" ]; then
+    # same turn completed -> commit (TAG here is the Stop hook's cwd; _cursor_put_seen dual-writes)
+    printf '%s\n' "$ts" > "$_CURSOR_SD/$m.last-seen" 2>/dev/null || true
+    if [ "$m" != "$TAG" ]; then printf '%s\n' "$ts" > "$_CURSOR_SD/$TAG.last-seen" 2>/dev/null || true; fi
+  fi
+  rm -f "$df" 2>/dev/null || true   # committed OR proven-stale: either way this record is spent
+  return 0
+}
+
 # Tags that participate in the AUTOMATIC hooks (SessionStart context injection +
 # UserPromptSubmit nudges). This whitelist keeps the bus out of unrelated
 # sessions; un-whitelisted tags can still use the slash commands manually.
@@ -1627,6 +1681,10 @@ SENDERR
     # The watermark advance now lives in the python (it advances to what was DISPLAYED, not the file's
     # newest — see below). Preserve the old whitelist guard: only a whitelisted tag advances its cursor.
     if is_whitelisted "$TAG"; then WL=1; else WL=0; fi
+    # Two-phase commit (step 5b): when enabled, the python writes a PENDING .delivered record tagged
+    # with THIS turn's marker instead of advancing .last-seen; the Stop hook commits it. Flag OFF
+    # (default) => step-5a direct advance.
+    if _two_phase_on; then TP=1; MY_MARKER="$(_turn_marker "$(_my_transcript)")"; else TP=0; MY_MARKER=""; fi
 
     echo "=== My session tag: [$TAG] ==="
     echo
@@ -1634,7 +1692,7 @@ SENDERR
     if [ "$MODE" = tail ]; then
       tail -80 "$BUS_FILE"
     else
-      BUS_FILE="$BUS_FILE" MY_TAG="$TAG" MY_MEMBER="$(_cursor_name)" LAST_SEEN="$LAST_SEEN" MODE="$MODE" LIMIT="$LIMIT" WL="$WL" \
+      BUS_FILE="$BUS_FILE" MY_TAG="$TAG" MY_MEMBER="$(_cursor_name)" LAST_SEEN="$LAST_SEEN" MODE="$MODE" LIMIT="$LIMIT" WL="$WL" TWO_PHASE="$TP" MY_MARKER="$MY_MARKER" \
       python3 - <<'PYEOF'
 import os, re, sys
 
@@ -1742,13 +1800,24 @@ if os.environ.get("WL") == "1":
     mem = os.environ.get("MY_MEMBER") or ""
     if mem and mem != me:
         keys.append(mem)
+    ts = sel[-1]["ts"]
     try:
         os.makedirs(sd, exist_ok=True)
-        for k in keys:
-            with open(os.path.join(sd, k + ".last-seen"), "w") as f:
-                f.write(sel[-1]["ts"] + "\n")
-            with open(os.path.join(sd, k + ".pending"), "w") as f:
-                f.write("0\n")
+        if os.environ.get("TWO_PHASE") == "1":
+            # step 5b: write a PENDING advance keyed on the member; the Stop hook commits it iff
+            # the turn completes with the same promptId. Do NOT advance .last-seen here.
+            marker = os.environ.get("MY_MARKER", "") or ""
+            with open(os.path.join(sd, (mem or me) + ".delivered"), "w") as f:
+                f.write(ts + "\t" + marker + "\n")
+            for k in keys:      # provisional pending (recomputed by the next prompt-check)
+                with open(os.path.join(sd, k + ".pending"), "w") as f:
+                    f.write("0\n")
+        else:
+            for k in keys:      # step 5a: commit the advance immediately
+                with open(os.path.join(sd, k + ".last-seen"), "w") as f:
+                    f.write(ts + "\n")
+                with open(os.path.join(sd, k + ".pending"), "w") as f:
+                    f.write("0\n")
     except OSError:
         pass
 PYEOF
@@ -1794,12 +1863,13 @@ PYEOF
     LAST_SEEN=""
     LAST_SEEN="$(_cursor_get)"   # member-keyed cursor, migrated (step 5)
     if is_whitelisted "$TAG"; then WL=1; else WL=0; fi
+    if _two_phase_on; then TP=1; MY_MARKER="$(_turn_marker "$(_my_transcript)")"; else TP=0; MY_MARKER=""; fi
 
     [ "$THREAD_ORDER" = 1 ] && _ord="oldest-first (thread order)" || _ord="newest-first"
     echo "=== Catch-up for [$TAG] — digest of unread, $_ord ==="
     echo
 
-    BUS_FILE="$BUS_FILE" MY_TAG="$TAG" MY_MEMBER="$(_cursor_name)" LAST_SEEN="$LAST_SEEN" LIMIT="$LIMIT" WL="$WL" THREAD_ORDER="$THREAD_ORDER" \
+    BUS_FILE="$BUS_FILE" MY_TAG="$TAG" MY_MEMBER="$(_cursor_name)" LAST_SEEN="$LAST_SEEN" LIMIT="$LIMIT" WL="$WL" THREAD_ORDER="$THREAD_ORDER" TWO_PHASE="$TP" MY_MARKER="$MY_MARKER" \
     python3 - <<'PYEOF'
 import os, re, sys
 
@@ -1915,13 +1985,22 @@ if os.environ.get("WL") == "1":
     mem = os.environ.get("MY_MEMBER") or ""
     if mem and mem != me:
         keys.append(mem)
+    ts = sel[-1]["ts"]
     try:
         os.makedirs(sd, exist_ok=True)
-        for k in keys:
-            with open(os.path.join(sd, k + ".last-seen"), "w") as f:
-                f.write(sel[-1]["ts"] + "\n")
-            with open(os.path.join(sd, k + ".pending"), "w") as f:
-                f.write("0\n")
+        if os.environ.get("TWO_PHASE") == "1":      # step 5b: pending advance, Stop commits it
+            marker = os.environ.get("MY_MARKER", "") or ""
+            with open(os.path.join(sd, (mem or me) + ".delivered"), "w") as f:
+                f.write(ts + "\t" + marker + "\n")
+            for k in keys:
+                with open(os.path.join(sd, k + ".pending"), "w") as f:
+                    f.write("0\n")
+        else:                                       # step 5a: commit immediately
+            for k in keys:
+                with open(os.path.join(sd, k + ".last-seen"), "w") as f:
+                    f.write(ts + "\n")
+                with open(os.path.join(sd, k + ".pending"), "w") as f:
+                    f.write("0\n")
     except OSError:
         pass
 PYEOF
@@ -2020,6 +2099,34 @@ PYEOF
       exit 0
     fi
     printf '%s\n' "$TAG"
+    exit 0
+    ;;
+
+  stop-commit)
+    # Stop hook (v4 §2.3.2, step 5b). Commit the pending .delivered cursor advance IFF it belongs
+    # to the turn that just ended (promptId match) — proof the model consumed the emission. A turn
+    # that died before its Stop never commits -> re-delivered. Silent, best-effort, ALWAYS exit 0
+    # (a hook that can fail is a hook that can wedge a turn). Reads the Stop payload from stdin:
+    # session_id + transcript_path.
+    _hook_pidjoin   # Stop carries session_id too — keep the join warm
+    if [ ! -t 0 ]; then
+      _SC="$(python3 -c 'import sys,json
+try:
+    d=json.load(sys.stdin); print(d.get("session_id","") or ""); print(d.get("transcript_path","") or "")
+except Exception:
+    print(""); print("")' 2>/dev/null || true)"
+      SC_SID="$(printf '%s\n' "$_SC" | sed -n 1p)"
+      SC_TX="$(printf '%s\n' "$_SC" | sed -n 2p)"
+    fi
+    # member from the payload's session_id (authoritative here); fall back to the tag.
+    SC_MEMBER="$TAG"
+    if command -v member_of >/dev/null 2>&1 && [ -n "${SC_SID:-}" ]; then
+      SC_MEMBER="$(member_of "$SC_SID" "$TAG")"
+    fi
+    # current turn marker from the payload transcript; fall back to locating our own.
+    [ -n "${SC_TX:-}" ] || SC_TX="$(_my_transcript)"
+    SC_MARK="$(_turn_marker "${SC_TX:-}")"
+    _cursor_commit_delivered "$SC_MEMBER" "${SC_MARK:-}"
     exit 0
     ;;
 
