@@ -100,7 +100,7 @@ function render() {
   if (!ops) return;
   const c = ops.counts;
 
-  const health = (c.collisions || 0) + (c.dead || 0);   // holobench alerts also land in Blocked
+  const health = (c.collisions || 0) + (c.dead || 0) + (c.lost_rc || 0);   // holobench + rt1180 alerts land in Blocked
   $("counts").innerHTML = [
     c.needs_you ? `<span class="hot"><b>${c.needs_you}</b> need you</span>` : "",
     (c.blocked + health) ? `<span class="hot"><b>${c.blocked + health}</b> stuck</span>` : "",
@@ -856,6 +856,18 @@ function renderBlocked() {
       `<div class="row-sub" style="white-space:normal">${c.count} live sessions post as [${esc(c.member)}] — a reply can reach the wrong one.</div>` +
       recent +
       `<div class="row-sub" style="white-space:normal;margin-top:6px">Both are live. Keep the one doing the work you want, close the other — or coordinate explicitly if deliberate. In a shared repo a git add -A can also sweep the other's work into your commit.</div>`;
+    bits.push(el);
+  }
+  for (const r of ops.lost_rc || []) {
+    const el = document.createElement("div");
+    el.className = "card card-hot";
+    // §3.4.1 (rt1180): alive but gone from the phone app -> looks crashed -> relaunched into a
+    // duplicate. Tell Kyle to RECONNECT, not relaunch — the whole point of the alarm.
+    el.innerHTML =
+      `<div class="card-who">📵 ${esc(r.member)} — alive but lost /RC</div>` +
+      `<div class="row-sub" style="white-space:normal">Gone from the phone's Claude app ${r.lost_rc_minutes}m ago, but the process is running.</div>` +
+      (r.preview ? `<div class="row-sub" style="white-space:normal;margin-top:6px">Last: ${esc((r.preview || "").slice(0, 110))}</div>` : "") +
+      `<div class="row-sub" style="white-space:normal;margin-top:6px">Reconnect it (/rc) — do NOT relaunch, or you'll put a second session in the same repo.</div>`;
     bits.push(el);
   }
   for (const s of (ops.silent || []).filter((x) => x.dead)) {

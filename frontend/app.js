@@ -263,6 +263,7 @@ function handleMessage({ kind, payload }) {
       if (payload.members) state.members = payload.members;
       state.silent = payload.silent || [];
       state.collisions = payload.collisions || [];
+      state.lost_rc = payload.lost_rc || [];
       sessionCountEl.textContent = `${state.sessions.length} session${state.sessions.length === 1 ? "" : "s"}`;
       renderGrid(state);
       renderFleetAlerts(state);
@@ -276,6 +277,10 @@ function handleMessage({ kind, payload }) {
       break;
     case "collisions":
       state.collisions = (payload && payload.collisions) || [];
+      renderFleetAlerts(state);
+      break;
+    case "lost_rc":
+      state.lost_rc = (payload && payload.lost_rc) || [];
       renderFleetAlerts(state);
       break;
     case "session": {
@@ -1333,10 +1338,11 @@ function renderFleetAlerts(state) {
   const box = document.getElementById("fleet-alerts");
   if (!box) return;
   const collisions = state.collisions || [];
+  const lostRc = state.lost_rc || [];
   const silent = state.silent || [];
   const dead = silent.filter((s) => s.dead);
   const quiet = silent.filter((s) => !s.dead);   // addressed + silent but a process is still alive
-  if (!collisions.length && !dead.length && !quiet.length) {
+  if (!collisions.length && !lostRc.length && !dead.length && !quiet.length) {
     box.hidden = true; box.replaceChildren(); return;
   }
   box.hidden = false;
@@ -1355,6 +1361,19 @@ function renderFleetAlerts(state) {
       + `<code>[${escapeHtml(c.member)}]</code> — a reply can reach the wrong one.`
       + recent
       + `<div class="alert-sub" style="margin-top:4px">Both are live. Keep the one doing the work you want, close the other — or coordinate explicitly if the split is deliberate. In a shared repo a <code>git add -A</code> can also sweep the other session's work into your commit.</div>`;
+    rows.push(row);
+  }
+  for (const r0 of lostRc) {
+    const row = document.createElement("div");
+    row.className = "alert-row alert-lostrc";
+    // The rt1180 trap (§3.4.1): alive but invisible in the phone app -> looks crashed -> relaunched
+    // into a duplicate. Say "alive, reconnect, DON'T relaunch" so Kyle resolves it the right way.
+    row.innerHTML =
+      `<strong>📵 ${escapeHtml(r0.member)} is ALIVE but lost its /RC</strong> `
+      + `(${r0.lost_rc_minutes}m ago) — it's gone from the phone's Claude app, but the process is running.`
+      + `<div class="alert-sub" style="margin-top:4px">Reconnect it (<code>/rc</code>) — do NOT relaunch, or you'll put a second session in the same repo.`
+      + (r0.preview ? ` Last: ${escapeHtml((r0.preview || "").slice(0, 110))}` : "")
+      + `</div>`;
     rows.push(row);
   }
   for (const s of dead) {
@@ -1380,6 +1399,7 @@ function renderFleetAlerts(state) {
   title.className = "fleet-alerts-title";
   const parts = [];
   if (collisions.length) parts.push(`${collisions.length} identity collision${collisions.length > 1 ? "s" : ""}`);
+  if (lostRc.length) parts.push(`${lostRc.length} lost /RC`);
   if (dead.length) parts.push(`${dead.length} dead reader${dead.length > 1 ? "s" : ""}`);
   if (quiet.length) parts.push(`${quiet.length} unresponsive`);
   title.textContent = `🩺 Fleet health — ${parts.join(" · ")}`;

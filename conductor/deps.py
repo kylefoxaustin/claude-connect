@@ -422,3 +422,66 @@ def build_wait_graph(
         "blocked_count": len({e["src"] for e in edges if e.get("hard")}),   # genuinely trapped
         "awaiting_count": len({e["src"] for e in edges if not e.get("hard")}),  # merely awaiting a reply
     }
+
+
+def compute_lost_rc(
+    sessions: list[dict[str, Any]],
+    rc_ever: set[str],
+    lost_rc_since: dict[str, float],
+    *,
+    now: float,
+    threshold_min: float = 15.0,
+) -> list[dict[str, Any]]:
+    """The live-but-lost-``/RC`` alarm (ARCHITECTURE_VISION §3.4.1, the rt1180 fix).
+
+    A session that lost its remote-control bridge is **alive but invisible in the phone's Claude
+    app** — which is exactly why Kyle assumed rt1180 had crashed and launched a replacement, putting
+    two sessions in one repo stepping on each other's git and mail. Conductor watches processes, not
+    ``/RC``, so it *can* see the session is alive; this surfaces that as an alarm ("alive, lost /RC
+    Nm ago — Reconnect, don't relaunch") instead of a quiet per-row button.
+
+    Fires ONLY on *lost it*, never *never-had-it*: a session that was never bridged may simply be one
+    Kyle doesn't drive from the phone, so alarming on it would be noise. So we require the session to
+    have been seen bridged at least once (``rc_ever``), then observed unbridged — with no reconnect
+    queued — for ``threshold_min`` minutes (debounced via ``lost_rc_since``, like the orphan-lease
+    flag). ``rc_ever`` and ``lost_rc_since`` are MUTATED in place (per-session state across scans).
+
+    Each input session dict: ``session_id``, ``bridged`` (bool), ``rc_pending`` (bool), plus display
+    fields (``member``, ``project_dir``, ``preview``, ``last_activity_at``) carried into the alarm.
+    """
+    alarms: list[dict[str, Any]] = []
+    live: set[str] = set()
+    for s in sessions:
+        sid = s.get("session_id") or ""
+        if not sid:
+            continue
+        live.add(sid)
+        if s.get("bridged"):
+            rc_ever.add(sid)                 # it's on the phone now — remember it, clear any timer
+            lost_rc_since.pop(sid, None)
+            continue
+        if s.get("rc_pending"):              # a reconnect is queued — recovering, not lost
+            lost_rc_since.pop(sid, None)
+            continue
+        if sid not in rc_ever:               # never bridged — not this alarm's business
+            continue
+        lost_rc_since.setdefault(sid, now)
+        mins = (now - lost_rc_since[sid]) / 60.0
+        if mins >= threshold_min:
+            alarms.append({
+                "session_id": sid,
+                "member": s.get("member", ""),
+                "project_dir": s.get("project_dir", ""),
+                "preview": s.get("preview", ""),
+                "last_activity_at": s.get("last_activity_at"),
+                "lost_rc_minutes": round(mins),
+            })
+    # GC per-session state for sessions that are no longer live (a relaunch mints a new session_id).
+    for sid in list(lost_rc_since):
+        if sid not in live:
+            lost_rc_since.pop(sid, None)
+    for sid in list(rc_ever):
+        if sid not in live:
+            rc_ever.discard(sid)
+    alarms.sort(key=lambda a: a["lost_rc_minutes"], reverse=True)   # most-stale first
+    return alarms

@@ -72,7 +72,7 @@ from .coord import (
     read_wake_state,
     write_wake_state,
 )
-from .deps import build_wait_graph, open_ask_edges, silent_addressees
+from .deps import build_wait_graph, compute_lost_rc, open_ask_edges, silent_addressees
 from .bridge import read_bridge
 from .models import BusEvent, BusTopology, ParkedSession, SessionRecord, Status
 from .resources import resources_state, touch_lease_activity
@@ -314,6 +314,9 @@ class AppState:
                                         "blocked_count": 0}   # who is blocked on whom
         self._silent: list[dict[str, Any]] = []               # dead-reader alarm (holobench)
         self._collisions: list[dict[str, Any]] = []           # two live sessions, one member (holobench)
+        self._lost_rc: list[dict[str, Any]] = []              # live-but-lost-/RC alarm (§3.4.1, rt1180)
+        self._rc_ever: set[str] = set()                       # sids seen bridged (LOST vs never-had)
+        self._lost_rc_since: dict[str, float] = {}            # sid -> when it went unbridged-after-bridged
         # Questions a Claude is BLOCKED ON, captured by the PreToolUse hook. Doubles as
         # the guard for keystroke injection: a session sitting on a picker must never be
         # typed at, because the picker swallows typed text into its free-text option.
@@ -567,6 +570,28 @@ class AppState:
         if collisions != self._collisions:
             self._collisions = collisions
             await self.hub.broadcast("collisions", {"collisions": collisions})
+
+        # LIVE-BUT-LOST-/RC ALARM (§3.4.1, rt1180): a session that WAS on the phone (/rc bridged) and
+        # lost it is alive but invisible in the phone's Claude app — the exact trap that made Kyle
+        # relaunch a "crashed" session and create a duplicate. Conductor watches the PROCESS, so it can
+        # say "alive, lost /RC Nm ago — Reconnect, don't relaunch" instead of letting it look dead.
+        # Fires only on lost-it (was bridged), aged, and not already reconnecting — so it isn't noise.
+        rc_inputs = [
+            {"session_id": getattr(r, "session_id", "") or "",
+             "bridged": read_bridge(r.pid)["bridged"],
+             "rc_pending": (getattr(r, "session_id", "") or "") in self._rc_pending,
+             "member": _bare_tag(r.tag), "project_dir": r.project_dir,
+             "preview": r.preview, "last_activity_at": r.last_activity_at}
+            for r in self.sessions.values() if r.status != Status.ENDED
+        ]
+        lost_rc = compute_lost_rc(
+            rc_inputs, self._rc_ever, self._lost_rc_since,
+            now=time.time(),
+            threshold_min=getattr(self.settings.bus, "lost_rc_alert_minutes", 15.0),
+        )
+        if lost_rc != self._lost_rc:
+            self._lost_rc = lost_rc
+            await self.hub.broadcast("lost_rc", {"lost_rc": lost_rc})
 
         decisions = await asyncio.to_thread(read_decisions, self.coord_root)
         # Drop records whose session is gone — a session killed mid-picker leaves its
@@ -1429,6 +1454,7 @@ class AppState:
             "members": self._members,        # member registry (v4 §3.4): member -> role summary
             "silent": self._silent,          # dead-reader alarm (holobench)
             "collisions": self._collisions,  # two live sessions, one member (holobench)
+            "lost_rc": self._lost_rc,        # alive but lost /RC (§3.4.1, rt1180)
             "fadeout_seconds": self.settings.ui.end_fadeout_seconds,
             "wmctrl_available": wmctrl_available(),
         }
@@ -2278,6 +2304,7 @@ async def get_ops(request: Request) -> dict[str, Any]:
         # with a session's REACHABILITY that only a human resolves" — surfaced on the phone too.
         "silent": state._silent,
         "collisions": state._collisions,
+        "lost_rc": state._lost_rc,        # live-but-lost-/RC alarm (§3.4.1, rt1180)
         "services": state.services.get("services", []),
         "resources": state.resources.get("resources", []),
         "counts": {
@@ -2286,6 +2313,7 @@ async def get_ops(request: Request) -> dict[str, Any]:
             "blocked": state.waiting.get("blocked_count", 0),
             "dead": sum(1 for s in state._silent if s.get("dead")),
             "collisions": len(state._collisions),
+            "lost_rc": len(state._lost_rc),
             "working": len(busy),
             "live": len(live),
             "idle": len(live) - len(busy),
@@ -2471,11 +2499,19 @@ def _resolve_parked(state: AppState, project: str) -> tuple[str, str]:
     real = os.path.realpath(cwd) if cwd else None
     if not real or not os.path.isdir(real):
         raise HTTPException(status_code=409, detail="session folder no longer exists")
-    if any(
-        r.status != Status.ENDED and os.path.realpath(r.project_dir) == real
-        for r in state.sessions.values()
-    ):
-        raise HTTPException(status_code=409, detail="a session is already running in that folder")
+    live = next((r for r in state.sessions.values()
+                 if r.status != Status.ENDED and os.path.realpath(r.project_dir) == real), None)
+    if live is not None:
+        # Name the live session, and if it merely LOST its /RC say so — that's the rt1180 case
+        # (§3.4.1): it only LOOKS crashed, so the fix is reconnect, not a duplicate-making relaunch.
+        member = _bare_tag(live.tag)
+        try:
+            bridged = read_bridge(live.pid)["bridged"]
+        except Exception:
+            bridged = True
+        hint = ("" if bridged else
+                " — it's ALIVE but lost its /RC (that's why it looks gone from the phone). Reconnect it, don't relaunch.")
+        raise HTTPException(status_code=409, detail=f"[{member}] is already running in that folder{hint}")
     return real, tag_to_state_basename(derive_tag(real, state.settings.bus.tags))
 
 
@@ -2668,6 +2704,7 @@ async def websocket(ws: WebSocket) -> None:
         await ws.send_text(json.dumps({"kind": "waiting", "payload": state.waiting}))
         await ws.send_text(json.dumps({"kind": "silent", "payload": {"silent": state._silent}}))
         await ws.send_text(json.dumps({"kind": "collisions", "payload": {"collisions": state._collisions}}))
+        await ws.send_text(json.dumps({"kind": "lost_rc", "payload": {"lost_rc": state._lost_rc}}))
         await ws.send_text(json.dumps({"kind": "decisions", "payload": {"decisions": state.decisions}}))
         while True:
             # We don't expect messages from the client right now; await any to detect close.
