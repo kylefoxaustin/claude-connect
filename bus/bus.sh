@@ -94,6 +94,32 @@ case "$CWD" in
 esac
 fi
 
+# ── Member layer (v4 §3.4 / §2.3, impl step 3) ────────────────────────────────────────────────
+# Source the durable-principal resolver + the PID-join bridge, both installed alongside this script
+# (~/.claude/bin, or bus/ in the repo). member_of() maps session_id -> member; the pid-join lets
+# THIS invocation resolve its OWN member (my_member) despite bus.sh never seeing session_id. Fully
+# guarded: if either file is absent, or the join/registry has no entry yet, member resolution
+# degrades to the cwd TAG — byte-for-byte today's behavior. Nothing here changes delivery yet
+# (step 5 re-keys the cursor on the member); step 3 only makes the resolver available and starts
+# populating the join from the hooks.
+_BUS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
+if [ -n "$_BUS_DIR" ] && [ -r "$_BUS_DIR/member-registry.sh" ]; then . "$_BUS_DIR/member-registry.sh"; fi
+if [ -n "$_BUS_DIR" ] && [ -r "$_BUS_DIR/pid-join.sh" ]; then . "$_BUS_DIR/pid-join.sh"; fi
+
+# _hook_pidjoin — from a hook's stdin JSON payload, record claude_pid -> session_id (step 3). The
+# hooks (SessionStart / UserPromptSubmit) are the ONLY place session_id is visible, so they seed the
+# join. Best-effort: only when stdin is the piped payload (never a tty — that read would hang), and
+# it can never fail or block the hook (a provenance breadcrumb is not allowed to break delivery).
+_hook_pidjoin() {
+  command -v pidjoin_record >/dev/null 2>&1 || return 0
+  [ -t 0 ] && return 0
+  local sid
+  sid="$(python3 -c 'import sys,json
+try: print(json.load(sys.stdin).get("session_id","") or "")
+except Exception: print("")' 2>/dev/null || true)"
+  pidjoin_record "$sid" 2>/dev/null || true
+}
+
 # Tags that participate in the AUTOMATIC hooks (SessionStart context injection +
 # UserPromptSubmit nudges). This whitelist keeps the bus out of unrelated
 # sessions; un-whitelisted tags can still use the slash commands manually.
@@ -1939,6 +1965,13 @@ PYEOF
     # boot-orphan liveness check) can ask "what tag would a claude running in this cwd be?" using
     # the ONE authoritative derivation instead of re-implementing it and drifting (the 2026-07-12
     # sanitized-map lesson). Run it as `(cd "$their_cwd" && bus.sh whoami)`.
+    # `whoami --member` prints the DURABLE member (via the pid-join, step 3) instead of the tag —
+    # a diagnostic ("who does the registry think I am?") and the value step 5's cursor will key on.
+    # Degrades to the tag when the member layer is absent/unbound, so it is always safe to call.
+    if [ "${1:-}" = "--member" ]; then
+      if command -v my_member >/dev/null 2>&1; then printf '%s\n' "$(my_member "$TAG")"; else printf '%s\n' "$TAG"; fi
+      exit 0
+    fi
     printf '%s\n' "$TAG"
     exit 0
     ;;
@@ -1961,6 +1994,7 @@ PYEOF
     # BUT an identity collision (a second session in a repo that already has one) is a
     # cross-cutting hazard that matters regardless of whitelist — it is exactly the case
     # nobody notices — so it's computed FIRST and can shout even for an un-whitelisted tag.
+    _hook_pidjoin   # step 3: seed claude_pid -> session_id from the payload (before any exit path)
     SIBLING_LINES="$(sibling_hook_lines 2>/dev/null || true)"
 
     # One JSON emitter for the SessionStart additionalContext (was three copy-pasted heredocs).
@@ -2031,6 +2065,7 @@ $SS_CTX"
     # If count > 0, emits JSON with a one-line additionalContext nudge
     # so Claude knows pending messages exist (without injecting content).
     # Silent + no-op outside the bus whitelist.
+    _hook_pidjoin   # step 3: seed the join for ALL sessions (before the whitelist exit)
     is_whitelisted "$TAG" || exit 0
 
     STATE_DIR="$HOME/.claude/bus-state"
