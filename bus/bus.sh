@@ -120,6 +120,42 @@ except Exception: print("")' 2>/dev/null || true)"
   pidjoin_record "$sid" 2>/dev/null || true
 }
 
+# ── Cursor helpers (v4 §2.3, impl step 5) ─────────────────────────────────────────────────────
+# The read-cursor keys on the durable MEMBER (drift-immune, via my_member/step 3). To keep
+# Conductor — which reads <tag>.last-seen / <tag>.pending — correct with NO change on its side, we
+# DUAL-WRITE the current tag file alongside the member file (the doc's "keep the old path live"
+# migration). member==tag (the common case — that is how Conductor binds today) => a single file,
+# byte-for-byte today's behavior. All if-blocks: no bare `test && cmd` that set -e could trip on.
+_CURSOR_SD="$HOME/.claude/bus-state"
+_cursor_name() { if command -v my_member >/dev/null 2>&1; then my_member "$TAG"; else printf '%s\n' "$TAG"; fi; }
+# Seed the member cursor from a legacy tag cursor the FIRST time member!=tag, so a re-key never
+# loses unread (would look like a fresh baseline) nor re-dumps history (would look like no baseline).
+_cursor_migrate() {
+  local m="$1"
+  if [ "$m" = "$TAG" ]; then return 0; fi
+  if [ -f "$_CURSOR_SD/$m.last-seen" ]; then return 0; fi
+  if [ ! -f "$_CURSOR_SD/$TAG.last-seen" ]; then return 0; fi
+  cp "$_CURSOR_SD/$TAG.last-seen" "$_CURSOR_SD/$m.last-seen" 2>/dev/null || true
+  if [ -f "$_CURSOR_SD/$TAG.pending" ]; then cp "$_CURSOR_SD/$TAG.pending" "$_CURSOR_SD/$m.pending" 2>/dev/null || true; fi
+  return 0
+}
+_cursor_get() {   # the authoritative last-seen VALUE (member-keyed, migrated); empty if none
+  local m; m="$(_cursor_name)"; _cursor_migrate "$m"
+  cat "$_CURSOR_SD/$m.last-seen" 2>/dev/null || true
+}
+_cursor_put_seen() {   # <ts> — dual-write the last-seen watermark (member + current tag)
+  local m; m="$(_cursor_name)"; mkdir -p "$_CURSOR_SD" 2>/dev/null || true
+  printf '%s\n' "$1" > "$_CURSOR_SD/$m.last-seen" 2>/dev/null || true
+  if [ "$m" != "$TAG" ]; then printf '%s\n' "$1" > "$_CURSOR_SD/$TAG.last-seen" 2>/dev/null || true; fi
+  return 0
+}
+_cursor_put_pending() {   # <count> — dual-write the pending count (member + current tag)
+  local m; m="$(_cursor_name)"; mkdir -p "$_CURSOR_SD" 2>/dev/null || true
+  printf '%s\n' "$1" > "$_CURSOR_SD/$m.pending" 2>/dev/null || true
+  if [ "$m" != "$TAG" ]; then printf '%s\n' "$1" > "$_CURSOR_SD/$TAG.pending" 2>/dev/null || true; fi
+  return 0
+}
+
 # Tags that participate in the AUTOMATIC hooks (SessionStart context injection +
 # UserPromptSubmit nudges). This whitelist keeps the bus out of unrelated
 # sessions; un-whitelisted tags can still use the slash commands manually.
@@ -160,8 +196,8 @@ mark_seen_if_bus_tag() {
   local NEWEST
   NEWEST="$(grep -E '^## [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2} \[' "$BUS_FILE" 2>/dev/null | tail -1 | awk '{print $2 " " $3}')"
   if [ -n "$NEWEST" ]; then
-    echo "$NEWEST" > "$STATE_DIR/$TAG.last-seen"
-    echo "0"       > "$STATE_DIR/$TAG.pending"
+    _cursor_put_seen "$NEWEST"   # dual-write member + tag (step 5)
+    _cursor_put_pending 0
   fi
 }
 
@@ -1587,8 +1623,7 @@ SENDERR
     done
 
     STATE_DIR="$HOME/.claude/bus-state"
-    LAST_SEEN=""
-    [ -f "$STATE_DIR/$TAG.last-seen" ] && LAST_SEEN="$(cat "$STATE_DIR/$TAG.last-seen" 2>/dev/null || true)"
+    LAST_SEEN="$(_cursor_get)"   # member-keyed cursor, migrated from a legacy tag cursor (step 5)
     # The watermark advance now lives in the python (it advances to what was DISPLAYED, not the file's
     # newest — see below). Preserve the old whitelist guard: only a whitelisted tag advances its cursor.
     if is_whitelisted "$TAG"; then WL=1; else WL=0; fi
@@ -1599,7 +1634,7 @@ SENDERR
     if [ "$MODE" = tail ]; then
       tail -80 "$BUS_FILE"
     else
-      BUS_FILE="$BUS_FILE" MY_TAG="$TAG" LAST_SEEN="$LAST_SEEN" MODE="$MODE" LIMIT="$LIMIT" WL="$WL" \
+      BUS_FILE="$BUS_FILE" MY_TAG="$TAG" MY_MEMBER="$(_cursor_name)" LAST_SEEN="$LAST_SEEN" MODE="$MODE" LIMIT="$LIMIT" WL="$WL" \
       python3 - <<'PYEOF'
 import os, re, sys
 
@@ -1701,12 +1736,19 @@ else:
 # should still surface. backend (2026-07-11): never advance past mail you did not SHOW.
 if os.environ.get("WL") == "1":
     sd = os.path.expanduser("~/.claude/bus-state")
+    # Key the cursor on the durable MEMBER (step 5), dual-writing the current tag file too so
+    # Conductor's tag-keyed reads stay correct with no change on its side. member==tag => one file.
+    keys = [me]
+    mem = os.environ.get("MY_MEMBER") or ""
+    if mem and mem != me:
+        keys.append(mem)
     try:
         os.makedirs(sd, exist_ok=True)
-        with open(os.path.join(sd, me + ".last-seen"), "w") as f:
-            f.write(sel[-1]["ts"] + "\n")
-        with open(os.path.join(sd, me + ".pending"), "w") as f:
-            f.write("0\n")
+        for k in keys:
+            with open(os.path.join(sd, k + ".last-seen"), "w") as f:
+                f.write(sel[-1]["ts"] + "\n")
+            with open(os.path.join(sd, k + ".pending"), "w") as f:
+                f.write("0\n")
     except OSError:
         pass
 PYEOF
@@ -1750,14 +1792,14 @@ PYEOF
     done
     STATE_DIR="$HOME/.claude/bus-state"
     LAST_SEEN=""
-    [ -f "$STATE_DIR/$TAG.last-seen" ] && LAST_SEEN="$(cat "$STATE_DIR/$TAG.last-seen" 2>/dev/null || true)"
+    LAST_SEEN="$(_cursor_get)"   # member-keyed cursor, migrated (step 5)
     if is_whitelisted "$TAG"; then WL=1; else WL=0; fi
 
     [ "$THREAD_ORDER" = 1 ] && _ord="oldest-first (thread order)" || _ord="newest-first"
     echo "=== Catch-up for [$TAG] — digest of unread, $_ord ==="
     echo
 
-    BUS_FILE="$BUS_FILE" MY_TAG="$TAG" LAST_SEEN="$LAST_SEEN" LIMIT="$LIMIT" WL="$WL" THREAD_ORDER="$THREAD_ORDER" \
+    BUS_FILE="$BUS_FILE" MY_TAG="$TAG" MY_MEMBER="$(_cursor_name)" LAST_SEEN="$LAST_SEEN" LIMIT="$LIMIT" WL="$WL" THREAD_ORDER="$THREAD_ORDER" \
     python3 - <<'PYEOF'
 import os, re, sys
 
@@ -1869,12 +1911,17 @@ else:
 # undisplayed messages are the OLDEST and that omission was DISCLOSED above (not a silent skip).
 if os.environ.get("WL") == "1":
     sd = os.path.expanduser("~/.claude/bus-state")
+    keys = [me]                                     # member-keyed cursor + tag dual-write (step 5)
+    mem = os.environ.get("MY_MEMBER") or ""
+    if mem and mem != me:
+        keys.append(mem)
     try:
         os.makedirs(sd, exist_ok=True)
-        with open(os.path.join(sd, me + ".last-seen"), "w") as f:
-            f.write(sel[-1]["ts"] + "\n")
-        with open(os.path.join(sd, me + ".pending"), "w") as f:
-            f.write("0\n")
+        for k in keys:
+            with open(os.path.join(sd, k + ".last-seen"), "w") as f:
+                f.write(sel[-1]["ts"] + "\n")
+            with open(os.path.join(sd, k + ".pending"), "w") as f:
+                f.write("0\n")
     except OSError:
         pass
 PYEOF
@@ -2042,7 +2089,7 @@ PYEOF
     #     Over-notifying is recoverable; eating mail is not.
     SS_STATE_DIR="$HOME/.claude/bus-state"
     SS_HAD_WATERMARK=0
-    [ -f "$SS_STATE_DIR/$TAG.last-seen" ] && SS_HAD_WATERMARK=1
+    if [ -n "$(_cursor_get)" ]; then SS_HAD_WATERMARK=1; fi   # member-keyed, migrates a legacy tag cursor (step 5)
     LATEST="$(tail -60 "$BUS_FILE")"
     # Build the whole additionalContext as one string, then JSON-encode it ONCE. (This replaces
     # the old `sed 's/^"//;s/"$//'` quote-strip trick, which was fragile; a collision warning with
@@ -2070,17 +2117,15 @@ $SS_CTX"
 
     STATE_DIR="$HOME/.claude/bus-state"
     mkdir -p "$STATE_DIR"
-    LAST_SEEN_FILE="$STATE_DIR/$TAG.last-seen"
-    PENDING_FILE="$STATE_DIR/$TAG.pending"
 
-    if [ -f "$LAST_SEEN_FILE" ]; then
-      LAST_SEEN="$(cat "$LAST_SEEN_FILE")"
-    else
-      # First run for this tag — treat "now" as the baseline so we
-      # don't flood the session with historical messages. The
-      # SessionStart hook already injected recent context separately.
+    # Cursor keys on the durable MEMBER (step 5), migrating a legacy tag cursor; dual-written so
+    # Conductor's tag-keyed reads stay correct with no change on its side.
+    LAST_SEEN="$(_cursor_get)"
+    if [ -z "$LAST_SEEN" ]; then
+      # First run — treat "now" as the baseline so we don't flood the session with historical
+      # messages (SessionStart already injected recent context separately).
       LAST_SEEN="$(date '+%Y-%m-%d %H:%M')"
-      echo "$LAST_SEEN" > "$LAST_SEEN_FILE"
+      _cursor_put_seen "$LAST_SEEN"
     fi
 
     # Parse header lines: "## YYYY-MM-DD HH:MM [tag]"
@@ -2095,11 +2140,11 @@ $SS_CTX"
       ' || true)"
 
     if [ -z "$NEW_MSGS" ]; then
-      echo "0" > "$PENDING_FILE"
+      _cursor_put_pending 0
       NOTE=""
     else
       COUNT="$(printf '%s\n' "$NEW_MSGS" | wc -l | tr -d ' ')"
-      echo "$COUNT" > "$PENDING_FILE"
+      _cursor_put_pending "$COUNT"
       SENDERS="$(printf '%s\n' "$NEW_MSGS" | awk '{print $3}' | sort -u | tr '\n' ' ' | sed 's/ *$//')"
       NEWEST="$(printf '%s\n' "$NEW_MSGS" | tail -1 | awk '{print $1 " " $2}')"
       NOTE="Claude Bus — $COUNT pending message(s) from $SENDERS on the cross-session log since you last checked (newest: $NEWEST). Content NOT shown. At a natural pause in your current work, mention to the user that pending messages exist and ask whether to check them now; run /msg-check once approved."
