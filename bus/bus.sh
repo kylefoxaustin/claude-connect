@@ -195,18 +195,22 @@ print(pid)
 # is the current turn's promptId (from the Stop payload's transcript). Match -> commit + clear;
 # mismatch -> the writing turn never completed, so discard WITHOUT committing (never mark-read what
 # a dead turn emitted). Silent, best-effort.
-_cursor_commit_delivered() {   # <member> <current_marker>
+_cursor_commit_delivered() {   # <member> <current_marker> -> prints the OUTCOME (for the debug log)
   local m="$1" cur="$2" df line ts mk
   df="$_CURSOR_SD/$m.delivered"
-  [ -f "$df" ] || return 0
+  if [ ! -f "$df" ]; then printf 'no-record\n'; return 0; fi
   IFS= read -r line < "$df" 2>/dev/null || true
   ts="${line%%$'\t'*}"; mk="${line#*$'\t'}"
   if [ -n "$ts" ] && [ "$mk" = "$cur" ] && [ -n "$cur" ]; then
     # same turn completed -> commit (TAG here is the Stop hook's cwd; _cursor_put_seen dual-writes)
     printf '%s\n' "$ts" > "$_CURSOR_SD/$m.last-seen" 2>/dev/null || true
     if [ "$m" != "$TAG" ]; then printf '%s\n' "$ts" > "$_CURSOR_SD/$TAG.last-seen" 2>/dev/null || true; fi
+    rm -f "$df" 2>/dev/null || true
+    printf 'committed %s\n' "$ts"
+  else
+    rm -f "$df" 2>/dev/null || true   # proven-stale: a turn that never completed emitted it
+    printf 'stale-discarded (record=%s want-marker=%s)\n' "${mk:-}" "${cur:-}"
   fi
-  rm -f "$df" 2>/dev/null || true   # committed OR proven-stale: either way this record is spent
   return 0
 }
 
@@ -2126,7 +2130,15 @@ except Exception:
     # current turn marker from the payload transcript; fall back to locating our own.
     [ -n "${SC_TX:-}" ] || SC_TX="$(_my_transcript)"
     SC_MARK="$(_turn_marker "${SC_TX:-}")"
-    _cursor_commit_delivered "$SC_MEMBER" "${SC_MARK:-}"
+    SC_OUT="$(_cursor_commit_delivered "$SC_MEMBER" "${SC_MARK:-}")"
+    # Verification aid (step 5b rollout): when bus-state/stop-debug exists, record that the Stop
+    # hook FIRED and what it saw — the way to confirm the new contract live BEFORE flipping the flag.
+    # A read-only breadcrumb; delete the flag file to silence it. Never affects the commit itself.
+    if [ -f "$_CURSOR_SD/stop-debug" ]; then
+      printf '%s sid=%s tx=%s member=%s marker=%s -> %s\n' \
+        "$(date '+%F %T')" "${SC_SID:-?}" "$([ -n "${SC_TX:-}" ] && echo yes || echo NONE)" \
+        "$SC_MEMBER" "${SC_MARK:-?}" "$SC_OUT" >> "$_CURSOR_SD/stop-debug.log" 2>/dev/null || true
+    fi
     exit 0
     ;;
 

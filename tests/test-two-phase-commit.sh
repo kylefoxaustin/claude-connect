@@ -74,9 +74,17 @@ ok  "T3 stale .delivered discarded" "$(delivered backend)" "NONE"
 
 # T4 — the whole point: after the crash (no valid commit), m5 is RE-DELIVERED on the next check
 mk_tx "turnC"
-OUT="$(run_check)"
+OUT="$(run_check)"                        # writes .delivered marker turnC
 okc "T4 re-delivers m5 (never lost)" "$OUT" "msg-five"
 nokc "T4 no re-dump of already-committed m4" "$OUT" "msg-four"
+
+# T5 — the rollout verification aid: stop-debug records that the hook fired + its outcome
+: > "$SD/stop-debug"
+run_stop                                  # marker turnC matches -> commit m5, logs it
+LOG="$(cat "$SD/stop-debug.log" 2>/dev/null || echo NONE)"
+okc "T5 stop-debug logged a firing" "$LOG" "member=backend"
+okc "T5 stop-debug logged the commit outcome" "$LOG" "committed 2026-07-18 10:05"
+ok  "T5 (sanity) m5 now committed" "$(seen backend)" "2026-07-18 10:05"
 
 echo "---"; echo "two-phase-commit: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
