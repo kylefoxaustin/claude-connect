@@ -210,6 +210,44 @@ ticking countdown, the watchdog's idle warning, and any pending request. The
 **GPU tile** additionally shows the GPU name + live `nvidia-smi` utilization bar +
 memory; other resources show a plain lease.
 
+## Agentic request-delivery (orders)
+
+When one session asks another to *produce* something — a rendered image, a report,
+a code change — an **order** makes the handoff a durable object with an explicit,
+logged lifecycle, instead of a freeform "did you get it?" exchange:
+
+```
+PLACED ─► CLAIMED ─► (COOKING) ─► DELIVERED ─► CONFIRMED ─► CLOSED
+                         ▲                └─ REJECTED (reasons, rev++) ─┘
+```
+
+Two properties are load-bearing:
+
+- **DELIVERED means LANDED, not SENT.** `order deliver` reads the declared files
+  back from the delivery address and **refuses** to advance unless they're actually
+  on disk — a service cannot ack a drop that isn't there.
+- **The requester owns the address *and* the acceptance test.** A service delivers
+  to a contract it did not write and **cannot grade (or accept) its own delivery**.
+  A reject bumps a revision and keeps its reason on the order, so a crash-relaunched
+  service sees what was already tried and doesn't repeat it; past a ceiling it pages you.
+
+```bash
+# requester:
+bus.sh order place tipo-btns to:image_gen path:/…/antique \
+  files:btn.png,btn-down.png format:'512 RGBA' accept:'reads cast-in'
+bus.sh order accept tipo-btns          # or: order reject tipo-btns "still reads pasted"
+# service:
+bus.sh order claim tipo-btns eta:8m
+bus.sh order deliver tipo-btns         # verifies the files landed, then acks DELIVERED
+# anyone:
+bus.sh order status tipo-btns          # or: order list
+```
+
+Orders live in `bus-state/coord/orders/<id>.json` (durable — they survive a crash),
+mutated atomically under a `flock`. **Resource-agnostic by construction:** only the
+address type changes (`fs-dir` today; `git-branch` / `bus-reply` / `shared-doc` /
+`board-state` adapters are planned). Slash-command: `/order`.
+
 ## Push gate (approve before code hits a repo)
 
 An optional safety gate: hold every `git push` until you approve it, while leaving

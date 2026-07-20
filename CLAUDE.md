@@ -23,6 +23,61 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.36.0: 📮 **The v4 delivery plane, BUILT and LIVE — the two mail-loss failure modes the
+  fleet review found are now closed in running code — plus the rt1180 lost-`/RC` alarm and
+  image_gen's agentic-delivery `order` primitive.** This is the implementation of
+  `docs/ARCHITECTURE_VISION.md` v4 (the doc a 9-session fleet review approved), shipped and
+  verified on the live fleet. ⭐ **THE CORE: the read-cursor was keyed on the drift-prone cwd TAG
+  and advanced over what a read point EMITTED — two independent ways to lose mail, both measured by
+  the fleet.** (1) 🪪 **MEMBER-KEYED CURSOR (step 5a, the 93/95 KEY-axis fix).** `bus.sh` never sees
+  `session_id` (only hooks do), so a **PID-JOIN bridge (step 3, `bus/pid-join.sh`)** was built
+  first: a hook records `claude_pid → session_id` (the v2.30 provenance pattern), any later `bus.sh`
+  walks its ancestry to the same `claude` and looks it up — **collision-safe by construction**
+  (real pids, not the cwd tag two sessions share). The cursor then keys on the durable **member**
+  (`session_id → member`), migrating a legacy tag cursor on first use and **DUAL-WRITING the current
+  tag file** so Conductor's tag-keyed reads stay correct with *zero* change on its side (the doc's
+  "keep the old path live" migration). member==tag (how Conductor binds today) ⇒ one file, unchanged.
+  (2) ⏳ **TWO-PHASE COMMIT (step 5b, the 91 COMMIT-POINT fix).** 91emulator *measured* a `check`
+  that emitted 200 messages, had its tool result **truncated by the harness to a 2 KB preview**, and
+  advanced the cursor to the file's newest anyway — **193 messages marked read, never received,
+  unreachable forever.** The cursor advanced over what was EMITTED, not RECEIVED. Fix: the advance
+  is a **pending `.delivered` record** (`ts<TAB>promptId`) written when a read point emits, and
+  **committed to `.last-seen` only by the turn's OWN `Stop` hook**, matched on `promptId` — proof
+  the turn ran to completion and the model consumed the emission. A turn that dies before its Stop
+  never commits ⇒ **re-delivered (the at-least-once the doc claimed and lacked)**; a *later* turn's
+  Stop can't commit a dead turn's read (promptId mismatch → discarded). Gated behind a flag
+  (`bus-state/two-phase`, default OFF = the 5a direct-advance) so the cutover is one reversible
+  touch. ⚠️ **THE VERIFY-BEFORE-FLIP DISCIPLINE EARNED ITS KEEP TWICE** (a `stop-debug` log confirms
+  the live contract before the flag flips): the payload parse first got empty stdin (`_hook_pidjoin`
+  consumed it); the "fix" via the pid-join was *also* wrong — **the `Stop` hook is spawned where
+  `_claude_pid` CANNOT walk to `claude`** (a tool call is `bash→claude` hop 2, the hook isn't), so
+  it fell back to the tag = broken for a drifted session. **The correct fix reads `session_id` from
+  the Stop PAYLOAD** (every hook carries it) — the SAME id `check` resolved its member from, so the
+  commit keys under the exact member the record was written under, drift or not. Both bugs were
+  caught by a unit test passing in a tool-call context while the *real hook* failed — the exact class
+  the "re-verify on the installed harness" rule exists for. Verified end-to-end live: `check`
+  deferred (`.delivered` written, `.last-seen` unchanged) → Stop committed on matching promptId
+  (`.last-seen` advanced, `.delivered` gone). 📵 **LOST-`/RC` ALARM (step 6, the rt1180 fix).** The
+  v2.35 collision *detection* catches a duplicate after the fact; this *prevents* it. A session that
+  lost its `/RC` bridge is **alive but invisible in the phone's Claude app** — which is why Kyle
+  assumed rt1180 had crashed and launched a replacement, putting two sessions in one repo. Conductor
+  watches the *process*, so `conductor/deps.py` `compute_lost_rc` raises "alive, lost `/RC` Nm ago —
+  Reconnect, don't relaunch" as a fleet-health alert (desktop + phone), firing **only on lost-it**
+  (was bridged, then not, aged past `bus.lost_rc_alert_minutes`=15) so it isn't noise; the relaunch
+  guard's 409 now NAMES the live session. 📦 **AGENTIC-DELIVERY `order` PRIMITIVE** (image_gen's
+  spec, `~/.claude/proposals/agentic-delivery/SPEC.md`, Kyle-requested). A durable **order** with a
+  verified-landing lifecycle (`PLACED→CLAIMED→(COOKING)→DELIVERED→CONFIRMED/CLOSED`, `+REJECTED→
+  COOKING`), generalizing the ad-hoc `svc-*` handshake. ⭐ **The load-bearing invariant, made
+  structural: `order deliver` READS THE FILES BACK from the address and refuses to say DELIVERED
+  unless they landed** — the verified-send discipline (the bus two-phase commit) one layer up. The
+  **requester owns the address + acceptance test**; a service cannot grade or accept its own delivery
+  (independent-estimator rule). Reject bumps a revision, retains its reason (a crash-relaunched
+  service won't repeat a rejected take), and past a ceiling says "pull Kyle in." `coord/orders/<id>
+  .json`, atomic under flock, whole state machine in one embedded python; `bus.sh order {place|claim|
+  deliver|accept|reject|status|list}` + `/order`. MVP = `fs-dir` only; git-branch/bus-reply/
+  shared-doc/board-state adapters + the "Needs You" surfacing are the next slice. **New tests:**
+  pid-join ×22, cursor-rekey ×16, two-phase-commit ×16, order ×21, lost_rc ×8 (≈358 python + the
+  shell suites). Live-installed to `~/.claude/bin` + the `Stop` hook wired + the two-phase flag ON.
 - ✅ v2.35.0: 🩺 **Fleet-health signals — two failure shapes holobench + image_gen found by LIVING
   them, plus the phantom-stall fix Kyle saw as "1.21 gigawatts."** ⭐ **THE THROUGH-LINE: an unread
   COUNT cannot tell "deliberating" from "has nothing to say" from "is not running" — all three are the
