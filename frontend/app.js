@@ -401,15 +401,25 @@ document.getElementById("pack-btn")?.addEventListener("click", () => {
   requestAnimationFrame(() => redrawLines(state));
 });
 
-document.getElementById("refresh-btn")?.addEventListener("click", async () => {
+document.getElementById("refresh-btn")?.addEventListener("click", async (e) => {
+  // Force a real rescan (POST /api/rescan) — not GET /api/sessions, which only re-fetched the
+  // cached last scan and so did nothing about a stale record. Visible feedback so it never again
+  // looks like it did nothing.
+  const btn = e.currentTarget;
+  const prev = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Rescanning…";
   try {
-    const r = await fetch("/api/sessions");
+    const r = await fetch("/api/rescan", { method: "POST" });
     if (r.ok) {
       const payload = await r.json();
       handleMessage({ kind: "sessions", payload });
     }
-  } catch (e) {
-    console.warn("refresh failed", e);
+  } catch (err) {
+    console.warn("rescan failed", err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prev;
   }
 });
 

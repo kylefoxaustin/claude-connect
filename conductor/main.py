@@ -1537,6 +1537,20 @@ async def get_sessions(request: Request) -> dict[str, Any]:
     return state._sessions_payload()
 
 
+@app.post("/api/rescan")
+async def rescan(request: Request) -> dict[str, Any]:
+    """Force a fresh scan NOW — what the Refresh button actually needs.
+
+    ``GET /api/sessions`` only returns the LAST cached scan, so 'Refresh' was a no-op against a
+    stale record (a session whose window title changed and dropped off the focus radar stayed
+    stale until a full restart). This runs a complete scan pass — re-discovering live processes and
+    re-resolving windows — broadcasts the result to every client, and returns the fresh payload.
+    """
+    state: AppState = request.app.state.cond
+    await state._do_scan()
+    return state._sessions_payload()
+
+
 @app.post("/api/sessions/{session_id}/focus")
 async def focus(session_id: str, request: Request) -> dict[str, Any]:
     state: AppState = request.app.state.cond

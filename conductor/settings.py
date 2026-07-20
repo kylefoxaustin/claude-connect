@@ -115,8 +115,11 @@ class RelaunchSettings:
     settle/gap knobs cover the flaky part: keystrokes only land once Claude's TUI
     is up at a prompt.
     """
-    rc: bool = False                   # inject `/rc` (Claude Code remote-control) on relaunch
-    rename: bool = False               # also inject `/rename <name>` after `/rc`
+    # Default ON (2026-07-20, Kyle): a fleet-recovery relaunch that DOESN'T restore a session's
+    # remote-control + title leaves it looking crashed and off the focus radar — its window title
+    # gets clobbered (e.g. by the agents view) so Conductor can't match it. Restore both on bring-up.
+    rc: bool = True                    # inject `/rc` (Claude Code remote-control) on relaunch
+    rename: bool = True                # also inject `/rename <name>` after `/rc`
     appear_timeout_seconds: float = 40.0   # how long to wait for the new session
     settle_seconds: float = 2.5            # TUI draw delay before first keystroke
     between_seconds: float = 1.0           # gap between injected keystrokes
