@@ -105,6 +105,7 @@ fi
 _BUS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
 if [ -n "$_BUS_DIR" ] && [ -r "$_BUS_DIR/member-registry.sh" ]; then . "$_BUS_DIR/member-registry.sh"; fi
 if [ -n "$_BUS_DIR" ] && [ -r "$_BUS_DIR/pid-join.sh" ]; then . "$_BUS_DIR/pid-join.sh"; fi
+if [ -n "$_BUS_DIR" ] && [ -r "$_BUS_DIR/order.sh" ]; then . "$_BUS_DIR/order.sh"; fi   # agentic delivery
 
 # _hook_pidjoin — from a hook's stdin JSON payload, record claude_pid -> session_id (step 3). The
 # hooks (SessionStart / UserPromptSubmit) are the ONLY place session_id is visible, so they seed the
@@ -2146,6 +2147,17 @@ except Exception:
     # back-compat: /gpu-* is the "gpu" resource
     action="${1:-status}"; shift 2>/dev/null || true
     res_dispatch "$action" gpu "$@"
+    exit $?
+    ;;
+
+  order)
+    # Agentic request-delivery (image_gen's spec): a durable ORDER with a verified-landing lifecycle.
+    # `order deliver` reads the artifact back before it can say DELIVERED — landed, not sent.
+    if ! command -v order_dispatch >/dev/null 2>&1; then
+      echo "bus.sh: order.sh not installed alongside bus.sh — order lifecycle unavailable." >&2; exit 1
+    fi
+    action="${1:-status}"; shift 2>/dev/null || true
+    order_dispatch "$action" "$@"
     exit $?
     ;;
 
