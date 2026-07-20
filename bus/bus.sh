@@ -2111,33 +2111,38 @@ PYEOF
     # Stop hook (v4 §2.3.2, step 5b). Commit the pending .delivered cursor advance IFF it belongs
     # to the turn that just ended (promptId match) — proof the model consumed the emission. A turn
     # that died before its Stop never commits -> re-delivered. Silent, best-effort, ALWAYS exit 0
-    # (a hook that can fail is a hook that can wedge a turn). Reads the Stop payload from stdin:
-    # session_id + transcript_path.
-    _hook_pidjoin   # Stop carries session_id too — keep the join warm
-    if [ ! -t 0 ]; then
-      _SC="$(python3 -c 'import sys,json
-try:
-    d=json.load(sys.stdin); print(d.get("session_id","") or ""); print(d.get("transcript_path","") or "")
-except Exception:
-    print(""); print("")' 2>/dev/null || true)"
-      SC_SID="$(printf '%s\n' "$_SC" | sed -n 1p)"
-      SC_TX="$(printf '%s\n' "$_SC" | sed -n 2p)"
-    fi
-    # member from the payload's session_id (authoritative here); fall back to the tag.
+    # (a hook that can fail is a hook that can wedge a turn).
+    #
+    # Take session_id + transcript_path from the PAYLOAD (read stdin ONCE). A tool call can walk its
+    # ancestry to `claude` (bash->claude), but the Stop hook is spawned in a context that CANNOT — so
+    # the pid-join ancestry walk returns nothing here and the member would silently fall back to the
+    # tag (fine for member==tag, but a DRIFTED session's record, keyed on its member, would never be
+    # found -> never committed). The payload's session_id is reliable and is the SAME id the check
+    # handler resolved its member from (check ran as a tool call), so member_of(payload session_id)
+    # == the member the .delivered record was keyed under, drift or not.
+    _SC_JSON=""
+    [ -t 0 ] || _SC_JSON="$(cat)"
+    SC_SID="$(printf '%s' "$_SC_JSON" | python3 -c 'import sys,json
+try: print(json.load(sys.stdin).get("session_id","") or "")
+except Exception: print("")' 2>/dev/null || true)"
+    SC_TX="$(printf '%s' "$_SC_JSON" | python3 -c 'import sys,json
+try: print(json.load(sys.stdin).get("transcript_path","") or "")
+except Exception: print("")' 2>/dev/null || true)"
+    [ -n "$SC_SID" ] && pidjoin_record "$SC_SID" 2>/dev/null || true   # keep the join warm from the payload
     SC_MEMBER="$TAG"
-    if command -v member_of >/dev/null 2>&1 && [ -n "${SC_SID:-}" ]; then
+    if [ -n "$SC_SID" ] && command -v member_of >/dev/null 2>&1; then
       SC_MEMBER="$(member_of "$SC_SID" "$TAG")"
     fi
-    # current turn marker from the payload transcript; fall back to locating our own.
-    [ -n "${SC_TX:-}" ] || SC_TX="$(_my_transcript)"
+    [ -n "$SC_TX" ] || SC_TX="$(_my_transcript)"
     SC_MARK="$(_turn_marker "${SC_TX:-}")"
     SC_OUT="$(_cursor_commit_delivered "$SC_MEMBER" "${SC_MARK:-}")"
-    # Verification aid (step 5b rollout): when bus-state/stop-debug exists, record that the Stop
-    # hook FIRED and what it saw — the way to confirm the new contract live BEFORE flipping the flag.
-    # A read-only breadcrumb; delete the flag file to silence it. Never affects the commit itself.
+    # Verification aid (step 5b rollout): when bus-state/stop-debug exists, record that the Stop hook
+    # FIRED and what it saw — the way to confirm the new contract live BEFORE flipping the flag. A
+    # read-only breadcrumb; delete the flag file to silence it. Never affects the commit itself.
     if [ -f "$_CURSOR_SD/stop-debug" ]; then
       printf '%s sid=%s tx=%s member=%s marker=%s -> %s\n' \
-        "$(date '+%F %T')" "${SC_SID:-?}" "$([ -n "${SC_TX:-}" ] && echo yes || echo NONE)" \
+        "$(date '+%F %T')" "${SC_SID:-?}" \
+        "$([ -n "${SC_TX:-}" ] && echo yes || echo NONE)" \
         "$SC_MEMBER" "${SC_MARK:-?}" "$SC_OUT" >> "$_CURSOR_SD/stop-debug.log" 2>/dev/null || true
     fi
     exit 0
