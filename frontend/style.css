@@ -1644,7 +1644,9 @@ body.link-mode .tile:hover { border-color: rgba(63, 185, 80, 0.55); }
   font-size: 13px;
 }
 .link-bar {
-  background: rgba(63, 185, 80, 0.10);
+  /* OPAQUE (green tint over the panel bg) — it's position:sticky, so a translucent
+     background let scrolled-past tiles bleed through and made the text unreadable. */
+  background: linear-gradient(rgba(63, 185, 80, 0.14), rgba(63, 185, 80, 0.14)), var(--bg-panel);
   border: 1px solid rgba(63, 185, 80, 0.45);
   position: sticky;
   top: 58px;
@@ -1679,7 +1681,7 @@ body.link-mode .tile:hover { border-color: rgba(63, 185, 80, 0.55); }
   flex-direction: column;
   align-items: stretch;
   gap: 8px;
-  background: rgba(63, 185, 80, 0.07);
+  background: linear-gradient(rgba(63, 185, 80, 0.10), rgba(63, 185, 80, 0.10)), var(--bg-panel);
   border: 1px solid rgba(63, 185, 80, 0.35);
 }
 .autonomy-title { font-size: 11px; color: var(--text-dim); line-height: 1.4; }
