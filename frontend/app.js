@@ -425,6 +425,14 @@ document.getElementById("refresh-btn")?.addEventListener("click", async (e) => {
 
 window.addEventListener("resize", () => requestAnimationFrame(() => redrawLines(state)));
 
+// Re-anchor the lines on SCROLL. The .lines-overlay is position:fixed and endpoints use
+// viewport coords (getBoundingClientRect), so as the board scrolls beneath the stationary overlay
+// the tiles move but the lines don't — they drift off their anchors (glaring with the whole fleet
+// linked). capture:true catches scroll from ANY scroller (scroll events don't bubble); passive +
+// rAF keep it cheap. Same reason resize redraws.
+window.addEventListener("scroll", () => requestAnimationFrame(() => redrawLines(state)),
+  { capture: true, passive: true });
+
 // Self-heal on wake. A backgrounded tab — especially on a phone — can have its
 // WebSocket killed WITHOUT the `close` event ever firing, so the reconnect loop never
 // starts and the board silently freezes on stale state (the push inbox showing no
