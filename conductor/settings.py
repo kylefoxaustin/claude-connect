@@ -115,11 +115,17 @@ class RelaunchSettings:
     settle/gap knobs cover the flaky part: keystrokes only land once Claude's TUI
     is up at a prompt.
     """
-    # Default ON (2026-07-20, Kyle): a fleet-recovery relaunch that DOESN'T restore a session's
-    # remote-control + title leaves it looking crashed and off the focus radar — its window title
-    # gets clobbered (e.g. by the agents view) so Conductor can't match it. Restore both on bring-up.
+    # rc default ON (2026-07-20, Kyle): a recovery should restore remote-control so a resumed
+    # session is drivable + visible in the phone app again (that's the real "came back crashed-
+    # looking" fix; focus itself is title-independent — it uses the tilix TILIX_ID).
+    #
+    # rename default OFF: auto-`/rename` proved harmful — (1) its keystroke injection is timing-
+    # flaky, so the leading chars get dropped and the remainder lands as a stray MESSAGE (`/rename
+    # other:91emulator` -> "ame other:91emulator" typed at a session, 2026-07-20); and (2) it
+    # renames to the derived TAG, clobbering a session's own nicer title (`Project 91qemu`). The
+    # session's `/rename` title survives `--continue` on its own; Conductor shouldn't force one.
     rc: bool = True                    # inject `/rc` (Claude Code remote-control) on relaunch
-    rename: bool = True                # also inject `/rename <name>` after `/rc`
+    rename: bool = False               # inject `/rename <name>` after `/rc` (opt-in; see above)
     appear_timeout_seconds: float = 40.0   # how long to wait for the new session
     settle_seconds: float = 2.5            # TUI draw delay before first keystroke
     between_seconds: float = 1.0           # gap between injected keystrokes
