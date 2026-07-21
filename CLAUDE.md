@@ -23,6 +23,34 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.36.1: 🐛 **A UX-fix patch, all found by USING the freshly-shipped fleet — plus the
+  through-line back to the crash: a bad clock was silently knocking `/rc` off restarted sessions.**
+  (1) 🔄 **REFRESH DIDN'T.** The "Force rescan" button only did `GET /api/sessions` — which returns
+  the *cached* last scan — so against a stale session record it did nothing, and only a full restart
+  ever fixed it (a session whose window title got clobbered dropped off the focus radar and stayed
+  there). New **`POST /api/rescan`** runs a real scan pass + re-broadcasts; the button posts it with
+  a "Rescanning…" state so it never again looks inert. (2) ♻️ **RECOVERY RELAUNCH: `rc` DEFAULT ON,
+  `rename` STAYS OFF.** A resumed session that didn't get its remote-control back looked crashed +
+  fell off the focus radar; `rc` on restores it. But default-rename-ON *backfired* live — the
+  `/rename` keystroke injection dropped its leading chars so `/rename other:91emulator` landed as a
+  stray **message** ("ame other:91emulator") at the session, AND it renamed to the ugly tag,
+  clobbering the session's own `Project 91qemu` title — so `rename` reverted to OFF (focus is
+  title-independent via TILIX_ID anyway; the rescan re-links a stale record). (3) 🟢 **"LET THEM
+  TALK" BANNER WAS SEE-THROUGH** — `position:sticky` + a 10%-opaque bg let scrolled tiles bleed
+  through and made it unreadable; painted the green tint over the opaque `--bg-panel` (theme-safe).
+  (4) 📏 **CONNECTOR LINES LOST THEIR ANCHORS ON SCROLL** — the `.lines-overlay` is `position:fixed`
+  and endpoints use viewport coords, but `redrawLines` never fired on scroll; added a capture-phase,
+  passive, rAF scroll listener (capture:true because scroll doesn't bubble). (5) 🕐 **THE `/rc`
+  THROUGH-LINE.** A user hit "restarted sessions can't turn on `/rc`, never seen before" — and it's
+  the SAME RTC skew from the crash forensics: `/rc` needs a claude.ai OAuth token, Claude Code
+  validates it against the **system clock**, and while the clock was wrong a *restarting* session's
+  token looked expired so `/rc` silently vanished from its command list (already-running sessions
+  kept their in-memory auth). Fixing the clock (done for the crash) + `/login` fixes it; now a
+  Troubleshooting entry. (6) 📖 **README fresh-eyes pass** (cold-newcomer agent): the rc-default
+  contradiction fixed across README + `settings.example.toml` + code; the 🩺 fleet-health section
+  went 3→4 signals (the lost-`/RC` alarm it had omitted); the `order` primitive linked from the bus
+  docs; the safety para now notes the decision-queue answer-injection. Docs + frontend + one backend
+  endpoint; no code-behavior change beyond the relaunch default + the rescan endpoint.
 - ✅ v2.36.0: 📮 **The v4 delivery plane, BUILT and LIVE — the two mail-loss failure modes the
   fleet review found are now closed in running code — plus the rt1180 lost-`/RC` alarm and
   image_gen's agentic-delivery `order` primitive.** This is the implementation of

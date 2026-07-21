@@ -78,11 +78,13 @@ end_fadeout_seconds = 30.0
 #
 # Optionally, once the session is up, inject:
 #   rc     — `/rc` = Claude Code's /remote-control (makes the session drivable
-#            from a browser/phone; needs a qualifying plan + /login). Off by
-#            default; turn on if you want relaunched sessions remote-controllable.
-#   rename — `/rename <name>` after /rc (usually unneeded — --continue keeps the
-#            prior session name).
-rc = false
+#            from a browser/phone; needs a qualifying plan + /login). ON by
+#            default, so a relaunched session comes back remote-controllable and
+#            visible in the phone app instead of looking crashed.
+#   rename — `/rename <name>` after /rc. OFF by default: its injection is timing-
+#            flaky (leading chars can drop and land as a stray message) and it
+#            overwrites a session's own title (--continue keeps the prior name).
+rc = true
 rename = false
 # How long to wait for the relaunched session to appear before giving up:
 appear_timeout_seconds = 40.0
