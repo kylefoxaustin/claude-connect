@@ -662,8 +662,16 @@ async function sessionAction(s, verb, btn) {
     if (verb === "reconnect") {
       btn.textContent = r.state === "connected" ? "On your phone ✓"
         : r.state === "queued" ? "Waits for idle…" : "Sent — connecting…";
+    } else if (r.injected) {
+      btn.textContent = "Woken ✓";
+    } else if (r.reason === "asking") {
+      // Don't say "Sent" when nothing was — this session is asking YOU. Route to the answer.
+      btn.textContent = "Asking you →";
+      showPane("inbox");
+    } else if (r.reason === "busy") {
+      btn.textContent = "Busy — soon";   // it'll read mail when it pauses; we didn't interrupt
     } else {
-      btn.textContent = r.injected ? "Woken ✓" : "Sent";
+      btn.textContent = "Couldn't reach it";
     }
   } catch (e) {
     btn.textContent = "Failed";

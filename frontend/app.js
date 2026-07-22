@@ -1475,6 +1475,35 @@ window.reclaimResource = async function reclaimResource(name, btn) {
   }
 };
 
+// A minimal ephemeral toast — feedback where the click happened, so an action that was
+// intentionally declined (a wake into a busy/asking session) never reads as "broken".
+// Optional action button (label + handler) for "go do the thing instead".
+function showToast(msg, opts = {}) {
+  const { kind = "info", actionLabel, onAction, ttl = 6000 } = opts;
+  let host = document.getElementById("toast-host");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "toast-host";
+    document.body.appendChild(host);
+  }
+  const t = document.createElement("div");
+  t.className = `toast toast-${kind}`;
+  const span = document.createElement("span");
+  span.textContent = msg;
+  t.appendChild(span);
+  const kill = () => { t.classList.add("toast-out"); setTimeout(() => t.remove(), 250); };
+  if (actionLabel && onAction) {
+    const b = document.createElement("button");
+    b.className = "toast-action";
+    b.textContent = actionLabel;
+    b.onclick = () => { try { onAction(); } finally { kill(); } };
+    t.appendChild(b);
+  }
+  host.appendChild(t);
+  setTimeout(kill, ttl);
+}
+window.showToast = showToast;
+
 window.requestCheck = async function requestCheck(sessionId, status) {
   const guard = (window.conductorPrefs && window.conductorPrefs.busClickGuard) || "confirm-busy";
   const busy = sessionLooksBusy(status);
@@ -1503,10 +1532,19 @@ window.requestCheck = async function requestCheck(sessionId, status) {
     // bumps <tag>.last-seen. If injection failed (no X / window not found),
     // warn so the click doesn't look silently broken.
     if (body.injected === false) {
-      console.warn(
-        "could not type /msg-check into the session window",
-        body.wmctrl_available ? "(window not found)" : "(wmctrl/xdotool unavailable)",
-      );
+      // Don't fail silently — say WHY, and offer the right next action.
+      if (body.reason === "asking") {
+        showToast("This session is asking YOU a question — answering here would corrupt it.",
+          { kind: "warn", actionLabel: "Focus it to answer",
+            onAction: () => window.requestFocus(sessionId) });
+      } else if (body.reason === "busy") {
+        showToast("It's busy working — I didn't interrupt it. It'll read messages the moment it pauses.",
+          { kind: "info" });
+      } else {
+        showToast(body.wmctrl_available
+          ? "Couldn't reach the session's window (not found)."
+          : "Can't type into the window — xdotool/wmctrl unavailable.", { kind: "warn" });
+      }
     }
   } catch (e) {
     console.warn("check error", e);

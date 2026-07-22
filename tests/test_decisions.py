@@ -239,7 +239,44 @@ def test_a_session_without_a_question_is_still_reachable(tmp_path, monkeypatch):
     monkeypatch.setattr("conductor.main.send_keys_to_session",
                         lambda **kw: sent.append(kw) or True)
 
-    ok = asyncio.run(app._inject_text(_rec(str(tmp_path / "proj")), "/msg-check", "test"))
+    # A DIFFERENT session (distinct id + cwd) than the one with the open question — real
+    # session_ids are unique, so it matches neither the decision's id nor its cwd.
+    ok = asyncio.run(app._inject_text(
+        _rec(str(tmp_path / "proj"), session_id="s2"), "/msg-check", "test"))
 
     assert ok is True
     assert len(sent) == 1
+
+
+# --- session->decision lookup (the #2 UX fix: a wake refused because a session is asking
+#     YOU should route you to answer, not silently no-op). Reuses _app/_rec above. -----
+def test_decision_for_matches_by_session_id_then_cwd(tmp_path):
+    app = _app(tmp_path)
+    rec = _rec(str(tmp_path / "proj"), session_id="sX")
+    # session_id join wins even when the decision's cwd differs (session cd'd away)
+    app.decisions = [{"session_id": "sX", "cwd": str(tmp_path / "proj" / "sub"),
+                      "questions": [{"question": "Reboot?"}]}]
+    d = app._decision_for(rec)
+    assert d is not None and d["session_id"] == "sX"
+    assert app._has_open_picker(rec) is True
+
+
+def test_decision_for_falls_back_to_cwd(tmp_path):
+    app = _app(tmp_path)
+    rec = _rec(str(tmp_path / "proj"), session_id="sX")
+    app.decisions = [{"session_id": "", "cwd": str(tmp_path / "proj"),
+                      "questions": [{"question": "Q?"}]}]
+    assert app._decision_for(rec) is not None
+    assert app._has_open_picker(rec) is True
+
+
+def test_decision_for_none_when_not_asking(tmp_path):
+    app = _app(tmp_path)
+    rec = _rec(str(tmp_path / "proj"), session_id="sX")
+    app.decisions = []
+    assert app._decision_for(rec) is None
+    assert app._has_open_picker(rec) is False
+    # a decision for a DIFFERENT session/cwd doesn't match this one
+    app.decisions = [{"session_id": "other", "cwd": str(tmp_path / "elsewhere"),
+                      "questions": [{"question": "Q?"}]}]
+    assert app._decision_for(rec) is None

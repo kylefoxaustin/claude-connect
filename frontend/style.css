@@ -472,6 +472,21 @@ body.link-mode .tile-actions { display: none; }
 .alert-quiet strong { color: #e5c07b; }
 .alert-lostrc strong { color: #e5c07b; }   /* alive but lost /RC = amber: reconnect, don't relaunch */
 .alert-webpush strong { color: #e06c75; }  /* paging is down = red: you won't be alerted */
+
+/* Ephemeral toasts — feedback where the click happened (a declined wake isn't "broken"). */
+#toast-host { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+  display: flex; flex-direction: column; gap: 8px; z-index: 9999; align-items: center;
+  pointer-events: none; }
+.toast { pointer-events: auto; max-width: min(560px, 92vw); display: flex; align-items: center;
+  gap: 12px; padding: 10px 14px; border-radius: 10px; font-size: 13px; line-height: 1.4;
+  color: var(--text); background: var(--bg-panel); border: 1px solid var(--border);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.4); animation: toast-in 0.18s ease-out; }
+.toast-warn { border-color: #e5c07b; }
+.toast-info { border-color: var(--bus-color); }
+.toast-out { opacity: 0; transform: translateY(6px); transition: opacity 0.25s, transform 0.25s; }
+.toast-action { flex: none; background: var(--bus-color); color: #1a1030; border: none;
+  border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 600; cursor: pointer; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; } }
 @media (pointer: coarse) { .fleet-alerts { margin: 8px; padding: 10px 14px; } }
 .push-req { display: flex; align-items: center; gap: 10px; padding: 3px 0; }
 .push-req-meta { font-size: 12px; color: var(--text); flex: 1; min-width: 0; }

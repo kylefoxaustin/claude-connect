@@ -1001,13 +1001,28 @@ class AppState:
         guard — which is *exactly* the case where this fires. So it needs its own guard,
         keyed on a signal that means what it says.
         """
+        return self._decision_for(rec) is not None
+
+    def _decision_for(self, rec: SessionRecord) -> dict[str, Any] | None:
+        """The pending decision (open picker) for this session — or None. Prefers the
+        session_id join (exact — the record is literally ``<session_id>.json``), then falls
+        back to a cwd match, mirroring ``_session_for_decision`` in the other direction. This
+        is the session→decision lookup behind both the picker guard and the UI's "go answer
+        it" routing, so it must catch a picker even when the session cd'd away from its cwd."""
         if not self.decisions:      # the overwhelmingly common case — nobody is asking
-            return False
+            return None
+        sid = getattr(rec, "session_id", "") or ""
+        if sid:
+            for d in self.decisions:
+                if d.get("session_id") == sid:
+                    return d
         target = os.path.realpath(getattr(rec, "project_dir", "") or "")
-        return bool(target) and any(
-            d.get("cwd") and os.path.realpath(d["cwd"]) == target
-            for d in self.decisions
-        )
+        if target:
+            for d in self.decisions:
+                cwd = d.get("cwd")
+                if cwd and os.path.realpath(cwd) == target:
+                    return d
+        return None
 
     def _tool_in_flight(self, rec: SessionRecord) -> bool:
         """Is this session on a tool that may be blocked at a permission prompt right now?
@@ -1635,11 +1650,26 @@ async def check_bus(session_id: str, request: Request) -> dict[str, Any]:
     # autonomous wake. This path used to bypass both, and it was one of the ways a keystroke
     # could land in a permission prompt.
     injected = await state._inject_text(rec, "/msg-check", "manual ping (check bus)")
-    return {
+    resp: dict[str, Any] = {
         "injected": injected,
         "tag": rec.tag,
         "wmctrl_available": wmctrl_available(),
     }
+    if not injected:
+        # Say WHY the keystroke didn't land, so the click isn't a silent no-op. "asking" =
+        # an open picker (typing would corrupt its question — go ANSWER it); "busy" = a tool
+        # in flight (don't interrupt; it'll read mail when it pauses); else the window just
+        # couldn't be reached.
+        if state._has_open_picker(rec):
+            resp["reason"] = "asking"
+            d = state._decision_for(rec)
+            if d:
+                resp["decision_session_id"] = d.get("session_id")
+        elif state._tool_in_flight(rec):
+            resp["reason"] = "busy"
+        else:
+            resp["reason"] = "no_window"
+    return resp
 
 
 @app.post("/api/sessions/{session_id}/reconnect")
