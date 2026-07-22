@@ -1732,6 +1732,43 @@ try:
 except OSError:
     sys.exit(0)
 
+# --- rotation catch-up (Kyle, 2026-07-22) ------------------------------------------------
+# When the bus rotates, the messages between our watermark and the NEW log's start move into
+# a messages-YYYY-MM.md archive. A plain `check` reads only the current log, so it would
+# ADVANCE THE WATERMARK PAST those archived messages (to the newest it DID show) and mark them
+# read WITHOUT EVER SHOWING THEM — silent mail loss, exactly what Kyle noticed. Detect the gap
+# (our watermark is older than the oldest message now in the current log ⇒ a rotation happened
+# since we last read) and merge the still-unread archive messages into `msgs`, so the SAME
+# filter/cap/advance below shows them and never skips them. Self-limiting: once shown, the
+# watermark advances past them, so the next check won't re-dump the archive.
+cur_oldest = msgs[0]["ts"] if msgs else ""
+if last and cur_oldest and last < cur_oldest:
+    import glob
+    seen_keys = {(m["ts"], m["sender"], "\n".join(m["lines"])) for m in msgs}
+    def _add_arch(mm, out):
+        if mm and mm["ts"] > last:
+            k = (mm["ts"], mm["sender"], "\n".join(mm["lines"]))
+            if k not in seen_keys:
+                seen_keys.add(k); mm["from_archive"] = True; out.append(mm)
+    arch = []
+    for af in sorted(glob.glob(os.path.join(os.path.dirname(path), "messages-*.md"))):
+        try:
+            with open(af, encoding="utf-8", errors="replace") as f:
+                acur = None
+                for line in f:
+                    line = line.rstrip("\n")
+                    hm = HDR.match(line)
+                    if hm:
+                        _add_arch(acur, arch)
+                        acur = {"ts": hm.group(1), "sender": hm.group(2), "lines": [line]}
+                    elif acur is not None:
+                        acur["lines"].append(line)
+                _add_arch(acur, arch)
+        except OSError:
+            continue
+    if arch:
+        msgs = sorted(msgs + arch, key=lambda m: m["ts"])
+
 def targets(msg):
     """Plain names a message is addressed to. Empty set == broadcast."""
     for ln in msg["lines"][1:]:
@@ -1779,6 +1816,11 @@ if not sel:
     print("No new messages since your last check (%s)." % (last or "ever"))
     print("(`--all-tags` = new traffic addressed to anyone · `--all` = full recent tail)")
     sys.exit(0)            # nothing shown -> do NOT advance the watermark
+
+_caught = sum(1 for m in sel if m.get("from_archive"))
+if _caught:
+    print("📁 %d message(s) below are from BEFORE the last bus rotation (recovered from the "
+          "archive) — caught up so nothing was lost across the rotation.\n" % _caught)
 
 for m in sel:
     print("\n".join(m["lines"]).rstrip())
@@ -1912,6 +1954,37 @@ try:
     if cur: msgs.append(cur)
 except OSError:
     sys.exit(0)
+
+# Rotation catch-up (Kyle, 2026-07-22) — same as `check`: a returning session digesting after
+# an absence is EXACTLY when a rotation may have happened, so pull the unread archive messages
+# in when our watermark is behind the current log's start, or catchup would skip them too.
+cur_oldest = msgs[0]["ts"] if msgs else ""
+if last and cur_oldest and last < cur_oldest:
+    import glob
+    seen_keys = {(m["ts"], m["sender"], "\n".join(m["lines"])) for m in msgs}
+    def _add_arch(mm, out):
+        if mm and mm["ts"] > last:
+            k = (mm["ts"], mm["sender"], "\n".join(mm["lines"]))
+            if k not in seen_keys:
+                seen_keys.add(k); mm["from_archive"] = True; out.append(mm)
+    arch = []
+    for af in sorted(glob.glob(os.path.join(os.path.dirname(path), "messages-*.md"))):
+        try:
+            with open(af, encoding="utf-8", errors="replace") as f:
+                acur = None
+                for line in f:
+                    line = line.rstrip("\n")
+                    hm = HDR.match(line)
+                    if hm:
+                        _add_arch(acur, arch)
+                        acur = {"ts": hm.group(1), "sender": hm.group(2), "lines": [line]}
+                    elif acur is not None:
+                        acur["lines"].append(line)
+                _add_arch(acur, arch)
+        except OSError:
+            continue
+    if arch:
+        msgs = sorted(msgs + arch, key=lambda m: m["ts"])
 
 def first_body(msg):
     for ln in msg["lines"][1:]:
