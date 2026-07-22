@@ -330,6 +330,13 @@ class AppState:
         # about it, so a still-unanswered question gets a reminder (hourly) and not a
         # nag (every scan tick).
         self._notified: dict[str, float] = {}
+        # Set once if web-push can't run (its optional deps — pywebpush/cryptography —
+        # aren't installed in the service venv). A MISSING DEPENDENCY won't fix itself
+        # mid-run, so we log it ONCE and stop trying, rather than raising every scan
+        # tick — which (a) killed phone paging silently for hours [ollama_95_neutron
+        # blocked 6h, 2026-07-22] and (b) spammed the scan-loop error channel, masking
+        # real scan errors. An observability feature must never break the fleet.
+        self._webpush_broken = False
         self.token_accountant = TokenAccountant()             # per-session token tally
         self._scan_misses: dict[str, int] = {}              # consecutive scans a session was absent
         self.recent_events: deque[BusEvent] = deque(maxlen=RECENT_EVENTS_MAX)
@@ -815,6 +822,8 @@ class AppState:
         that reason: a third alarm is a deliberate choice, and it only fires on the case a human
         genuinely must clear (relaunch the session).
         """
+        if self._webpush_broken:
+            return                     # deps missing — already logged once; don't retry-spam
         dead = [s for s in self._silent if s.get("dead")] if self.settings.bus.page_dead_readers else []
         items = notifiable(self.decisions, self._push_requests, dead)
         # Forget items that are no longer pending FIRST, so the same question asked again
@@ -826,7 +835,19 @@ class AppState:
         subs = await asyncio.to_thread(read_subs, self.coord_root)
         if not subs:
             return                     # no phone registered — nothing to do, and not an error
-        keys = await asyncio.to_thread(load_or_create_keys, self.coord_root)
+        try:
+            keys = await asyncio.to_thread(load_or_create_keys, self.coord_root)
+        except ImportError as e:
+            # pywebpush/cryptography not in the service venv. This CANNOT self-heal mid-run,
+            # so disable web-push and log ONCE — never raise into the scan loop (paging is an
+            # accelerator, never the only door: the item stays in the /m inbox regardless).
+            self._webpush_broken = True
+            log.error(
+                "web-push disabled — missing dependency (%s). Phone paging is OFF until "
+                "the service venv has pywebpush installed (pip install pywebpush) and "
+                "Conductor is restarted. Blocked questions/pushes remain visible in /m.", e,
+            )
+            return
         subject = vapid_subject(socket.gethostname())
         now = time.time()
         for item in pending:
