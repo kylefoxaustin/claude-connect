@@ -42,6 +42,7 @@
         <button id="compact-btn" title="Collapse all tiles to a compact size (keeps them all visible)">⊟ Compact</button>
         <button id="pack-btn" title="Pull all tiles together into a tidy grid — your own layout is kept and restored when you turn this off">⊞ Tidy</button>
         <button id="relaunch-btn" title="Bring dormant sessions back (fleet recovery after a reboot or crash)">⟳ Relaunch</button>
+        <button id="reconstitute-btn" title="Rebuild the fleet from the disaster-recovery backup — clone repos + resume sessions on a new machine">🧯 Reconstitute</button>
         <button id="waiting-btn" title="Who is blocked on whom — bottlenecks, deadlocks, and the longest waits">⏳ Blocked</button>
         <button id="link-btn" title="Let these Claudes talk to each other unattended for a while — click tiles to select, then set a duration">🔗 Let them talk</button>
         <button id="groups-btn" title="Manage groups">▦ Groups</button>
@@ -251,6 +252,38 @@
           <div class="relaunch-actions">
             <span class="relaunch-status" id="relaunch-status"></span>
             <button id="relaunch-go" class="relaunch-go">Relaunch selected</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reconstitute: rebuild the fleet from the DR roster on a new machine. -->
+    <div id="reconstitute-modal" class="modal hidden">
+      <div class="modal-card">
+        <header>
+          <h2>🧯 Reconstitute the fleet</h2>
+          <button id="reconstitute-modal-close">×</button>
+        </header>
+        <div class="relaunch-body">
+          <p class="settings-hint">
+            Reads the disaster-recovery roster and, per session, what it takes to bring it back:
+            <strong>present</strong> (relaunch) · <strong>clone</strong> (git clone, then relaunch) ·
+            <strong>transcript-only</strong> (no repo — resume the conversation in a fresh dir).
+            Already-<strong>live</strong> sessions are shown but not selectable. Extract the
+            <code>fleet-transcripts</code> asset first (RESTORE.md) or a session resumes blank —
+            missing transcripts are flagged.
+          </p>
+          <div class="relaunch-controls">
+            <label class="relaunch-all-label">
+              <input type="checkbox" id="reconstitute-all" />
+              <strong>Select all recoverable</strong>
+            </label>
+            <span id="reconstitute-summary" class="relaunch-status"></span>
+          </div>
+          <ul id="reconstitute-list" class="relaunch-list"></ul>
+          <div class="relaunch-actions">
+            <span class="relaunch-status" id="reconstitute-status"></span>
+            <button id="reconstitute-go" class="relaunch-go">Reconstitute selected</button>
           </div>
         </div>
       </div>

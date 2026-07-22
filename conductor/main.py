@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import getpass
 import logging
+import json
 import os
 import shutil
 import socket
@@ -93,6 +94,8 @@ from .scanner import (
     parse_session_meta,
     tag_to_state_basename,
 )
+from .reconstitute import build_plan
+from .roster import build_roster
 from .settings import DEFAULT_SETTINGS_PATH, Settings, dump_settings, load_settings
 from .windows import (
     focus_session,
@@ -2675,6 +2678,98 @@ async def relaunch_batch(payload: RelaunchBatchRequest, request: Request) -> dic
     asyncio.create_task(state.relaunch_batch(items, rc, rename))
     log.info("relaunch-batch: accepted %d (skipped %d)", len(items), len(skipped))
     return {"launching": len(items), "skipped": skipped}
+
+
+# --- Reconstitute (DR capstone): rebuild the fleet from a roster on a new machine --------
+def _reconstitute_roster(state: AppState, roster_path: str | None) -> dict:
+    """Load the roster to plan from: an explicit path, else the restored fleet-backup's
+    fleet-roster.json, else generate one live. On a fresh box the fleet-backup copy is the
+    real one; on the live box a fresh generation matches the current fleet."""
+    candidates = []
+    if roster_path:
+        candidates.append(Path(os.path.expanduser(roster_path)))
+    candidates.append(Path(os.path.expanduser("~/Documents/GitHub/fleet-backup/fleet-roster.json")))
+    for c in candidates:
+        try:
+            if c.is_file():
+                return json.loads(c.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+    # Fall back to a live-generated roster (the current machine's fleet).
+    projects_root = state.settings.scanner.claude_home_path / "projects"
+    return build_roster(projects_root, state.settings.bus.tags)
+
+
+def _live_cwds(state: AppState) -> set[str]:
+    return {os.path.realpath(r.project_dir) for r in state.sessions.values()
+            if r.status != Status.ENDED}
+
+
+@app.get("/api/reconstitute")
+async def reconstitute_plan(request: Request, roster: str | None = None) -> dict[str, Any]:
+    """The fleet-rebuild plan: per roster session, what it takes to bring it back
+    (live / present / clone / transcript-only / blocked) + blockers. Read-only."""
+    state: AppState = request.app.state.cond
+    r = await asyncio.to_thread(_reconstitute_roster, state, roster)
+    return build_plan(r, _live_cwds(state))
+
+
+class ReconstituteRequest(BaseModel):
+    cwd: str                     # the roster session's cwd (the join key)
+    roster: str | None = None    # optional explicit roster path
+
+
+@app.post("/api/reconstitute/execute")
+async def reconstitute_execute(payload: ReconstituteRequest, request: Request) -> dict[str, Any]:
+    """Bring ONE session back: clone its repo if the cwd is absent, then relaunch
+    ``claude --continue`` in a tracked window with ``/rc``. Refuses if a session is
+    already live there, or if there's nothing to restore into.
+
+    Transcript PLACEMENT is a prerequisite (extract the fleet-transcripts asset first, per
+    RESTORE.md) — the plan flags a missing transcript; we don't silently launch a blank.
+    """
+    state: AppState = request.app.state.cond
+    r = await asyncio.to_thread(_reconstitute_roster, state, payload.roster)
+    target = os.path.realpath(payload.cwd)
+    entry = next((e for e in r.get("sessions", [])
+                  if os.path.realpath(e.get("cwd") or "") == target), None)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="that cwd is not in the roster")
+    from .reconstitute import plan_for
+    plan = plan_for(entry, _live_cwds(state))
+
+    if plan["status"] == "live":
+        raise HTTPException(status_code=409, detail="a session is already running there")
+    if plan["status"] == "blocked":
+        raise HTTPException(status_code=409,
+                            detail="nothing to restore into (no repo, no cwd, no transcript)")
+
+    cwd = payload.cwd
+    cloned = False
+    if plan["status"] == "clone":
+        if os.path.exists(cwd):
+            raise HTTPException(status_code=409, detail="cwd already exists — not cloning over it")
+        remote = entry.get("git_remote")
+        args = ["git", "clone", remote, cwd]
+        proc = await asyncio.to_thread(
+            lambda: subprocess.run(args, capture_output=True, text=True, timeout=600))
+        if proc.returncode != 0:
+            raise HTTPException(status_code=500, detail=f"git clone failed: {proc.stderr.strip()[:300]}")
+        cloned = True
+        branch = entry.get("git_branch")
+        if branch:
+            await asyncio.to_thread(
+                lambda: subprocess.run(["git", "-C", cwd, "checkout", branch],
+                                       capture_output=True, text=True, timeout=60))
+    elif plan["status"] == "transcript-only":
+        os.makedirs(cwd, exist_ok=True)
+
+    name = (entry.get("member") or os.path.basename(cwd.rstrip("/")) or "session")
+    ok, detail = state.relaunch_parked(cwd, name, rc=True, rename=False)
+    if not ok:
+        raise HTTPException(status_code=500, detail=detail)
+    return {"launched": True, "cwd": cwd, "name": name, "cloned": cloned,
+            "status": plan["status"], "blockers": plan["blockers"], "detail": detail}
 
 
 class BusMessage(BaseModel):

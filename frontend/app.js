@@ -1284,6 +1284,133 @@ window.requestFocus = async function requestFocus(sessionId) {
   }
 };
 
+// --- Reconstitute (DR capstone): rebuild the fleet from the roster ------------
+// Reads /api/reconstitute (the plan per session) and, for the ones you tick, runs
+// clone → --continue. Read-only until you press go; already-live sessions can't be
+// selected; missing-transcript / dirty-repo blockers are shown, not hidden.
+const reconModal = document.getElementById("reconstitute-modal");
+const reconList = document.getElementById("reconstitute-list");
+const reconAllCb = document.getElementById("reconstitute-all");
+const reconGo = document.getElementById("reconstitute-go");
+const reconStatus = document.getElementById("reconstitute-status");
+const reconSummary = document.getElementById("reconstitute-summary");
+let reconPlan = null;
+
+const RECON_BADGE = {
+  live: ["live", "recon-b-live"],
+  present: ["relaunch", "recon-b-present"],
+  clone: ["clone repo", "recon-b-clone"],
+  "transcript-only": ["resume (no repo)", "recon-b-tx"],
+  blocked: ["can't recover", "recon-b-blocked"],
+};
+
+function syncReconSelection() {
+  const boxes = [...reconList.querySelectorAll("input[type=checkbox]:not(:disabled)")];
+  const sel = boxes.filter((b) => b.checked);
+  reconAllCb.checked = boxes.length > 0 && sel.length === boxes.length;
+  reconAllCb.indeterminate = sel.length > 0 && sel.length < boxes.length;
+  reconGo.disabled = sel.length === 0;
+  reconGo.textContent = sel.length ? `Reconstitute ${sel.length}` : "Reconstitute selected";
+}
+
+function renderReconList() {
+  reconList.replaceChildren();
+  if (!reconPlan) { reconStatus.textContent = "Loading the recovery plan…"; return; }
+  const sessions = reconPlan.sessions || [];
+  const c = reconPlan.counts || {};
+  reconSummary.textContent =
+    `${reconPlan.session_count} sessions · ${c.live || 0} live · `
+    + `${(c.present || 0) + (c.clone || 0) + (c["transcript-only"] || 0)} recoverable`
+    + (c.blocked ? ` · ${c.blocked} blocked` : "");
+  for (const s of sessions) {
+    const li = document.createElement("li");
+    li.className = "recon-item";
+    const [label, cls] = RECON_BADGE[s.status] || [s.status, ""];
+    const selectable = s.recoverable && s.status !== "live";
+    const cb = document.createElement("input");
+    cb.type = "checkbox"; cb.value = s.cwd; cb.disabled = !selectable;
+    cb.addEventListener("change", syncReconSelection);
+    const body = document.createElement("div");
+    body.className = "recon-body";
+    const repo = s.git_remote ? escapeHtml(s.git_remote)
+      : (s.is_repo ? "(local repo)" : "(no repo)");
+    const blockers = (s.blockers || []).map((b) =>
+      `<div class="recon-blocker">⚠ ${escapeHtml(b)}</div>`).join("");
+    body.innerHTML =
+      `<div class="recon-head"><span class="recon-badge ${cls}">${label}</span> `
+      + `<strong>${escapeHtml(s.tag || s.cwd)}</strong> `
+      + `<span class="recon-sub">${fmtTok(s.tokens_out)} out · ${fmtAge(s.last_active)}</span></div>`
+      + `<div class="recon-sub">${escapeHtml(s.cwd)}</div>`
+      + `<div class="recon-sub">${repo}${s.git_dirty ? " · ⚠ dirty" : ""}`
+      + `${s.transcripts_present ? "" : " · ⚠ no transcript on disk"}</div>`
+      + blockers;
+    const lbl = document.createElement("label");
+    lbl.className = "recon-label" + (selectable ? "" : " recon-disabled");
+    lbl.append(cb, body);
+    li.append(lbl);
+    reconList.append(li);
+  }
+  syncReconSelection();
+}
+
+async function openReconstitute() {
+  reconStatus.textContent = "";
+  reconAllCb.checked = false; reconAllCb.indeterminate = false;
+  reconPlan = null;
+  renderReconList();
+  reconModal.classList.remove("hidden");
+  try {
+    const r = await fetch("/api/reconstitute");
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    reconPlan = await r.json();
+    renderReconList();
+  } catch (err) {
+    reconStatus.textContent = `Couldn't load the recovery plan: ${err.message}`;
+  }
+}
+document.getElementById("reconstitute-btn")?.addEventListener("click", openReconstitute);
+document.getElementById("reconstitute-modal-close")
+  ?.addEventListener("click", () => reconModal.classList.add("hidden"));
+reconModal?.addEventListener("click", (e) => {
+  if (e.target === reconModal) reconModal.classList.add("hidden");
+});
+reconAllCb?.addEventListener("change", () => {
+  const boxes = [...reconList.querySelectorAll("input[type=checkbox]:not(:disabled)")];
+  boxes.forEach((b) => { b.checked = reconAllCb.checked; });
+  syncReconSelection();
+});
+
+reconGo?.addEventListener("click", async () => {
+  const cwds = [...reconList.querySelectorAll("input[type=checkbox]:checked")].map((c) => c.value);
+  if (!cwds.length) return;
+  if (!window.confirm(
+    `Reconstitute ${cwds.length} session${cwds.length > 1 ? "s" : ""}?\n\n`
+    + `Each will clone its repo (if missing) and open 'claude --continue' in a tracked `
+    + `window. They run one at a time. On THIS machine most are already present — this is `
+    + `built for a fresh box after a restore.`)) return;
+  reconGo.disabled = true;
+  let done = 0, failed = 0;
+  // Staggered — one at a time, so clones + spawns don't stampede the box.
+  for (const cwd of cwds) {
+    reconStatus.textContent = `Reconstituting ${done + failed + 1}/${cwds.length}…`;
+    try {
+      const r = await fetch("/api/reconstitute/execute", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd }),
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.detail || `HTTP ${r.status}`);
+      done++;
+    } catch (err) {
+      failed++;
+      console.warn("reconstitute failed for", cwd, err.message);
+    }
+  }
+  reconStatus.textContent = `Done — launched ${done}`
+    + (failed ? `, ${failed} failed (see console)` : "") + ". They appear as they come up.";
+  setTimeout(() => { openReconstitute(); }, 2500);  // refresh the plan (statuses change)
+});
+
 // Is this Claude actively working? jsonl touched in the last 30s (active/warm).
 // Best-effort: a session blocked on a quiet long tool call can still read idle.
 function sessionLooksBusy(status) {
