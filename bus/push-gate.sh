@@ -114,6 +114,31 @@ if [ -f "$TOK" ]; then
   # work" on the one control he relies on. A consumed-but-unreported approval is the worst thing
   # this gate can do.
   if [ "$now" -lt "$exp" ]; then
+    # Don't BURN a valid approval on a provable NO-OP push (image_gen, 2026-07-21).
+    # The gate fires PRE-push, so it normally can't tell "Everything up-to-date" from
+    # a real push and consumes the one-shot token either way — wasting a scarce human
+    # click and training toward "just approve again". For a BARE `git push` /
+    # `git push <remote>` (no branch, refspec, or flags), the only thing it CAN push
+    # is the current branch to its upstream; if HEAD is not ahead of @{u}, zero refs
+    # move. Allow WITHOUT consuming so the approval survives for the real push.
+    # Anything fancier — explicit ref, --tags/--delete/--force, or no upstream (@{u}
+    # errors → count empty) — falls through and consumes as before. Conservative: this
+    # only ever PRESERVES an already-granted token on a guaranteed no-op; it never
+    # newly-allows an unapproved push (no token still means DENY below).
+    _pargs="$(printf '%s' "$CMD" | grep -Eo '\bpush\b[^;&|]*' | head -1 | sed -E 's/^push[[:space:]]*//')"
+    _bare=0
+    if [ -z "$_pargs" ]; then _bare=1; else case "$_pargs" in
+      -* ) _bare=0 ;;                # a flag (--force/--tags/--delete/-f…)
+      *[[:space:]]* ) _bare=0 ;;     # more than one token (remote + branch/refspec)
+      *:* ) _bare=0 ;;               # a refspec / delete syntax
+      * ) _bare=1 ;;                 # a single remote name only (e.g. `origin`)
+    esac; fi
+    if [ "$_bare" = 1 ]; then
+      _ahead="$(git -C "$PUSHDIR" rev-list --count '@{u}..HEAD' 2>/dev/null || true)"
+      if [ "$_ahead" = 0 ]; then
+        exit 0                                   # provable no-op → ALLOW, token PRESERVED
+      fi
+    fi
     rm -f "$TOK"                                 # consume a VALID token — one push per approval
     rm -f "$REQUESTS/$KEY" 2>/dev/null || true   # clear the (now-satisfied) request
     exit 0                                       # ALLOW (proceeds via normal perms)
