@@ -1073,14 +1073,22 @@ function renderWaiting() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ nodes: c.nodes }),
           });
-          if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+          if (!r.ok) {
+            const err = new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+            err.status = r.status;
+            throw err;
+          }
           const d = await r.json();
           tell.textContent = d.pinged.length
             ? `✅ Told them · woke ${d.pinged.join(", ")}`
             : "✅ Told them — they'll see it when they surface";
         } catch (e) {
-          tell.textContent = `Failed: ${e.message}`;
-          tell.disabled = false;
+          // These 409/429s are benign, not failures: the stall resolved itself, or they
+          // were already told. Say the true thing, don't cry "Failed" (and on a resolved
+          // stall there's nothing left to click, so leave the button spent).
+          if (e.status === 409) { tell.textContent = "Already resolved"; }
+          else if (e.status === 429) { tell.textContent = "Already told them"; tell.disabled = false; }
+          else { tell.textContent = `Failed: ${e.message}`; tell.disabled = false; }
         }
       };
       row.appendChild(tell);
@@ -1450,7 +1458,7 @@ window.decidePush = async function decidePush(key, action, btn) {
     // the next scan re-broadcasts the (now shorter) request list and re-renders
   } catch (err) {
     if (btn) { btn.disabled = false; btn.textContent = action === "approve" ? "Approve push" : "Dismiss"; }
-    window.alert(`Could not ${action} push: ${err.message}`);
+    showToast(`Couldn't ${action} the push: ${err.message}`, { kind: "warn" });
   }
 };
 
@@ -1471,7 +1479,9 @@ window.reclaimResource = async function reclaimResource(name, btn) {
     if (btn) btn.textContent = msg;
   } catch (err) {
     if (btn) { btn.disabled = false; btn.textContent = "reclaim"; }
-    window.alert(`Could not reclaim "${name}": ${err.message}`);
+    // The 409 reason ("owner's session is live / not offline long enough") IS the point —
+    // show it, so a refused reclaim explains itself instead of just bouncing.
+    showToast(`Can't reclaim "${name}": ${err.message}`, { kind: "warn" });
   }
 };
 
