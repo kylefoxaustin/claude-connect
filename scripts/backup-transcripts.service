@@ -1,0 +1,12 @@
+[Unit]
+Description=Fleet DR — daily transcript backup (zstd archive -> fleet-backup release asset)
+Documentation=https://github.com/kylefoxaustin/fleet-backup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# IO-heavy (tar ~1 GB + upload ~300 MB) — run gently so it never disturbs the fleet.
+ExecStart=%h/Documents/GitHub/claude-connect/scripts/backup-transcripts.sh
+Nice=15
+IOSchedulingClass=idle

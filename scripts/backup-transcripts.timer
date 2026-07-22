@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily fleet transcript backup (DR)
+
+[Timer]
+# Once a day, off-peak. Persistent catches up a missed run after downtime; the randomized
+# delay avoids colliding with the hourly state snapshot on the dot.
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+RandomizedDelaySec=30min
+
+[Install]
+WantedBy=timers.target
