@@ -346,3 +346,5 @@ body {
 .soft-await[open] > summary::after { content: " ▴"; }
 .soft-await > summary:hover { color: var(--text); }
 .soft-await > .row { margin-top: 8px; }
+
+.res-reclaim { margin-top: 8px; }

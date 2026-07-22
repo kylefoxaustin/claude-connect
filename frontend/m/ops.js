@@ -1051,7 +1051,53 @@ function resourceRow(r) {
     (detail ? `<div class="row-sub">${detail}</div>` : "") +
     jobLine + (r.smi ? gpuMeta(r.smi) : "") + queueLine +
     `</div>`;
+  // An orphan lease (owner's session offline) is the one resource state a HUMAN must clear —
+  // the desktop had a reclaim button, the phone didn't (you saw the warning, couldn't act).
+  if (lease && lease.orphan_suspect) {
+    const b = document.createElement("button");
+    b.className = "btn btn-sm res-reclaim";
+    b.textContent = "Reclaim";
+    b.onclick = () => reclaimResource(r.name, b);
+    el.querySelector(".row-body").appendChild(b);
+  }
   return el;
+}
+
+// Hand an orphaned lease to the next in queue (or free it). Two-tap confirm (mobile-friendly,
+// no jarring dialog). The backend refuses (409) unless IT flagged the lease as an orphan —
+// and if it refuses, we show WHY (owner may be live) rather than a bare "Failed".
+async function reclaimResource(name, btn) {
+  if (btn.dataset.armed !== "1") {
+    btn.dataset.armed = "1";
+    btn.textContent = "Tap again to reclaim";
+    setTimeout(() => {
+      if (btn.dataset.armed === "1") { btn.dataset.armed = ""; btn.textContent = "Reclaim"; }
+    }, 3000);
+    return;
+  }
+  btn.dataset.armed = "";
+  btn.disabled = true;
+  btn.textContent = "Reclaiming…";
+  try {
+    const d = await api(`/api/resources/${encodeURIComponent(name)}/reclaim`, { method: "POST" });
+    const res = String(d.result || "");
+    btn.textContent = res.startsWith("offered:") ? `Handed to ${bare(res.slice(8))}` : "Freed";
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = "Reclaim";
+    const row = btn.closest(".res-row");
+    if (row) {
+      let note = row.querySelector(".reclaim-note");
+      if (!note) {
+        note = document.createElement("div");
+        note.className = "row-sub res-warn reclaim-note";
+        row.querySelector(".row-body").appendChild(note);
+      }
+      // The 409 reason ("owner's session is live / not offline long enough") is the point.
+      note.textContent = e.status === 409 ? e.message : `Couldn't reclaim: ${e.message}`;
+    }
+  }
+  setTimeout(refresh, 1500);
 }
 
 function gpuMeta(smi) {
