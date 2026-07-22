@@ -83,6 +83,23 @@ NAME="$(basename "$REPO")"
 KEY="$(printf '%s' "$REPO" | tr '/ ' '__' | sed 's/^_*//')"
 now="$(date +%s)"
 
+# ---- exemption: the private disaster-recovery backup repo auto-pushes ------------
+# Kyle's policy (2026-07-21): fleet-backup is EXEMPT from the gate. Its entire value
+# is being CURRENT + off-box; a snapshot that needs a manual tap every hour goes
+# stale and fails exactly when the disaster hits (the "notification must never be the
+# only door" trap, applied to backups). There is no product code here to protect.
+# SPOOF-RESISTANT BY DESIGN: we match the repo's ORIGIN REMOTE against the real
+# GitHub slug, NOT the directory basename — a stray `mkdir fleet-backup` with no
+# remote (or a different remote) is NOT exempt and still hits the gate.
+FLEET_BACKUP_SLUG="${FLEET_BACKUP_SLUG:-kylefoxaustin/fleet-backup}"
+_origin="$(git -C "$PUSHDIR" remote get-url origin 2>/dev/null || true)"
+# owner/repo from any remote form: https://host/…, git@host:…, ssh://…/… (drop .git)
+_slug="$(printf '%s' "$_origin" | sed -E 's#^(https?://[^/]+/|ssh://[^/]+/|[^/@]+@[^:]+:)##; s#\.git$##; s#/+$##')"
+if [ -n "$_slug" ] && [ "$_slug" = "$FLEET_BACKUP_SLUG" ]; then
+  rm -f "$REQUESTS/$KEY" 2>/dev/null || true   # never leave a stale request for an exempt repo
+  exit 0                                        # ALLOW — private backup, auto-push is the point
+fi
+
 TOK="$TOKENS/$KEY"
 if [ -f "$TOK" ]; then
   # The token is `key=value` lines. It USED to be a bare epoch, and a leftover one must
