@@ -23,6 +23,49 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.37.0: 🧯 **DISASTER RECOVERY — the fleet can now be rebuilt on a new machine — plus a
+  6-hour-silence root-cause fix, a "silent no-op is a lie of omission" UX arc, and a bus mail-loss
+  fix.** Prompted by scary reboots (Kyle: *"if Skippy dies, how do I get ALL of this — the Claudes
+  included — back up on a NEW PC, picking which ones from the archives?"*). ⭐ **THE MODEL that makes
+  it tractable: a Claude session = cwd/repo + transcript (`claude --continue` fuel) + bus identity;
+  reconstitute = restore those three, then `--continue`** — which is Conductor's dormant-dock
+  relaunch with clone-repo + drop-transcript prepended. 📇 **THE ROSTER** (`conductor/roster.py` +
+  `scripts/fleet-roster.py`) is the pick-list + source of truth: per session cwd, git remote/branch/
+  HEAD (+**dirty** flag), tag/member, transcripts, tokens. 💾 **THE BACKUP** is a PRIVATE repo
+  (`github.com/kylefoxaustin/fleet-backup`, Kyle's choice over rsync/drive): image_gen owns the
+  hourly `state/` snapshot (bin/, bus-state/ = the brain, 528 memory files, commands, systemd units)
+  + the 135 GB model manifest + the snapshot timer; claude-connect owns the roster, **`RESTORE.md`**
+  (the bare-metal runbook, live on fleet-backup), and — next — the Conductor Reconstitute screen.
+  🔐 **fleet-backup is EXEMPT from the push-gate** (matched on the origin SLUG, spoof-resistant — a
+  stray `mkdir fleet-backup` is NOT exempt) so the hourly timer auto-pushes; a private backup whose
+  value is being CURRENT must never need a manual tap. 🧹 **DIRTY-REPO NUDGE** (`scripts/dr-nudge.py`,
+  Kyle's policy: commit+push over tar-the-tree) — finds LIVE sessions whose repo is dirty and posts
+  one `[operator]` reminder (throttled). 📼 **TRANSCRIPT SLICE** (`scripts/backup-transcripts.sh`) —
+  transcripts (~1 GB, files exceed GitHub's 100 MB cap) ride as a zstd RELEASE ASSET (293 MB), not
+  git blobs. ⚠️ **THE 6-HOUR SILENCE, ROOT-CAUSED.** ollama_95_neutron sat blocked on a human
+  decision (*"Reboot the board?"*) for 6 hours; the phone's Claude app said "archived" and wake taps
+  were ignored. Cause: the durable Conductor service ran from `.venv`, which was **missing
+  `cryptography`** (a pywebpush dep), so `_notify()` threw `ModuleNotFoundError` **every scan tick** —
+  phone paging was silently DEAD, and the error spam masked real scan errors. Fixed the env (installed
+  the dep) AND hardened the code: a missing web-push dep now **degrades gracefully** (disable + log
+  once), never crashing the scan loop — *an observability feature must never break the fleet.*
+  ⭐ **"A SILENT NO-OP IS A LIE OF OMISSION" — a 6-part UX arc** so the app never again goes quiet when
+  something's wrong: (1) 🔕 **surface when Conductor CAN'T page your phone** (the meta-fix — a red
+  Fleet-health banner + phone banner when paging is broken/unsubscribed-with-pending); (2) a wake into
+  a session with an **open picker** says *"it's asking YOU — answer it"* (+Focus/Needs-You route)
+  instead of silently swallowing; (3) a wake into a **busy** session says *"working, I didn't
+  interrupt — it'll read mail when it pauses"*; (4) answering a **dead** session offers **Relaunch**,
+  not a false *"Already answered"*; (5) guarded refusals (unstall/reclaim/push) **explain themselves**
+  (toast, not `alert()`/"Failed:"); (6) 📵 **phone reclaim** for an orphan lease (was desktop-only).
+  📮 **BUS ROTATION MAIL-LOSS FIX** (Kyle noticed sessions miss messages after a rotation): rotation
+  MOVES unread mail between a reader's watermark and the new log's start into an archive, and the
+  first post-rotation `check` advanced the watermark PAST it without ever showing it — **silent loss.**
+  Now `check`/`catchup` **detect the gap and recover the unread archive messages** (automatic — the
+  loss happens on the first auto-check, before a human could run a catch-up command — and
+  self-limiting). 🔐 **push-gate no-op fix**: a bare `git push` that moves zero refs no longer BURNS a
+  one-shot approval. **New tests:** roster ×10, gate-exempt ×7, no-op-token ×11, webpush-degraded ×10,
+  answer-endpoint ×3, decision-correlation ×3, rotation-catchup ×15 (shell). Live-verified: paging
+  rang the phone; transcripts + coordination layer are off-box; the rotation fix is installed fleet-wide.
 - ✅ v2.36.1: 🐛 **A UX-fix patch, all found by USING the freshly-shipped fleet — plus the
   through-line back to the crash: a bad clock was silently knocking `/rc` off restarted sessions.**
   (1) 🔄 **REFRESH DIDN'T.** The "Force rescan" button only did `GET /api/sessions` — which returns

@@ -1,3 +1,3 @@
 """Conductor — local dashboard for Claude Code sessions."""
 
-__version__ = "2.36.1"
+__version__ = "2.37.0"
