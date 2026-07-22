@@ -108,6 +108,7 @@ function render() {
     `<span><b>${c.idle}</b> idle</span>`,
   ].filter(Boolean).join("");
 
+  renderWpBanner();
   renderInbox();
   renderFleet();
   renderAutonomy();
@@ -125,6 +126,22 @@ function render() {
   setBadge("auto", ops.autonomy.length, "badge badge-ok");
   setBadge("resources", resAlert, "badge badge-warn");
   $("inbox-n").textContent = c.needs_you ? `· ${c.needs_you}` : "";
+}
+
+// Paging-health banner. The 2026-07-22 incident: notifications were dead for 6h and
+// nothing said so, so a Claude sat blocked on a decision the whole time. If we can't
+// page this phone, the phone should say so — the inbox is still the door, but silence
+// must never read as "nothing needs you".
+function renderWpBanner() {
+  const el = $("wp-banner");
+  if (!el) return;
+  const wp = ops.webpush;
+  if (!wp || wp.healthy !== false) { el.hidden = true; el.textContent = ""; return; }
+  const fix = wp.reason === "no_subscription"
+    ? "Turn on notifications below, or watch Needs You."
+    : "Server-side notifications are down — watch Needs You in the meantime.";
+  el.hidden = false;
+  el.innerHTML = `<b>🔕 Notifications aren't reaching this phone.</b> ${esc(wp.detail || "")} ${esc(fix)}`;
 }
 
 function setBadge(pane, n, cls) {

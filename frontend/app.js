@@ -264,6 +264,7 @@ function handleMessage({ kind, payload }) {
       state.silent = payload.silent || [];
       state.collisions = payload.collisions || [];
       state.lost_rc = payload.lost_rc || [];
+      state.webpush = payload.webpush || null;
       sessionCountEl.textContent = `${state.sessions.length} session${state.sessions.length === 1 ? "" : "s"}`;
       renderGrid(state);
       renderFleetAlerts(state);
@@ -1360,11 +1361,26 @@ function renderFleetAlerts(state) {
   const silent = state.silent || [];
   const dead = silent.filter((s) => s.dead);
   const quiet = silent.filter((s) => !s.dead);   // addressed + silent but a process is still alive
-  if (!collisions.length && !lostRc.length && !dead.length && !quiet.length) {
+  const wp = state.webpush;                       // can we page the phone? (2026-07-22)
+  const wpBroken = wp && wp.healthy === false;
+  if (!collisions.length && !lostRc.length && !dead.length && !quiet.length && !wpBroken) {
     box.hidden = true; box.replaceChildren(); return;
   }
   box.hidden = false;
   const rows = [];
+  if (wpBroken) {
+    // An app that can't alert you should at least TELL you it can't — the 2026-07-22
+    // incident (paging dead 6h, a Claude blocked the whole time, nothing said so).
+    const row = document.createElement("div");
+    row.className = "alert-row alert-webpush";
+    const fix = wp.reason === "no_subscription"
+      ? `Turn on notifications for this phone (Notifications panel), or watch the inbox.`
+      : `Server-side notifications are down. Blocked questions and pushes are still in the inbox below.`;
+    row.innerHTML =
+      `<strong>🔕 Phone notifications aren't reaching you</strong> — ${escapeHtml(wp.detail || "")}`
+      + `<div class="alert-sub" style="margin-top:4px">${fix}</div>`;
+    rows.push(row);
+  }
   for (const c of collisions) {
     const row = document.createElement("div");
     row.className = "alert-row alert-collision";
@@ -1420,6 +1436,7 @@ function renderFleetAlerts(state) {
   if (lostRc.length) parts.push(`${lostRc.length} lost /RC`);
   if (dead.length) parts.push(`${dead.length} dead reader${dead.length > 1 ? "s" : ""}`);
   if (quiet.length) parts.push(`${quiet.length} unresponsive`);
+  if (wpBroken) parts.push(`notifications down`);
   title.textContent = `🩺 Fleet health — ${parts.join(" · ")}`;
   box.replaceChildren(title, ...rows);
 }

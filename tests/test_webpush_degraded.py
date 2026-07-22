@@ -56,6 +56,36 @@ def test_missing_dep_disables_webpush_without_raising(monkeypatch, caplog):
     assert subs_calls["n"] == 1                          # never called read_subs again
 
 
+def test_status_dependency_missing_is_unhealthy(monkeypatch):
+    app = AppState(load_settings())
+    app._webpush_broken = True
+    st = app._webpush_status()
+    assert st["healthy"] is False and st["reason"] == "dependency_missing"
+
+
+def test_status_no_subscription_is_ok_when_nothing_pending(monkeypatch):
+    app = AppState(load_settings())
+    app.decisions = []
+    monkeypatch.setattr(m, "read_subs", lambda _r: [])       # no phone registered
+    st = app._webpush_status()
+    assert st["healthy"] is True and st["reason"] == "no_subscription"
+
+
+def test_status_no_subscription_ALARMS_when_something_needs_you(monkeypatch):
+    app = AppState(load_settings())
+    app.decisions = [_decision()]                            # a blocked question exists
+    monkeypatch.setattr(m, "read_subs", lambda _r: [])       # but no phone to page
+    st = app._webpush_status()
+    assert st["healthy"] is False and st["reason"] == "no_subscription"
+
+
+def test_status_ok_when_subscribed_and_deps_present(monkeypatch):
+    app = AppState(load_settings())
+    monkeypatch.setattr(m, "read_subs", lambda _r: [{"endpoint": "e", "keys": {}}])
+    st = app._webpush_status()
+    assert st["healthy"] is True and st["reason"] == "ok"
+
+
 def test_healthy_webpush_is_untouched(monkeypatch):
     """When the deps ARE present, _notify proceeds normally (no false-disable)."""
     app = AppState(load_settings())

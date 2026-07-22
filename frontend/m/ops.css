@@ -113,6 +113,10 @@ body {
   background: var(--row); border: 1px solid var(--line); border-radius: 12px;
 }
 .card-hot { border-color: var(--warn); }
+.wp-banner { margin: 8px 12px 0; padding: 10px 12px; border-radius: 10px; font-size: 14px;
+  line-height: 1.4; color: var(--text); background: rgba(248,81,73,0.14);
+  border: 1px solid var(--bad); }
+.wp-banner b { color: var(--bad); }
 .card-head {
   display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
   margin-bottom: 4px;

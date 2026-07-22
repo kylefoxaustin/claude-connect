@@ -471,6 +471,7 @@ body.link-mode .tile-actions { display: none; }
 .alert-dead strong { color: #e06c75; }
 .alert-quiet strong { color: #e5c07b; }
 .alert-lostrc strong { color: #e5c07b; }   /* alive but lost /RC = amber: reconnect, don't relaunch */
+.alert-webpush strong { color: #e06c75; }  /* paging is down = red: you won't be alerted */
 @media (pointer: coarse) { .fleet-alerts { margin: 8px; padding: 10px 14px; } }
 .push-req { display: flex; align-items: center; gap: 10px; padding: 3px 0; }
 .push-req-meta { font-size: 12px; color: var(--text); flex: 1; min-width: 0; }

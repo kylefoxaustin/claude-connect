@@ -811,6 +811,33 @@ class AppState:
                 return s
         return None
 
+    def _webpush_status(self) -> dict[str, Any]:
+        """Can phone paging actually reach a device right now? Surfaced to the UI so it
+        can warn — an app that can't alert you should at least TELL you it can't. The
+        2026-07-22 incident: paging was dead 6h (a missing dep) and nothing said so, so a
+        Claude sat blocked on a human decision the whole time. ``healthy=False`` means a
+        page that should fire cannot; the reason drives the message.
+        """
+        if self._webpush_broken:
+            return {"healthy": False, "reason": "dependency_missing",
+                    "detail": ("Phone notifications are offline — a server dependency is "
+                               "missing (install it and restart Conductor). Blocked "
+                               "questions and pushes are still in the inbox.")}
+        try:
+            subs = read_subs(self.coord_root)
+        except Exception:  # noqa: BLE001 — a status probe must never raise
+            subs = []
+        if not subs:
+            # No device registered. This is only an ALARM when something needs you RIGHT
+            # NOW — otherwise it just means you never turned notifications on, which is
+            # a choice, not a fault.
+            pending = bool(notifiable(self.decisions, self._push_requests))
+            return {"healthy": not pending, "reason": "no_subscription",
+                    "detail": ("Something needs you, but no phone is set to receive "
+                               "notifications — enable them, or use the inbox.") if pending
+                              else "Notifications aren't set up on any phone."}
+        return {"healthy": True, "reason": "ok", "detail": ""}
+
     async def _notify(self) -> None:
         """Ring Kyle's phone about the things that stop work dead: a Claude blocked on a question,
         a gated ``git push``, and — only if ``[bus].page_dead_readers`` is on — a DEAD reader
@@ -1476,6 +1503,7 @@ class AppState:
             "silent": self._silent,          # dead-reader alarm (holobench)
             "collisions": self._collisions,  # two live sessions, one member (holobench)
             "lost_rc": self._lost_rc,        # alive but lost /RC (§3.4.1, rt1180)
+            "webpush": self._webpush_status(),  # can we actually page the phone? (2026-07-22)
             "fadeout_seconds": self.settings.ui.end_fadeout_seconds,
             "wmctrl_available": wmctrl_available(),
         }
@@ -2342,6 +2370,7 @@ async def get_ops(request: Request) -> dict[str, Any]:
         "lost_rc": state._lost_rc,        # live-but-lost-/RC alarm (§3.4.1, rt1180)
         "services": state.services.get("services", []),
         "resources": state.resources.get("resources", []),
+        "webpush": state._webpush_status(),   # can we actually page this phone? (2026-07-22)
         "counts": {
             "needs_you": (len(state.decisions) + len(state._push_requests)
                           + len(state._push_proposals) + len(state._persist_requests)),
