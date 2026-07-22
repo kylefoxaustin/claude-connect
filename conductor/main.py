@@ -1977,13 +1977,29 @@ async def answer_decision(session_id: str, payload: DecisionAnswer,
     if rec_dec is None:
         # Almost always benign: Kyle answered it at the keyboard between the phone
         # rendering it and him tapping. Say so plainly rather than 500-ing.
-        raise HTTPException(status_code=409,
-                            detail="that question is no longer pending — it was already answered")
+        raise HTTPException(status_code=409, detail={
+            "code": "already_answered",
+            "message": "that question is no longer pending — it was already answered",
+        })
 
     session = state._session_for_decision(rec_dec)
     if session is None:
-        raise HTTPException(status_code=409,
-                            detail="the session that asked is no longer running")
+        # The asking session died while its picker was up. Answering would type into the
+        # void — so don't; tell the user it isn't running and hand back the parked project
+        # so the UI can offer a one-tap relaunch instead of a dead end (#4).
+        proj = None
+        cwd = rec_dec.get("cwd")
+        if cwd:
+            rp = os.path.realpath(cwd)
+            for p in state.parked:
+                if os.path.realpath(getattr(p, "project_dir", "") or "") == rp:
+                    proj = p.project
+                    break
+        raise HTTPException(status_code=409, detail={
+            "code": "session_not_running",
+            "message": "the session that asked isn't running — relaunch it, then answer",
+            "project": proj,
+        })
 
     try:
         keys = plan_keystrokes(rec_dec["questions"], payload.answers)

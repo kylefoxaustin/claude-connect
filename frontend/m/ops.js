@@ -40,8 +40,11 @@ async function api(path, opts = {}) {
   if (!res.ok) {
     let detail = res.statusText;
     try { detail = (await res.json()).detail || detail; } catch { /* not json */ }
-    const e = new Error(detail);
+    // detail may be a plain string or a structured {code, message, ...} — keep both so
+    // callers can branch on a code (e.g. "session_not_running" → offer relaunch).
+    const e = new Error(typeof detail === "string" ? detail : (detail.message || res.statusText));
     e.status = res.status;
+    e.detail = detail;
     throw e;
   }
   return res.status === 204 ? null : res.json();
@@ -258,10 +261,27 @@ function decisionCard(d) {
       await refresh();
     } catch (e) {
       answering.delete(d.session_id);
-      // The common case is benign — he answered it at the keyboard a moment ago.
       const b = el.querySelector(".btn-primary");
-      if (b) b.textContent = e.status === 409 ? "Already answered" : `Failed: ${e.message}`;
-      setTimeout(refresh, 1500);
+      const code = e.detail && e.detail.code;
+      if (code === "session_not_running") {
+        // #4: the asking session died — don't pretend it was answered. Offer a relaunch
+        // (once it's back and re-asks, it can be answered) instead of a dead end.
+        if (b) {
+          b.textContent = "Not running — Relaunch";
+          b.disabled = false;
+          const proj = e.detail.project;
+          b.onclick = proj
+            ? () => relaunchParked({ project: proj }, b)
+            : () => showPane("fleet");
+        }
+      } else if (e.status === 409) {
+        // Benign: answered at the keyboard a moment ago.
+        if (b) b.textContent = "Already answered";
+        setTimeout(refresh, 1500);
+      } else {
+        if (b) b.textContent = `Failed: ${e.message}`;
+        setTimeout(refresh, 1500);
+      }
     }
   });
   el.appendChild(submit);
