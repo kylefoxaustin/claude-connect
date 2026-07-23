@@ -372,3 +372,11 @@ body {
 .rb-transcriptonly { background: var(--warn); }
 .rb-blocked { background: var(--bad); color: #fff; }
 .recon-blk { color: var(--warn); font-size: 12px; margin-top: 4px; white-space: normal; }
+
+/* @mention bar: type "@session message" to deliver a live prompt to that session. */
+.atbar { display: flex; gap: 8px; margin: 0 0 6px; }
+.atbar-in { flex: 1; min-width: 0; padding: 11px 12px; font-size: 15px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--row); color: var(--text); }
+.atbar-in::placeholder { color: var(--dim); }
+.atbar .btn-sm { min-height: 0; }
+.atbar-status { color: var(--dim); font-size: 12px; min-height: 16px; margin: 0 2px 8px; }

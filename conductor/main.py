@@ -307,6 +307,11 @@ class AppState:
         # 'tell this session its push was approved' — delivered only when it's QUIET,
         # because a busy session swallows injected keystrokes without a trace.
         self._push_notices: dict[str, dict[str, Any]] = {}
+        # Remote prompts: a message the operator @-addressed to a session (from the phone, or via
+        # the prompt-route hook), delivered into that session's terminal as a prompt — but only
+        # when it's QUIET, same discipline as the push notices (a busy session eats keystrokes).
+        self._remote_prompts: dict[str, dict[str, Any]] = {}
+        self._remote_prompt_seq = 0
         # 'reconnect this session's remote control' (/rc), queued when the target is busy —
         # an /rc injected mid-turn queues in the TUI and silently fails to bridge, so we fire
         # it only once the session is idle, exactly like the push notices above.
@@ -623,6 +628,7 @@ class AppState:
         await self._wake_unread_recipients()
         await self._wake_retractions()
         await self._deliver_push_notices()
+        await self._deliver_remote_prompts()
         await self._deliver_rc_reconnects()
         await asyncio.to_thread(prune_ledger, self.settings.bus.state_dir_resolved)
         await self._notify()
@@ -798,6 +804,21 @@ class AppState:
         return next((s for s in self.sessions.values()
                      if _bare_tag(s.tag) == _bare_tag(owner) and s.status != Status.ENDED), None)
 
+    def _resolve_live_by_name(self, name: str) -> SessionRecord | None:
+        """Resolve a FRIENDLY name the operator typed (``claude-connect``) to a live session,
+        matching either the full bare tag (``other:claude-connect``) or its ident (the part
+        after ``other:``). Used by remote prompt routing, where you @-mention the short name."""
+        want = _bare_tag(name).lower()
+        want_id = want[6:] if want.startswith("other:") else want
+        for s in self.sessions.values():
+            if s.status == Status.ENDED:
+                continue
+            bare = _bare_tag(s.tag).lower()
+            ident = bare[6:] if bare.startswith("other:") else bare
+            if want in (bare, ident) or want_id in (bare, ident):
+                return s
+        return None
+
     def _live_session_for_service(self, name: str) -> SessionRecord | None:
         """Resolve a service by its registered NAME (``image_gen``) to the live session
         running it. Unlike a lease owner (``bus.sh`` writes those already tag-shaped), a
@@ -935,6 +956,33 @@ class AppState:
             if not sent:
                 self._push_notices[key] = note     # inject failed -> put it back to retry
 
+    _REMOTE_PROMPT_TTL_S = 900.0        # 15 min — a remote prompt that never lands goes stale
+
+    async def _deliver_remote_prompts(self) -> None:
+        """Deliver operator @-addressed prompts into the target session's terminal — but only
+        once it is QUIET (a busy Claude eats injected keystrokes). Same claim-before-await
+        discipline as the push notices, so a prompt is delivered at most once; attributed to the
+        human in the provenance ledger, since the operator genuinely composed it."""
+        if not self._remote_prompts:
+            return
+        now = time.time()
+        for key, rp in list(self._remote_prompts.items()):
+            if now - rp["queued"] > self._REMOTE_PROMPT_TTL_S:
+                del self._remote_prompts[key]
+                log.info("remote prompt to [%s] expired undelivered", rp.get("tag"))
+                continue
+            rec = self._resolve_live_by_name(rp["tag"])
+            if rec is None or rec.status in _BUSY_STATUSES:
+                continue                           # gone / busy -> keep, retry once live+quiet
+            if self._remote_prompts.pop(key, None) is None:
+                continue                           # another pass already claimed it
+            sent = await self._inject_text(
+                rec, rp["message"], f"remote prompt from {rp.get('source', 'operator')}",
+                actor=rp.get("actor", "human"),
+            )
+            if not sent:
+                self._remote_prompts[key] = rp     # picker/tool guard refused -> retry once quiet
+
     async def _deliver_rc_reconnects(self) -> None:
         """Fire a queued ``/rc`` reconnect the moment its session is idle.
 
@@ -1053,13 +1101,19 @@ class AppState:
         # clock granularity between the hook's clock and the transcript's.
         return rec.last_activity_at <= m["started_epoch"] + 1
 
-    async def _inject_text(self, rec: SessionRecord, text: str, why: str) -> bool:
+    async def _inject_text(self, rec: SessionRecord, text: str, why: str,
+                           *, actor: str = "conductor") -> bool:
         """Type ``text`` into a live session's terminal (raises its window).
 
         THE CHOKE POINT. Attestation lives here, not at the call sites — a new injection path
         added next month cannot forget to attest, OR to honour the modal guards, if it cannot
         inject without passing through here. Call-site guarding is the version that rots (the
         ping paths bypassed this and were exactly the ones that could type into a prompt).
+
+        ``actor`` names who drove this injection for the provenance ledger — "conductor" for an
+        automated nudge, "human:<ip>" for a message the operator actually composed (a remote
+        prompt). It's the same distinction the decision-answer path records: the ledger must say
+        who really typed, since the keystrokes land as a user turn either way.
         """
         if self._has_open_picker(rec):
             log.info("NOT typing at [%s] (%s) — it has a question open and the picker "
@@ -1076,7 +1130,7 @@ class AppState:
         await asyncio.to_thread(
             attest, self.settings.bus.state_dir_resolved,
             target_pid=rec.pid, target_tag=rec.tag, text=text, why=why,
-            source="conductor:_inject_text", actor="conductor",
+            source="conductor:_inject_text", actor=actor,
         )
         try:
             ok = await asyncio.to_thread(
@@ -2770,6 +2824,36 @@ async def reconstitute_execute(payload: ReconstituteRequest, request: Request) -
         raise HTTPException(status_code=500, detail=detail)
     return {"launched": True, "cwd": cwd, "name": name, "cloned": cloned,
             "status": plan["status"], "blockers": plan["blockers"], "detail": detail}
+
+
+class PromptRoute(BaseModel):
+    tag: str        # target session tag (bare/bracketed/@-prefixed all accepted)
+    message: str    # delivered into that session's terminal AS A PROMPT (your words, verbatim)
+
+
+@app.post("/api/prompt-route")
+async def prompt_route(payload: PromptRoute, request: Request) -> dict[str, Any]:
+    """Deliver an operator-composed message to a session as a live prompt (the `@tag message`
+    feature). It's queued and injected once the target is quiet — never silently into a busy
+    session — and recorded in the provenance ledger as human-driven, since you actually typed it.
+    """
+    state: AppState = request.app.state.cond
+    tag = payload.tag.strip().lstrip("@").strip().strip("[]")
+    message = payload.message.strip()
+    if not tag or not message:
+        raise HTTPException(status_code=400, detail="tag and message are required")
+    rec = state._resolve_live_by_name(tag)
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"no live session for '{tag}'")
+    actor = f"human:{request.client.host}" if request.client else "human"
+    state._remote_prompt_seq += 1
+    key = f"{tag}:{state._remote_prompt_seq}"
+    state._remote_prompts[key] = {
+        "tag": tag, "message": message, "queued": time.time(), "source": actor, "actor": actor,
+    }
+    busy = rec.status in _BUSY_STATUSES
+    return {"queued": True, "tag": rec.tag,
+            "delivery": "waiting for it to go idle" if busy else "on the next scan"}
 
 
 class BusMessage(BaseModel):

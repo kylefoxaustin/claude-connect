@@ -789,6 +789,27 @@ $("recon-go")?.addEventListener("click", async () => {
   setTimeout(openReconM, 2500);      // refresh the plan (statuses change)
 });
 
+// @mention → deliver YOUR words to a session as a live prompt (Kyle's "@claude-connect …").
+// Parse a leading @tag, POST /api/prompt-route; the backend queues + injects once it's quiet.
+const atForm = $("atbar"), atIn = $("atbar-in"), atStatus = $("atbar-status");
+atForm?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const raw = (atIn.value || "").trim();
+  const mm = raw.match(/^@([A-Za-z0-9_.:-]+)\s+([\s\S]+)$/);
+  if (!mm) { atStatus.textContent = "Start with @session — e.g. @claude-connect check the bus"; return; }
+  const tag = mm[1], message = mm[2].trim();
+  atStatus.textContent = `Sending to @${tag}…`;
+  try {
+    const r = await api("/api/prompt-route", { method: "POST", body: JSON.stringify({ tag, message }) });
+    atStatus.textContent = `✓ Sent to @${bare(r.tag)} — it lands ${r.delivery}.`;
+    atIn.value = "";
+  } catch (err) {
+    atStatus.textContent = err.status === 404
+      ? `No live session called @${tag} (it must be running).`
+      : `Failed: ${err.message}`;
+  }
+});
+
 // Member-role control (v4 §3.4): observer=read-only · service · peer=default · trusted.
 const MROLES = ["observer", "service", "peer", "trusted"];
 function roleSelectHTML(s) {

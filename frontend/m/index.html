@@ -63,6 +63,13 @@
             </select>
           </label>
         </div>
+        <!-- @mention a session: your words land as a live prompt in its terminal. -->
+        <form id="atbar" class="atbar" autocomplete="off">
+          <input id="atbar-in" class="atbar-in" placeholder="@session your message…"
+                 enterkeyhint="send" />
+          <button id="atbar-go" class="btn btn-sm btn-primary" type="submit">Send</button>
+        </form>
+        <div id="atbar-status" class="atbar-status"></div>
         <div id="fleet"></div>
       </section>
 
