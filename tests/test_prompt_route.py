@@ -90,3 +90,29 @@ def test_drain_holds_when_busy(monkeypatch):
     asyncio.run(st._deliver_remote_prompts())
     assert called == []                             # busy → not injected
     assert len(st._remote_prompts) == 1             # kept for retry when quiet
+
+
+def test_drain_route_files_enqueues_and_removes(tmp_path):
+    """The hook drops a route file; Conductor's drain turns it into a queued remote prompt."""
+    import json as _json
+    st = _st()
+    st.coord_root = tmp_path / "coord"
+    rdir = st.coord_root / "prompt-routes"; rdir.mkdir(parents=True)
+    (rdir / "1.json").write_text(_json.dumps(
+        {"target": "qualcomm", "message": "rerun it", "source_session": "abc12345", "ts": 1.0}))
+    st._drain_prompt_route_files()
+    assert len(st._remote_prompts) == 1
+    rp = next(iter(st._remote_prompts.values()))
+    assert rp["tag"] == "qualcomm" and rp["message"] == "rerun it"
+    assert rp["actor"] == "human"
+    assert not list(rdir.glob("*.json"))          # file consumed
+
+
+def test_drain_bad_route_file_is_removed_not_crashing(tmp_path):
+    st = _st()
+    st.coord_root = tmp_path / "coord"
+    rdir = st.coord_root / "prompt-routes"; rdir.mkdir(parents=True)
+    (rdir / "bad.json").write_text("not json")
+    st._drain_prompt_route_files()                # must not raise
+    assert st._remote_prompts == {}
+    assert not list(rdir.glob("*.json"))          # garbage cleaned up

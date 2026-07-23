@@ -958,11 +958,43 @@ class AppState:
 
     _REMOTE_PROMPT_TTL_S = 900.0        # 15 min — a remote prompt that never lands goes stale
 
+    def _drain_prompt_route_files(self) -> None:
+        """Pick up route requests the prompt-route hook dropped — an @-mention you typed inside
+        a session, or in the Claude app over /rc — and enqueue them for delivery, exactly like
+        the phone @-bar. The hook writes a file (it can't touch Conductor's in-memory queue);
+        this is the bridge."""
+        rdir = self.coord_root / "prompt-routes"
+        try:
+            files = sorted(rdir.glob("*.json"))
+        except OSError:
+            return
+        for f in files:
+            rec = None
+            try:
+                rec = json.loads(f.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                pass
+            if isinstance(rec, dict):
+                target = (rec.get("target") or "").strip()
+                message = (rec.get("message") or "").strip()
+                if target and message:
+                    self._remote_prompt_seq += 1
+                    src = str(rec.get("source_session", "?"))[:8]
+                    self._remote_prompts[f"{target}:{self._remote_prompt_seq}"] = {
+                        "tag": target, "message": message, "queued": time.time(),
+                        "source": f"human via [{src}]", "actor": "human",
+                    }
+            try:
+                f.unlink()
+            except OSError:
+                pass
+
     async def _deliver_remote_prompts(self) -> None:
         """Deliver operator @-addressed prompts into the target session's terminal — but only
         once it is QUIET (a busy Claude eats injected keystrokes). Same claim-before-await
         discipline as the push notices, so a prompt is delivered at most once; attributed to the
         human in the provenance ledger, since the operator genuinely composed it."""
+        await asyncio.to_thread(self._drain_prompt_route_files)   # hook-dropped routes -> queue
         if not self._remote_prompts:
             return
         now = time.time()
