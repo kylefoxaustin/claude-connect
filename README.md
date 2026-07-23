@@ -4,7 +4,7 @@
 
 **A local dashboard for watching all your Claude Code sessions at once — in your browser or as a standalone desktop app — plus an optional _message bus_ (a shared log your sessions post to) that lets them talk to each other.**
 
-[![version: 2.36](https://img.shields.io/badge/version-2.36-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
+[![version: 2.38](https://img.shields.io/badge/version-2.38-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
 [![platform: linux](https://img.shields.io/badge/platform-linux-orange)](#requirements)
 [![safety: read--only](https://img.shields.io/badge/safety-read--only-green)](#how-it-works)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -34,7 +34,11 @@ If you're like us, you're running 3, 4, or 8 Claude Code sessions at once across
 - **See everything at a glance.** One tile per live Claude session — status dot, live preview of what it's saying, time since last activity. Click a tile to jump to that terminal.
 - **Let your Claudes talk.** Wire up the optional message bus and your sessions can `/msg-send` each other across projects. The dashboard shows the traffic with animated connection lines.
 
-It's **local by default, and read-only toward Claude**. It watches Claude's `~/.claude/projects/*.jsonl` logs and process state — it never edits your files or conversations, and the server binds only to `127.0.0.1`. **No telemetry, no analytics, no uploads of your data.** The only things that ever leave the box are ones you explicitly opt into: the 3D view fetches Three.js from a CDN; **phone notifications** (Web Push) send a signed alert through your browser's push service (Google/Mozilla/Apple); and **phone/remote access** rides *your own* [Tailscale](https://tailscale.com) tailnet (WireGuard, device-to-device — the server still binds `127.0.0.1` and is never exposed on the LAN). The few *actions* it can take are **external and user-triggered**: raise a terminal window, type `/msg-check` (the nudge that makes a session go read its waiting bus messages) — or, from the phone, your chosen answer to a Claude's on-screen question — into a session, append to the separate bus log, or relaunch a closed session — never a silent write to Claude's own state.
+It's **local by default, and read-only toward Claude** — it watches Claude's `~/.claude/projects/*.jsonl` logs and process state, and never edits your files or conversations. The server binds only to `127.0.0.1`, with **no telemetry, no analytics, and no uploads of your data.**
+
+The only things that ever leave the box are ones you explicitly opt into: the 3D view fetches Three.js from a CDN; **phone notifications** (Web Push) send a signed alert through your browser's push service (Google/Mozilla/Apple); and **phone/remote access** rides *your own* [Tailscale](https://tailscale.com) tailnet (WireGuard, device-to-device — never exposed on the LAN). And the few *actions* Conductor can take are all **external and user-triggered** — raise a terminal window, type `/msg-check` into a session (the nudge that makes it read its waiting bus messages), answer a Claude's on-screen question from your phone, append to the separate bus log, or relaunch a closed session — never a silent write to Claude's own state.
+
+> 🚀 **Just want to try it?** Jump straight to [Quick Start](#quick-start) — you'll have a tile on screen in under a minute. The tours below are optional.
 
 ---
 
@@ -100,6 +104,7 @@ Access is over `tailscale serve --https` (HTTPS is required for Web Push + the s
 - 🩺 **Fleet-health signals** *(new in 2.35–2.36)* — four failure shapes an unread-message *count* can't distinguish: an **identity collision** (two Claudes in one repo posting under one bus tag — the card shows what each is doing, not just the clashing name), a **dead-reader alarm** (a tag others keep addressing that has itself gone silent for hours — mail rotting behind a reader that no longer exists), a **lost-`/RC` alarm** *(2.36)* — a session that's **alive but dropped its remote-control bridge**, so it's invisible in the phone's Claude app and *looks* crashed; Conductor watches the process, so it says "reconnect, don't relaunch" instead of letting you spawn a duplicate into the same repo — and a **phantom-stall fix** so the mutual-stall detector only draws an edge when *A asked B a question B hasn't answered*, never merely because *B has unread mail* — a session that's only cc'd is no longer threaded into a stall it has no part in
 - 🔗 **Autonomy windows** *(new in 2.23)* — *"I'm away from these keyboards for a few hours — let them wake each other."* Grant a chosen set of sessions a **time-boxed** permission to auto-deliver directed mail among themselves without your click. It lifts the *attended* guard, never the *working* one (a busy Claude is still never interrupted), only **directed** mail wakes anyone, and it **expires** — the time-box is the safety property. Draw the window by clicking tiles on the board, or pick members from the phone
 - 📱 **Phone access + notifications** *(new in 2.22–2.27)* — reach the fleet from your phone over your Tailscale tailnet: a purpose-built **mobile console** (`/m`), a **decision queue** to *answer a Claude's `AskUserQuestion` from your phone*, a push-approval inbox, and **Web Push** that pages you on exactly two things — a session blocked on a question, or a gated `git push`. See [Phone access & notifications](#phone-access--notifications)
+- 🧯 **Disaster recovery** *(new in 2.37–2.38)* — an **optional** setup that answers *"what if this machine dies?"*: a private `fleet-backup` repo backs up the whole `~/.claude` coordination layer **hourly** and your session transcripts **daily**, off-box. On a new machine, one `bootstrap.sh` restores it and starts Conductor, and a **🧯 Reconstitute** screen (on the desktop *and* your phone) rebuilds the fleet — cloning each repo and resuming each session you pick with `claude --continue`. See [Disaster recovery](#-disaster-recovery)
 - 🎛️ **Shared-resource coordination** *(new in 2.9–2.23)* — sessions self-reserve scarce resources over the bus — a **GPU** *or* a dev **board** (IQ9 EVK, Orin, …) — with soft/hard holds, a **FIFO queue** (get pinged the moment it's your turn, no polling), an idle 🐕 watchdog that nudges/reclaims quiet leases, **abandoned-lease detection** (a hold whose session died is flagged, and reaped outright after a reboot), and a live tile per resource. It also covers **service Claudes** (a single-holder *service* — say a local image generator — takes jobs off a queue and returns each result as mail, v2.23) and a **fleet registry** where every asset carries an onboarding **card** that travels with it to whoever reserves it. No more arbitrating who gets what. See [Shared-resource coordination](#-shared-resource-coordination)
 - 📦 **Agentic request-delivery** *(new in 2.36)* — a durable **order** with a verified-landing lifecycle (`PLACED → CLAIMED → DELIVERED → CONFIRMED`, with a `REJECTED → COOKING` revise loop), for when one Claude asks another to *produce* something — a rendered sprite, a report, a code change. Unlike a fire-and-forget job, an order is a persistent object: **"delivered" is a verified fact, not a claim** — the service reads the files back from the delivery address before it can ack, so it literally cannot say DELIVERED for a drop that isn't on disk. The **requester owns the address *and* the acceptance test**, so a producer can't grade its own work; a reject bumps a revision and keeps its reason on the order (a crash-relaunched service won't repeat a rejected attempt). `bus.sh order …` / `/order`; resource-agnostic by construction (the delivery address type is the only thing that changes)
 - ✉️ **Compose from the dashboard** — send your own bus message to all sessions or a chosen few, with an optional "ping" that makes them read it now
@@ -619,6 +624,29 @@ Conductor keeps **no central database** — state lives in two clearly separated
 Layout/minimize/group state is keyed by **project directory**, so a session re-attaches to its saved spot, size, and group whenever it runs in the same directory — across reboots and even fresh (non-resumed) sessions. Conductor doesn't prune offline tiles' layout, so it waits for them to return. Clear it with **Reset layout**, **Ungroup**, or your browser's site-data tools.
 
 **On your machine (the bus), not the browser:** the cross-session bus log (`~/Documents/claude-bus/messages.md`), unread state (`~/.claude/bus-state/`), and the active/passive whitelist (`~/.claude/bus-state/active-tags`). The Conductor server itself is **in-memory and restart-clean** — it holds no persistent state of its own.
+
+---
+
+## 🧯 Disaster recovery
+
+*Optional.* The Conductor **server** is restart-clean, but the fleet you've built up — the bus tooling, coordination state, per-session memory, and each session's conversation — lives in `~/.claude` and would be lost if the machine died. Disaster recovery backs that up off-box and gives you a one-screen rebuild on a new machine.
+
+**What's backed up, and how often:**
+
+| What | Where | Cadence |
+| --- | --- | --- |
+| The `~/.claude` **coordination layer** — bus tooling, `bus-state/` (tags, members, leases, watermarks), per-session memory, hooks, systemd units | a **private `fleet-backup` GitHub repo** | **hourly** |
+| Your session **transcripts** (the `claude --continue` fuel, ~1 GB) | a compressed **release asset** on that repo | **daily** |
+| A **roster** (`fleet-roster.json`) — every session's cwd, git remote/branch, tokens, transcript | the same repo | with each snapshot |
+
+Backups run as `systemd --user` timers, so they're automatic and survive reboots. Big model files are captured as a re-download **manifest**, not blobs.
+
+**Restoring on a new machine** (same home path, e.g. `/home/kyle`):
+
+1. `git clone` the `fleet-backup` repo and run **`./bootstrap.sh`** — it restores `~/.claude`, extracts the transcripts, sets up Conductor, and starts it, then stops at the two things it can't automate (`claude /login`, `tailscale up`).
+2. Open Conductor and use the **🧯 Reconstitute** screen (on the desktop *or* your phone at `/m`) to pick which sessions to bring back. For each, it clones the repo (if needed) and resumes the conversation with `claude --continue`.
+
+The manual, step-by-step equivalent lives as `RESTORE.md` inside the (private) backup repo. Note DR backs up the **bus/coordination state and transcripts** — not the in-memory Conductor server (which needs no backup; it rebuilds itself from what it observes).
 
 ---
 

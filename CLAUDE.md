@@ -23,6 +23,32 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.38.0: 🧯 **DR CAPSTONE — the fleet is now rebuildable on a new machine in one flow, incl.
+  FROM THE PHONE.** Completes the v2.37 disaster-recovery arc with the pieces that turn "the data is
+  backed up" into "one screen rebuilds the fleet." ⭐ **THE RECONSTITUTE SCREEN** (`conductor/
+  reconstitute.py`, `GET/POST /api/reconstitute[/execute]`): reads the DR roster and, per session,
+  computes a PLAN — **live** (running, skip) / **present** (relaunch) / **clone** (git clone then
+  relaunch) / **transcript-only** (no repo — resume the conversation in a fresh dir) / **blocked**
+  (nothing to restore into) — surfacing blockers (missing transcript ⇒ would resume BLANK; dirty repo
+  ⇒ uncommitted work not in the backup). Pure function of (roster, live cwds, filesystem) ⇒ fully
+  testable off the target box; execute = `git clone` (if the cwd is absent) then `relaunch_parked`
+  (`--continue` + `/rc`), with guards (409 already-live/blocked, 404 not-in-roster, refuses to clone
+  over an existing dir, never silently launches a transcript-less session). 🖥📱 **DESKTOP MODAL +
+  PHONE OVERLAY** — a 🧯 Reconstitute button on the desktop topbar AND in the `/m` Fleet bar (a
+  full-screen tap-to-pick overlay), both driving the same tested endpoints. 🥾 **`bootstrap.sh`** (in
+  fleet-backup): one script at a fresh box restores `~/.claude` + transcripts, sets up Conductor's
+  venv, installs+starts the services, and stops at the two things it can't automate (`/login`,
+  `tailscale up`) — then points you at Reconstitute. ⏰ **DAILY TRANSCRIPT TIMER**
+  (`backup-transcripts.{service,timer}`) — the ~1 GB transcripts (293 MB zstd) back up daily off-peak
+  (Nice/idle-IO, Persistent), complementing the hourly state snapshot. ⭐ **THE HONEST ANSWER TO
+  "reconstitute a new PC FROM THE PHONE"** (Kyle asked about an APK): Conductor is a HOST tool — it
+  must run ON the box to clone repos / spawn sessions, so a bare machine has a chicken-and-egg an APK
+  can't solve. What delivers it: `bootstrap.sh` AT the box (15 min, local), THEN the phone drives the
+  pick-and-rebuild over Tailscale — which is exactly what shipped. **APK deferred**: its only real win
+  is DND-breaking 3am alerts (a separate native+Firebase effort, against the privacy stance, and a
+  push approval "can wait until morning"). 📖 README fresh-eyes pass (the DR capability was entirely
+  absent + the badge was stale). **New tests:** reconstitute plan ×8, endpoint ×5 (404 python). Both
+  editions; RESTORE.md updated with the automated path.
 - ✅ v2.37.0: 🧯 **DISASTER RECOVERY — the fleet can now be rebuilt on a new machine — plus a
   6-hour-silence root-cause fix, a "silent no-op is a lie of omission" UX arc, and a bus mail-loss
   fix.** Prompted by scary reboots (Kyle: *"if Skippy dies, how do I get ALL of this — the Claudes
