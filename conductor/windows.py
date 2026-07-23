@@ -115,6 +115,44 @@ def _active_window_id() -> int | None:
         return None
 
 
+def _active_window_name() -> str | None:
+    """Title of the currently-focused window (``getactivewindow getwindowname``). May be empty
+    for a tilix tile CLIENT window that carries no title of its own — that's why callers treat a
+    MISSING name as 'can't verify' (accept) but a MISMATCHING name as 'wrong window' (reject)."""
+    try:
+        out = subprocess.run(
+            ["xdotool", "getactivewindow", "getwindowname"],
+            capture_output=True, text=True, timeout=2.0,
+        )
+        return out.stdout.strip() if out.returncode == 0 else None
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+
+
+def _active_is_not_target(title: str | None, window_title: str | None) -> bool:
+    """True only when the active window is CONFIRMED to be a DIFFERENT session than the target.
+
+    The tilix-path counterpart to ``_window_belongs_to_target`` — the guard that path was missing
+    (Kyle, 2026-07-23: a push notice for 95emulator was typed into qualcomm's active terminal).
+
+    We compare ONLY against the target's ``window_title`` — the field that, by construction,
+    *matches the X11 window title* (the ``/rename`` custom title, e.g. ``Project 95Qemu``). We do
+    NOT match the general ``title``/tag: window titles are inconsistent (a session with no custom
+    title shows its cwd, e.g. ``kyle@skippy: ~/…/qualcomm/results``), so tag-matching would
+    false-refuse and break the common /msg-check path. So: if the target has a window_title and
+    the active window has a title that does NOT contain it, it's a different window — refuse. If
+    either is missing/unmatchable, we can't confirm a mismatch, so we DON'T block (the focus-moved
+    check is the guard there). Note this still catches the reported bug: the TARGET's title
+    (95Qemu) is absent from the WRONG window's name (qualcomm's cwd), so it correctly refuses."""
+    wt = (window_title or "").strip()
+    if not wt:
+        return False                      # no reliable X11 title for the target -> can't confirm
+    name = _active_window_name()
+    if not name:
+        return False                      # no active-window title -> can't confirm a mismatch
+    return wt.lower() not in name.lower()  # target's title absent from active window -> different
+
+
 def list_windows() -> list[tuple[int, int, str]]:
     """Return [(window_id_int, pid, title)] from `wmctrl -lp`. Empty list if unavailable."""
     if not wmctrl_available():
@@ -329,11 +367,28 @@ def _focus_session_input(
         if not tilix_activate_terminal(tilix_id):
             return False
         deadline = time.monotonic() + _FOCUS_POLL_TIMEOUT_S
+        moved = False
         while time.monotonic() < deadline:
             if _active_window_id() != before:
+                moved = True
                 break                       # focus has moved off the previous window
             time.sleep(_FOCUS_POLL_STEP_S)
+        # THE FIX (Kyle, 2026-07-23). This path used to `return True` here unconditionally — so if
+        # the async activate never actually moved focus (target window minimised, or the user had
+        # switched to ANOTHER session's terminal in the meantime), we'd fall through and type into
+        # whatever window WAS focused. That is exactly how a push notice for 95emulator landed in
+        # qualcomm's active terminal. Two guards now, both fail CLOSED (don't type, retry later):
+        #   1. focus must actually MOVE off the previously-active window, and
+        #   2. the now-active window must not be CONFIRMED to be a different session.
+        if not moved:
+            log.warning("tilix activate did not move focus to the target — refusing to type "
+                        "(it would land in the currently-active window)")
+            return False
         time.sleep(_TILE_SETTLE_S)          # let the tile's widget start accepting input
+        if _active_is_not_target(title, window_title):
+            log.warning("active window is a DIFFERENT session than the target (%s / %s) — "
+                        "refusing to type", window_title, title)
+            return False
         return True
 
     if not wmctrl_available():
@@ -426,14 +481,22 @@ def send_keys_to_session(
         pid=pid, terminal_pid=terminal_pid, title=title, window_title=window_title,
     ):
         return False
-    return _type_into_focused_window(text)
+    return _type_into_focused_window(text, title=title, window_title=window_title)
 
 
-def _type_into_focused_window(text: str) -> bool:
+def _type_into_focused_window(
+    text: str, *, title: str | None = None, window_title: str | None = None,
+) -> bool:
     """Ctrl-U (clear the line), type ``text``, then Return — into whatever window currently has
-    keyboard focus. The caller is responsible for having focused the RIGHT window/tile first."""
+    keyboard focus. The caller focuses the RIGHT tile first; as a LAST line of defence (the focus
+    settle leaves a small window in which the user could switch terminals) we re-confirm the
+    active window isn't a confirmed-different session immediately before the first keystroke."""
     try:
         time.sleep(_FOCUS_SETTLE_S)  # let the widget start accepting input (no dropped leaders)
+        if _active_is_not_target(title, window_title):
+            log.warning("focus moved to a different session before typing — aborting (would "
+                        "mis-deliver to %s / %s)", window_title, title)
+            return False
         subprocess.run(
             ["xdotool", "key", "--clearmodifiers", "ctrl+u"],
             check=True, capture_output=True, timeout=3.0,
