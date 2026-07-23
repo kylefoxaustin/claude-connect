@@ -875,9 +875,11 @@ push_approve() {  # <repo-name-or-key>
   mkdir -p "$PUSH_TOKENS"
   [ -d "$PUSH_REQUESTS" ] && for f in "$PUSH_REQUESTS"/*; do [ -f "$f" ] || continue
     name="$(_push_field repo_name "$f")"; repo="$(_push_field repo "$f")"; key="$(basename "$f")"
+    sha="$(_push_field sha "$f")"   # the commit the gate recorded — pin the approval to it (qualcomm, 2026-07-22)
     if [ "$name" = "$q" ] || [ "$key" = "$q" ]; then
       { echo "expires=$(( $(date +%s) + PUSH_TTL ))"
         echo "repo=$repo"; echo "repo_name=$name"
+        [ -n "$sha" ] && echo "sha=$sha"
         echo "approved=$(date +%s)"
         echo "approved_at=$(date '+%Y-%m-%d %H:%M')"; } > "$PUSH_TOKENS/$key"
       rm -f "$f"; matched=1

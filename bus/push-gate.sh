@@ -100,6 +100,12 @@ if [ -n "$_slug" ] && [ "$_slug" = "$FLEET_BACKUP_SLUG" ]; then
   exit 0                                        # ALLOW — private backup, auto-push is the point
 fi
 
+# The commit this push would land (for the SHA-pin below + the request record). HEAD is the
+# right proxy: a plain `git push` / `git push <remote>` pushes the current branch's tip = HEAD.
+# A fancier push (explicit ref, --all) whose pushed ref != HEAD fails SAFE — it mismatches and
+# asks for re-approval, never a false allow.
+HEAD_SHA="$(git -C "$PUSHDIR" rev-parse HEAD 2>/dev/null || true)"
+
 TOK="$TOKENS/$KEY"
 if [ -f "$TOK" ]; then
   # The token is `key=value` lines. It USED to be a bare epoch, and a leftover one must
@@ -114,6 +120,15 @@ if [ -f "$TOK" ]; then
   # work" on the one control he relies on. A consumed-but-unreported approval is the worst thing
   # this gate can do.
   if [ "$now" -lt "$exp" ]; then
+    # SHA-PIN (qualcomm, 2026-07-22): an approval authorizes ONE SPECIFIC commit, not "the next
+    # arbitrary push to this repo". If the token names a commit and HEAD has since MOVED (a new
+    # commit, or `git commit --amend`), DENY without consuming and require re-approval for the
+    # commit actually being pushed. A legacy token with no `sha=` is still honoured (back-compat,
+    # like the bare-epoch handling) so an in-flight approval from before this change still works.
+    tok_sha="$(grep -E '^sha=' "$TOK" 2>/dev/null | head -1 | cut -d= -f2-)"
+    if [ -n "$tok_sha" ] && [ "$tok_sha" != "$HEAD_SHA" ]; then
+      MISMATCH=1; MM_APPROVED="$tok_sha"           # keep the token — it's still valid for ITS commit
+    else
     # Don't BURN a valid approval on a provable NO-OP push (image_gen, 2026-07-21).
     # The gate fires PRE-push, so it normally can't tell "Everything up-to-date" from
     # a real push and consumes the one-shot token either way — wasting a scarce human
@@ -142,13 +157,15 @@ if [ -f "$TOK" ]; then
     rm -f "$TOK"                                 # consume a VALID token — one push per approval
     rm -f "$REQUESTS/$KEY" 2>/dev/null || true   # clear the (now-satisfied) request
     exit 0                                       # ALLOW (proceeds via normal perms)
+    fi                                           # end SHA-pin: token's commit matches HEAD
+  else
+    # Expired. Grab when it was granted (for an honest message), remove the stale token, and DENY
+    # below — but with a message that says it LAPSED, so Kyle re-approves instead of thinking the
+    # gate is broken.
+    EXPIRED_AT="$(grep -E '^approved_at=' "$TOK" 2>/dev/null | head -1 | cut -d= -f2-)"
+    rm -f "$TOK"
+    EXPIRED=1
   fi
-  # Expired. Grab when it was granted (for an honest message), remove the stale token, and DENY
-  # below — but with a message that says it LAPSED, so Kyle re-approves instead of thinking the
-  # gate is broken.
-  EXPIRED_AT="$(grep -E '^approved_at=' "$TOK" 2>/dev/null | head -1 | cut -d= -f2-)"
-  rm -f "$TOK"
-  EXPIRED=1
 fi
 
 # The line Kyle actually approves on. `$CMD` is the WHOLE tool call and is multi-line —
@@ -162,11 +179,15 @@ PUSHCMD="$(printf '%s' "$CMD" \
   | head -1 | sed -E 's/[[:space:]]*[0-9]*>[[:space:]]*$//; s/[[:space:]]*$//')"
 [ -n "$PUSHCMD" ] || PUSHCMD="git push"
 
-# no valid token -> file a request Conductor surfaces, and DENY this push
+# no valid (matching) token -> file a request Conductor surfaces, and DENY this push. The
+# request carries the SHA of the commit being pushed (HEAD), so `push approve` can pin the
+# token to THIS commit — an approval authorizes one specific commit, not the next arbitrary push.
 mkdir -p "$REQUESTS" 2>/dev/null || true
 { echo "repo=$REPO"; echo "repo_name=$NAME"; echo "cwd=$CWD"
-  echo "cmd=$PUSHCMD"; echo "epoch=$now"; echo "created=$(date '+%Y-%m-%d %H:%M')"; } > "$REQUESTS/$KEY" 2>/dev/null || true
-if [ "${EXPIRED:-0}" = 1 ]; then
+  echo "cmd=$PUSHCMD"; echo "sha=$HEAD_SHA"; echo "epoch=$now"; echo "created=$(date '+%Y-%m-%d %H:%M')"; } > "$REQUESTS/$KEY" 2>/dev/null || true
+if [ "${MISMATCH:-0}" = 1 ]; then
+  echo "🛑 Your approval for '$NAME' was for commit ${MM_APPROVED:0:8}, but HEAD is now ${HEAD_SHA:0:8} (you committed again or amended). That approval was NOT consumed — it still stands for its commit. Re-approve THIS commit in Conductor's inbox (or 'bus.sh push approve $NAME'), then re-run this push." >&2
+elif [ "${EXPIRED:-0}" = 1 ]; then
   echo "🛑 Your approval for '$NAME'${EXPIRED_AT:+ (granted $EXPIRED_AT)} EXPIRED before this push ran — it did NOT go through, and it was NOT silently reused. A fresh request is filed: re-approve in Conductor's inbox (or 'bus.sh push approve $NAME'), then re-run this push." >&2
 else
   echo "🛑 Push to '$NAME' needs Kyle's approval (commits are fine — only pushes are gated). Requested in Conductor's push inbox; approve there or Kyle runs 'bus.sh push approve $NAME', then re-run this push." >&2
