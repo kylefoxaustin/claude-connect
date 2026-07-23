@@ -716,6 +716,79 @@ async function relaunchParked(p, btn) {
   setTimeout(refresh, 3000);   // the revived session appears live on a later scan
 }
 
+// --- Reconstitute (DR) from the phone ----------------------------------------
+// Drive the fleet rebuild remotely once Conductor is up on the new box: read the plan,
+// tap the sessions to bring back, execute clone + --continue one at a time.
+const RECON_LABEL = {
+  live: "live", present: "relaunch", clone: "clone repo",
+  "transcript-only": "resume (no repo)", blocked: "can't recover",
+};
+let reconSel = new Set();
+
+function updateReconGo() {
+  const b = $("recon-go");
+  if (!b) return;
+  b.disabled = reconSel.size === 0;
+  b.textContent = reconSel.size ? `Reconstitute ${reconSel.size}` : "Reconstitute";
+}
+
+async function openReconM() {
+  reconSel = new Set();
+  const cards = $("recon-cards");
+  $("recon-status").textContent = "Loading the recovery plan…";
+  $("recon-note").textContent = "";
+  cards.innerHTML = "";
+  updateReconGo();
+  $("recon-overlay").hidden = false;
+  let plan;
+  try { plan = await api("/api/reconstitute"); }
+  catch (e) { $("recon-status").textContent = `Couldn't load: ${e.message}`; return; }
+  const c = plan.counts || {};
+  $("recon-status").textContent = "";
+  $("recon-note").textContent =
+    `${plan.session_count} sessions · ${c.live || 0} live · `
+    + `${(c.present || 0) + (c.clone || 0) + (c["transcript-only"] || 0)} recoverable`
+    + (c.blocked ? ` · ${c.blocked} blocked` : "");
+  for (const s of (plan.sessions || [])) {
+    const selectable = s.recoverable && s.status !== "live";
+    const el = document.createElement("div");
+    el.className = "card recon-card" + (selectable ? " recon-tap" : " recon-off");
+    const blk = (s.blockers || []).map((b) => `<div class="recon-blk">⚠ ${esc(b)}</div>`).join("");
+    const badgeCls = "rb-" + s.status.replace("-", "");
+    el.innerHTML =
+      `<div class="recon-cardhead"><span class="recon-badge ${badgeCls}">`
+      + `${RECON_LABEL[s.status] || s.status}</span> <b>${esc(s.tag || s.cwd)}</b></div>`
+      + `<div class="row-sub" style="white-space:normal">${esc(s.cwd)}</div>`
+      + `<div class="row-sub">${s.git_remote ? esc(s.git_remote) : (s.is_repo ? "(local repo)" : "(no repo)")}`
+      + `${s.git_dirty ? " · ⚠ dirty" : ""}${s.transcripts_present ? "" : " · ⚠ no transcript"}</div>`
+      + blk;
+    if (selectable) {
+      el.onclick = () => {
+        if (reconSel.has(s.cwd)) { reconSel.delete(s.cwd); el.classList.remove("recon-sel"); }
+        else { reconSel.add(s.cwd); el.classList.add("recon-sel"); }
+        updateReconGo();
+      };
+    }
+    cards.appendChild(el);
+  }
+}
+
+$("recon-open")?.addEventListener("click", openReconM);
+$("recon-close")?.addEventListener("click", () => { $("recon-overlay").hidden = true; });
+$("recon-go")?.addEventListener("click", async () => {
+  const cwds = [...reconSel];
+  if (!cwds.length) return;
+  const b = $("recon-go"); b.disabled = true;
+  let done = 0, failed = 0;
+  for (const cwd of cwds) {          // one at a time so clones/spawns don't stampede
+    $("recon-status").textContent = `Reconstituting ${done + failed + 1}/${cwds.length}…`;
+    try { await api("/api/reconstitute/execute", { method: "POST", body: JSON.stringify({ cwd }) }); done++; }
+    catch (e) { failed++; }
+  }
+  $("recon-status").textContent = `Launched ${done}${failed ? `, ${failed} failed` : ""}. They come up shortly.`;
+  setTimeout(openReconM, 2500);      // refresh the plan (statuses change)
+});
+
 // Member-role control (v4 §3.4): observer=read-only · service · peer=default · trusted.
 const MROLES = ["observer", "service", "peer", "trusted"];
 function roleSelectHTML(s) {

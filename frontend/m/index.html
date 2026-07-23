@@ -49,6 +49,7 @@
       <section class="pane" id="pane-fleet" hidden>
         <div class="pane-bar">
           <h2 class="pane-h">Fleet</h2>
+          <button id="recon-open" class="btn btn-sm" title="Rebuild the fleet from the DR backup">🧯 Reconstitute</button>
           <label class="sort-label">
             Sort
             <select id="fleet-sort">
@@ -138,6 +139,20 @@
         <h2 class="pane-h">Resources</h2>
         <div id="resources"></div>
       </section>
+
+      <!-- Reconstitute overlay: rebuild the fleet from the DR backup, from your phone. -->
+      <div id="recon-overlay" class="recon-overlay" hidden>
+        <div class="recon-top">
+          <strong>🧯 Reconstitute</strong>
+          <button id="recon-close" class="recon-x">×</button>
+        </div>
+        <div id="recon-note" class="recon-note"></div>
+        <div id="recon-cards"></div>
+        <div class="recon-foot">
+          <span id="recon-status" class="row-sub"></span>
+          <button id="recon-go" class="btn btn-primary" disabled>Reconstitute</button>
+        </div>
+      </div>
 
       <nav class="tabs">
         <button class="tab tab-on" data-pane="inbox">

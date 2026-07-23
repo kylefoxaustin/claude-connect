@@ -348,3 +348,27 @@ body {
 .soft-await > .row { margin-top: 8px; }
 
 .res-reclaim { margin-top: 8px; }
+
+/* Reconstitute overlay (DR from the phone). */
+.recon-overlay { position: fixed; inset: 0; z-index: 20; background: var(--bg);
+  display: flex; flex-direction: column; padding: calc(10px + env(safe-area-inset-top,0)) 12px 0; }
+.recon-top { display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 2px 10px; font-size: 18px; border-bottom: 1px solid var(--line); }
+.recon-x { background: none; border: 0; color: var(--dim); font-size: 28px; line-height: 1; }
+.recon-note { color: var(--dim); font-size: 13px; padding: 10px 2px; }
+#recon-cards { flex: 1; overflow-y: auto; }
+.recon-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 2px calc(12px + env(safe-area-inset-bottom,0)); border-top: 1px solid var(--line); }
+.recon-foot .btn { min-width: 140px; }
+.recon-card { border: 1px solid var(--line); }
+.recon-tap { cursor: pointer; }
+.recon-off { opacity: 0.55; }
+.recon-sel { border-color: var(--accent); background: #221a33; }
+.recon-cardhead { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.recon-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; color: #12101a; }
+.rb-live { background: #6b7280; color: #e6edf3; }
+.rb-present { background: #58a6ff; }
+.rb-clone { background: var(--ok); }
+.rb-transcriptonly { background: var(--warn); }
+.rb-blocked { background: var(--bad); color: #fff; }
+.recon-blk { color: var(--warn); font-size: 12px; margin-top: 4px; white-space: normal; }
