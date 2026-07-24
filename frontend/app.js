@@ -1641,6 +1641,45 @@ function showToast(msg, opts = {}) {
 }
 window.showToast = showToast;
 
+// Resource asset card — how to access + set up a shared resource (an EVK, the GPU, …).
+// Sections render as <pre> via textContent: the bodies are raw notes (ssh commands, key paths)
+// — preformatted preserves them exactly, and textContent means no HTML injection from a card.
+window.showResourceCard = function showResourceCard(res) {
+  const modal = document.getElementById("card-modal");
+  const titleEl = document.getElementById("card-modal-title");
+  const body = document.getElementById("card-modal-body");
+  const card = res && res.card;
+  if (!modal || !card) return;
+  titleEl.textContent = (res.label || res.name) + (card.kind ? ` · ${card.kind}` : "");
+  body.replaceChildren();
+  if (card.summary) {
+    const s = document.createElement("div");
+    s.className = "card-summary"; s.textContent = card.summary;
+    body.appendChild(s);
+  }
+  for (const sec of card.sections || []) {
+    const wrap = document.createElement("section");
+    wrap.className = "card-section" + (sec.key === "access" ? " card-access" : "");
+    const h = document.createElement("h3");
+    h.textContent = (sec.key === "access" ? "🔑 " : "") + sec.title;
+    const pre = document.createElement("pre");
+    pre.className = "card-pre"; pre.textContent = sec.body;
+    wrap.append(h, pre);
+    body.appendChild(wrap);
+  }
+  if (!(card.sections || []).length) {
+    const e = document.createElement("div");
+    e.className = "card-empty"; e.textContent = "This card has no sections filled in yet.";
+    body.appendChild(e);
+  }
+  modal.classList.remove("hidden");
+};
+document.getElementById("card-modal-close")
+  ?.addEventListener("click", () => document.getElementById("card-modal").classList.add("hidden"));
+document.getElementById("card-modal")?.addEventListener("click", (e) => {
+  if (e.target.id === "card-modal") e.currentTarget.classList.add("hidden");
+});
+
 window.requestCheck = async function requestCheck(sessionId, status) {
   const guard = (window.conductorPrefs && window.conductorPrefs.busClickGuard) || "confirm-busy";
   const busy = sessionLooksBusy(status);

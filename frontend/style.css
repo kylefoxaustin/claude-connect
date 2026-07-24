@@ -2007,3 +2007,21 @@ body.link-mode .tile-actions { visibility: hidden; }
 .recon-b-clone { background: #3fb950; }
 .recon-b-tx { background: #e5c07b; }
 .recon-b-blocked { background: #e06c75; color: #fff; }
+
+/* Resource asset card — access/setup/gotchas, shown from the resource tile. */
+.res-card-btn { margin-top: 6px; align-self: flex-start; font-size: 11px; padding: 3px 9px;
+  border-radius: 6px; border: 1px solid var(--border); background: rgba(188,140,255,0.12);
+  color: var(--text); cursor: pointer; }
+.res-card-btn:hover { background: rgba(188,140,255,0.22); }
+#card-modal .modal-card { max-width: 680px; }
+.card-body { max-height: 72vh; overflow-y: auto; padding: 4px 2px; }
+.card-summary { color: var(--text-dim); font-size: 13px; margin-bottom: 12px; }
+.card-section { margin-bottom: 14px; }
+.card-section h3 { margin: 0 0 5px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--text-dim); }
+.card-access h3 { color: var(--bus-color); }
+.card-access { border-left: 3px solid var(--bus-color); padding-left: 10px; }
+.card-pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, monospace;
+  font-size: 12.5px; line-height: 1.45; color: var(--text); background: var(--bg-panel);
+  border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; }
+.card-empty { color: var(--text-dim); font-style: italic; }

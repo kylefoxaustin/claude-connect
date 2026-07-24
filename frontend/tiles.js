@@ -1048,6 +1048,14 @@ function fillResourceTile(tile, res) {
     );
   }
 
+  // The asset card — how to reach + set up this resource (access / setup / gotchas / …).
+  if (res.card) {
+    children.push(el("button", { class: "res-card-btn",
+      title: "how to access + set up this resource (from its asset card)",
+      onclick: (e) => { e.stopPropagation(); window.showResourceCard && window.showResourceCard(res); } },
+      res.card.has_access ? "🔑 Access & setup" : "📇 Card"));
+  }
+
   tile.replaceChildren(...children);
   return tile;
 }

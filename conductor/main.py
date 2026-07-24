@@ -76,6 +76,7 @@ from .coord import (
 from .deps import build_wait_graph, compute_lost_rc, open_ask_edges, silent_addressees
 from .bridge import read_bridge
 from .models import BusEvent, BusTopology, ParkedSession, SessionRecord, Status
+from .registry import attach_cards
 from .resources import resources_state, touch_lease_activity
 from .services import read_services
 from .tokens import TokenAccountant
@@ -267,6 +268,7 @@ class AppState:
         self.sessions: dict[str, SessionRecord] = {}        # keyed by project_dir
         self.parked: list[ParkedSession] = []               # relaunchable offline sessions
         self.res_root = settings.bus.state_dir_resolved / "resources"   # shared-resource leases
+        self._registry_root = settings.bus.state_dir_resolved / "registry"  # asset cards (access/setup/…)
         self.resources: dict[str, Any] = {"resources": []}
         self._pinged_offers: set[str] = set()                 # offers we've already woken
         self._owner_missing_since: dict[str, float] = {}      # lease -> when its owner went offline
@@ -502,6 +504,9 @@ class AppState:
         await self.hub.broadcast("bus", self._bus_payload())
         # Resource tiles: named-resource leases (+ nvidia-smi telemetry for the GPU).
         self.resources = await asyncio.to_thread(resources_state, self.res_root)
+        # Attach each resource's asset card (access / setup / gotchas …) so the tile can show
+        # 'how do I reach this EVK?' next to the live lease.
+        await asyncio.to_thread(attach_cards, self.resources.get("resources", []), self._registry_root)
         await asyncio.to_thread(self._refresh_active_leases)
         self._annotate_orphans()
         await self.hub.broadcast("resources", self.resources)

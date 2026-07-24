@@ -789,6 +789,33 @@ $("recon-go")?.addEventListener("click", async () => {
   setTimeout(openReconM, 2500);      // refresh the plan (statuses change)
 });
 
+// Resource asset card overlay (how to access + set up a resource, from the phone). Bodies
+// render via textContent (raw ssh commands / key paths preserved, no HTML injection).
+function showResourceCardM(r) {
+  const card = r && r.card;
+  if (!card) return;
+  $("card-ov-title").textContent = (r.label || r.name) + (card.kind ? " · " + card.kind : "");
+  const body = $("card-ov-body");
+  body.replaceChildren();
+  if (card.summary) {
+    const s = document.createElement("div");
+    s.className = "card-ov-summary"; s.textContent = card.summary;
+    body.appendChild(s);
+  }
+  for (const sec of card.sections || []) {
+    const wrap = document.createElement("section");
+    wrap.className = "card-ov-section" + (sec.key === "access" ? " card-ov-access" : "");
+    const h = document.createElement("div");
+    h.className = "card-ov-h"; h.textContent = (sec.key === "access" ? "🔑 " : "") + sec.title;
+    const pre = document.createElement("pre");
+    pre.className = "card-ov-pre"; pre.textContent = sec.body;
+    wrap.append(h, pre);
+    body.appendChild(wrap);
+  }
+  $("card-overlay").hidden = false;
+}
+$("card-ov-close")?.addEventListener("click", () => { $("card-overlay").hidden = true; });
+
 // @mention → deliver YOUR words to a session as a live prompt (Kyle's "@claude-connect …").
 // Parse a leading @tag, POST /api/prompt-route; the backend queues + injects once it's quiet.
 const atForm = $("atbar"), atIn = $("atbar-in"), atStatus = $("atbar-status");
@@ -1145,6 +1172,14 @@ function resourceRow(r) {
     (detail ? `<div class="row-sub">${detail}</div>` : "") +
     jobLine + (r.smi ? gpuMeta(r.smi) : "") + queueLine +
     `</div>`;
+  // The asset card — how to reach + set up this resource (access / setup / gotchas).
+  if (r.card) {
+    const b = document.createElement("button");
+    b.className = "btn btn-sm res-card-btn";
+    b.textContent = r.card.has_access ? "🔑 Access & setup" : "📇 Card";
+    b.onclick = () => showResourceCardM(r);
+    el.querySelector(".row-body").appendChild(b);
+  }
   // An orphan lease (owner's session offline) is the one resource state a HUMAN must clear —
   // the desktop had a reclaim button, the phone didn't (you saw the warning, couldn't act).
   if (lease && lease.orphan_suspect) {
