@@ -185,11 +185,21 @@ PUSHCMD="$(printf '%s' "$CMD" \
 mkdir -p "$REQUESTS" 2>/dev/null || true
 { echo "repo=$REPO"; echo "repo_name=$NAME"; echo "cwd=$CWD"
   echo "cmd=$PUSHCMD"; echo "sha=$HEAD_SHA"; echo "epoch=$now"; echo "created=$(date '+%Y-%m-%d %H:%M')"; } > "$REQUESTS/$KEY" 2>/dev/null || true
+# 95emulator (2026-07-24): the gate denies the WHOLE Bash call, so a compound
+# `git add … && git commit … && git push` blocks the COMMIT too — but it's natural to assume the
+# commit ran and only the push is pending. It didn't: HEAD never moved, and a later standalone
+# push says "Everything up-to-date". If the blocked command staged/committed before the push,
+# say so — so nobody chases a commit that never happened (cost ~20 min twice).
+_precommit=""
+if printf '%s' "$CMD" | grep -Eq '(^|[;&|(])[[:space:]]*git[[:space:]]+(add|commit)\b'; then
+  _precommit="
+⚠ Heads-up: the git add/commit in this command did NOT run either — the WHOLE command was blocked, HEAD did not move. Commit in a SEPARATE step first, then push."
+fi
 if [ "${MISMATCH:-0}" = 1 ]; then
   echo "🛑 Your approval for '$NAME' was for commit ${MM_APPROVED:0:8}, but HEAD is now ${HEAD_SHA:0:8} (you committed again or amended). That approval was NOT consumed — it still stands for its commit. Re-approve THIS commit in Conductor's inbox (or 'bus.sh push approve $NAME'), then re-run this push." >&2
 elif [ "${EXPIRED:-0}" = 1 ]; then
   echo "🛑 Your approval for '$NAME'${EXPIRED_AT:+ (granted $EXPIRED_AT)} EXPIRED before this push ran — it did NOT go through, and it was NOT silently reused. A fresh request is filed: re-approve in Conductor's inbox (or 'bus.sh push approve $NAME'), then re-run this push." >&2
 else
-  echo "🛑 Push to '$NAME' needs Kyle's approval (commits are fine — only pushes are gated). Requested in Conductor's push inbox; approve there or Kyle runs 'bus.sh push approve $NAME', then re-run this push." >&2
+  echo "🛑 Push to '$NAME' needs Kyle's approval (commits are fine — only pushes are gated). Requested in Conductor's push inbox; approve there or Kyle runs 'bus.sh push approve $NAME', then re-run this push.${_precommit}" >&2
 fi
 exit 2
