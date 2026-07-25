@@ -74,6 +74,7 @@ from .coord import (
     write_wake_state,
 )
 from .deps import build_wait_graph, compute_lost_rc, open_ask_edges, silent_addressees
+from .projects import projects_needing_operator, read_projects
 from .bridge import read_bridge
 from .models import BusEvent, BusTopology, ParkedSession, SessionRecord, Status
 from .registry import attach_cards
@@ -320,6 +321,7 @@ class AppState:
         self._rc_pending: dict[str, dict[str, Any]] = {}
         self._autonomy: list[dict[str, Any]] = []             # live "let them talk" windows
         self.services: dict[str, Any] = {"services": []}      # service Claudes (image_gen…)
+        self.projects: list[dict[str, Any]] = []              # Project Layer: lead-owned multi-session work
         self.waiting: dict[str, Any] = {"edges": [], "cycles": [], "bottlenecks": [],
                                         "blocked_count": 0}   # who is blocked on whom
         self._silent: list[dict[str, Any]] = []               # dead-reader alarm (holobench)
@@ -531,6 +533,12 @@ class AppState:
         if svc != self.services:
             self.services = svc
             await self.hub.broadcast("services", svc)
+        # Project Layer: a lead submits a plan → it lands in plan_review → Kyle approves it from
+        # his phone (Gate #1). Read the record and broadcast on change so the approval surfaces.
+        projs = await asyncio.to_thread(read_projects, self.coord_root)
+        if projs != self.projects:
+            self.projects = projs
+            await self.hub.broadcast("projects", {"projects": projs})
         # Who is blocked on whom. Every input is already in hand — this is a VIEW over
         # state we collect anyway (directed mail, service queues, resource queues), which
         # is why it's cheap enough to rebuild every scan.
@@ -2037,6 +2045,45 @@ async def service_action(name: str, action: str, request: Request) -> dict[str, 
     return {"ok": proc.returncode == 0, "result": (proc.stdout or "").strip()}
 
 
+@app.get("/api/projects")
+async def get_projects(request: Request) -> dict[str, Any]:
+    """Project Layer state — lead-owned multi-session work. ``needs_operator`` is the subset
+    blocked on Kyle (a plan awaiting approval, an empty lead seat)."""
+    state: AppState = request.app.state.cond
+    return {"projects": state.projects,
+            "needs_operator": projects_needing_operator(state.projects)}
+
+
+class ProjectAction(BaseModel):
+    notes: str | None = None       # for revise: what the lead should change
+
+
+@app.post("/api/projects/{pid}/{action}")
+async def project_action(pid: str, action: str, request: Request,
+                         body: ProjectAction | None = None) -> dict[str, Any]:
+    """Operator's plan-gate decision (Gate #1), made from the dashboard instead of a terminal.
+
+    ``approve`` → the project goes ACTIVE (jobs may fan out — next slice). ``revise`` → the plan
+    goes back to the lead with notes. Both shell to the same ``bus.sh project`` one-writer the
+    fleet uses; Conductor never mutates the record directly.
+    """
+    if action not in ("approve", "revise"):
+        raise HTTPException(status_code=404, detail="unknown action")
+    if not pid or not all(c.isalnum() or c in "._-" for c in pid):
+        raise HTTPException(status_code=400, detail="bad project id")
+    state: AppState = request.app.state.cond
+    args = [str(state.settings.bus.script_path_resolved), "project", action, pid]
+    if action == "revise":
+        args.append((body.notes if body else None) or "please revise")
+    proc = await asyncio.to_thread(subprocess.run, args, capture_output=True, text=True, timeout=15)
+    # Re-read + broadcast so every open console reflects the decision immediately.
+    state.projects = await asyncio.to_thread(read_projects, state.coord_root)
+    await state.hub.broadcast("projects", {"projects": state.projects})
+    log.info("project %s %s: %s", pid, action, (proc.stdout or "").strip() or proc.returncode)
+    return {"ok": proc.returncode == 0,
+            "result": (proc.stdout or "").strip() or (proc.stderr or "").strip()}
+
+
 @app.get("/api/decisions")
 async def get_decisions(request: Request) -> dict[str, Any]:
     """Questions the fleet is blocked on, waiting for a human. Oldest first."""
@@ -2510,10 +2557,14 @@ async def get_ops(request: Request) -> dict[str, Any]:
         "lost_rc": state._lost_rc,        # live-but-lost-/RC alarm (§3.4.1, rt1180)
         "services": state.services.get("services", []),
         "resources": state.resources.get("resources", []),
+        # Project Layer: only the operator-actionable subset (a plan awaiting approval, an empty
+        # lead seat) — the phone is a needs-you console, not the full DAG view (slice 4).
+        "projects": projects_needing_operator(state.projects),
         "webpush": state._webpush_status(),   # can we actually page this phone? (2026-07-22)
         "counts": {
             "needs_you": (len(state.decisions) + len(state._push_requests)
-                          + len(state._push_proposals) + len(state._persist_requests)),
+                          + len(state._push_proposals) + len(state._persist_requests)
+                          + sum(1 for p in state.projects if p.get("needs") == "approve-plan")),
             "blocked": state.waiting.get("blocked_count", 0),
             "dead": sum(1 for s in state._silent if s.get("dead")),
             "collisions": len(state._collisions),

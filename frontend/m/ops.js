@@ -168,6 +168,11 @@ function renderInbox() {
   // Acts that would outlive the session. These outrank a push: a push touches a repo;
   // a hook in settings.json is arbitrary code on every tool call in every session.
   for (const p of ops.persist || []) items.push(persistCard(p));
+  // Project Layer Gate #1: a lead's plan awaiting Kyle's approval before work fans out.
+  // The advisory states (an empty lead seat) render as a quiet info row, not a task.
+  for (const p of ops.projects || []) {
+    items.push(p.needs === "approve-plan" ? projectPlanCard(p) : projectInfoRow(p));
+  }
   // Approvals you already gave that the session hasn't used yet. Shown BELOW the things
   // that still need you — it's reassurance, not a task. Its whole job is to answer
   // "did my tap land?", which used to have no answer at all.
@@ -407,6 +412,78 @@ function persistCard(p) {
   }
   row.append(go, no);
   el.appendChild(row);
+  return el;
+}
+
+/* Project Layer, Gate #1: a lead ([tag]) has submitted a PLAN and the project is blocked on Kyle
+ * approving it before any work fans out. He decides where the information is — the goal + the plan
+ * are both on the card — instead of walking to a terminal. Approve → ACTIVE; Send back → the plan
+ * returns to the lead with a note. Both shell to the same `bus.sh project` one-writer. */
+function projectPlanCard(p) {
+  const el = document.createElement("div");
+  el.className = "card card-hot";
+  const age = p.created_epoch ? Date.now() / 1000 - p.created_epoch : null;
+  el.innerHTML =
+    `<div class="card-head">` +
+    `<span class="card-who">📋 ${esc(bare(p.lead) || "?")} → plan for ${esc(p.id)}</span>` +
+    `<span class="row-age">${ago(age)}</span></div>` +
+    `<div class="card-q">${esc(p.goal || "(no goal)")}</div>` +
+    `<div class="commits"><pre style="white-space:pre-wrap;margin:0">${esc(p.plan || "(empty plan)")}</pre></div>` +
+    (p.plan_notes ? `<div class="row-sub" style="white-space:normal">last note: ${esc(p.plan_notes)}</div>` : "");
+
+  const row = document.createElement("div");
+  row.className = "btn-row";
+  const go = document.createElement("button");
+  go.className = "btn btn-primary";
+  go.textContent = "Approve plan";
+  const back = document.createElement("button");
+  back.className = "btn btn-danger";
+  back.textContent = "Send back";
+  const act = async (action, notes) => {
+    [go, back].forEach((b) => (b.disabled = true));
+    (action === "approve" ? go : back).innerHTML = '<span class="spin"></span> …';
+    try {
+      const r = await api(`/api/projects/${encodeURIComponent(p.id)}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(notes ? { notes } : {}),
+      });
+      if (r && r.ok === false) throw new Error(r.result || "refused");
+    } catch (e) {
+      [go, back].forEach((b) => (b.disabled = false));
+      go.textContent = "Approve plan"; back.textContent = "Send back";
+      el.querySelector(".card-q")?.insertAdjacentHTML(
+        "afterend", `<div class="row-sub" style="color:var(--bad,#ff6b6b)">couldn't ${action}: ${esc(String(e.message || e))} — tap again or use a terminal</div>`);
+      return;
+    }
+    refresh();
+  };
+  go.addEventListener("click", () => act("approve"));
+  back.addEventListener("click", () => {
+    const notes = prompt("What should the lead change? (sent back with the plan)");
+    if (notes === null) return;                 // cancelled — leave the plan pending
+    act("revise", notes.trim());
+  });
+  row.append(go, back);
+  el.appendChild(row);
+  return el;
+}
+
+/* A project that lost its lead (nominee declined / suggested another) — advisory, not a task the
+ * phone can complete: re-nominating needs a session picker (slice 4 / the desktop). Show it so Kyle
+ * KNOWS the seat is empty; don't pretend there's a button here that isn't. */
+function projectInfoRow(p) {
+  const el = document.createElement("div");
+  el.className = "card";
+  const nom = p.last_nomination;
+  const why = p.needs === "awaiting-nominee"
+    ? `nominee ${esc(bare(p.lead) || "?")} hasn't answered yet`
+    : (nom && nom.response === "suggested"
+        ? `${esc(nom.session)} suggested ${esc(nom.suggested)} — re-nominate`
+        : `lead seat is empty — re-nominate`);
+  el.innerHTML =
+    `<div class="card-head"><span class="card-who">📋 ${esc(p.id)}</span></div>` +
+    `<div class="row-sub" style="white-space:normal">${why}</div>`;
   return el;
 }
 
