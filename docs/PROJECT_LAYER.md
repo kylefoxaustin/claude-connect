@@ -66,6 +66,33 @@ LEAD closes the project when the goal's acceptance test passes → reports to Ky
 Conductor observes the whole thing and surfaces the two gates (plan-approval, issues) the way
 the **decision queue** already surfaces a blocked question — desktop + phone.
 
+## 3a. Naming the lead — a nomination handshake (per Kyle, 2026-07-24)
+
+Kyle picks a lead from **what he's seen a session do**. But the *fleet* knows things Kyle can't
+fully see: who has the deepest hands-on with a given block, who's mid-something-critical, who's
+overloaded, who quietly knows a peer is the real expert. So naming a lead is **not a unilateral
+assignment — it's a short handshake** that combines Kyle's judgment with the fleet's self-knowledge:
+
+- Kyle **nominates** a session as lead of the project.
+- The nominee responds:
+  - **ACCEPT** — takes the lead, proceeds to draft the plan.
+  - **DECLINE** (with a reason) — "wrong expertise, this is an ISP thing, not emulation," or
+    "mid a two-day benchmark, can't lead this now." Returns to Kyle.
+  - **SUGGEST `<other>`** (with a why) — "93emulator did the MICFIL/XCVR gate work and knows the
+    QOM device model better than I do." A *suggestion*, not a reassignment.
+- **Kyle stays the decider.** A decline or a suggestion comes back to Kyle, who nominates the next
+  candidate (possibly the suggested one, who then accepts/declines/suggests in turn). This keeps
+  the human-names-the-lead property (§2 non-goals): the fleet **advises**, Kyle **confirms**.
+
+Why it earns the ceremony: it's the same reason the fleet catches bugs no single view does —
+**Kyle's knowledge + the fleet's self-knowledge beats either alone.** The nominee also gets agency
+(leadership is opt-in, not conscription — the order-*claim* principle applied to leadership), and a
+better-suited lead is surfaced *before* a wrong one starts planning and burning tokens.
+
+Mechanically it's a tiny directed bus exchange + a `lead_status: {nominated|accepted|declined}` +
+`suggestions[]` on the project record — and Conductor shows Kyle the nomination + any suggestion so
+he confirms from desktop or phone.
+
 ## 4. The crux: the plan-review gate (Human Gate #1)
 
 **This is what makes the whole thing safe.** Letting a lead Claude *decompose and delegate
@@ -213,6 +240,10 @@ Kyle explicitly wants **a phone UI and a local-PC view of the project and its me
 9. **Auditing the shield (§4a).** The lead answers worker questions on Kyle's behalf. Log those on
    the project so Kyle can spot-check what he was shielded from? (Transparency vs. noise — the
    whole point was to *not* show him everything.)
+10. **Nomination loop (§3a).** Bound the suggest→suggest→suggest chain (Kyle can always cut it
+    with "no, you do it") — and allow **accept-with-caveat** ("I'll lead it, but Y has more depth
+    if you'd rather")? Does a nominee see the project goal/plan-sketch before accepting, or accept
+    blind on the one-line ask?
 
 ---
 
