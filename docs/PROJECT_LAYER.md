@@ -1,258 +1,264 @@
 # The Project Layer — lead-owned, multi-session coordinated work
 
-**Status:** DESIGN / for fleet review. Not built. Author: claude-connect, from Kyle's ask
-(2026-07-24). Extends the existing coordination primitives (orders, services, bus, roles).
+**Status:** DESIGN v2 (post fleet-review). Not built. Author: claude-connect, from Kyle's ask
+(2026-07-24), revised 2026-07-25 after a 4-session review (95emulator, 93emulator, qualcomm,
+image_gen) — all grounded in real multi-session work. Extends orders/services/bus/roles.
+
+> **What changed in v2 (the fleet's fire).** The skeleton held; the cost model and the decision-
+> shield were redesigned. Headlines: pre-run token *estimation* is theater — demoted to a size
+> band; the LIVE meter + hard cap is the only real control (§5). Throttle is enforced by
+> **Conductor**, not the lead — fox/henhouse (§5). The shield now **splits technical vs project
+> decisions** and carries an **escalate-always denylist** so it can't usurp Kyle's authority (§4a).
+> A **job-dependency DAG** is a genuine new primitive (§6). A **mid-flight premise-collapse gate**
+> is added (§4b). And the layer's honest win is **cognitive load, not speed** (§0).
 
 ---
 
+## 0. The honest tradeoff, stated up front (95emulator)
+
+This layer optimizes **Kyle's attention** — fewer, better-framed touchpoints — **not wall-clock
+speed.** The biggest coordination cost in the motivating work wasn't decisions or couriering; it
+was **latency**: every async hop through a session's wake cycle took *hours*, and Kyle-as-courier
+was often *faster* because he's synchronous and always-on. Routing work through a lead's wake cycle
+can make a deadline *worse*. So: **the win is cognitive load; the cost is latency.** For
+tight-deadline work, freeform bus + a human courier may still be right. Build this for *cognitive
+scale* (many concurrent aspects Kyle can't hold in his head), not for *speed*.
+
 ## 1. The problem
 
-Some work needs several Claudes on different aspects of **one** goal. The live example:
-enabling **Neutron support in 95qemu** needed inputs from other sessions — a measurement here,
-a converted model there, a parity check elsewhere. It got done, but **Kyle was the project
-manager**: relaying "did you get 95's message?", chasing data, confirming each session ran its
-part, carrying results back. That's the couriering the bus was built to abolish — one layer up.
+Some work needs several Claudes on different aspects of **one** goal. The live example: enabling
+**Neutron support in 95qemu** needed inputs from multiple sessions — a measurement here, a converted
+model there, a parity check elsewhere. It got done, but **Kyle was the project manager**: relaying
+"did you get X's message?", chasing data, confirming runs, carrying results. That's couriering, one
+layer up from the bus.
 
-"Let them talk amongst themselves" (auto-delivery + autonomy windows) gets us *part* of the way:
-sessions can reach each other without Kyle. But freeform chat has no **goal**, no **owner**, no
-**structure**, and no **bounded human touchpoints** — so Kyle still has to hold the whole thing in
-his head and step in constantly.
+"Let them talk amongst themselves" gets us *part* way — but freeform chat has no **goal**, no
+**owner**, no **structure**, and no **bounded human touchpoints**, so Kyle still holds the whole
+thing in his head and steps in constantly.
 
 ## 2. What we're adding — a *project*
 
-A **project** is a bounded unit of coordinated work with:
-
-- a **goal** (what "done" means),
-- one accountable **lead** session (decomposes, delegates, aggregates — the PM role, moved off
-  Kyle and onto a Claude),
-- a **plan** the lead drafts and **Kyle approves** before any work fans out,
-- a set of **jobs** the lead delegates to other sessions (each job is an **order** — we already
-  have verified point-to-point delivery),
-- **issues** the lead escalates to Kyle — and *only* those,
-- a live **status** Kyle watches in Conductor instead of assembling in his head.
-
-The value over freeform chat is exactly the four things chat lacks: **a scope, an owner,
-structured/verified jobs, and two — only two — human gates.** It turns Kyle from the fleet's
-courier into its architect.
+A **project** is a bounded unit of coordinated work: a **goal**, one accountable **lead** (the PM
+role moved off Kyle onto a Claude), a **plan** Kyle approves, **jobs** delegated as **orders** with
+**dependency edges**, **technical decisions the workers own**, and **escalations** — few and
+pre-digested — that reach Kyle.
 
 ### Non-goals (deliberately)
-- Not a general agent framework. The fleet already decided (PRIOR_ART_REVIEW.md) *not* to
-  brain-transplant onto LangGraph/CrewAI/AutoGen — those **drive** agents; this fleet is
-  autonomous interactive peers + a bus + an observer. We **extend our primitives.**
-- Not autonomous project *creation*. Kyle starts a project and names its lead. A Claude does not
-  spin up projects and conscript the fleet on its own.
-- Not two-way human relay. The lead reports; Kyle decides. Kyle does not become the message bus.
+- Not a general agent framework. The fleet decided (PRIOR_ART_REVIEW.md) *not* to adopt
+  LangGraph/CrewAI/AutoGen — those **drive** disposable workers; this is autonomous expert peers +
+  a bus + an observer + a human architect. We **extend our primitives.**
+- Not autonomous project *creation*. Kyle starts a project and nominates its lead.
+- Not the default. **Most coordinated work is NOT a project** (§7). You *earn* the wrapper.
 
 ## 3. The lifecycle
 
 ```
-Kyle: project new "neutron-support" --lead 95emulator --goal "…"
-   ↓
-LEAD drafts a PLAN (decomposition: the jobs, who does each, the acceptance test for each)
-   ↓
-━━━ HUMAN GATE #1: Kyle reviews/approves the PLAN ━━━  ← the load-bearing gate (see §4)
-   ↓  (approve / revise / reject)
-LEAD fans out JOBS as ORDERS to the chosen sessions (they CLAIM — opt-in, never force-assigned)
-   ↓
-WORKERS do the work, DELIVER (verified-landing: can't say done until it's actually on disk)
-   ↓
-LEAD aggregates; on a blocker it can't resolve → escalates an ISSUE
-   ↓
-━━━ HUMAN GATE #2: Kyle answers the ISSUE (a decision, a datum, an arch change) ━━━
-   ↓
-LEAD closes the project when the goal's acceptance test passes → reports to Kyle
+Kyle nominates a LEAD  ──►  §3a handshake (accept / decline / suggest-another)
+        ↓ (accepted)
+LEAD drafts a PLAN: the job DAG (jobs + who + dependency edges + each job's acceptance test)
+        ↓
+━━ GATE #1: Kyle approves the PLAN (the decomposition) ━━  ← §4
+        ↓
+LEAD asks Conductor to DISPATCH jobs ──► Conductor ADMITS by global load ──► §5 throttle
+        ↓ (directed orders; workers CLAIM — opt-in)
+WORKERS work. TECHNICAL calls: the worker DECIDES + logs (§4a). PROJECT calls: ask the lead.
+        ↓
+LEAD aggregates at the JOIN; re-checks the premise at milestones ──► §4b
+        ↓ (a blocker only it can't resolve, or a denylisted call)
+━━ GATE #2: Kyle answers an ESCALATION (pre-digested: decision + impact + options + rec) ━━  ← §4a
+        ↓
+LEAD closes when the goal's acceptance test passes.
 ```
 
-Conductor observes the whole thing and surfaces the two gates (plan-approval, issues) the way
-the **decision queue** already surfaces a blocked question — desktop + phone.
+Conductor observes throughout and surfaces the gates (plan-approval, escalations, premise-collapse)
+through the decision-queue machinery already used for blocked questions — desktop + phone.
 
-## 3a. Naming the lead — a nomination handshake (per Kyle, 2026-07-24)
+## 3a. Naming the lead — a nomination handshake
 
-Kyle picks a lead from **what he's seen a session do**. But the *fleet* knows things Kyle can't
-fully see: who has the deepest hands-on with a given block, who's mid-something-critical, who's
-overloaded, who quietly knows a peer is the real expert. So naming a lead is **not a unilateral
-assignment — it's a short handshake** that combines Kyle's judgment with the fleet's self-knowledge:
+Kyle picks from **what he's seen a session do**; the fleet knows what he can't fully see (who's
+deepest on a block, who's overloaded, who knows a peer is the real expert). So:
 
-- Kyle **nominates** a session as lead of the project.
-- The nominee responds:
-  - **ACCEPT** — takes the lead, proceeds to draft the plan.
-  - **DECLINE** (with a reason) — "wrong expertise, this is an ISP thing, not emulation," or
-    "mid a two-day benchmark, can't lead this now." Returns to Kyle.
-  - **SUGGEST `<other>`** (with a why) — "93emulator did the MICFIL/XCVR gate work and knows the
-    QOM device model better than I do." A *suggestion*, not a reassignment.
-- **Kyle stays the decider.** A decline or a suggestion comes back to Kyle, who nominates the next
-  candidate (possibly the suggested one, who then accepts/declines/suggests in turn). This keeps
-  the human-names-the-lead property (§2 non-goals): the fleet **advises**, Kyle **confirms**.
+- Kyle **nominates** a session — **with the goal + a scope sketch attached** (a nominee must not
+  accept blind; the review was unanimous on this).
+- The nominee: **ACCEPT** · **DECLINE** (reason) · **SUGGEST another** (why). Kyle stays the
+  decider — advise, not reassign.
+- **Provisional-accept → draft → confirm-or-hand-back-with-the-plan-as-evidence** (95emulator): the
+  *most-informed* decline comes *after* decomposing ("now that I've planned it, this is 200k tokens
+  / really an ISP job"). So an accept is provisional until the plan exists; the lead may hand it
+  back at the plan gate, with the plan as the argument.
+- After ~2 suggest-rounds, let the fleet **self-nominate** rather than Kyle guessing a third time
+  (qualcomm).
 
-Why it earns the ceremony: it's the same reason the fleet catches bugs no single view does —
-**Kyle's knowledge + the fleet's self-knowledge beats either alone.** The nominee also gets agency
-(leadership is opt-in, not conscription — the order-*claim* principle applied to leadership), and a
-better-suited lead is surfaced *before* a wrong one starts planning and burning tokens.
+Why it earns the ceremony: **Kyle's knowledge + the fleet's self-knowledge beats either alone** —
+the same reason the fleet catches bugs no single view does. Leadership is opt-in (the order-*claim*
+principle applied one level up). `lead_status` + `suggestions[]` on the project record; Conductor
+shows the nomination so Kyle confirms from anywhere.
 
-Mechanically it's a tiny directed bus exchange + a `lead_status: {nominated|accepted|declined}` +
-`suggestions[]` on the project record — and Conductor shows Kyle the nomination + any suggestion so
-he confirms from desktop or phone.
+## 4. Gate #1 — plan review (the decomposition, not the cost)
 
-## 4. The crux: the plan-review gate (Human Gate #1)
+**The load-bearing gate**, and its value is the **decomposition** — catching ten wrong jobs before
+they fan out — **not** the cost number (which is theater, §5). Same philosophy as the push-gate:
+the human decides at the *plan*, then execution runs without couriering.
 
-**This is what makes the whole thing safe.** Letting a lead Claude *decompose and delegate
-autonomously* is real authority — more than peers chatting. The plan gate is where Kyle catches a
-bad decomposition **before** it becomes ten wrong jobs burning tokens across the fleet.
+- The plan is a concrete artifact: **goal + goal-acceptance-test**, and the **job DAG** — per job:
+  *what*, *which session*, its **dependency edges** (which jobs must deliver first), a **size band**
+  (S/M/L, §5), and an **acceptance test that the worker PROPOSES and the lead APPROVES** (93/
+  qualcomm: the worker is often the expert on what "done" observably means; a lead-*dictated* test
+  can be wrong).
+- Kyle can **approve / revise (send back) / reject**. Approval is bound to *that plan* — an amended
+  plan needs re-approval (the SHA-pin lesson: authorize the specific thing, not "whatever next").
+- A lead **cannot dispatch a job not in the approved plan.** New jobs mid-project = a plan
+  amendment = a lightweight re-approval. This is the bound against runaway.
 
-It's the **same philosophy as the push-gate**: put the human decision at the *right point* — the
-plan — then let execution run without couriering. Design properties:
+## 4a. Decision routing — the shield, split correctly (the biggest v2 change)
 
-- The plan is a concrete artifact: **goal + acceptance test**, and per job: *what*, *which
-  session*, *its acceptance test*, and an **estimated cost** (see §5).
-- Kyle can **approve / revise (send back with notes) / reject**. Approval is bound to *that plan*
-  (an amended plan needs re-approval — the SHA-pin lesson from the push-gate: authorize the
-  specific thing, not "whatever the lead does next").
-- A lead **cannot dispatch a job that isn't in an approved plan.** New jobs mid-project = a plan
-  amendment = a (lightweight) re-approval. This is the bound against runaway.
+The whole premise is that sessions have **different expertise** — so the naive "the lead answers
+everything it can" is **backwards for technical calls** (all four reviewers): a worker is usually
+*more* expert on its sub-decision than the lead, and pushing it *up* inverts expertise and invites
+confidently-wrong answers. So route on the **right axis**:
 
-## 4a. Question routing — the lead is a decision-shield (per Kyle, 2026-07-24)
+**TECHNICAL / DOMAIN decisions → the worker DECIDES and LOGS.** "int8 vs fp16 for this conversion,"
+"which onnx2tf flag," "outputs.bin vs outputs_0.bin" — the worker has the hands and the context; most
+of these aren't questions for anyone, they're *discover-by-doing*. The worker decides and records it
+on the project (the audit log, below). Real escalation volume is **lower** than a naive design fears.
 
-A project doesn't just produce *issues* — it produces **questions**, lots of them, and the subtle
-ones come from **workers mid-job**, not the lead. If those all hit Kyle raw, the flood is worse
-than the couriering we're removing. The rule that prevents it: **questions flow UP the hierarchy —
-worker → lead → (only if needed) Kyle. Never worker → Kyle directly.**
+**PROJECT / COORDINATION decisions → the lead.** Priority, sequencing, which-approach-serves-the-
+goal, resolving a cross-job conflict. These the lead can answer with project context, and it does —
+this is the flood it absorbs so Kyle doesn't see it.
 
-- A **worker** that hits a decision on a job does **NOT** block on its own AskUserQuestion picker
-  — that freezes the worker and re-introduces couriering. It asks the **lead** through the job/
-  order channel: a **"needs-decision"** state on the order (*"to proceed I need: `<question>`,
-  options A/B"*). The order system already has the reject/revise loop; this is a sibling state.
-- The **lead answers everything it can.** It holds the project context a worker lacks, so most
-  low-level calls ("int8 vs fp16 for this conversion?") it simply decides and replies down the
-  channel; the worker continues. **Kyle never sees these.** This is the filter — the whole reason
-  the project doesn't flood him.
-- The lead **escalates only what genuinely needs Kyle**, and — exactly as Kyle framed it — it must
-  **describe the decision, its project impact, and the options.** Concretely the lead escalates in
-  the shape of a good multiple-choice question:
-  - **the decision** (one line),
-  - **why it matters** (project impact / what's blocked),
-  - **the options** (2–4), and
-  - **the lead's recommendation** (it's the closest informed estimator; Kyle overrides freely —
-    the lead recommends, it never pressures).
+**🔴 ESCALATE-ALWAYS denylist → the lead may NOT decide; it MUST escalate to Kyle** (image_gen's
+blocker — without it, "answers everything it can" and "usurps Kyle's authority" are the same
+sentence, and the shield's own pressure to minimize escalations runs *toward* the violation):
 
-  That *is* an `AskUserQuestion` — so it lands in the **decision queue Kyle already answers from his
-  phone**. No new channel. The lead is composing the question *for* Kyle, on the worker's behalf,
-  translated from low-level to project-level.
+1. anything that changes **SCOPE, BUDGET, or the GOAL / acceptance-test**;
+2. **accepting a RISK or a regression** (a 2% accuracy loss, a known-unsafe shortcut);
+3. anything **IRREVERSIBLE** or **outside the approved plan**.
 
-Two escalation sources converge on Kyle's decision queue, both **lead-framed** and **project-
-tagged**: the lead's *own* project questions, and worker questions the lead couldn't answer. So
-what reaches Kyle is *few* and *pre-digested* — the opposite of a flood.
+The denylist is **prevention**; the **audit log** (every technical + project decision the lead/
+workers made on Kyle's behalf, recorded on the project) is **detection** — Kyle spot-checks what he
+was shielded from. Both, not either.
 
-**Open question:** an escape hatch — may a worker escalate DIRECTLY to Kyle, bypassing the lead,
-for something urgent/safety-critical it believes the lead would sit on? Default is via-the-lead
-(unflooded + contextualized); a direct path is a bigger gun, so probably reserved or off by
-default. And: does the lead's answer to a worker get logged on the project (an audit of decisions
-the lead made on Kyle's behalf), so Kyle can spot-check what he was shielded from?
+**Escalation shape** (Kyle's framing): the decision (one line) · why it matters (project impact) ·
+the options (2–4) · the lead's recommendation. That *is* an `AskUserQuestion`, so it lands in the
+decision queue Kyle already answers from his phone. Two sources converge there, both lead-framed and
+project-tagged: the lead's *own* project questions, and worker questions the lead couldn't answer.
 
-## 5. ⭐ Token / cost governance (first-class, per Kyle)
+**Direct-escalation hatch — REQUIRED, not optional** (95/qualcomm): via-the-lead adds wake-cycle
+latency that's unacceptable on the critical path, and a worker may hold a signal the lead would sit
+on. Proof: 95emulator surfaced the push-gate *security* bug through a mis-routed approval — a
+via-the-lead-absolute rule would have had **no path** for it. So a worker may escalate **directly to
+Kyle**, bounded to **safety / security / data-loss / premise-collapse / hard-blocking-on-the-critical-
+path**. Anything else goes through the lead.
 
-A project **multiplies token burn**: every job is another Claude doing real work. Left unbounded
-this can (a) **swamp the API** — many sessions hammering concurrently → rate-limit/`overloaded`
-errors and long waits — or (b) **exhaust the monthly budget**. So cost is not a footnote; it's a
-design pillar with three parts:
+## 4b. Gate #1.5 — the premise-collapse check (qualcomm's new primitive)
 
-**(a) Estimate — at the gate.** The plan Kyle approves carries a **cost estimate per job** and a
-**project total** (rough — token bands, or "small/medium/large"). Kyle approves a *budget*, not a
-blank check. Conductor already has the per-session token accountant (`conductor/tokens.py`); the
-estimate can be informed by each session's historical burn rate.
+Gate #1 is *up-front*; the failure that most needs Kyle often arrives **mid-flight**: the goal goes
+**moot**. 95emulator lived it — mid-project the eIQ runner was found to SIGILL on NeutronAdd, moving
+all of yolov8 from "runner-clean" to "won't run." A lead would keep dutifully fanning out jobs toward
+a half-dead goal. So the lead runs a cheap **"is this still worth finishing?"** self-assessment at
+milestones, and **mandatorily** on any worker "this might be moot" signal — surfacing to Kyle when
+the premise is in doubt. Cheap to run; catches the most expensive failure (a whole project spent on
+a dead goal).
 
-**(b) Throttle — at dispatch.** The lead does **not** fire all jobs at once. Options to weigh:
-   - a **concurrency cap** (≤ N jobs in flight fleet-wide at a time — the rest queue),
-   - **serialize by default**, parallelize only jobs the plan marks independent,
-   - respect a global "the fleet is busy" backpressure signal (Conductor knows how many sessions
-     are ACTIVE/WARM right now).
-   This directly attacks the "swamp → API error waiting on servers" failure.
+## 5. ⭐ Token / cost governance — measured, not estimated (redesigned)
 
-**(c) Meter + cap — during the run.** Conductor **tracks live token spend against the approved
-budget** (it already sums per-session tokens) and:
-   - shows spend/budget on the project view,
-   - **pages Kyle when a project crosses a threshold** (e.g. 80% of budget) — a real page, like a
-     blocked question,
-   - a **hard cap**: at 100% the lead is told to **stop dispatching and escalate**, not silently
-     blow through. (Mirrors the workflow token-budget discipline: the target is a ceiling.)
+A project multiplies token burn; unbounded it swamps the API (`overloaded`, long waits) or exhausts
+the monthly budget. The v1 design leaned on a pre-run *estimate*; the fleet unanimously called that
+**theater**, with receipts (image_gen's tipometer button: planned "1 sprite, medium," actual ~1M+
+tokens over 5 revise-rounds; 95's "document Neutron" → 10×; qualcomm's "regen 10 int8 models" →
+10-20×). Cost is dominated by **iteration count and rabbit-hole depth — unknowable at t0** — and
+estimates are **systematically low** (anchored on the happy path; revisions only add). So:
 
-Open question for the fleet: whose tokens? Each worker spends its *own* session's tokens against
-the *same* Anthropic account — so the project total is what matters for the monthly budget, and
-the concurrency cap is what matters for rate-limits. Both need surfacing.
+- **(a) Size band, not a number.** The plan carries **S/M/L per job** — a *scheduling hint*, not a
+  budget anyone trusts. Kyle approves a **scope + a hard ceiling**, not a token figure. (Fleet Law:
+  an estimate is a DERIVED number; never gate on it as if MEASURED.)
+- **(b) Throttle = Conductor admission control, not the lead** (fox/henhouse — a lead eager to
+  finish rationalizes "one more parallel job"). The lead **requests** dispatch; **Conductor admits**
+  by **fleet-global** load (it already knows the ACTIVE/WARM count) — a project competes for the same
+  `overloaded` ceiling as Kyle's own session and every autonomy window, so the cap must be global,
+  not per-project. **The throttle unit is API-consumers, not jobs**: each job is a session that
+  spawns subagents + background tasks (~5× fan-out), so count consumers (Conductor must learn to see
+  spawned subagents, which ACTIVE/WARM currently misses). Serialize by default; parallelize only
+  plan-marked-independent jobs.
+- **(c) Live meter + graceful cap — the ONLY real control.** Conductor tracks live spend (it already
+  sums per-session tokens) and: **pages at ~60-70%** (not 80% — by the time you see 80% + in-flight,
+  you're past 100%); stops dispatch at **`ceiling − N×worst-case-job`** because tokens are *spent,
+  not reserved* and in-flight jobs finish their uncancellable turn; is **retry-aware** (orders model
+  jobs as atomic, but real jobs fail + retry and each retry burns — a silent leak); and drives the
+  lead to a **minimal-viable checkpoint before the cap bites** (a hard stop at 100%-of-70%-done
+  strands a half-built project — design the graceful degradation, not just the stop).
+- **(d) Budget the LEAD's own cost as a first-class line** (93): N workers × decisions serialized
+  through one lead session fills its context (degrades / compacts mid-project) and burns
+  meaningfully. The lead isn't free overhead.
+- **(e) Split the two failures** (qualcomm): **budget** is cumulative (project-total, the monthly-
+  spend risk); **rate-limit/overloaded** is acute (concurrency, the swamp risk). They need different
+  controls (the cap for one, admission-control concurrency for the other) — the doc must not fold
+  them into one number.
 
-## 6. How it reuses what exists (so this is an extension, not a rewrite)
+## 6. Jobs as orders — with a dependency DAG (the reuse, and where it breaks)
 
-- **Jobs = orders.** The v2.36 `order` primitive already gives verified point-to-point delegation:
-  PLACED→CLAIMED→(COOKING)→DELIVERED→CONFIRMED, the **requester owns the acceptance test**, a
-  worker **can't self-grade**, reject bumps a revision. A project's jobs are orders tagged with the
-  project id. Almost nothing new at the job layer.
-- **Lead = a role.** The member registry (v4 §3.4) already has roles (observer/peer/service/
-  trusted). Add **`lead`** as a per-project attribute (a session is lead *of a project*, not
-  globally). One lead per project — the "named owner" rule from FAILURE_MODES (coordination fails
-  by diffusion when no one owns it).
-- **Coordination = the bus.** Job hand-offs and status ride the bus with auto-delivery; the lead
-  never couriers.
-- **State = `coord/projects/<id>.json`.** A durable record (goal, lead, plan, jobs[], issues[],
-  budget, spent, status), atomic under flock, exactly like orders/leases live today.
-- **Human gates = the approver queue.** The plan-approval and issues surface through the same
-  Conductor inbox / phone `/m` decision-queue machinery that already pages Kyle for blocked
-  questions and gated pushes.
+- **Jobs = orders**, mostly. The v2.36 `order` primitive gives verified point-to-point delivery
+  (PLACED→CLAIMED→DELIVERED→CONFIRMED, worker can't self-grade, reject bumps a revision). Caveats the
+  fleet made explicit:
+  - **Jobs must be DIRECTED, not broadcast** (image_gen): a job posted `to:all` "for any capable
+    session" reintroduces diffusion (owned by no one — the FAILURE_MODES coordination bug). The lead
+    *addresses* each job to a chosen session, which then CLAIMs (opt-in) — a two-sided match, like
+    the lead handshake one level up.
+  - **Acceptance test = worker-PROPOSED, lead-APPROVED** (not lead-dictated) — the worker is the
+    expert on what "gated" or "converts correctly" observably means.
+  - **A lead can't self-accept its own jobs** (image_gen dogfooded this): if the lead is both
+    requester and worker the independence guard degenerates. Decide: the lead is a **pure PM** (does
+    no jobs), or a lead's own job is accepted by a **peer or Kyle**. (A genuine your-call — §9.)
+- **⭐ A job-dependency DAG is a genuine NEW primitive** (93/95/image_gen), not order reuse. Orders
+  are independent edges; the motivating example is a *chain* — a converted model **feeds** a parity
+  check; job B can't start until job A delivers, and B's run is often what *verifies* A's acceptance.
+  Without dependency edges the lead hand-sequences dispatch = **couriering one layer down**. So: **the
+  PLAN carries the dependency graph; orders are the point-to-point edges; the lead holds the graph;
+  Conductor's admission-control honors the edges** (won't admit B until A is CONFIRMED). The order
+  layer does *not* sequence dependencies — the plan does.
 
-New surface area is small: a `project` state machine in `bus.sh` (+ `/project` command), a
-project id on orders, a `lead` attribute, the budget/throttle logic, and the **Conductor project
-view**.
+## 7. When is a project overkill? Default: NOT a project (all four)
 
-## 7. Conductor's role (the observer half — claude-connect owns this)
+Most coordinated work — including the Neutron work that *motivates* this — was 2-party or a short
+chain, done fine at low ceremony. A project wrapper for that is pure ceremony, and the risk is
+**metastasis** (everything becomes a project). So the **default is NOT a project**, and the bright
+line is **AGGREGATION / the JOIN** (image_gen's sharpest framing): the wrapper earns its weight only
+when **≥3 sessions' outputs must be COMBINED into one goal-level result, or share a cross-job
+acceptance test** — i.e. when something *joins*. A linear chain of 3 orders needs no project (each
+order's own acceptance test suffices). **The project exists for the join, not the fan-out.** Concrete
+bar to encode: ≥3 sessions **and** a real aggregation/dependency **and** ≥2 rounds of back-and-forth
+— else it's just orders.
 
-Kyle explicitly wants **a phone UI and a local-PC view of the project and its members.** So:
+## 8. Conductor's role (the observer half — claude-connect owns this)
 
-- **A project view** — desktop board + phone `/m`: the goal, the lead, the **job graph** (out /
-  claimed / delivered / blocked), the **members** working it, live **token spend vs budget**, and
-  the open **issues**.
-- **The two gates surfaced**: plan-approval and issues appear in the existing inbox / decision
-  queue (desktop + phone), so Kyle approves a plan or answers an issue from wherever he is.
-- **Members view**: who's on the project, each one's current job + status + token burn — the
-  "which Claude is doing what" that Kyle holds in his head today.
-- **Budget alarms**: the 80%/100% pages ride the existing Web Push (the two-things-page rule
-  becomes three, opt-in — or folds under "a decision that needs you").
+Kyle wants a **desktop + phone view of the project and its members**. So:
+- **Project view** (desktop board + phone `/m`): the goal, the lead, the **job DAG** (blocked-on /
+  claimed / delivered / done), the **members** on it (each one's current job + status + token burn),
+  live **spend vs ceiling**, and open **escalations**.
+- **The gates surfaced** through the existing inbox / decision queue: plan-approval, escalations, and
+  the premise-collapse check — Kyle approves a plan or answers an escalation from anywhere.
+- **Admission control lives here** (§5): Conductor is the independent throttle enforcer — it must
+  learn to count spawned subagents as API-consumers, and expose the fleet-global concurrency state.
+- **Budget alarms** ride the existing Web Push (folds under "a decision that needs you").
+- **Lead-death = the orphan-reap pattern** already shipped (image_gen): Conductor sees the lead's
+  session dead (`kill -0` / owner_pid / tenant-watch), surfaces it, Kyle reassigns, the **new lead
+  inherits plan + jobs + budget from the durable `coord/projects/<id>.json`** — the crash-recovery
+  lesson (state survives session death; reconstitute from disk). Open: the new lead **re-confirms**
+  the inherited plan it didn't write (93) — which interacts with the plan-gate re-approval.
 
-## 8. Open questions (for the fleet review)
+## 9. Genuine your-call decisions (not fleet-resolvable)
 
-1. **Plan format.** How structured must the plan be for the gate to be meaningful but not
-   bureaucratic? (Freeform markdown Kyle reads, vs a structured job list Conductor renders.)
-2. **Cost estimation.** Can a lead estimate a job's tokens usefully *before* it runs? Or do we
-   estimate from the worker's historical burn + a size hint, and rely on the live meter + cap as
-   the real control?
-3. **Throttle policy.** Concurrency cap N? Serialize-by-default? Who enforces — the lead, or
-   Conductor as backpressure? (A lead enforcing its own limit is one estimator; Conductor is the
-   independent one.)
-4. **Worker refusal.** A worker can decline/park a job (orders are opt-in). How does the lead
-   handle a job no one claims — escalate as an issue? Reassign?
-5. **Lead failure.** If the lead session dies mid-project, what happens? (Orphan-reap analog:
-   Conductor sees the lead has no live session → surfaces it → Kyle reassigns lead.)
-6. **Scope of Gate #1.** Does *every* job need pre-approval, or does Kyle approve the plan once and
-   the lead executes within it, only re-gating on amendments? (Leaning: approve the plan; amend =
-   re-gate.)
-7. **When is a project overkill?** Two sessions and one hand-off is just an order. What's the
-   threshold where the project wrapper earns its weight vs. adding ceremony?
-8. **Direct worker escalation (§4a).** Should a worker ever bypass the lead and escalate straight
-   to Kyle (urgent/safety), or is via-the-lead absolute? If allowed, how is it bounded so it
-   doesn't become the flood-avoidance hole?
-9. **Auditing the shield (§4a).** The lead answers worker questions on Kyle's behalf. Log those on
-   the project so Kyle can spot-check what he was shielded from? (Transparency vs. noise — the
-   whole point was to *not* show him everything.)
-10. **Nomination loop (§3a).** Bound the suggest→suggest→suggest chain (Kyle can always cut it
-    with "no, you do it") — and allow **accept-with-caveat** ("I'll lead it, but Y has more depth
-    if you'd rather")? Does a nominee see the project goal/plan-sketch before accepting, or accept
-    blind on the one-line ask?
+1. **Framing:** commit to "cognitive-load win, accept the latency cost" (§0) as what this layer *is*?
+2. **Lead role:** pure PM (leads never do jobs), or leads do jobs but a peer/Kyle accepts them (§6)?
+3. **Ceremony bar:** the exact aggregation threshold (§7) — where does a project earn its weight?
+4. **Direct-escalation scope:** exactly which severities bypass the lead (§4a)?
 
----
+## 10. Build slices (once §9 is settled)
 
-## Build slices (once the design settles)
-
-1. **Project object + plan gate** — `bus.sh project {new|plan|approve|revise|status}`, plan
-   stored, Kyle approves via Conductor. (Gate #1 — the highest-value piece.)
-2. **Jobs as tagged orders + throttle** — the lead dispatches within the approved plan, honouring
-   a concurrency cap. (Auto-delegation, cost-aware.)
-3. **Conductor project view** — desktop + phone: goal, job graph, members, spend/budget, issues.
-4. **Budget meter + alarms** — live token spend, threshold page, hard-cap stop.
-5. **Issue escalation + lead-death handling** — the second gate + the orphan-lead case.
+1. **Project object + nomination handshake + plan gate** — `bus.sh project {new|nominate|accept|
+   decline|suggest|plan|approve|revise|status}`; plan (job DAG) stored; Kyle confirms via Conductor.
+2. **Jobs as directed orders + the dependency DAG + Conductor admission-control throttle.**
+3. **Decision routing** — worker-decides-technical + logs; lead handles project; the escalate-always
+   denylist; the direct-escalation hatch.
+4. **Conductor project/members view** — DAG, members, spend vs ceiling, escalations.
+5. **Live meter + graceful cap + premise-collapse check + lead-death reassignment.**
