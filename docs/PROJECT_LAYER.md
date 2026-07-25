@@ -83,6 +83,44 @@ plan — then let execution run without couriering. Design properties:
 - A lead **cannot dispatch a job that isn't in an approved plan.** New jobs mid-project = a plan
   amendment = a (lightweight) re-approval. This is the bound against runaway.
 
+## 4a. Question routing — the lead is a decision-shield (per Kyle, 2026-07-24)
+
+A project doesn't just produce *issues* — it produces **questions**, lots of them, and the subtle
+ones come from **workers mid-job**, not the lead. If those all hit Kyle raw, the flood is worse
+than the couriering we're removing. The rule that prevents it: **questions flow UP the hierarchy —
+worker → lead → (only if needed) Kyle. Never worker → Kyle directly.**
+
+- A **worker** that hits a decision on a job does **NOT** block on its own AskUserQuestion picker
+  — that freezes the worker and re-introduces couriering. It asks the **lead** through the job/
+  order channel: a **"needs-decision"** state on the order (*"to proceed I need: `<question>`,
+  options A/B"*). The order system already has the reject/revise loop; this is a sibling state.
+- The **lead answers everything it can.** It holds the project context a worker lacks, so most
+  low-level calls ("int8 vs fp16 for this conversion?") it simply decides and replies down the
+  channel; the worker continues. **Kyle never sees these.** This is the filter — the whole reason
+  the project doesn't flood him.
+- The lead **escalates only what genuinely needs Kyle**, and — exactly as Kyle framed it — it must
+  **describe the decision, its project impact, and the options.** Concretely the lead escalates in
+  the shape of a good multiple-choice question:
+  - **the decision** (one line),
+  - **why it matters** (project impact / what's blocked),
+  - **the options** (2–4), and
+  - **the lead's recommendation** (it's the closest informed estimator; Kyle overrides freely —
+    the lead recommends, it never pressures).
+
+  That *is* an `AskUserQuestion` — so it lands in the **decision queue Kyle already answers from his
+  phone**. No new channel. The lead is composing the question *for* Kyle, on the worker's behalf,
+  translated from low-level to project-level.
+
+Two escalation sources converge on Kyle's decision queue, both **lead-framed** and **project-
+tagged**: the lead's *own* project questions, and worker questions the lead couldn't answer. So
+what reaches Kyle is *few* and *pre-digested* — the opposite of a flood.
+
+**Open question:** an escape hatch — may a worker escalate DIRECTLY to Kyle, bypassing the lead,
+for something urgent/safety-critical it believes the lead would sit on? Default is via-the-lead
+(unflooded + contextualized); a direct path is a bigger gun, so probably reserved or off by
+default. And: does the lead's answer to a worker get logged on the project (an audit of decisions
+the lead made on Kyle's behalf), so Kyle can spot-check what he was shielded from?
+
 ## 5. ⭐ Token / cost governance (first-class, per Kyle)
 
 A project **multiplies token burn**: every job is another Claude doing real work. Left unbounded
@@ -169,6 +207,12 @@ Kyle explicitly wants **a phone UI and a local-PC view of the project and its me
    re-gate.)
 7. **When is a project overkill?** Two sessions and one hand-off is just an order. What's the
    threshold where the project wrapper earns its weight vs. adding ceremony?
+8. **Direct worker escalation (§4a).** Should a worker ever bypass the lead and escalate straight
+   to Kyle (urgent/safety), or is via-the-lead absolute? If allowed, how is it bounded so it
+   doesn't become the flood-avoidance hole?
+9. **Auditing the shield (§4a).** The lead answers worker questions on Kyle's behalf. Log those on
+   the project so Kyle can spot-check what he was shielded from? (Transparency vs. noise — the
+   whole point was to *not* show him everything.)
 
 ---
 
