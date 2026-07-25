@@ -28,6 +28,14 @@ import urllib.parse
 # the original cloned repo (so the clone is safe to delete).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# WebKitGTK 2.40+ tries to render through a GBM/EGL DMABUF path by default, and on some setups —
+# NVIDIA proprietary drivers, a remote session (RustDesk/VNC), containers — that path can't
+# initialize ("Could not create GBM EGL display: EGL_NOT_INITIALIZED"), and WebKit ABORTS before the
+# window ever appears (SIGABRT/core dump — the app simply "won't launch", Kyle 2026-07-25). Disabling
+# the DMABUF renderer falls back to a compositing path that works everywhere; for a dashboard the
+# difference is imperceptible. setdefault so anyone who WANTS the GPU path can still force it.
+os.environ.setdefault("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
+
 import uvicorn
 import webview
 
