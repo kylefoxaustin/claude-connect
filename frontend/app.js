@@ -165,6 +165,18 @@ heatmapBtn.addEventListener("click", async () => {
   }
 });
 
+// 🗂 Projects — the lead-owned multi-session view (Project Layer slice 4). Same lazy-overlay
+// discipline as History: a failure in projects.js can never touch the board.
+let projectsMod = null;
+document.getElementById("projects-btn")?.addEventListener("click", async () => {
+  try {
+    if (!projectsMod) projectsMod = await import("/static/projects.js");
+    projectsMod.activate();
+  } catch (err) {
+    console.error("projects view failed to load", err);
+  }
+});
+
 function applyTheme() {
   document.documentElement.dataset.theme = prefs.theme;
 }
@@ -315,6 +327,13 @@ function handleMessage({ kind, payload }) {
     case "push": {
       state.push = payload || { requests: [] };
       renderPushInbox(state);
+      break;
+    }
+    case "projects": {
+      // Project Layer (slice 4). The board itself doesn't render projects — they live in the
+      // 🗂 overlay — so we just hand the update to an open overlay if there is one.
+      state.projects = (payload && payload.projects) || [];
+      window.__projectsOnUpdate?.(state.projects);
       break;
     }
     case "members": {
