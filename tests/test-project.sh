@@ -87,5 +87,52 @@ okc "suggestion recorded in status" "$(ops status p2)" "image_gen"
 okc "list shows projects" "$(ops list)" "neutron"
 okc "list shows p2" "$(ops list)" "p2"
 
+# ============================ SLICE 2: jobs, the DAG, dispatch-as-orders ======================
+# neutron is active with lead 95emulator. Build an A -> B chain and drive it to completion.
+DROP="$HOME/drop"; mkdir -p "$DROP"
+jfield(){ python3 -c "import sys,json;p=json.load(open('$PROJECT_STATE_DIR/$1.json'));j=[x for x in p['jobs'] if x['id']=='$2'][0];print(j.get('$3',''))"; }
+
+# 14. add jobs — a job is DIRECTED and must declare a landing (path+files)
+okc "add jobA" "$(lead job add neutron jobA to:qualcomm path:$DROP files:isa.md -- extract ISA)" "added"
+okc "add jobB deps A" "$(lead job add neutron jobB to:image_gen path:$DROP files:dec.c deps:jobA -- decode)" "added"
+ok  "jobA state planned" "$(jfield neutron jobA state)" "planned"
+
+# 15. guards: unknown dep, self-dep, non-lead can't add, broadcast (no to:) refused
+okc "unknown dep refused" "$(lead job add neutron jobX to:qualcomm path:$DROP files:x.md deps:nope -- x)" "unknown dep"
+# a self-dep is refused by the unknown-dep guard (the job doesn't exist yet) — which is exactly
+# why cycles are impossible: you can only depend on jobs that already exist.
+okc "self-dep refused (no back-edges possible)" "$(lead job add neutron jobY to:qualcomm path:$DROP files:y.md deps:jobY -- y)" "unknown dep"
+okc "non-lead can't add" "$(other job add neutron jobZ to:qualcomm path:$DROP files:z.md -- z)" "only the accepted lead"
+okc "broadcast job refused" "$(lead job add neutron jobW path:$DROP files:w.md -- no assignee)" "DIRECTED to one session"
+
+# 16. jobs view shows readiness
+okc "jobs: A dispatchable" "$(ops jobs neutron)" "jobA"
+okc "jobs: B blocked on A" "$(ops jobs neutron)" "waiting on: jobA"
+
+# 17. the DAG blocks dispatch of B until A is done
+okc "dispatch B refused (blocked)" "$(lead dispatch neutron jobB)" "blocked"
+okc "dispatch A ok (ready)" "$(lead dispatch neutron jobA)" "dispatched"
+ok  "jobA now dispatched" "$(jfield neutron jobA state)" "dispatched"
+ok  "jobA has an order id" "$(jfield neutron jobA order_id)" "proj-neutron__jobA"
+
+# 18. only the lead dispatches; can't re-dispatch
+okc "non-lead can't dispatch" "$(other dispatch neutron jobB)" "only the lead"
+okc "no double-dispatch" "$(lead dispatch neutron jobA)" "already dispatched"
+
+# 19. complete jobA's order: worker (qualcomm) claims + delivers (file lands) + lead accepts -> CLOSED
+OID=proj-neutron__jobA
+worker(){ (cd "$OTHER" && bash "$BUS" order "$@" 2>&1); }        # qualcomm is jobA's assignee
+leadorder(){ (cd "$LEAD" && bash "$BUS" order "$@" 2>&1); }      # 95emulator dispatched it = the order's requester
+okc "worker claims" "$(worker claim $OID)" "Claimed"
+printf 'isa\n' > "$DROP/isa.md"
+okc "worker delivers (verified)" "$(worker deliver $OID)" "DELIVERED"
+okc "lead accepts order" "$(leadorder accept $OID)" "CONFIRMED"
+
+# 20. sync advances the DAG: jobA done -> jobB unblocks
+okc "sync completes jobA" "$(ops sync neutron)" "jobA"
+ok  "jobA done" "$(jfield neutron jobA state)" "done"
+okc "jobB now dispatchable" "$(ops jobs neutron)" "jobB"
+okc "dispatch B now allowed" "$(lead dispatch neutron jobB)" "dispatched"
+
 echo "---"; echo "project: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

@@ -74,7 +74,11 @@ from .coord import (
     write_wake_state,
 )
 from .deps import build_wait_graph, compute_lost_rc, open_ask_edges, silent_addressees
-from .projects import projects_needing_operator, read_projects
+from .projects import (
+    projects_needing_operator,
+    read_projects,
+    total_in_flight,
+)
 from .bridge import read_bridge
 from .models import BusEvent, BusTopology, ParkedSession, SessionRecord, Status
 from .registry import attach_cards
@@ -112,6 +116,15 @@ log = logging.getLogger("conductor")
 
 # Mirrors the frontend's ping guard: a session mid-task shouldn't get keystrokes.
 _BUSY_STATUSES = frozenset({Status.ACTIVE, Status.WARM})
+
+# Project Layer §5b — admission control. Dispatching a job spins up a worker session (which itself
+# fans out ~5× into subagents), so unbounded parallel dispatch is exactly the `overloaded` swamp the
+# throttle exists to prevent. The cap is FLEET-GLOBAL (in-flight jobs across ALL projects), because
+# every project competes for the same API ceiling as Kyle's own session and every autonomy window.
+# This is the concurrency control (the acute risk, §5e); the cumulative token meter is slice 5.
+_PROJECT_MAX_IN_FLIGHT = 3
+# And a busy-fleet guard: if this many sessions are already ACTIVE/WARM, don't admit more work.
+_PROJECT_FLEET_BUSY_CEILING = 8
 
 # Auto-delivery only wakes sessions that are clearly unattended and not working:
 # not ACTIVE/WARM (busy) and not WAITING (Kyle may be typing at that prompt).
@@ -536,6 +549,12 @@ class AppState:
         # Project Layer: a lead submits a plan → it lands in plan_review → Kyle approves it from
         # his phone (Gate #1). Read the record and broadcast on change so the approval surfaces.
         projs = await asyncio.to_thread(read_projects, self.coord_root)
+        # Slice 2: advance the job DAG. Any dispatched job whose order reached CLOSED becomes done
+        # (unblocking dependents) — driven here so a completed order flows the graph forward with no
+        # human. Only sync projects that actually have an in-flight job, and only re-read if we did.
+        if any(p.get("in_flight", 0) for p in projs):
+            await self._sync_project_dags(projs)
+            projs = await asyncio.to_thread(read_projects, self.coord_root)
         if projs != self.projects:
             self.projects = projs
             await self.hub.broadcast("projects", {"projects": projs})
@@ -812,6 +831,38 @@ class AppState:
             if touch_lease_activity(self.res_root / r["name"], now):
                 lease["last_active_epoch"] = now
                 log.info("heartbeat for %s on behalf of a working [%s]", r["name"], lease.get("owner"))
+
+    async def _sync_project_dags(self, projs: list[dict[str, Any]]) -> None:
+        """Run ``bus.sh project sync`` for each project with an in-flight job, so a job whose order
+        reached CLOSED advances to done (unblocking dependents) with no human in the loop."""
+        for p in projs:
+            if not p.get("in_flight"):
+                continue
+            try:
+                await asyncio.to_thread(
+                    subprocess.run,
+                    [str(self.settings.bus.script_path_resolved), "project", "sync", p["id"]],
+                    capture_output=True, text=True, timeout=15,
+                )
+            except (OSError, subprocess.SubprocessError) as e:
+                log.warning("project sync %s failed: %s", p.get("id"), e)
+
+    def _dispatch_admission(self) -> tuple[bool, str, dict[str, int]]:
+        """Fleet-global admission decision for dispatching one more job (§5b). NOT the lead's call —
+        the lead requests, Conductor admits by load — because a lead eager to finish rationalizes
+        'one more parallel job'. Returns (ok, reason, meter)."""
+        in_flight = total_in_flight(self.projects)
+        busy = sum(1 for s in self.sessions.values()
+                   if s.status in _BUSY_STATUSES and s.status != Status.ENDED)
+        meter = {"in_flight": in_flight, "cap": _PROJECT_MAX_IN_FLIGHT,
+                 "fleet_busy": busy, "fleet_ceiling": _PROJECT_FLEET_BUSY_CEILING}
+        if in_flight >= _PROJECT_MAX_IN_FLIGHT:
+            return False, (f"admission throttled: {in_flight} job(s) already in flight across the "
+                           f"fleet (cap {_PROJECT_MAX_IN_FLIGHT}). Let one land first."), meter
+        if busy >= _PROJECT_FLEET_BUSY_CEILING:
+            return False, (f"admission throttled: {busy} sessions already ACTIVE/WARM (ceiling "
+                           f"{_PROJECT_FLEET_BUSY_CEILING}) — the fleet is near the API ceiling."), meter
+        return True, "", meter
 
     def _live_session_for(self, owner: str) -> SessionRecord | None:
         return next((s for s in self.sessions.values()
@@ -2048,10 +2099,13 @@ async def service_action(name: str, action: str, request: Request) -> dict[str, 
 @app.get("/api/projects")
 async def get_projects(request: Request) -> dict[str, Any]:
     """Project Layer state — lead-owned multi-session work. ``needs_operator`` is the subset
-    blocked on Kyle (a plan awaiting approval, an empty lead seat)."""
+    blocked on Kyle (a plan awaiting approval, an empty lead seat); ``admission`` is the current
+    fleet-global throttle meter (in-flight jobs vs cap)."""
     state: AppState = request.app.state.cond
+    _, _, meter = state._dispatch_admission()
     return {"projects": state.projects,
-            "needs_operator": projects_needing_operator(state.projects)}
+            "needs_operator": projects_needing_operator(state.projects),
+            "admission": meter}
 
 
 class ProjectAction(BaseModel):
@@ -2082,6 +2136,33 @@ async def project_action(pid: str, action: str, request: Request,
     log.info("project %s %s: %s", pid, action, (proc.stdout or "").strip() or proc.returncode)
     return {"ok": proc.returncode == 0,
             "result": (proc.stdout or "").strip() or (proc.stderr or "").strip()}
+
+
+@app.post("/api/projects/{pid}/jobs/{jobid}/dispatch")
+async def dispatch_job(pid: str, jobid: str, request: Request) -> dict[str, Any]:
+    """Admission-controlled job dispatch (§5b). The lead REQUESTS; Conductor ADMITS by fleet-global
+    load — this is the fox/henhouse control, so the throttle lives here and not in the lead's own
+    hands. If admitted, it shells ``bus.sh project dispatch`` (which enforces the DAG: a job can't go
+    until its deps are CONFIRMED). Placing the order is the bus layer's job; gating concurrency is
+    ours."""
+    for v, label in ((pid, "project id"), (jobid, "job id")):
+        if not v or not all(c.isalnum() or c in "._-" for c in v):
+            raise HTTPException(status_code=400, detail=f"bad {label}")
+    state: AppState = request.app.state.cond
+    ok, reason, meter = state._dispatch_admission()
+    if not ok:
+        # 429: not an error in the request, the fleet is just at capacity. Say why + the meter.
+        return {"ok": False, "admitted": False, "result": reason, "admission": meter}
+    proc = await asyncio.to_thread(
+        subprocess.run,
+        [str(state.settings.bus.script_path_resolved), "project", "dispatch", pid, jobid],
+        capture_output=True, text=True, timeout=20)
+    state.projects = await asyncio.to_thread(read_projects, state.coord_root)
+    await state.hub.broadcast("projects", {"projects": state.projects})
+    log.info("project %s dispatch %s: %s", pid, jobid, (proc.stdout or "").strip() or proc.returncode)
+    return {"ok": proc.returncode == 0, "admitted": True,
+            "result": (proc.stdout or "").strip() or (proc.stderr or "").strip(),
+            "admission": meter}
 
 
 @app.get("/api/decisions")

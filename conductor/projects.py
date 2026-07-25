@@ -26,6 +26,37 @@ def _load(path: Path) -> dict[str, Any] | None:
         return None
 
 
+def _deps_done(job: dict[str, Any], by_id: dict[str, dict[str, Any]]) -> bool:
+    return all(by_id.get(d, {}).get("state") == "done" for d in job.get("deps", []))
+
+
+def annotate_jobs(p: dict[str, Any]) -> dict[str, Any]:
+    """Compute per-job readiness (ready/blocked/dispatched/done) + DAG counts, matching bus.sh's
+    own readiness rule. ``in_flight`` (dispatched, not yet done) is what the concurrency throttle
+    caps; ``ready`` is what the lead can dispatch right now."""
+    jobs = p.get("jobs") or []
+    by_id = {j["id"]: j for j in jobs}
+    counts = {"total": len(jobs), "ready": 0, "blocked": 0, "dispatched": 0, "done": 0}
+    for j in jobs:
+        st = j.get("state")
+        if st == "done":
+            r = "done"
+        elif st == "dispatched":
+            r = "dispatched"
+        elif _deps_done(j, by_id):
+            r = "ready"
+        else:
+            r = "blocked"
+        j["readiness"] = r
+        j["blocking_deps"] = ([d for d in j.get("deps", []) if by_id.get(d, {}).get("state") != "done"]
+                              if r == "blocked" else [])
+        counts[r] = counts.get(r, 0) + 1
+    p["job_counts"] = counts
+    p["in_flight"] = counts["dispatched"]          # in-flight worker jobs, for the throttle
+    p["ready_jobs"] = [j["id"] for j in jobs if j.get("readiness") == "ready"]
+    return p
+
+
 def _needs_operator(p: dict[str, Any]) -> str | None:
     """The one operator-actionable signal per project, or None. A plan awaiting approval is the
     only thing that hard-blocks the project on Kyle (Gate #1); a stalled nomination (declined with
@@ -53,6 +84,7 @@ def read_projects(coord_root: Path) -> list[dict[str, Any]]:
         if not p or "id" not in p:
             continue
         noms = p.get("nominations") or []
+        annotate_jobs(p)                          # per-job readiness + DAG counts (slice 2)
         p["needs"] = _needs_operator(p)
         p["last_nomination"] = noms[-1] if noms else None
         # Don't ship the whole plan text in the list payload — only whether one exists + its size.
@@ -67,3 +99,9 @@ def read_projects(coord_root: Path) -> list[dict[str, Any]]:
 def projects_needing_operator(projects: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """The subset with a non-None ``needs`` — what the ops console/decision surface should raise."""
     return [p for p in projects if p.get("needs")]
+
+
+def total_in_flight(projects: list[dict[str, Any]]) -> int:
+    """Jobs dispatched-but-not-done across ALL projects — the fleet-global concurrency the throttle
+    caps (§5b: the cap is global, since every project competes for the same overloaded ceiling)."""
+    return sum(p.get("in_flight", 0) for p in projects)

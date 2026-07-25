@@ -18,31 +18,116 @@
 #   project approve <id>              operator approves the plan → project goes active (Gate #1)
 #   project revise <id> <notes…>      operator sends the plan back with notes
 #   project status <id> | project list
+#
+# Slice 2 — jobs, the dependency DAG, and dispatch-as-orders (§6):
+#   project job add <id> <job> to:<who> path:<dir> files:<a,b> [deps:<x,y>] [size:S|M|L] \
+#                              [accept:<test>] -- <desc…>    lead adds a job to the DAG
+#   project jobs <id>                 show the DAG: per-job state + readiness (blocked/ready/…)
+#   project dispatch <id> <job>       lead dispatches a READY job → places a directed order to:who
+#   project sync <id>                 advance the DAG: a job whose order reached CLOSED becomes done
+#
+# THE DAG (the genuinely new primitive, 93/95/image_gen): a job may depend on earlier jobs and can't
+# be dispatched until they're CONFIRMED. Because a job's deps must reference jobs that ALREADY EXIST,
+# a cycle is impossible by construction (you cannot add a back-edge to a job created later). Jobs are
+# DIRECTED (addressed to one session, §6) — never broadcast, which would reintroduce diffusion. A
+# dispatched job IS an order.sh order, so delivery is verified (files land) and the worker can't
+# self-grade. Conductor honors the edges AND admits by fleet-global concurrency (§5b) — the bus
+# enforces the DAG here; the fleet-load throttle lives in Conductor.
 
 _project_me() { _coord_plain "$TAG" 2>/dev/null || printf '%s' "$TAG"; }
 
 project_dispatch() {
   local verb="${1:-list}"; shift 2>/dev/null || true
   local PROJECT_ROOT="${PROJECT_STATE_DIR:-$COORD_ROOT/projects}"   # lazy: COORD_ROOT set by call time
+  local ORDER_ROOT="${ORDER_STATE_DIR:-$COORD_ROOT/orders}"         # jobs are orders (slice 2)
   mkdir -p "$PROJECT_ROOT" 2>/dev/null || true
   # Canonicalize the session-name argument (nominate <id> <session>, suggest <id> <who> …) the same
   # way _project_me canonicalizes the actor's own tag — else a nominee's own accept won't match the
   # stored lead. nominate: $2 is the session; suggest: $2 is the suggested session.
   if [ "$verb" = "nominate" ] && [ -n "$2" ]; then set -- "$1" "$(_coord_plain "$2")" "${@:3}"; fi
   if [ "$verb" = "suggest" ] && [ -n "$2" ]; then set -- "$1" "$(_coord_plain "$2")" "${@:3}"; fi
+
+  # `dispatch` is the one verb that spans two subsystems: it must place a real order.sh order AND
+  # flip the job to dispatched, atomically-enough. order_dispatch takes its OWN flock, so we can't
+  # nest it inside the project flock; instead: (1) validate readiness + emit the order spec under
+  # the project lock, (2) place the order, (3) record the order_id on the job. Order-first would
+  # orphan an order if step 3 died; spec-first (mark optimistically) would orphan a job if the
+  # order failed. We do check → place → mark, and _dispatch_mark is idempotent on the order_id.
+  if [ "$verb" = "dispatch" ]; then
+    local pid="${1:-}" jobid="${2:-}"
+    if [ -z "$pid" ] || [ -z "$jobid" ]; then echo "usage: project dispatch <id> <job>" >&2; return 1; fi
+    local orderid="proj-${pid}__${jobid}"
+    local spec; spec="$(project_dispatch _dispatch_check "$pid" "$jobid")"; local rc=$?
+    if [ "$rc" -ne 0 ]; then printf '%s\n' "$spec" >&2; return "$rc"; fi
+    # spec is TAB-separated: assignee<TAB>path<TAB>files<TAB>accept
+    local assignee path files accept
+    IFS=$'\t' read -r assignee path files accept <<<"$spec"
+    if ! command -v order_dispatch >/dev/null 2>&1; then
+      echo "project: order.sh not available — can't dispatch a job as an order." >&2; return 1; fi
+    local -a oargs=(place "$orderid" "to:$assignee" "path:$path" "files:$files")
+    [ -n "$accept" ] && oargs+=("accept:$accept")   # array so a spaced accept test isn't split
+    local placed; placed="$(order_dispatch "${oargs[@]}" 2>&1)"; rc=$?
+    if [ "$rc" -ne 0 ]; then printf 'project: order placement failed: %s\n' "$placed" >&2; return 1; fi
+    project_dispatch _dispatch_mark "$pid" "$jobid" "$orderid"
+    return $?
+  fi
+
   local STDIN=""
   if [ "$verb" = "plan" ]; then STDIN="$(cat 2>/dev/null || true)"; fi
   ( flock 9
-    PROJECT_ROOT="$PROJECT_ROOT" PROJECT_ME="$(_project_me)" PROJECT_NOW="$(date +%s)" \
+    PROJECT_ROOT="$PROJECT_ROOT" ORDER_ROOT="$ORDER_ROOT" \
+    PROJECT_ME="$(_project_me)" PROJECT_NOW="$(date +%s)" \
     PROJECT_STDIN="$STDIN" \
     python3 - "$verb" "$@" <<'PYEOF'
 import json, os, sys, time
 
-ROOT = os.environ["PROJECT_ROOT"]
+ROOT       = os.environ["PROJECT_ROOT"]
+ORDER_ROOT = os.environ.get("ORDER_ROOT", "")
 ME   = os.environ.get("PROJECT_ME", "") or "?"
 NOW  = int(os.environ.get("PROJECT_NOW") or 0)
 argv = sys.argv[1:]
 verb = argv[0] if argv else "list"
+
+
+def plain(t):
+    """A tag/to:-token -> canonical bare name, matching bus.sh's _coord_plain (strip [], other:,
+    lowercase) so a job's assignee is stored the same way the actor's own tag resolves."""
+    t = (t or "").strip()
+    if t.startswith("[") and t.endswith("]"):
+        t = t[1:-1]
+    if t.startswith("other:"):
+        t = t[6:]
+    return t.lower()
+
+
+def jobs_of(p):
+    return p.setdefault("jobs", [])
+
+
+def job_by_id(p, jid):
+    return next((j for j in jobs_of(p) if j.get("id") == jid), None)
+
+
+def deps_done(p, job):
+    """True iff every dependency of this job is a job in state 'done'."""
+    byid = {j["id"]: j for j in jobs_of(p)}
+    return all(byid.get(d, {}).get("state") == "done" for d in job.get("deps", []))
+
+
+def blocking_deps(p, job):
+    byid = {j["id"]: j for j in jobs_of(p)}
+    return [d for d in job.get("deps", []) if byid.get(d, {}).get("state") != "done"]
+
+
+def order_state(oid):
+    """Read an order.sh order's state straight off disk (no order_dispatch needed for a read)."""
+    if not ORDER_ROOT:
+        return None
+    try:
+        with open(os.path.join(ORDER_ROOT, oid + ".json"), encoding="utf-8") as f:
+            return json.load(f).get("state")
+    except (OSError, json.JSONDecodeError):
+        return None
 
 def path(pid): return os.path.join(ROOT, pid + ".json")
 
@@ -96,6 +181,63 @@ if verb in ("new",):
          "jobs": [], "issues": [], "log": []}
     logline(p, "created")
     save(p); print("✅ project '%s' created. Next: project nominate %s <session>" % (pid, pid))
+    sys.exit(0)
+
+if verb == "job":
+    # project job add <pid> <jobid> to:<who> path:<dir> files:<a,b> [deps:<x,y>] [size:S|M|L]
+    #                [accept:<test>] -- <desc…>    (only the accepted lead, project active/planning)
+    sub = argv[1] if len(argv) > 1 else ""
+    if sub != "add":
+        die("usage: project job add <id> <jobid> to:<who> path:<dir> files:<a,b> [deps:x,y] -- <desc>")
+    rest = argv[2:]
+    if len(rest) < 2:
+        die("usage: project job add <id> <jobid> to:<who> path:<dir> files:<a,b> [deps:x,y] -- <desc>")
+    pid, jid = rest[0], rest[1]
+    p = load(pid)
+    if p is None:
+        die("no project '%s'" % pid)
+    if p.get("lead") != ME:
+        die("only the accepted lead ([%s]) may add jobs; you are [%s]" % (p.get("lead"), ME))
+    if p.get("state") not in ("planning", "plan_review", "active"):
+        die("can't add jobs while project is '%s' (need a lead + a plan in progress)" % p.get("state"))
+    if not jid.replace("-", "").replace("_", "").isalnum():
+        die("job id must be alphanumeric/-/_")
+    if job_by_id(p, jid):
+        die("job '%s' already exists in project '%s'" % (jid, pid))
+    # split kv tokens from the trailing "-- <desc>"
+    toks = rest[2:]
+    desc = ""
+    if "--" in toks:
+        i = toks.index("--"); kvtoks = toks[:i]; desc = " ".join(toks[i + 1:]).strip()
+    else:
+        kvtoks = toks
+    kw = {}
+    for a in kvtoks:
+        if ":" in a:
+            k, v = a.split(":", 1); kw[k] = v
+    to = plain(kw.get("to", ""))
+    jpath = kw.get("path", "")     # NOT `path` — that's the module-level path() fn; rebinding it breaks save()
+    files = [f for f in kw.get("files", "").split(",") if f]
+    deps = [d for d in kw.get("deps", "").split(",") if d]
+    if not to:
+        die("job needs to:<session> — a job is DIRECTED to one session, never broadcast")
+    if not jpath or not files:
+        die("job needs path:<dir> and files:<a,b> — dispatch places a verified order (files must land)")
+    # deps must reference jobs that ALREADY exist — this is what makes a cycle impossible.
+    unknown = [d for d in deps if not job_by_id(p, d)]
+    if unknown:
+        die("unknown dep(s): %s — a dependency must be a job already added to this project" % ",".join(unknown))
+    if jid in deps:
+        die("a job cannot depend on itself")
+    job = {"id": jid, "to": to, "desc": desc, "deps": deps,
+           "size": (kw.get("size", "") or "").upper(), "accept": kw.get("accept", ""),
+           "path": jpath, "files": files, "state": "planned", "order_id": None}
+    jobs_of(p).append(job)
+    logline(p, "job %s added -> %s (deps: %s)" % (jid, to, ",".join(deps) or "none"))
+    save(p)
+    print("✅ job '%s' added to '%s' -> [%s]%s. %s" % (
+        jid, pid, to, (" (deps: %s)" % ",".join(deps)) if deps else "",
+        "Dispatch when ready: project dispatch %s %s" % (pid, jid)))
     sys.exit(0)
 
 # all remaining verbs take an id
@@ -172,6 +314,89 @@ if verb == "revise":
     p["plan_status"] = "revise"; p["plan_notes"] = notes; p["state"] = "planning"
     logline(p, "plan sent back: " + notes)
     save(p); print("↩ plan for '%s' sent back to the lead with notes." % pid)
+    sys.exit(0)
+
+# ---- slice 2: the DAG ----
+def readiness(p, j):
+    if j["state"] == "done":
+        return "done"
+    if j["state"] == "dispatched":
+        return "dispatched"
+    return "ready" if deps_done(p, j) else "blocked"
+
+if verb == "jobs":
+    js = jobs_of(p)
+    if not js:
+        print("project '%s' has no jobs yet. Add: project job add %s <jobid> to:<who> …" % (pid, pid))
+        sys.exit(0)
+    print("=== jobs for %s === [%s]" % (pid, p["state"]))
+    for j in js:
+        r = readiness(p, j)
+        icon = {"done": "✅", "dispatched": "📤", "ready": "▶", "blocked": "⛔"}[r]
+        extra = ""
+        if r == "blocked":
+            extra = "  ⛔ waiting on: " + ",".join(blocking_deps(p, j))
+        elif r == "dispatched" and j.get("order_id"):
+            extra = "  order:%s (%s)" % (j["order_id"], order_state(j["order_id"]) or "?")
+        elif r == "ready":
+            extra = "  ▶ dispatchable"
+        sz = (" " + j["size"]) if j.get("size") else ""
+        print("  %s %-14s -> [%s]%s  deps=%s%s" % (
+            icon, j["id"], j.get("to", "?"), sz, ",".join(j.get("deps", [])) or "—", extra))
+        if j.get("desc"):
+            print("       %s" % j["desc"])
+    sys.exit(0)
+
+if verb == "_dispatch_check":
+    # internal: validate a job is dispatchable and EMIT its order spec (tab-separated) for the shell
+    # to hand to order_dispatch. No write here — placement happens in the shell, then _dispatch_mark.
+    jid = argv[2] if len(argv) > 2 else ""
+    j = job_by_id(p, jid)
+    if j is None:
+        die("no job '%s' in project '%s'" % (jid, pid))
+    if p.get("lead") != ME:
+        die("only the lead ([%s]) may dispatch jobs; you are [%s]" % (p.get("lead"), ME))
+    if p.get("state") != "active":
+        die("project '%s' is '%s' — approve the plan before dispatching jobs" % (pid, p.get("state")))
+    if j["state"] == "dispatched":
+        die("job '%s' is already dispatched (order %s)" % (jid, j.get("order_id")))
+    if j["state"] == "done":
+        die("job '%s' is already done" % jid)
+    if not deps_done(p, j):
+        die("job '%s' is blocked — waiting on: %s" % (jid, ",".join(blocking_deps(p, j))))
+    sys.stdout.write("\t".join([j["to"], j["path"], ",".join(j["files"]), j.get("accept", "")]))
+    sys.exit(0)
+
+if verb == "_dispatch_mark":
+    jid = argv[2] if len(argv) > 2 else ""
+    oid = argv[3] if len(argv) > 3 else ""
+    j = job_by_id(p, jid)
+    if j is None:
+        die("no job '%s'" % jid)
+    if j["state"] == "planned":
+        j["state"] = "dispatched"; j["order_id"] = oid
+        logline(p, "job %s dispatched as order %s -> %s" % (jid, oid, j["to"]))
+        save(p)
+    print("📤 dispatched job '%s' -> [%s] as order '%s'. The worker claims + delivers; the order "
+          "verifies files landed; then project sync %s advances the DAG." % (jid, j["to"], oid, pid))
+    sys.exit(0)
+
+if verb == "sync":
+    # advance the DAG: any dispatched job whose order reached CLOSED becomes 'done', which may
+    # unblock dependents. Conductor calls this each scan; the lead can too. Read-only on orders.
+    changed = []
+    for j in jobs_of(p):
+        if j["state"] == "dispatched" and order_state(j.get("order_id")) == "CLOSED":
+            j["state"] = "done"; changed.append(j["id"])
+            logline(p, "job %s done (order %s CLOSED)" % (j["id"], j.get("order_id")))
+    if changed:
+        save(p)
+        newly = [j["id"] for j in jobs_of(p) if j["state"] == "planned" and deps_done(p, j)]
+        print("✅ %d job(s) completed: %s.%s" % (
+            len(changed), ", ".join(changed),
+            ("  Now dispatchable: " + ", ".join(newly)) if newly else ""))
+    else:
+        print("no change — no dispatched job's order has reached CLOSED yet.")
     sys.exit(0)
 
 die("unknown verb '%s'" % verb, 2)

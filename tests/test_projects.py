@@ -10,7 +10,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from conductor.projects import projects_needing_operator, read_projects
+from conductor.projects import (
+    annotate_jobs,
+    projects_needing_operator,
+    read_projects,
+    total_in_flight,
+)
 
 
 def _write(root: Path, rec: dict) -> None:
@@ -78,3 +83,42 @@ def test_newest_created_first_and_bad_json_skipped(tmp_path: Path):
     (tmp_path / "projects" / "junk.json").write_text("{not json", encoding="utf-8")
     ps = read_projects(tmp_path)
     assert [p["id"] for p in ps] == ["new", "old"]   # junk skipped, newest first
+
+
+# --- slice 2: the DAG annotation + throttle ----------------------------------
+def _job(jid, state="planned", deps=None, order_id=None):
+    return {"id": jid, "to": "x", "desc": "", "deps": deps or [], "size": "",
+            "accept": "", "path": "/d", "files": ["f"], "state": state, "order_id": order_id}
+
+
+def test_dag_readiness():
+    p = _proj("p", state="active", jobs=[
+        _job("A"),                              # no deps -> ready
+        _job("B", deps=["A"]),                  # A not done -> blocked
+        _job("C", state="dispatched", order_id="o1"),
+        _job("D", state="done"),
+    ])
+    annotate_jobs(p)
+    by = {j["id"]: j for j in p["jobs"]}
+    assert by["A"]["readiness"] == "ready"
+    assert by["B"]["readiness"] == "blocked" and by["B"]["blocking_deps"] == ["A"]
+    assert by["C"]["readiness"] == "dispatched"
+    assert by["D"]["readiness"] == "done"
+    assert p["job_counts"] == {"total": 4, "ready": 1, "blocked": 1, "dispatched": 1, "done": 1}
+    assert p["in_flight"] == 1
+    assert p["ready_jobs"] == ["A"]
+
+
+def test_dependent_unblocks_when_dep_done():
+    p = _proj("p", state="active", jobs=[_job("A", state="done"), _job("B", deps=["A"])])
+    annotate_jobs(p)
+    assert {j["id"]: j["readiness"] for j in p["jobs"]} == {"A": "done", "B": "ready"}
+
+
+def test_total_in_flight_is_fleet_global(tmp_path: Path):
+    _write(tmp_path, _proj("p1", state="active", jobs=[_job("A", state="dispatched", order_id="o")]))
+    _write(tmp_path, _proj("p2", state="active",
+                           jobs=[_job("B", state="dispatched", order_id="o"),
+                                 _job("C", state="done")]))
+    ps = read_projects(tmp_path)
+    assert total_in_flight(ps) == 2      # one in p1, one in p2 (the done job doesn't count)
