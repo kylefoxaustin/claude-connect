@@ -146,9 +146,13 @@ project-tagged: the lead's *own* project questions, and worker questions the lea
 **Direct-escalation hatch — REQUIRED, not optional** (95/qualcomm): via-the-lead adds wake-cycle
 latency that's unacceptable on the critical path, and a worker may hold a signal the lead would sit
 on. Proof: 95emulator surfaced the push-gate *security* bug through a mis-routed approval — a
-via-the-lead-absolute rule would have had **no path** for it. So a worker may escalate **directly to
-Kyle**, bounded to **safety / security / data-loss / premise-collapse / hard-blocking-on-the-critical-
-path**. Anything else goes through the lead.
+via-the-lead-absolute rule would have had **no path** for it. Resolved shape (§9 decision 4): a worker
+may escalate **directly to Kyle** in **two** cases — (a) a **narrow severity list**: safety /
+security / data-loss / premise-collapse, which bypass the lead *instantly*; and (b) a **lead-timeout
+auto-escalate**: if the worker has been waiting on the lead for a decision past a timeout `T`, it
+auto-escalates to Kyle. Everything else goes through the lead. This deliberately has **no self-
+declared "I'm urgent/blocked" category** — that would be the hole that swallows the shield; the
+timeout gives the latency relief without letting a worker route around the lead at will.
 
 ## 4b. Gate #1.5 — the premise-collapse check (qualcomm's new primitive)
 
@@ -207,8 +211,11 @@ estimates are **systematically low** (anchored on the happy path; revisions only
   - **Acceptance test = worker-PROPOSED, lead-APPROVED** (not lead-dictated) — the worker is the
     expert on what "gated" or "converts correctly" observably means.
   - **A lead can't self-accept its own jobs** (image_gen dogfooded this): if the lead is both
-    requester and worker the independence guard degenerates. Decide: the lead is a **pure PM** (does
-    no jobs), or a lead's own job is accepted by a **peer or Kyle**. (A genuine your-call — §9.)
+    requester and worker the independence guard degenerates. **Resolved (§9 decision 2): the lead
+    DOES do worker jobs, but its own deliverables are accepted by a designated PEER or Kyle** — never
+    self-graded. The lead is usually the most-expert on the core work, so pure-PM would waste it; the
+    peer-accept keeps the independence guard intact. (The lead always does the aggregation/join too —
+    that's the PM half, independent of whether it takes worker jobs.)
 - **⭐ A job-dependency DAG is a genuine NEW primitive** (93/95/image_gen), not order reuse. Orders
   are independent edges; the motivating example is a *chain* — a converted model **feeds** a parity
   check; job B can't start until job A delivers, and B's run is often what *verifies* A's acceptance.
@@ -246,12 +253,23 @@ Kyle wants a **desktop + phone view of the project and its members**. So:
   lesson (state survives session death; reconstitute from disk). Open: the new lead **re-confirms**
   the inherited plan it didn't write (93) — which interacts with the plan-gate re-approval.
 
-## 9. Genuine your-call decisions (not fleet-resolvable)
+## 9. Your-call decisions — RESOLVED (Kyle, 2026-07-25)
 
-1. **Framing:** commit to "cognitive-load win, accept the latency cost" (§0) as what this layer *is*?
-2. **Lead role:** pure PM (leads never do jobs), or leads do jobs but a peer/Kyle accepts them (§6)?
-3. **Ceremony bar:** the exact aggregation threshold (§7) — where does a project earn its weight?
-4. **Direct-escalation scope:** exactly which severities bypass the lead (§4a)?
+All four settled, so the design is decision-complete:
+
+1. **Framing → cognitive scale, accept latency.** The layer is for taking on more concurrent aspects
+   than a human can hold in his head; it is **not** for speed (for tight deadlines, courier it). This
+   is now the layer's stated identity (§0) and a testable paper claim.
+2. **Lead role → the lead also does worker jobs; its OWN deliverables are accepted by a designated
+   peer or Kyle** (never self-accepted — the independence guard, §6). Matches the real model (the lead
+   is usually most-expert on the core). The lead always does the aggregation regardless.
+3. **Ceremony bar → strict.** A project earns the wrapper only with **≥3 sessions AND a real
+   aggregation/join AND ≥2 rounds** of back-and-forth (§7). Default is NOT a project; below the bar
+   it's just orders. Prevents metastasis.
+4. **Direct-escalation → narrow list + lead-timeout auto-escalate** (§4a). Safety / security /
+   data-loss / premise-collapse bypass the lead instantly; AND a worker waiting on the lead past a
+   timeout `T` auto-escalates to Kyle. Covers the security-path and the latency problem without a
+   self-declared "urgent" hole.
 
 ## 10. Build slices (once §9 is settled)
 
