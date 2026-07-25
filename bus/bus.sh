@@ -106,6 +106,7 @@ _BUS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
 if [ -n "$_BUS_DIR" ] && [ -r "$_BUS_DIR/member-registry.sh" ]; then . "$_BUS_DIR/member-registry.sh"; fi
 if [ -n "$_BUS_DIR" ] && [ -r "$_BUS_DIR/pid-join.sh" ]; then . "$_BUS_DIR/pid-join.sh"; fi
 if [ -n "$_BUS_DIR" ] && [ -r "$_BUS_DIR/order.sh" ]; then . "$_BUS_DIR/order.sh"; fi   # agentic delivery
+if [ -n "$_BUS_DIR" ] && [ -r "$_BUS_DIR/project.sh" ]; then . "$_BUS_DIR/project.sh"; fi  # project layer
 
 # _hook_pidjoin — from a hook's stdin JSON payload, record claude_pid -> session_id (step 3). The
 # hooks (SessionStart / UserPromptSubmit) are the ONLY place session_id is visible, so they seed the
@@ -2238,6 +2239,17 @@ except Exception: print("")' 2>/dev/null || true)"
     fi
     action="${1:-status}"; shift 2>/dev/null || true
     order_dispatch "$action" "$@"
+    exit $?
+    ;;
+
+  project)
+    # The Project Layer (docs/PROJECT_LAYER.md) slice 1: lead-owned multi-session work — nomination
+    # handshake (accept/decline/suggest) + the plan gate the operator approves before work fans out.
+    if ! command -v project_dispatch >/dev/null 2>&1; then
+      echo "bus.sh: project.sh not installed alongside bus.sh — project layer unavailable." >&2; exit 1
+    fi
+    action="${1:-list}"; shift 2>/dev/null || true
+    project_dispatch "$action" "$@"
     exit $?
     ;;
 
