@@ -34,6 +34,38 @@ _FOCUS_POLL_TIMEOUT_S = 2.0
 _FOCUS_POLL_STEP_S = 0.1
 _TILE_SETTLE_S = 0.4
 
+# A human actively at the keyboard/mouse within this long ⇒ DEFER injection. Conductor types into
+# terminals, and doing so while a person is driving the same X session races their live focus — the
+# keystrokes can split into whatever tile they just clicked (Kyle, 2026-07-25: a "push approved"
+# notice split across two Tilix panes, half landing on his shell prompt). No window-level guard can
+# catch this: panes share one X11 window, so the mis-delivery check is blind to which pane is focused.
+_HUMAN_ACTIVE_MS = 4000
+
+
+def _mutter_idle_ms() -> int | None:
+    """Milliseconds since the last human keyboard/mouse input, via GNOME Mutter's IdleMonitor over
+    D-Bus (no new dependency — dbus-send ships with the desktop). Returns None if it can't be read
+    (no Mutter, no session bus) — the caller treats that as 'can't tell, proceed', so this is a guard
+    that helps where it can and never blocks the fleet on a box it can't measure."""
+    try:
+        r = subprocess.run(
+            ["dbus-send", "--session", "--print-reply", "--dest=org.gnome.Mutter.IdleMonitor",
+             "/org/gnome/Mutter/IdleMonitor/Core", "org.gnome.Mutter.IdleMonitor.GetIdletime"],
+            capture_output=True, text=True, timeout=2.0)
+        if r.returncode != 0:
+            return None
+        m = re.search(r"uint64\s+(\d+)", r.stdout)
+        return int(m.group(1)) if m else None
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+
+
+def human_recently_active(threshold_ms: int = _HUMAN_ACTIVE_MS) -> bool:
+    """True iff a human used the machine within ``threshold_ms``. Best-effort: unknown ⇒ False
+    (proceed), so this never wedges injection on a host where idle time can't be read."""
+    idle = _mutter_idle_ms()
+    return idle is not None and idle < threshold_ms
+
 
 def wmctrl_available() -> bool:
     return shutil.which("wmctrl") is not None
@@ -361,6 +393,14 @@ def _focus_session_input(
     returns unmatchable client ids) and we do NOT ``windowactivate`` (it raises the window but does
     not give a tilix TILE keyboard focus — keys vanish). NON-TILIX: resolve by title, verify it is
     the target's window, and ``windowactivate``."""
+    # A human actively driving the machine will race us for keyboard focus — and if they steal it
+    # mid-type (e.g. clicking another Tilix pane over RustDesk), our keystrokes split into their
+    # window. No window-level check can see that (panes share one X11 window), so we refuse UP FRONT:
+    # don't type while a person is active; the caller retries once they go idle (same as the busy
+    # guard). This is the only guard that catches pane-level mis-delivery, because it never competes.
+    if human_recently_active():
+        log.debug("a human is active at the machine — deferring injection to avoid a focus race")
+        return False
     tilix_id = tilix_id_for_pid(pid)
     if tilix_id:
         before = _active_window_id()

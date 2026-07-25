@@ -147,6 +147,36 @@ def test_picker_answer_refuses_when_the_tile_activate_fails(env):
     assert _send_keys() is False
 
 
+# --- human-active defer (2026-07-25): don't type while a person drives the machine --------------
+def test_human_recently_active_reads_mutter_idle(monkeypatch):
+    monkeypatch.setattr(W, "_mutter_idle_ms", lambda: 1000)     # 1s ago -> active
+    assert W.human_recently_active() is True
+    monkeypatch.setattr(W, "_mutter_idle_ms", lambda: 60_000)   # 60s ago -> not active
+    assert W.human_recently_active() is False
+    monkeypatch.setattr(W, "_mutter_idle_ms", lambda: None)     # can't tell -> proceed (fail-open)
+    assert W.human_recently_active() is False
+
+
+def test_text_inject_defers_while_human_active(env, monkeypatch):
+    """The bug: a notice split across two Tilix panes when Kyle was live on the machine. The guard
+    refuses to type at all while a human is active — nothing is typed, and the caller retries."""
+    monkeypatch.setattr(W, "human_recently_active", lambda: True)
+    assert _send() is False
+    assert env["typed"] == [], "typed while a human was active — the exact focus-race we're closing"
+    assert env["activated_uuid"] is None, "shouldn't even activate a tile while a human is active"
+
+
+def test_picker_answer_defers_while_human_active(env, monkeypatch):
+    monkeypatch.setattr(W, "human_recently_active", lambda: True)
+    assert _send_keys() is False
+
+
+def test_inject_proceeds_when_human_idle(env, monkeypatch):
+    monkeypatch.setattr(W, "human_recently_active", lambda: False)
+    assert _send() is True
+    assert env["typed"] == ["/msg-check"]
+
+
 def test_verify_guard_does_not_false_positive_on_a_SHARED_token(monkeypatch):
     """Found live: two sessions whose titles share a token ("simtest-a"/"simtest-b" both contain
     "simtest"; "keyhole"/"keyhole-sizer" both contain "keyhole") must not verify as each other."""
