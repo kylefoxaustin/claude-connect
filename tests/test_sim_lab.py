@@ -205,7 +205,7 @@ def test_concurrent_notify_rings_the_phone_once(monkeypatch):
     app._silent = []
     sent = []
     item = {"key": "q1", "title": "a question"}
-    monkeypatch.setattr("conductor.main.notifiable", lambda *a: [item])
+    monkeypatch.setattr("conductor.main.notifiable", lambda *a, **k: [item])
     monkeypatch.setattr("conductor.main.due", lambda items, n: [i for i in items if i["key"] not in n])
     monkeypatch.setattr("conductor.main.prune_sent", lambda n, items: n)
     monkeypatch.setattr("conductor.main.read_subs", lambda root: [{"endpoint": "e"}])

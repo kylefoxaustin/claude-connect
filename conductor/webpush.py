@@ -144,14 +144,24 @@ def drop_sub(coord_root: Path, endpoint: str) -> None:
 # --- what is worth interrupting a human for ---------------------------------
 def notifiable(decisions: list[dict[str, Any]],
                push_requests: list[dict[str, Any]],
-               dead_readers: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
-    """The things that page. The default two — a blocked question, a gated push — plus, ONLY when the
-    operator has opted in (``[bus].page_dead_readers``), a DEAD reader: a session that isn't running
-    while someone has an open question waiting on it. That is the third case where work has stopped and
-    a human is the only unblocker (they must relaunch it); it stays off by default because a third
-    alarm is a deliberate choice, not a default. Each item carries a stable ``key`` so we can tell
-    "still unanswered" from "new" — the difference between a reminder and a nag."""
+               dead_readers: list[dict[str, Any]] | None = None,
+               escalations: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    """The things that page. The default two — a blocked question, a gated push — plus a project
+    ESCALATION that is Kyle's to decide (the shield's denylist/severity hatch, or a lead-timeout):
+    that is exactly a blocked question, lead-framed and project-tagged, so it pages by the same rule.
+    Plus, ONLY when the operator has opted in (``[bus].page_dead_readers``), a DEAD reader. Each item
+    carries a stable ``key`` so we can tell "still unanswered" from "new" — reminder, not nag."""
     out: list[dict[str, Any]] = []
+    for e in escalations or []:
+        who = e.get("raised_by") or "a session"
+        mark = e.get("severity") or e.get("deny") or ("timed out" if e.get("timed_out") else "")
+        out.append({
+            "key": f"escalation:{e.get('project')}:{e.get('id')}",
+            "title": f"🚩 {e.get('project')} needs your call" + (f" ({mark})" if mark else ""),
+            "body": (e.get("question") or "")[:140],
+            "url": "/m?pane=inbox",
+            "tag": "escalation",
+        })
     for d in decisions:
         q = (d.get("questions") or [{}])[0]
         who = Path(d.get("cwd", "")).name or "a session"

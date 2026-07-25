@@ -134,5 +134,81 @@ ok  "jobA done" "$(jfield neutron jobA state)" "done"
 okc "jobB now dispatchable" "$(ops jobs neutron)" "jobB"
 okc "dispatch B now allowed" "$(lead dispatch neutron jobB)" "dispatched"
 
+# ============================ SLICE 3: decision routing (the shield) ==========================
+efield(){ python3 -c "import sys,json;p=json.load(open('$PROJECT_STATE_DIR/$1.json'));e=[x for x in p['escalations'] if x['id']=='$2'][0];print(e.get('$3',''))"; }
+
+# 21. the audit log — a worker LOGS a technical decision (no escalation, nobody asked)
+okc "decide logs" "$(other decide neutron job:jobA chose int8 over fp16 within tolerance)" "logged"
+
+# 22. a project question routes to the LEAD
+okc "escalate to lead" "$(other escalate neutron e1 job:jobA <<'EOF'
+question: int8 model or wait for fp16?
+why: jobB parity depends on it
+option: int8
+option: fp16
+recommendation: int8
+EOF
+)" "the lead"
+ok  "e1 target lead" "$(efield neutron e1 target)" "lead"
+
+# 23. a severity finding takes the HATCH — straight to Kyle
+okc "security escalates to Kyle" "$(other escalate neutron e2 sev:security <<'EOF'
+question: patch the push-gate bypass now?
+why: a security control has a hole
+option: patch now
+option: file it
+EOF
+)" "Kyle DIRECTLY"
+ok  "e2 target kyle" "$(efield neutron e2 target)" "kyle"
+
+# 24. the lead answers a lead-bound escalation; is BARRED from a Kyle-bound one
+okc "lead answers lead-bound" "$(lead answer neutron e1 use int8)" "answered"
+okc "lead BARRED from kyle-bound" "$(lead answer neutron e2 patch it)" "may not answer"
+ok  "e2 still open" "$(efield neutron e2 state)" "open"
+
+# 25. Kyle (operator) answers the Kyle-bound one
+okc "operator answers kyle-bound" "$(ops answer neutron e2 patch now)" "answered"
+ok  "e2 answered" "$(efield neutron e2 state)" "answered"
+
+# 26. forward — a lead pushes a lead-bound item to Kyle on a denylist realization
+other escalate neutron e3 <<'EOF' >/dev/null
+question: add ONNX export as a deliverable?
+why: hinted but not in the approved plan
+option: add it
+option: keep to plan
+EOF
+okc "lead forwards (scope)" "$(lead forward neutron e3 deny:scope </dev/null)" "forwarded"
+ok  "e3 now kyle-bound" "$(efield neutron e3 target)" "kyle"
+okc "lead barred after forward" "$(lead answer neutron e3 add it)" "may not answer"
+okc "non-lead cannot forward" "$(other forward neutron e3 </dev/null)" "only the lead"
+
+# 27. escalations view + deny routing straight to Kyle
+okc "deny routes to Kyle" "$(img escalate neutron e4 deny:irreversible <<'EOF'
+question: delete old checkpoints (40GB)?
+why: irreversible
+option: delete
+option: archive first
+EOF
+)" "Kyle DIRECTLY"
+# 27b. lead-timeout auto-escalate (the system verb Conductor calls) flips a lead-bound one to Kyle
+other escalate neutron e5 <<'EOF' >/dev/null
+question: which sequencing for the last two jobs?
+why: coordination call
+option: A then B
+option: B then A
+EOF
+ok  "e5 starts lead-bound" "$(efield neutron e5 target)" "lead"
+okc "timeout-forward flips to Kyle" "$(ops timeout-forward neutron e5)" "auto-escalated"
+ok  "e5 now kyle-bound" "$(efield neutron e5 target)" "kyle"
+ok  "e5 marked timed_out" "$(efield neutron e5 timed_out)" "True"
+okc "lead barred after timeout" "$(lead answer neutron e5 A then B)" "may not answer"
+
+okc "escalations --open lists open e4" "$(ops escalations neutron --open)" "e4"
+okc "escalations --open lists forwarded e3" "$(ops escalations neutron --open)" "e3"
+# e2 is answered, so it must NOT appear under --open (but DOES in the full view)
+if printf '%s' "$(ops escalations neutron --open)" | grep -qF "e2"; then
+  fail=$((fail+1)); echo "FAIL: answered e2 should not be in --open"; else pass=$((pass+1)); fi
+okc "full view shows answered e2" "$(ops escalations neutron)" "e2"
+
 echo "---"; echo "project: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

@@ -85,6 +85,9 @@ def read_projects(coord_root: Path) -> list[dict[str, Any]]:
             continue
         noms = p.get("nominations") or []
         annotate_jobs(p)                          # per-job readiness + DAG counts (slice 2)
+        es = p.get("escalations") or []           # decision shield (slice 3)
+        p["open_kyle_escalations"] = sum(1 for e in es if e.get("state") == "open" and e.get("target") == "kyle")
+        p["open_lead_escalations"] = sum(1 for e in es if e.get("state") == "open" and e.get("target") == "lead")
         p["needs"] = _needs_operator(p)
         p["last_nomination"] = noms[-1] if noms else None
         # Don't ship the whole plan text in the list payload — only whether one exists + its size.
@@ -105,3 +108,21 @@ def total_in_flight(projects: list[dict[str, Any]]) -> int:
     """Jobs dispatched-but-not-done across ALL projects — the fleet-global concurrency the throttle
     caps (§5b: the cap is global, since every project competes for the same overloaded ceiling)."""
     return sum(p.get("in_flight", 0) for p in projects)
+
+
+def open_escalations(projects: list[dict[str, Any]], target: str | None = "kyle") -> list[dict[str, Any]]:
+    """Open escalations across all projects, each enriched with its project id + goal. Default
+    ``target='kyle'`` returns only the ones that are Kyle's to decide (the denylist + severity hatch,
+    plus any the lead-timeout auto-escalated) — what the phone decision queue raises. ``target=None``
+    returns all open ones (for the desktop view)."""
+    out: list[dict[str, Any]] = []
+    for p in projects:
+        for e in p.get("escalations") or []:
+            if e.get("state") != "open":
+                continue
+            if target is not None and e.get("target") != target:
+                continue
+            out.append({**e, "project": p["id"], "project_goal": p.get("goal", "")})
+    # oldest first — a decision that has waited longest should surface first.
+    out.sort(key=lambda e: e.get("created", 0))
+    return out

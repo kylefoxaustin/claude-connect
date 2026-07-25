@@ -12,6 +12,7 @@ from pathlib import Path
 
 from conductor.projects import (
     annotate_jobs,
+    open_escalations,
     projects_needing_operator,
     read_projects,
     total_in_flight,
@@ -122,3 +123,42 @@ def test_total_in_flight_is_fleet_global(tmp_path: Path):
                                  _job("C", state="done")]))
     ps = read_projects(tmp_path)
     assert total_in_flight(ps) == 2      # one in p1, one in p2 (the done job doesn't count)
+
+
+# --- slice 3: the decision shield -------------------------------------------
+def _esc(eid, target="kyle", state="open", created=100, **over):
+    e = {"id": eid, "raised_by": "qualcomm", "job": "", "question": f"q{eid}", "why": "",
+         "options": [], "recommendation": "", "severity": "", "deny": "", "target": target,
+         "state": state, "answer": "", "answered_by": "", "answered_epoch": 0, "created": created}
+    e.update(over)
+    return e
+
+
+def test_open_escalations_kyle_only_by_default(tmp_path: Path):
+    _write(tmp_path, _proj("p", state="active", escalations=[
+        _esc("k1", target="kyle", deny="scope"),
+        _esc("l1", target="lead"),                 # lead-bound -> not Kyle's
+        _esc("k2", target="kyle", state="answered"),  # answered -> gone
+    ]))
+    ps = read_projects(tmp_path)
+    kyle = open_escalations(ps, target="kyle")
+    assert [e["id"] for e in kyle] == ["k1"]
+    assert kyle[0]["project"] == "p"               # enriched with the project id
+    # target=None returns ALL open (for the desktop): k1 + l1, not the answered k2
+    assert sorted(e["id"] for e in open_escalations(ps, target=None)) == ["k1", "l1"]
+
+
+def test_open_escalations_oldest_first(tmp_path: Path):
+    _write(tmp_path, _proj("p", state="active", escalations=[
+        _esc("new", created=200), _esc("old", created=100)]))
+    ps = read_projects(tmp_path)
+    assert [e["id"] for e in open_escalations(ps)] == ["old", "new"]
+
+
+def test_escalation_counts_annotated(tmp_path: Path):
+    _write(tmp_path, _proj("p", state="active", escalations=[
+        _esc("k1", target="kyle"), _esc("l1", target="lead"), _esc("l2", target="lead"),
+        _esc("done1", target="kyle", state="answered")]))
+    p = read_projects(tmp_path)[0]
+    assert p["open_kyle_escalations"] == 1
+    assert p["open_lead_escalations"] == 2

@@ -161,6 +161,9 @@ function renderInbox() {
   const items = [];
 
   for (const d of ops.decisions) items.push(decisionCard(d));
+  // Project escalations that are Kyle's to decide (the shield's denylist/severity hatch, or a
+  // lead-timeout). Same shape as a decision — question · why · options — so it sits up here.
+  for (const e of ops.escalations || []) items.push(escalationCard(e));
   // A proposal outranks a bare gate request: it's the same repo asking the SAME question
   // with the context attached, and answering it arms the grant.
   for (const p of ops.proposals || []) items.push(proposalCard(p));
@@ -412,6 +415,67 @@ function persistCard(p) {
   }
   row.append(go, no);
   el.appendChild(row);
+  return el;
+}
+
+/* A project ESCALATION Kyle must decide (slice 3 shield). Reached his queue because it hit the
+ * denylist (scope/budget/goal/risk/irreversible), a severity hatch (safety/security/data-loss/
+ * premise), or the lead didn't answer in time. Shows the decision, its project impact, the options,
+ * and the raiser's recommendation — Kyle taps an option and it's recorded on the project (the lead +
+ * worker read it). If there are no options, a free-text prompt. */
+function escalationCard(e) {
+  const el = document.createElement("div");
+  el.className = "card card-hot";
+  const mark = e.severity || e.deny || (e.timed_out ? "lead timed out" : "");
+  const age = e.created ? Date.now() / 1000 - e.created : null;
+  el.innerHTML =
+    `<div class="card-head">` +
+    `<span class="card-who">🚩 ${esc(e.project)} · ${esc(bare(e.raised_by) || "?")}` +
+    (mark ? ` <span class="pill">${esc(mark)}</span>` : "") + `</span>` +
+    `<span class="row-age">${ago(age)}</span></div>` +
+    `<div class="card-q">${esc(e.question)}</div>` +
+    (e.why ? `<div class="row-sub" style="white-space:normal">why: ${esc(e.why)}</div>` : "") +
+    (e.recommendation ? `<div class="row-sub" style="white-space:normal">rec: ${esc(e.recommendation)}</div>` : "");
+
+  const send = async (answer, btns) => {
+    btns.forEach((b) => (b.disabled = true));
+    try {
+      const r = await api(`/api/projects/${encodeURIComponent(e.project)}/escalations/${encodeURIComponent(e.id)}/answer`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ answer }) });
+      if (r && r.ok === false) throw new Error(r.result || "refused");
+    } catch (err) {
+      btns.forEach((b) => (b.disabled = false));
+      el.querySelector(".card-q")?.insertAdjacentHTML(
+        "afterend", `<div class="row-sub" style="color:var(--bad,#ff6b6b)">couldn't answer: ${esc(String(err.message || err))} — tap again or use a terminal</div>`);
+      return;
+    }
+    refresh();
+  };
+
+  const opts = e.options || [];
+  if (opts.length) {
+    const btns = opts.map((o) => {
+      const b = document.createElement("button");
+      b.className = "opt";
+      b.innerHTML = `<span class="opt-box opt-radio"></span><span class="opt-text"><span class="opt-l">${esc(o)}</span></span>`;
+      b.addEventListener("click", () => send(o, btns));
+      el.appendChild(b);
+      return b;
+    });
+  } else {
+    const row = document.createElement("div");
+    row.className = "btn-row";
+    const b = document.createElement("button");
+    b.className = "btn btn-primary";
+    b.textContent = "Answer…";
+    b.addEventListener("click", () => {
+      const a = prompt(`Your decision for "${e.question}":`);
+      if (a === null || !a.trim()) return;
+      send(a.trim(), [b]);
+    });
+    row.appendChild(b);
+    el.appendChild(row);
+  }
   return el;
 }
 

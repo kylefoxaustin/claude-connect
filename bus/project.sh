@@ -33,6 +33,22 @@
 # dispatched job IS an order.sh order, so delivery is verified (files land) and the worker can't
 # self-grade. Conductor honors the edges AND admits by fleet-global concurrency (§5b) — the bus
 # enforces the DAG here; the fleet-load throttle lives in Conductor.
+#
+# Slice 3 — decision routing, the shield (§4a):
+#   project decide <id> [job:<j>] <text…>     LOG a technical decision made on Kyle's behalf (audit)
+#   project escalate <id> <eid> [job:<j>] [sev:<safety|security|data-loss|premise>] \
+#            [deny:<scope|budget|goal|risk|irreversible>]   + STDIN body → raise a decision
+#   project answer <id> <eid> <answer…>       resolve an escalation (lead→lead-bound, Kyle→Kyle-bound)
+#   project forward <id> <eid> [deny:<d>]     + STDIN why → the lead pushes a lead-bound one to Kyle
+#   project escalations <id> [--open]         list escalations
+#
+# THE ROUTING AXIS (§4a): TECHNICAL/DOMAIN calls the WORKER decides+logs (`decide`) — pushing them up
+# inverts expertise. PROJECT/COORDINATION calls go to the LEAD. The ESCALATE-ALWAYS denylist (scope/
+# budget/goal/risk/irreversible) and the severity HATCH (safety/security/data-loss/premise) route
+# DIRECTLY to Kyle and the lead is STRUCTURALLY BARRED from answering them (target=kyle → the lead's
+# `answer` is refused). The escalation SHAPE is Kyle's: question · why(impact) · options · recommendation
+# — an AskUserQuestion that lands in the phone decision queue. A lead-timeout auto-forward (Conductor)
+# gives latency relief without a self-declared "I'm urgent" category (the hole that would swallow it).
 
 _project_me() { _coord_plain "$TAG" 2>/dev/null || printf '%s' "$TAG"; }
 
@@ -73,7 +89,12 @@ project_dispatch() {
   fi
 
   local STDIN=""
-  if [ "$verb" = "plan" ]; then STDIN="$(cat 2>/dev/null || true)"; fi
+  # Read a body from stdin for the form-verbs — but ONLY when stdin is actually piped. Without the
+  # tty guard, `project forward … ` with no heredoc blocks on cat forever (and a guard refusal never
+  # gets to fire). Piped → read; interactive/no-pipe → empty body, and the verb validates it.
+  case "$verb" in
+    plan|escalate|forward) [ ! -t 0 ] && STDIN="$(cat 2>/dev/null || true)" ;;
+  esac
   ( flock 9
     PROJECT_ROOT="$PROJECT_ROOT" ORDER_ROOT="$ORDER_ROOT" \
     PROJECT_ME="$(_project_me)" PROJECT_NOW="$(date +%s)" \
@@ -397,6 +418,189 @@ if verb == "sync":
             ("  Now dispatchable: " + ", ".join(newly)) if newly else ""))
     else:
         print("no change — no dispatched job's order has reached CLOSED yet.")
+    sys.exit(0)
+
+# ---- slice 3: decision routing (the shield) ----
+SEVERITIES = ("safety", "security", "data-loss", "premise")
+DENYLIST   = ("scope", "budget", "goal", "risk", "irreversible")
+
+def escs(p):
+    return p.setdefault("escalations", [])
+
+def esc_by_id(p, eid):
+    return next((e for e in escs(p) if e.get("id") == eid), None)
+
+def parse_esc_body(text):
+    """A tiny key: value form on stdin -> the escalation shape. `option:` repeats."""
+    q = why = rec = ""
+    opts = []
+    for ln in (text or "").splitlines():
+        k, sep, v = ln.partition(":")
+        if not sep:
+            continue
+        k = k.strip().lower(); v = v.strip()
+        if k == "question":
+            q = v
+        elif k in ("why", "impact"):
+            why = v
+        elif k in ("option", "opt"):
+            if v:
+                opts.append(v)
+        elif k in ("recommendation", "rec"):
+            rec = v
+    return q, why, opts, rec
+
+if verb == "decide":
+    # the AUDIT LOG (detection): a technical/domain decision made on Kyle's behalf. Any project
+    # participant may log; it is a record, not a request — nobody is asked, nothing blocks.
+    kw = {}
+    words = []
+    for a in argv[2:]:
+        if a.startswith("job:"):
+            kw["job"] = a[4:]
+        else:
+            words.append(a)
+    text = " ".join(words).strip()
+    if not text:
+        die("usage: project decide <id> [job:<j>] <what you decided and why>")
+    p.setdefault("decisions", []).append(
+        {"by": ME, "job": kw.get("job", ""), "text": text, "ts": NOW})
+    logline(p, "decision logged by %s%s" % (ME, (" [job %s]" % kw["job"]) if kw.get("job") else ""))
+    save(p)
+    print("📝 logged a technical decision on '%s' (audit trail — Kyle can spot-check it)." % pid)
+    sys.exit(0)
+
+if verb == "escalate":
+    eid = argv[2] if len(argv) > 2 else ""
+    if not eid:
+        die("usage: project escalate <id> <eid> [job:<j>] [sev:<…>] [deny:<…>]  (+ body on stdin)")
+    if esc_by_id(p, eid):
+        die("escalation '%s' already exists" % eid)
+    kw = {}
+    for a in argv[3:]:
+        if ":" in a:
+            k, v = a.split(":", 1); kw[k] = v
+    sev = (kw.get("sev", "") or "").lower()
+    deny = (kw.get("deny", "") or "").lower()
+    if sev and sev not in SEVERITIES:
+        die("sev must be one of: %s" % ", ".join(SEVERITIES))
+    if deny and deny not in DENYLIST:
+        die("deny must be one of: %s" % ", ".join(DENYLIST))
+    q, why, opts, rec = parse_esc_body(os.environ.get("PROJECT_STDIN", ""))
+    if not q:
+        die("escalation needs a body on stdin with at least 'question: …'. e.g.\n"
+            "  project escalate %s e1 <<'EOF'\n  question: int8 or fp16 here?\n"
+            "  why: int8 drops 2%% accuracy\n  option: int8\n  option: fp16\n"
+            "  recommendation: fp16\n  EOF" % pid)
+    # ROUTING: the denylist and the severity hatch go straight to Kyle and the lead can't answer
+    # them; everything else goes to the lead. There is deliberately NO self-declared "urgent".
+    target = "kyle" if (sev or deny) else "lead"
+    e = {"id": eid, "raised_by": ME, "job": kw.get("job", ""), "question": q, "why": why,
+         "options": opts, "recommendation": rec, "severity": sev, "deny": deny,
+         "target": target, "state": "open", "answer": "", "answered_by": "",
+         "answered_epoch": 0, "created": NOW}
+    escs(p).append(e)
+    logline(p, "escalation %s raised by %s -> %s%s" % (
+        eid, ME, target, (" (%s)" % (sev or deny)) if (sev or deny) else ""))
+    save(p)
+    route = ("↑ Kyle DIRECTLY (%s) — the lead may not decide this" % (sev or deny)) if target == "kyle" \
+            else "→ the lead"
+    print("🚩 escalation '%s' raised %s. %s" % (
+        eid, route, "It lands in Kyle's decision queue." if target == "kyle"
+        else "The lead answers, or forwards it to Kyle if it hits the denylist."))
+    sys.exit(0)
+
+if verb == "answer":
+    eid = argv[2] if len(argv) > 2 else ""
+    e = esc_by_id(p, eid)
+    if e is None:
+        die("no escalation '%s' in project '%s'" % (eid, pid))
+    if e["state"] != "open":
+        die("escalation '%s' is already %s" % (eid, e["state"]))
+    ans = " ".join(argv[3:]).strip()
+    if not ans:
+        die("usage: project answer <id> <eid> <the decision>")
+    # The lead may answer only LEAD-bound escalations. A Kyle-bound one (denylist/severity) is his —
+    # the lead is structurally barred, which is what gives the denylist teeth. Kyle answers through
+    # Conductor (as operator), so ME != lead there.
+    if e["target"] == "lead" and p.get("lead") != ME:
+        die("only the lead ([%s]) may answer a lead-bound escalation; you are [%s]" % (p.get("lead"), ME))
+    if e["target"] == "kyle" and p.get("lead") == ME:
+        die("escalation '%s' is Kyle's to decide (%s) — the lead may not answer it. "
+            "If you meant to weigh in, forward it with your recommendation." % (eid, e["severity"] or e["deny"]))
+    e["state"] = "answered"; e["answer"] = ans; e["answered_by"] = ME; e["answered_epoch"] = NOW
+    logline(p, "escalation %s answered by %s" % (eid, ME))
+    save(p)
+    print("✅ escalation '%s' answered by [%s]: %s" % (eid, ME, ans))
+    sys.exit(0)
+
+if verb == "forward":
+    eid = argv[2] if len(argv) > 2 else ""
+    e = esc_by_id(p, eid)
+    if e is None:
+        die("no escalation '%s'" % eid)
+    if p.get("lead") != ME:
+        die("only the lead ([%s]) forwards an escalation to Kyle; you are [%s]" % (p.get("lead"), ME))
+    if e["state"] != "open":
+        die("escalation '%s' is already %s" % (eid, e["state"]))
+    kw = {}
+    for a in argv[3:]:
+        if ":" in a:
+            k, v = a.split(":", 1); kw[k] = v
+    deny = (kw.get("deny", "") or "").lower()
+    if deny and deny not in DENYLIST:
+        die("deny must be one of: %s" % ", ".join(DENYLIST))
+    why_more = (os.environ.get("PROJECT_STDIN", "") or "").strip()
+    e["target"] = "kyle"
+    if deny:
+        e["deny"] = deny
+    if why_more:
+        e["why"] = (e.get("why", "") + ("  [lead: " + why_more + "]")).strip()
+    logline(p, "escalation %s forwarded to Kyle by %s%s" % (eid, ME, (" (%s)" % deny) if deny else ""))
+    save(p)
+    print("↑ escalation '%s' forwarded to Kyle's decision queue%s." % (
+        eid, (" (%s)" % deny) if deny else ""))
+    sys.exit(0)
+
+if verb == "timeout-forward":
+    # SYSTEM action (Conductor only): a lead-bound escalation the lead hasn't answered within the
+    # timeout auto-escalates to Kyle — §4a's latency relief. There is deliberately NO lead guard and
+    # NO worker trigger: only the CLOCK (via Conductor) flips it, so it can't become the self-declared
+    # "I'm urgent" category that would swallow the shield.
+    eid = argv[2] if len(argv) > 2 else ""
+    e = esc_by_id(p, eid)
+    if e is None:
+        die("no escalation '%s'" % eid)
+    if e["state"] != "open" or e["target"] != "lead":
+        die("'%s' is not an open lead-bound escalation (state=%s target=%s)" % (eid, e["state"], e["target"]))
+    e["target"] = "kyle"; e["timed_out"] = True
+    logline(p, "escalation %s auto-escalated to Kyle (lead did not answer in time)" % eid)
+    save(p)
+    print("⏱ escalation '%s' auto-escalated to Kyle (lead timeout)." % eid)
+    sys.exit(0)
+
+if verb == "escalations":
+    open_only = "--open" in argv[2:]
+    es = [e for e in escs(p) if (not open_only or e["state"] == "open")]
+    if not es:
+        print("no%s escalations for '%s'." % (" open" if open_only else "", pid))
+        sys.exit(0)
+    print("=== escalations for %s ===" % pid)
+    for e in es:
+        icon = "🟢" if e["state"] == "answered" else ("🔴" if e["target"] == "kyle" else "🟡")
+        tag = ("↑Kyle" if e["target"] == "kyle" else "→lead")
+        mark = (" %s" % (e["severity"] or e["deny"])) if (e["severity"] or e["deny"]) else ""
+        print("  %s %-12s %s%s  by %s%s : %s" % (
+            icon, e["id"], tag, mark, e["raised_by"],
+            (" [job %s]" % e["job"]) if e.get("job") else "", e["question"]))
+        if e.get("why"):
+            print("       why: %s" % e["why"])
+        for o in e.get("options", []):
+            print("        - %s" % o)
+        if e.get("recommendation"):
+            print("       rec: %s" % e["recommendation"])
+        if e["state"] == "answered":
+            print("       ✅ [%s]: %s" % (e["answered_by"], e["answer"]))
     sys.exit(0)
 
 die("unknown verb '%s'" % verb, 2)

@@ -75,6 +75,7 @@ from .coord import (
 )
 from .deps import build_wait_graph, compute_lost_rc, open_ask_edges, silent_addressees
 from .projects import (
+    open_escalations,
     projects_needing_operator,
     read_projects,
     total_in_flight,
@@ -125,6 +126,12 @@ _BUSY_STATUSES = frozenset({Status.ACTIVE, Status.WARM})
 _PROJECT_MAX_IN_FLIGHT = 3
 # And a busy-fleet guard: if this many sessions are already ACTIVE/WARM, don't admit more work.
 _PROJECT_FLEET_BUSY_CEILING = 8
+
+# §4a lead-timeout auto-escalate: a worker's escalation to the lead that sits unanswered this long
+# auto-escalates to Kyle — the latency relief on the critical path, WITHOUT a self-declared "urgent"
+# category (only the clock flips it). Generous by default: the lead usually answers fast; this is
+# the backstop for a lead that's asleep/stuck, not the common path.
+_PROJECT_LEAD_TIMEOUT_SECONDS = 30 * 60
 
 # Auto-delivery only wakes sessions that are clearly unattended and not working:
 # not ACTIVE/WARM (busy) and not WAITING (Kyle may be typing at that prompt).
@@ -555,6 +562,11 @@ class AppState:
         if any(p.get("in_flight", 0) for p in projs):
             await self._sync_project_dags(projs)
             projs = await asyncio.to_thread(read_projects, self.coord_root)
+        # Slice 3: a lead-bound escalation the lead hasn't answered within the timeout auto-escalates
+        # to Kyle (§4a). Only the clock flips it — never a worker — so it isn't a route-around-the-lead.
+        if any(p.get("open_lead_escalations", 0) for p in projs):
+            await self._auto_escalate_timeouts(projs)
+            projs = await asyncio.to_thread(read_projects, self.coord_root)
         if projs != self.projects:
             self.projects = projs
             await self.hub.broadcast("projects", {"projects": projs})
@@ -847,6 +859,27 @@ class AppState:
             except (OSError, subprocess.SubprocessError) as e:
                 log.warning("project sync %s failed: %s", p.get("id"), e)
 
+    async def _auto_escalate_timeouts(self, projs: list[dict[str, Any]]) -> None:
+        """Flip any open LEAD-bound escalation older than the timeout to Kyle (§4a). Uses the system
+        ``timeout-forward`` verb (no lead guard) so the clock — not a worker — is what escalates."""
+        now = time.time()
+        for p in projs:
+            for e in p.get("escalations") or []:
+                if e.get("state") != "open" or e.get("target") != "lead":
+                    continue
+                if now - e.get("created", now) < _PROJECT_LEAD_TIMEOUT_SECONDS:
+                    continue
+                try:
+                    await asyncio.to_thread(
+                        subprocess.run,
+                        [str(self.settings.bus.script_path_resolved), "project",
+                         "timeout-forward", p["id"], e["id"]],
+                        capture_output=True, text=True, timeout=15,
+                    )
+                    log.info("escalation %s/%s auto-escalated to Kyle (lead timeout)", p["id"], e["id"])
+                except (OSError, subprocess.SubprocessError) as ex:
+                    log.warning("timeout-forward %s/%s failed: %s", p["id"], e.get("id"), ex)
+
     def _dispatch_admission(self) -> tuple[bool, str, dict[str, int]]:
         """Fleet-global admission decision for dispatching one more job (§5b). NOT the lead's call —
         the lead requests, Conductor admits by load — because a lead eager to finish rationalizes
@@ -919,7 +952,8 @@ class AppState:
             # No device registered. This is only an ALARM when something needs you RIGHT
             # NOW — otherwise it just means you never turned notifications on, which is
             # a choice, not a fault.
-            pending = bool(notifiable(self.decisions, self._push_requests))
+            pending = bool(notifiable(self.decisions, self._push_requests,
+                                      escalations=open_escalations(self.projects, target="kyle")))
             return {"healthy": not pending, "reason": "no_subscription",
                     "detail": ("Something needs you, but no phone is set to receive "
                                "notifications — enable them, or use the inbox.") if pending
@@ -940,7 +974,8 @@ class AppState:
         if self._webpush_broken:
             return                     # deps missing — already logged once; don't retry-spam
         dead = [s for s in self._silent if s.get("dead")] if self.settings.bus.page_dead_readers else []
-        items = notifiable(self.decisions, self._push_requests, dead)
+        items = notifiable(self.decisions, self._push_requests, dead,
+                           escalations=open_escalations(self.projects, target="kyle"))
         # Forget items that are no longer pending FIRST, so the same question asked again
         # later rings immediately rather than being suppressed by a stale timestamp.
         self._notified = prune_sent(self._notified, items)
@@ -2105,6 +2140,7 @@ async def get_projects(request: Request) -> dict[str, Any]:
     _, _, meter = state._dispatch_admission()
     return {"projects": state.projects,
             "needs_operator": projects_needing_operator(state.projects),
+            "escalations": open_escalations(state.projects, target=None),   # all open, for the desktop
             "admission": meter}
 
 
@@ -2163,6 +2199,35 @@ async def dispatch_job(pid: str, jobid: str, request: Request) -> dict[str, Any]
     return {"ok": proc.returncode == 0, "admitted": True,
             "result": (proc.stdout or "").strip() or (proc.stderr or "").strip(),
             "admission": meter}
+
+
+class EscalationAnswer(BaseModel):
+    answer: str
+
+
+@app.post("/api/projects/{pid}/escalations/{eid}/answer")
+async def answer_escalation(pid: str, eid: str, payload: EscalationAnswer,
+                            request: Request) -> dict[str, Any]:
+    """Kyle answers a project escalation from his phone (the decision shield, slice 3). Shells
+    ``bus.sh project answer`` — Conductor runs as its own (non-lead) tag, so the bus guard admits it
+    for a Kyle-bound escalation and refuses were the answer routed wrongly. Unlike a decision, this
+    isn't a keystroke into a picker — it's a recorded answer on the project the lead/worker reads."""
+    for v, label in ((pid, "project id"), (eid, "escalation id")):
+        if not v or not all(c.isalnum() or c in "._-" for c in v):
+            raise HTTPException(status_code=400, detail=f"bad {label}")
+    ans = (payload.answer or "").strip()
+    if not ans:
+        raise HTTPException(status_code=400, detail="answer is empty")
+    state: AppState = request.app.state.cond
+    proc = await asyncio.to_thread(
+        subprocess.run,
+        [str(state.settings.bus.script_path_resolved), "project", "answer", pid, eid, ans],
+        capture_output=True, text=True, timeout=15)
+    state.projects = await asyncio.to_thread(read_projects, state.coord_root)
+    await state.hub.broadcast("projects", {"projects": state.projects})
+    log.info("escalation %s/%s answered: %s", pid, eid, (proc.stdout or "").strip() or proc.returncode)
+    return {"ok": proc.returncode == 0,
+            "result": (proc.stdout or "").strip() or (proc.stderr or "").strip()}
 
 
 @app.get("/api/decisions")
@@ -2641,11 +2706,15 @@ async def get_ops(request: Request) -> dict[str, Any]:
         # Project Layer: only the operator-actionable subset (a plan awaiting approval, an empty
         # lead seat) — the phone is a needs-you console, not the full DAG view (slice 4).
         "projects": projects_needing_operator(state.projects),
+        # Decision shield (slice 3): escalations that are Kyle's to decide — the denylist + severity
+        # hatch + any the lead-timeout auto-escalated. Lead-framed, project-tagged, phone-answerable.
+        "escalations": open_escalations(state.projects, target="kyle"),
         "webpush": state._webpush_status(),   # can we actually page this phone? (2026-07-22)
         "counts": {
             "needs_you": (len(state.decisions) + len(state._push_requests)
                           + len(state._push_proposals) + len(state._persist_requests)
-                          + sum(1 for p in state.projects if p.get("needs") == "approve-plan")),
+                          + sum(1 for p in state.projects if p.get("needs") == "approve-plan")
+                          + len(open_escalations(state.projects, target="kyle"))),
             "blocked": state.waiting.get("blocked_count", 0),
             "dead": sum(1 for s in state._silent if s.get("dead")),
             "collisions": len(state._collisions),
