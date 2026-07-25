@@ -97,7 +97,7 @@ project_dispatch() {
   esac
   ( flock 9
     PROJECT_ROOT="$PROJECT_ROOT" ORDER_ROOT="$ORDER_ROOT" \
-    PROJECT_ME="$(_project_me)" PROJECT_NOW="$(date +%s)" \
+    PROJECT_ME="${PROJECT_ME_OVERRIDE:-$(_project_me)}" PROJECT_NOW="$(date +%s)" \
     PROJECT_STDIN="$STDIN" \
     python3 - "$verb" "$@" <<'PYEOF'
 import json, os, sys, time
@@ -375,7 +375,9 @@ if verb == "_dispatch_check":
     j = job_by_id(p, jid)
     if j is None:
         die("no job '%s' in project '%s'" % (jid, pid))
-    if p.get("lead") != ME:
+    # The lead decides WHAT to dispatch (it built the plan); Conductor (as 'operator') admits WHEN by
+    # fleet load and places it on the lead's behalf — so both may dispatch, but no other session.
+    if p.get("lead") != ME and ME != "operator":
         die("only the lead ([%s]) may dispatch jobs; you are [%s]" % (p.get("lead"), ME))
     if p.get("state") != "active":
         die("project '%s' is '%s' — approve the plan before dispatching jobs" % (pid, p.get("state")))
@@ -520,14 +522,15 @@ if verb == "answer":
     ans = " ".join(argv[3:]).strip()
     if not ans:
         die("usage: project answer <id> <eid> <the decision>")
-    # The lead may answer only LEAD-bound escalations. A Kyle-bound one (denylist/severity) is his —
-    # the lead is structurally barred, which is what gives the denylist teeth. Kyle answers through
-    # Conductor (as operator), so ME != lead there.
-    if e["target"] == "lead" and p.get("lead") != ME:
-        die("only the lead ([%s]) may answer a lead-bound escalation; you are [%s]" % (p.get("lead"), ME))
-    if e["target"] == "kyle" and p.get("lead") == ME:
-        die("escalation '%s' is Kyle's to decide (%s) — the lead may not answer it. "
-            "If you meant to weigh in, forward it with your recommendation." % (eid, e["severity"] or e["deny"]))
+    # Kyle (via Conductor, as 'operator') may answer ANY escalation — it's his queue. Otherwise the
+    # shield's routing holds: the lead answers only LEAD-bound ones, and is STRUCTURALLY BARRED from
+    # Kyle-bound ones (denylist/severity) — which is what gives the denylist its teeth.
+    if ME != "operator":
+        if e["target"] == "lead" and p.get("lead") != ME:
+            die("only the lead ([%s]) may answer a lead-bound escalation; you are [%s]" % (p.get("lead"), ME))
+        if e["target"] == "kyle" and p.get("lead") == ME:
+            die("escalation '%s' is Kyle's to decide (%s) — the lead may not answer it. "
+                "If you meant to weigh in, forward it with your recommendation." % (eid, e["severity"] or e["deny"]))
     e["state"] = "answered"; e["answer"] = ans; e["answered_by"] = ME; e["answered_epoch"] = NOW
     logline(p, "escalation %s answered by %s" % (eid, ME))
     save(p)

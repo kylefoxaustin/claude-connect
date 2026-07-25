@@ -133,6 +133,15 @@ _PROJECT_FLEET_BUSY_CEILING = 8
 # the backstop for a lead that's asleep/stuck, not the common path.
 _PROJECT_LEAD_TIMEOUT_SECONDS = 30 * 60
 
+
+def _project_subenv() -> dict[str, str]:
+    """Conductor acts for KYLE on the project, so it identifies as 'operator' (not its cwd-derived
+    tag) for every ``bus.sh project`` call. Without this, when the project's lead happens to run
+    where Conductor does, the shield's 'the lead may not answer a Kyle-bound escalation' guard (and
+    the dispatch lead-guard) misfire on Conductor. operator = Kyle: it may answer any escalation and
+    admit any dispatch, and it is never a lead, so the guards resolve correctly."""
+    return {**os.environ, "PROJECT_ME_OVERRIDE": "operator"}
+
 # Auto-delivery only wakes sessions that are clearly unattended and not working:
 # not ACTIVE/WARM (busy) and not WAITING (Kyle may be typing at that prompt).
 _WAKEABLE_STATUSES = frozenset({Status.IDLE, Status.DORMANT})
@@ -854,7 +863,7 @@ class AppState:
                 await asyncio.to_thread(
                     subprocess.run,
                     [str(self.settings.bus.script_path_resolved), "project", "sync", p["id"]],
-                    capture_output=True, text=True, timeout=15,
+                    capture_output=True, text=True, timeout=15, env=_project_subenv(),
                 )
             except (OSError, subprocess.SubprocessError) as e:
                 log.warning("project sync %s failed: %s", p.get("id"), e)
@@ -874,7 +883,7 @@ class AppState:
                         subprocess.run,
                         [str(self.settings.bus.script_path_resolved), "project",
                          "timeout-forward", p["id"], e["id"]],
-                        capture_output=True, text=True, timeout=15,
+                        capture_output=True, text=True, timeout=15, env=_project_subenv(),
                     )
                     log.info("escalation %s/%s auto-escalated to Kyle (lead timeout)", p["id"], e["id"])
                 except (OSError, subprocess.SubprocessError) as ex:
@@ -2165,7 +2174,8 @@ async def project_action(pid: str, action: str, request: Request,
     args = [str(state.settings.bus.script_path_resolved), "project", action, pid]
     if action == "revise":
         args.append((body.notes if body else None) or "please revise")
-    proc = await asyncio.to_thread(subprocess.run, args, capture_output=True, text=True, timeout=15)
+    proc = await asyncio.to_thread(subprocess.run, args, capture_output=True, text=True,
+                                   timeout=15, env=_project_subenv())
     # Re-read + broadcast so every open console reflects the decision immediately.
     state.projects = await asyncio.to_thread(read_projects, state.coord_root)
     await state.hub.broadcast("projects", {"projects": state.projects})
@@ -2192,7 +2202,7 @@ async def dispatch_job(pid: str, jobid: str, request: Request) -> dict[str, Any]
     proc = await asyncio.to_thread(
         subprocess.run,
         [str(state.settings.bus.script_path_resolved), "project", "dispatch", pid, jobid],
-        capture_output=True, text=True, timeout=20)
+        capture_output=True, text=True, timeout=20, env=_project_subenv())
     state.projects = await asyncio.to_thread(read_projects, state.coord_root)
     await state.hub.broadcast("projects", {"projects": state.projects})
     log.info("project %s dispatch %s: %s", pid, jobid, (proc.stdout or "").strip() or proc.returncode)
@@ -2222,7 +2232,7 @@ async def answer_escalation(pid: str, eid: str, payload: EscalationAnswer,
     proc = await asyncio.to_thread(
         subprocess.run,
         [str(state.settings.bus.script_path_resolved), "project", "answer", pid, eid, ans],
-        capture_output=True, text=True, timeout=15)
+        capture_output=True, text=True, timeout=15, env=_project_subenv())
     state.projects = await asyncio.to_thread(read_projects, state.coord_root)
     await state.hub.broadcast("projects", {"projects": state.projects})
     log.info("escalation %s/%s answered: %s", pid, eid, (proc.stdout or "").strip() or proc.returncode)

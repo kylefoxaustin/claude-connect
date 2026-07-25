@@ -210,5 +210,22 @@ if printf '%s' "$(ops escalations neutron --open)" | grep -qF "e2"; then
   fail=$((fail+1)); echo "FAIL: answered e2 should not be in --open"; else pass=$((pass+1)); fi
 okc "full view shows answered e2" "$(ops escalations neutron)" "e2"
 
+# ===== operator override: Conductor acts as 'operator', not its cwd tag (collision regression) =====
+# The live bug: Conductor shells from its own cwd, so when the project's lead runs where Conductor
+# does, ME == lead and the 'lead may not answer a Kyle-bound escalation' guard misfires. Fixed by
+# PROJECT_ME_OVERRIDE=operator. Here the ANSWERER shares the lead's cwd (LEAD), so without the
+# override ME would be the lead and be barred; with it, operator answers fine.
+opas(){ (cd "$LEAD" && PROJECT_ME_OVERRIDE=operator bash "$BUS" project "$@" 2>&1); }
+lead job add neutron jobD to:qualcomm path:$DROP files:d.md -- extra >/dev/null
+lead escalate neutron e6 deny:budget <<'EOF' >/dev/null
+question: spend 2x the token budget to finish?
+why: budget denylist
+option: yes
+option: no
+EOF
+okc "operator answers a kyle-bound one from the lead's own cwd" "$(opas answer neutron e6 no)" "answered"
+# and operator can dispatch even though it isn't literally the lead tag
+okc "operator may dispatch (admits on lead's behalf)" "$(opas dispatch neutron jobD)" "dispatched"
+
 echo "---"; echo "project: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
