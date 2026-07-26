@@ -1,0 +1,32 @@
+[
+  {
+    "label": "v2_ABLATION_mlockall_100MB",
+    "target_mb": 963.33,
+    "peak_mb": 2278.3359375,
+    "rss_mb": 2278.3359375,
+    "lck_mb": 2346.33984375,
+    "swap_mb": 0.0,
+    "vsz_mb": 2346.36328125,
+    "settle_s": 6.137017726898193
+  },
+  {
+    "label": "v2_chunk1GB",
+    "target_mb": 963.33,
+    "peak_mb": 992.51953125,
+    "rss_mb": 992.51953125,
+    "lck_mb": 963.3359375,
+    "swap_mb": 0.0,
+    "vsz_mb": 2346.3125,
+    "settle_s": 6.088135004043579
+  },
+  {
+    "label": "v1_chunk1GB_READMErec",
+    "target_mb": 963.33,
+    "peak_mb": 8693.89453125,
+    "rss_mb": 8693.89453125,
+    "lck_mb": 8693.90234375,
+    "swap_mb": 0.0,
+    "vsz_mb": 8693.92578125,
+    "settle_s": 6.489577293395996
+  }
+]
