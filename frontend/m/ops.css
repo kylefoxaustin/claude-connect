@@ -403,3 +403,6 @@ body {
 .mp-bar.over .mp-fill { background: #f85149; }
 .mp-attn { margin-top: 8px; }
 .mp-bad { color: #f85149; }
+
+/* the reassuring "nothing needs you" chip — calm, not an alert */
+.strip-counts .calm { color: var(--ok, #3fb950); }

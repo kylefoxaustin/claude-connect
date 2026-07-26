@@ -105,7 +105,11 @@ function render() {
 
   const health = (c.collisions || 0) + (c.dead || 0) + (c.lost_rc || 0);   // holobench + rt1180 alerts land in Blocked
   $("counts").innerHTML = [
-    c.needs_you ? `<span class="hot"><b>${c.needs_you}</b> need you</span>` : "",
+    // The one chip that's reassuring when EMPTY — say so, rather than just vanishing. Singular
+    // "needs" for one, plural "need" for many.
+    c.needs_you
+      ? `<span class="hot"><b>${c.needs_you}</b> need${c.needs_you === 1 ? "s" : ""} you</span>`
+      : `<span class="calm">nothing needs you</span>`,
     (c.blocked + health) ? `<span class="hot"><b>${c.blocked + health}</b> stuck</span>` : "",
     `<span><b>${c.working}</b> working</span>`,
     `<span><b>${c.idle}</b> idle</span>`,
