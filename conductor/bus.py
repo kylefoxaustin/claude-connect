@@ -173,8 +173,22 @@ def _coerce_event(obj: dict) -> BusEvent | None:
 
 # --- Markdown adapter (claude-bus) -----------------------------------------
 
-# Header line: `## 2025-05-08 14:23 [backend]`
-_HEADER_RE = re.compile(r"^##\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})\s+\[([^\]]+)\]\s*$")
+# Header line: `## 2025-05-08 14:23 [backend]` or, since the seconds-granularity fix (slice 6),
+# `## 2025-05-08 14:23:07 [backend]`. The seconds are OPTIONAL so old minute-stamped messages and
+# new second-stamped ones both parse — the transition needs no migration. Minute granularity caused
+# silent mail loss: a message sharing the reader's watermark minute compared `ts <= last_seen` true
+# and was skipped, so anything arriving in the same minute a session last checked was never delivered.
+_HEADER_RE = re.compile(r"^##\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}(?::\d{2})?)\s+\[([^\]]+)\]\s*$")
+
+
+def _ts_epoch(date: str, hm: str) -> float:
+    """Parse a header date+time (minute OR second granularity) to epoch; time.time() on failure."""
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.strptime(f"{date} {hm}", fmt).timestamp()
+        except ValueError:
+            continue
+    return time.time()
 
 
 def parse_markdown_blocks(text: str) -> list[BusEvent]:
@@ -199,7 +213,7 @@ def parse_markdown_blocks(text: str) -> list[BusEvent]:
             i += 1
         body = "\n".join(body_lines).strip()
         try:
-            ts = datetime.strptime(f"{date} {hm}", "%Y-%m-%d %H:%M").timestamp()
+            ts = _ts_epoch(date, hm)
         except ValueError:
             ts = time.time()
         out.append(BusEvent(
@@ -246,7 +260,7 @@ def _iter_full_blocks(text: str):
             body_lines.append(lines[i])
             i += 1
         try:
-            ts = datetime.strptime(f"{date} {hm}", "%Y-%m-%d %H:%M").timestamp()
+            ts = _ts_epoch(date, hm)
         except ValueError:
             continue
         yield ts, f"[{tag}]", "\n".join(body_lines).strip()

@@ -443,3 +443,27 @@ def test_a_plain_message_still_works_with_no_priority_at_all():
     """Zero adoption: the default is inferred, and nobody has to learn anything."""
     t = _address_targets("to:qualcomm — [x] a real question")
     assert t == frozenset({"qualcomm"})
+
+
+# --- slice 6: seconds-granularity fix for same-minute silent mail loss ------
+def test_same_minute_directed_mail_is_not_lost(tmp_path):
+    """The RQ1 bug: minute-granularity timestamps + `ts <= last_seen` silently dropped any directed
+    message that arrived in the same minute a session last checked. Seconds granularity + a tolerant
+    parser fix it, with backward-compat for old minute-format messages."""
+    from conductor.bus import directed_unread_all
+    md = tmp_path / "messages.md"
+    sd = tmp_path / "state"; sd.mkdir()
+    md.write_text(
+        "## 2026-07-26 15:05 [other:q]\n\nto:worker — old minute-format\n\n"
+        "## 2026-07-26 15:19:10 [other:q]\n\nto:worker — read up to here\n\n"
+        "## 2026-07-26 15:19:47 [other:q]\n\nto:worker — SAME MINUTE, later second\n\n"
+    )
+    (sd / "other:worker.last-seen").write_text("2026-07-26 15:19:10\n")
+    r = directed_unread_all(md, sd, ["[other:worker]"])["[other:worker]"]
+    assert r["count"] == 1 and r["wakeable"] == 1, "same-minute-later-second message was lost"
+
+    (sd / "other:worker.last-seen").write_text("2026-07-26 15:19:47\n")
+    assert directed_unread_all(md, sd, ["[other:worker]"])["[other:worker]"]["count"] == 0, "over-delivered"
+
+    (sd / "other:worker.last-seen").write_text("2026-07-26 15:04\n")   # old minute watermark
+    assert directed_unread_all(md, sd, ["[other:worker]"])["[other:worker]"]["count"] == 3, "minute-format broke"

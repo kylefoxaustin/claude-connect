@@ -94,7 +94,7 @@ project_dispatch() {
     local _bf="${BUS_FILE:-$HOME/Documents/claude-bus/messages.md}"
     if [ -w "$_bf" ] || [ -w "$(dirname "$_bf")" ]; then
       {
-        echo ""; echo "## $(date '+%Y-%m-%d %H:%M') [$TAG]"; echo ""
+        echo ""; echo "## $(date '+%Y-%m-%d %H:%M:%S') [$TAG]"; echo ""
         printf 'to:%s — 📋 Project "%s": job "%s" is assigned to you.\n' "$assignee" "$pid" "$jobid"
         [ -n "$desc" ] && printf '   %s\n' "$desc"
         printf '   Deliverable: %s in %s\n' "$files" "$path"
@@ -665,7 +665,7 @@ PYEOF
     local _bf="${BUS_FILE:-$HOME/Documents/claude-bus/messages.md}"
     if [ -n "$_who" ] && { [ -w "$_bf" ] || [ -w "$(dirname "$_bf")" ]; }; then
       {
-        echo ""; echo "## $(date '+%Y-%m-%d %H:%M') [$TAG]"; echo ""
+        echo ""; echo "## $(date '+%Y-%m-%d %H:%M:%S') [$TAG]"; echo ""
         printf 'to:%s — 🧭 You are nominated to LEAD project "%s".\n' "$_who" "$_pid"
         printf '   Review the goal + scope, then accept / decline / suggest another:\n'
         printf '     ~/.claude/bin/bus.sh project status %s\n' "$_pid"

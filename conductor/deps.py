@@ -250,11 +250,13 @@ def _plain(tag: str) -> str:
 
 
 def _ts_to_epoch(ts: str, now: float) -> float:
-    """Bus timestamps are minute-resolution local time (``YYYY-MM-DD HH:MM``)."""
-    try:
-        return time.mktime(time.strptime(ts.strip(), "%Y-%m-%d %H:%M"))
-    except (ValueError, TypeError):
-        return now
+    """Bus timestamps are ``YYYY-MM-DD HH:MM`` (old) or ``HH:MM:SS`` (slice-6 seconds fix)."""
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return time.mktime(time.strptime(ts.strip(), fmt))
+        except (ValueError, TypeError):
+            continue
+    return now
 
 
 def _find_cycles(adj: dict[str, set[str]]) -> list[list[str]]:

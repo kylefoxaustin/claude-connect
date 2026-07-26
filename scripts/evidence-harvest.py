@@ -26,7 +26,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-HDR = re.compile(r'^## (\d{4})-(\d{2})-\d{2} \d{2}:\d{2} \[([^\]]+)\]\s*$')
+HDR = re.compile(r'^## (\d{4})-(\d{2})-\d{2} \d{2}:\d{2}(?::\d{2})? \[([^\]]+)\]\s*$')
 TO = re.compile(r'\bto:(\S+)')
 
 

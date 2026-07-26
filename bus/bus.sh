@@ -338,7 +338,7 @@ _res_write() {  # mode secs job
 }
 
 _broker_notify() {  # post a hand-off message from a neutral [resource-broker] tag
-  local ts; ts="$(date '+%Y-%m-%d %H:%M')"
+  local ts; ts="$(date '+%Y-%m-%d %H:%M:%S')"
   { echo ""; echo "## $ts [resource-broker]"; echo ""; echo "$1"; } >> "$BUS_FILE"
 }
 
@@ -532,7 +532,7 @@ _coord_retract() {  # kind to-tag text...
     echo "usage: bus.sh $( [ "$kind" = CORRECTION ] && echo supersede || echo retract ) <to-tag> \"<what was wrong / do instead>\"" >&2
     return 2
   fi
-  local plain now ts label; plain="$(_coord_plain "$to")"; now="$(date +%s)"; ts="$(date '+%Y-%m-%d %H:%M')"
+  local plain now ts label; plain="$(_coord_plain "$to")"; now="$(date +%s)"; ts="$(date '+%Y-%m-%d %H:%M:%S')"
   case "$kind" in CORRECTION) label="🛑 CORRECTION" ;; *) label="🛑 RETRACTION" ;; esac
   { echo ""; echo "## $ts [$TAG]"; echo ""
     echo "to:$plain — [$TAG] $label — $text  (Do NOT act on my earlier instruction.)"; } >> "$BUS_FILE"
@@ -782,11 +782,13 @@ me_p = plain(me)
 # recipient, "reply" is the wrong close signal — and for the human it never arrives at all.)
 NONPOSTING = {"operator", "human", "kyle"}
 
-HDR = re.compile(r'^## (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) \[([^\]]+)\]\s*$')
+HDR = re.compile(r'^## (\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2})?) \[([^\]]+)\]\s*$')
 TO  = re.compile(r'\bto:(\S+)')
 
 def epoch(ts):
-    try: return time.mktime(time.strptime(ts, "%Y-%m-%d %H:%M"))
+    for _f in ("%Y-%m-%d %H:%M:%S","%Y-%m-%d %H:%M"):
+        try: return time.mktime(time.strptime(ts, _f))
+        except Exception: continue
     except Exception: return 0.0
 
 # parse every message: (epoch, sender_plain, {recipient_plains}, first_body_line)
@@ -1094,7 +1096,7 @@ _svc_request() {  # <name> <text…>
   ) 9>"$SVC_LOCK"
   pos="$(grep -c . "$SVC_QUEUE" 2>/dev/null || echo 1)"
   # Tell the service. Directed mail => auto-delivery wakes it if it's parked.
-  { echo ""; echo "## $(date '+%Y-%m-%d %H:%M') [$TAG]"; echo ""
+  { echo ""; echo "## $(date '+%Y-%m-%d %H:%M:%S') [$TAG]"; echo ""
     echo "to:$SVC_NAME — [$TAG] 🧾 JOB REQUEST (queue position $pos): $text"
     echo "(Run \`/svc-next $SVC_NAME\` when you're free. Reply with \`/svc-done $SVC_NAME <result>\` and I'll be woken automatically — I'm NOT waiting on you.)"
   } >> "$BUS_FILE"
@@ -1135,7 +1137,7 @@ _svc_done() {  # <name> [result…]
   text="$(_svc_field text "$SVC_SERVING")"
   : > "$SVC_SERVING"
   # Return the result. Directed => the requester is auto-woken. Fire-and-forget, closed.
-  { echo ""; echo "## $(date '+%Y-%m-%d %H:%M') [$TAG]"; echo ""
+  { echo ""; echo "## $(date '+%Y-%m-%d %H:%M:%S') [$TAG]"; echo ""
     echo "to:$(_coord_plain "$req") — [$TAG] ✅ JOB DONE — re: $text"
     echo "${result:-(no note)}"
   } >> "$BUS_FILE"
@@ -1178,7 +1180,7 @@ _svc_hold() {  # <name> [why…]
   _svc_setup "$1" || return 2; shift
   echo "${*:-Kyle wants the next slot}" > "$SVC_HOLD"
   echo "🙋 You have the NEXT opening on [$SVC_NAME]. It will finish its current job, then wait for you."
-  { echo ""; echo "## $(date '+%Y-%m-%d %H:%M') [operator]"; echo ""
+  { echo ""; echo "## $(date '+%Y-%m-%d %H:%M:%S') [operator]"; echo ""
     echo "to:$SVC_NAME — [operator] 🙋 Kyle has claimed your NEXT opening. Finish what you're on, then STOP and wait for him — do not pull the next queued job. He'll release you with /svc-resume."
   } >> "$BUS_FILE"
 }
@@ -1187,7 +1189,7 @@ _svc_resume() {  # <name>
   _svc_setup "$1" || return 2
   rm -f "$SVC_HOLD"
   echo "▶ [$SVC_NAME] released — it may take queued jobs again."
-  { echo ""; echo "## $(date '+%Y-%m-%d %H:%M') [operator]"; echo ""
+  { echo ""; echo "## $(date '+%Y-%m-%d %H:%M:%S') [operator]"; echo ""
     echo "to:$SVC_NAME — [operator] ▶ Released. Carry on with the queue: run /svc-next $SVC_NAME."
   } >> "$BUS_FILE"
 }
@@ -1628,7 +1630,7 @@ SENDERR
       echo "ERROR: bus.sh send received an empty message on stdin." >&2
       exit 2
     fi
-    TS="$(date '+%Y-%m-%d %H:%M')"
+    TS="$(date '+%Y-%m-%d %H:%M:%S')"
     { echo ""; echo "## $TS [$TAG]"; echo ""; printf '%s\n' "$MSG_BODY"; } >> "$BUS_FILE"
     # READ IT BACK. Do not just assert the write succeeded.
     #
@@ -1717,7 +1719,7 @@ def plain(t):
     return t.lower()
 
 me_p = plain(me)
-HDR  = re.compile(r'^## (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) \[([^\]]+)\]\s*$')
+HDR  = re.compile(r'^## (\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2})?) \[([^\]]+)\]\s*$')
 TO   = re.compile(r'\bto:(\S+)')
 
 msgs, cur = [], None
@@ -1940,7 +1942,7 @@ def plain(t):
     return t.lower()
 
 me_p = plain(me)
-HDR  = re.compile(r'^## (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) \[([^\]]+)\]\s*$')
+HDR  = re.compile(r'^## (\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2})?) \[([^\]]+)\]\s*$')
 TO   = re.compile(r'\bto:(\S+)')
 
 msgs, cur = [], None
@@ -2347,7 +2349,7 @@ $SS_CTX"
     if [ -z "$LAST_SEEN" ]; then
       # First run — treat "now" as the baseline so we don't flood the session with historical
       # messages (SessionStart already injected recent context separately).
-      LAST_SEEN="$(date '+%Y-%m-%d %H:%M')"
+      LAST_SEEN="$(date '+%Y-%m-%d %H:%M:%S')"
       _cursor_put_seen "$LAST_SEEN"
     fi
 
@@ -2454,7 +2456,7 @@ Usage (from any session):
 
 ---
 
-## $(date '+%Y-%m-%d %H:%M') [system]
+## $(date '+%Y-%m-%d %H:%M:%S') [system]
 
 Bus rotated. Previous log archived to \`$(basename "$ARCHIVE_FILE")\`.
 
