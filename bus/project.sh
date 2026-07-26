@@ -75,17 +75,37 @@ project_dispatch() {
     local orderid="proj-${pid}__${jobid}"
     local spec; spec="$(project_dispatch _dispatch_check "$pid" "$jobid")"; local rc=$?
     if [ "$rc" -ne 0 ]; then printf '%s\n' "$spec" >&2; return "$rc"; fi
-    # spec is TAB-separated: assignee<TAB>path<TAB>files<TAB>accept
-    local assignee path files accept
-    IFS=$'\t' read -r assignee path files accept <<<"$spec"
+    # spec is TAB-separated: assignee<TAB>path<TAB>files<TAB>accept<TAB>desc
+    local assignee path files accept desc
+    IFS=$'\t' read -r assignee path files accept desc <<<"$spec"
     if ! command -v order_dispatch >/dev/null 2>&1; then
       echo "project: order.sh not available — can't dispatch a job as an order." >&2; return 1; fi
     local -a oargs=(place "$orderid" "to:$assignee" "path:$path" "files:$files")
     [ -n "$accept" ] && oargs+=("accept:$accept")   # array so a spaced accept test isn't split
     local placed; placed="$(order_dispatch "${oargs[@]}" 2>&1)"; rc=$?
     if [ "$rc" -ne 0 ]; then printf 'project: order placement failed: %s\n' "$placed" >&2; return 1; fi
-    project_dispatch _dispatch_mark "$pid" "$jobid" "$orderid"
-    return $?
+    project_dispatch _dispatch_mark "$pid" "$jobid" "$orderid"; rc=$?
+    [ "$rc" -ne 0 ] && return "$rc"
+    # ⭐ WAKE THE WORKER. Placing an order tells NOBODY (Kyle, 2026-07-25: "job shows dispatched but
+    # the worker is quiet"). Post a DIRECTED bus message (to:<assignee>) so Conductor's auto-delivery
+    # wakes an idle worker and its prompt-hook surfaces the job — the "never be the courier" rule,
+    # applied to job dispatch. Sender is whoever dispatched ($TAG: the lead, or claude-connect when
+    # Conductor drives it). Best-effort: a bus-write failure must not un-dispatch a placed order.
+    local _bf="${BUS_FILE:-$HOME/Documents/claude-bus/messages.md}"
+    if [ -w "$_bf" ] || [ -w "$(dirname "$_bf")" ]; then
+      {
+        echo ""; echo "## $(date '+%Y-%m-%d %H:%M') [$TAG]"; echo ""
+        printf 'to:%s — 📋 Project "%s": job "%s" is assigned to you.\n' "$assignee" "$pid" "$jobid"
+        [ -n "$desc" ] && printf '   %s\n' "$desc"
+        printf '   Deliverable: %s in %s\n' "$files" "$path"
+        printf '   Claim it, do the work, then deliver (it verifies the files landed):\n'
+        printf '     ~/.claude/bin/bus.sh order claim %s\n' "$orderid"
+        printf '     ~/.claude/bin/bus.sh order deliver %s\n' "$orderid"
+      } >> "$_bf" 2>/dev/null \
+        && echo "   📨 notified [$assignee] on the bus — it'll be woken to claim the job." \
+        || echo "   ⚠ order placed, but couldn't post the wake to the bus ($_bf)." >&2
+    fi
+    return 0
   fi
 
   local STDIN=""
@@ -387,7 +407,10 @@ if verb == "_dispatch_check":
         die("job '%s' is already done" % jid)
     if not deps_done(p, j):
         die("job '%s' is blocked — waiting on: %s" % (jid, ",".join(blocking_deps(p, j))))
-    sys.stdout.write("\t".join([j["to"], j["path"], ",".join(j["files"]), j.get("accept", "")]))
+    # emit the order spec (tab-separated) + the desc, for the shell to place the order AND post the
+    # directed wake to the assignee. \t and \n can't appear in these fields (ids/paths/one-line desc).
+    sys.stdout.write("\t".join([j["to"], j["path"], ",".join(j["files"]),
+                                j.get("accept", ""), (j.get("desc", "") or "").replace("\t", " ")]))
     sys.exit(0)
 
 if verb == "_dispatch_mark":

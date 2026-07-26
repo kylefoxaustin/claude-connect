@@ -111,9 +111,14 @@ okc "jobs: B blocked on A" "$(ops jobs neutron)" "waiting on: jobA"
 
 # 17. the DAG blocks dispatch of B until A is done
 okc "dispatch B refused (blocked)" "$(lead dispatch neutron jobB)" "blocked"
-okc "dispatch A ok (ready)" "$(lead dispatch neutron jobA)" "dispatched"
+disp_out="$(lead dispatch neutron jobA)"
+okc "dispatch A ok (ready)" "$disp_out" "dispatched"
+okc "dispatch NOTIFIES the assignee" "$disp_out" "notified [qualcomm]"
 ok  "jobA now dispatched" "$(jfield neutron jobA state)" "dispatched"
 ok  "jobA has an order id" "$(jfield neutron jobA order_id)" "proj-neutron__jobA"
+# the wake is a DIRECTED bus message (to:assignee) — what Conductor's auto-delivery wakes on
+okc "wake lands on the bus, addressed to the worker" "$(cat "$BUS_FILE")" "to:qualcomm"
+okc "wake carries the claim instruction" "$(cat "$BUS_FILE")" "order claim proj-neutron__jobA"
 
 # 18. only the lead dispatches; can't re-dispatch
 okc "non-lead can't dispatch" "$(other dispatch neutron jobB)" "only the lead"
