@@ -2813,6 +2813,16 @@ async def get_ops(request: Request) -> dict[str, Any]:
         # Decision shield (slice 3): escalations that are Kyle's to decide — the denylist + severity
         # hatch + any the lead-timeout auto-escalated. Lead-framed, project-tagged, phone-answerable.
         "escalations": open_escalations(state.projects, target="kyle"),
+        # A compact glance at EVERY project (slice 4b) — the phone's read-only Projects tab. Not the
+        # full DAG (that's the desktop workbench); just enough to check in: state, progress, spend.
+        "all_projects": [{
+            "id": p["id"], "goal": p.get("goal", ""), "state": p.get("state"),
+            "lead": p.get("lead"), "lead_offline": p.get("lead_offline", False),
+            "job_counts": p.get("job_counts", {}), "spend": p.get("spend", 0),
+            "ceiling": p.get("ceiling", 0), "spend_pct": p.get("spend_pct"),
+            "over_budget": p.get("over_budget", False), "budget_warn": p.get("budget_warn", False),
+            "open_kyle": p.get("open_kyle_escalations", 0), "needs": p.get("needs"),
+        } for p in state.projects],
         "webpush": state._webpush_status(),   # can we actually page this phone? (2026-07-22)
         "counts": {
             "needs_you": (len(state.decisions) + len(state._push_requests)

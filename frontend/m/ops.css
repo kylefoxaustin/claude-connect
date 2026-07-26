@@ -393,3 +393,13 @@ body {
   font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.5; color: var(--text);
   background: var(--row); border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; }
 .res-card-btn { margin-top: 8px; }
+
+/* Projects tab (slice 4b) — read-only glance rows */
+.mp-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.mp-bar { height: 6px; border-radius: 999px; background: var(--line, #2a2f37); overflow: hidden; margin: 8px 0 4px; }
+.mp-fill { height: 100%; background: #3fb950; transition: width .4s ease; }
+.mp-fill.ok { background: #4493f8; }
+.mp-bar.warn .mp-fill { background: #d29922; }
+.mp-bar.over .mp-fill { background: #f85149; }
+.mp-attn { margin-top: 8px; }
+.mp-bad { color: #f85149; }

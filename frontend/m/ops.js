@@ -118,6 +118,7 @@ function render() {
   renderPicker();
   renderBlocked();
   renderResources();
+  renderProjects();
 
   // A resource whose owner is offline needs Kyle to reclaim it — the one resource state
   // that a human has to resolve, so it earns the tab badge.
@@ -128,6 +129,10 @@ function render() {
   setBadge("blocked", c.blocked + health, "badge badge-warn");
   setBadge("auto", ops.autonomy.length, "badge badge-ok");
   setBadge("resources", resAlert, "badge badge-warn");
+  // Projects tab badge: projects that want you (a plan to approve, an open escalation, a dead lead).
+  const projAlert = (ops.all_projects || []).filter(
+    (p) => p.needs === "approve-plan" || p.open_kyle > 0 || p.lead_offline).length;
+  setBadge("projects", projAlert, "badge badge-warn");
   $("inbox-n").textContent = c.needs_you ? `· ${c.needs_you}` : "";
 }
 
@@ -1427,8 +1432,66 @@ function serviceRow(s) {
   return el;
 }
 
+/* The Projects tab (slice 4b): a READ-ONLY glance at every project — state, job progress, spend.
+ * NOT the interactive DAG (that's the desktop workbench, by the /m needs-you-console philosophy);
+ * just enough to check in. Everything that needs a tap (approve a plan, answer an escalation) still
+ * lives in the Inbox. */
+const _humanTok = (n) => {
+  n = n || 0;
+  if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1) + "K";
+  return String(n);
+};
+const _PSTATE = { draft: "#6e7681", nominating: "#8957e5", planning: "#8957e5",
+                  plan_review: "#d29922", active: "#3fb950" };
+
+function renderProjects() {
+  const host = $("projects-list");
+  if (!host) return;
+  const ps = ops.all_projects || [];
+  if (!ps.length) {
+    host.innerHTML = `<div class="empty"><div class="empty-big">🗂</div>No projects yet.</div>`;
+    return;
+  }
+  host.replaceChildren(...ps.map((p) => {
+    const el = document.createElement("div");
+    el.className = "card";
+    const jc = p.job_counts || {};
+    const done = jc.done || 0, total = jc.total || 0;
+    const jobpct = total ? Math.round(100 * done / total) : 0;
+    const attn = p.needs === "approve-plan" ? '<span class="pill">📋 approve</span>'
+      : (p.open_kyle > 0 ? `<span class="pill">🚩 ${p.open_kyle}</span>` : "");
+
+    let budget = "";
+    if (p.ceiling) {
+      const pct = Math.min(100, p.spend_pct || 0);
+      const cls = p.over_budget ? "over" : (p.budget_warn ? "warn" : "");
+      budget = `<div class="mp-bar ${cls}"><div class="mp-fill" style="width:${pct}%"></div></div>`
+        + `<div class="row-sub">💰 ${_humanTok(p.spend)} / ${_humanTok(p.ceiling)} (${p.spend_pct}%)`
+        + `${p.over_budget ? " · at cap — dispatch held" : (p.budget_warn ? " · warn" : "")}</div>`;
+    } else if (p.spend) {
+      budget = `<div class="row-sub">💰 ${_humanTok(p.spend)} tokens · no cap</div>`;
+    }
+
+    const leadTxt = `lead ${esc(bare(p.lead) || "—")}`
+      + (p.lead_offline ? ' · <b class="mp-bad">lead offline</b>' : "");
+    el.innerHTML =
+      `<div class="card-head"><span class="card-who">`
+      + `<span class="mp-dot" style="background:${_PSTATE[p.state] || "#6e7681"}"></span>${esc(p.id)}</span>`
+      + `<span class="row-age">${esc(p.state)}</span></div>`
+      + `<div class="row-sub" style="white-space:normal">${esc((p.goal || "").slice(0, 90))}</div>`
+      + (total
+          ? `<div class="mp-bar"><div class="mp-fill ok" style="width:${jobpct}%"></div></div>`
+            + `<div class="row-sub">${done}/${total} jobs done · ${leadTxt}</div>`
+          : `<div class="row-sub">no jobs yet · ${leadTxt}</div>`)
+      + budget
+      + (attn ? `<div class="mp-attn">${attn}</div>` : "");
+    return el;
+  }));
+}
+
 // ---------------------------------------------------------------- tabs
-const PANES = ["inbox", "fleet", "auto", "blocked", "resources"];
+const PANES = ["inbox", "fleet", "auto", "blocked", "resources", "projects"];
 
 function showPane(name) {
   if (!PANES.includes(name)) name = "inbox";
