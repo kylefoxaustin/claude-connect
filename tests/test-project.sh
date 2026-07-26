@@ -232,5 +232,15 @@ okc "operator answers a kyle-bound one from the lead's own cwd" "$(opas answer n
 # and operator can dispatch even though it isn't literally the lead tag
 okc "operator may dispatch (admits on lead's behalf)" "$(opas dispatch neutron jobD)" "dispatched"
 
+# ===== slice 5: the budget ceiling (the meter itself is Conductor-side / python-tested) =====
+okc "set budget (2m shorthand)" "$(lead budget neutron 2m)" "2,000,000 output tokens"
+ok  "ceiling stored" "$(python3 -c "import json;print(json.load(open('$PROJECT_STATE_DIR/neutron.json'))['ceiling'])")" "2000000"
+okc "status shows the budget" "$(ops status neutron)" "2,000,000 output tokens"
+okc "500k shorthand" "$(lead budget neutron 500k)" "500,000"
+okc "bad value refused" "$(lead budget neutron nope)" "usage: project budget"
+okc "non-lead/non-operator refused" "$(other budget neutron 1m)" "only the lead"
+okc "operator may set it" "$(opas budget neutron 750000)" "750,000"
+okc "0 clears the cap" "$(lead budget neutron 0)" "cap cleared"
+
 echo "---"; echo "project: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

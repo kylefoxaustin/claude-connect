@@ -80,6 +80,7 @@ from .projects import (
     read_projects,
     total_in_flight,
 )
+from .project_spend import ProjectSpendMeter
 from .bridge import read_bridge
 from .models import BusEvent, BusTopology, ParkedSession, SessionRecord, Status
 from .registry import attach_cards
@@ -351,6 +352,8 @@ class AppState:
         self._autonomy: list[dict[str, Any]] = []             # live "let them talk" windows
         self.services: dict[str, Any] = {"services": []}      # service Claudes (image_gen…)
         self.projects: list[dict[str, Any]] = []              # Project Layer: lead-owned multi-session work
+        self._spend_meter = ProjectSpendMeter()               # measured per-project token spend (§5c)
+        self._budget_alarmed: set[str] = set()                # projects we've raised a budget decision for
         self.waiting: dict[str, Any] = {"edges": [], "cycles": [], "bottlenecks": [],
                                         "blocked_count": 0}   # who is blocked on whom
         self._silent: list[dict[str, Any]] = []               # dead-reader alarm (holobench)
@@ -576,6 +579,15 @@ class AppState:
         if any(p.get("open_lead_escalations", 0) for p in projs):
             await self._auto_escalate_timeouts(projs)
             projs = await asyncio.to_thread(read_projects, self.coord_root)
+        # Slice 5: the MEASURED spend meter (annotates spend/spend_pct/over_budget) + lead-death flag.
+        self._spend_meter.update(projs, self._member_output_tokens)
+        self._annotate_lead_offline(projs)
+        # Budget alarm: a project crossing the warn threshold raises a Kyle-bound decision (extend /
+        # checkpoint / finish) THROUGH the shield — reusing the queue+paging, not a new alarm class.
+        if await self._check_budget_alarms(projs):
+            projs = await asyncio.to_thread(read_projects, self.coord_root)
+            self._spend_meter.update(projs, self._member_output_tokens)
+            self._annotate_lead_offline(projs)
         if projs != self.projects:
             self.projects = projs
             await self.hub.broadcast("projects", {"projects": projs})
@@ -888,6 +900,80 @@ class AppState:
                     log.info("escalation %s/%s auto-escalated to Kyle (lead timeout)", p["id"], e["id"])
                 except (OSError, subprocess.SubprocessError) as ex:
                     log.warning("timeout-forward %s/%s failed: %s", p["id"], e.get("id"), ex)
+
+    def _member_session(self, member: str) -> SessionRecord | None:
+        """Resolve a PROJECT member (a bare name like ``claude-connect``) to its live session.
+
+        NOT ``_live_session_for`` — that keeps the ``other:`` prefix (it matches lease owners, which
+        bus.sh writes as ``other:qualcomm``), but project.sh stores members bare (``_coord_plain``
+        strips ``other:``), so ``claude-connect`` would never match ``[other:claude-connect]``. Strip
+        BOTH sides fully — the same bracket/other: normalization the service resolver learned."""
+        want = _bare_tag(member).replace("other:", "")
+        for s in self.sessions.values():
+            if s.status == Status.ENDED:
+                continue
+            if _bare_tag(s.tag).replace("other:", "") == want:
+                return s
+        return None
+
+    def _member_output_tokens(self, member: str) -> int | None:
+        """A member's cumulative session OUTPUT tokens, or None if it has no live session. The unit
+        the spend meter attributes project cost from (§5c)."""
+        rec = self._member_session(member)
+        jp = getattr(rec, "jsonl_path", None) if rec else None
+        if not jp:
+            return None
+        try:
+            return int(self.token_accountant.usage_for(jp).get("output", 0))
+        except (OSError, ValueError, KeyError):
+            return None
+
+    def _annotate_lead_offline(self, projs: list[dict[str, Any]]) -> None:
+        """Lead-death surfacing (§10.5): an active project whose lead has no live session. Surfaced,
+        never auto-reassigned — deciding who inherits a half-run project is Kyle's call."""
+        for p in projs:
+            lead = p.get("lead") or ""
+            p["lead_offline"] = bool(p.get("state") == "active" and lead
+                                     and self._member_session(lead) is None)
+
+    async def _check_budget_alarms(self, projs: list[dict[str, Any]]) -> bool:
+        """Raise a Kyle-bound budget decision once when a project crosses the warn threshold. Reuses
+        the shield: it becomes an escalation in the same queue Kyle answers (extend / checkpoint /
+        finish) and pages by the same rule. Resets when spend drops back under (e.g. ceiling raised)."""
+        raised = False
+        for p in projs:
+            pid = p["id"]
+            if not p.get("budget_warn"):
+                self._budget_alarmed.discard(pid)     # back under threshold -> re-arm
+                continue
+            if pid in self._budget_alarmed:
+                continue
+            # Don't pile on if a budget escalation for this project is already open.
+            if any(e.get("state") == "open" and e.get("deny") == "budget"
+                   for e in p.get("escalations", [])):
+                self._budget_alarmed.add(pid)
+                continue
+            spend, ceiling, pct = p.get("spend", 0), p.get("ceiling", 0), p.get("spend_pct")
+            body = (
+                f"question: project '{pid}' has spent {spend:,} of its {ceiling:,}-token ceiling "
+                f"({pct}%). Extend the budget, checkpoint and stop, or let it finish?\n"
+                f"why: measured spend crossed {int(self._spend_meter.WARN_FRACTION * 100)}% — deciding "
+                f"now beats a hard stop at a half-built state\n"
+                f"option: extend the ceiling\noption: checkpoint and stop\noption: let it finish\n"
+                f"recommendation: checkpoint and reassess before the cap bites")
+            eid = f"budget-{spend}"
+            try:
+                await asyncio.to_thread(
+                    subprocess.run,
+                    [str(self.settings.bus.script_path_resolved), "project", "escalate",
+                     pid, eid, "deny:budget"],
+                    input=body, capture_output=True, text=True, timeout=15, env=_project_subenv())
+                self._budget_alarmed.add(pid)
+                raised = True
+                log.info("budget alarm: project %s at %s%% of ceiling", pid, pct)
+            except (OSError, subprocess.SubprocessError) as e:
+                log.warning("budget escalate for %s failed: %s", pid, e)
+        return raised
 
     def _dispatch_admission(self) -> tuple[bool, str, dict[str, int]]:
         """Fleet-global admission decision for dispatching one more job (§5b). NOT the lead's call —
@@ -2195,6 +2281,14 @@ async def dispatch_job(pid: str, jobid: str, request: Request) -> dict[str, Any]
         if not v or not all(c.isalnum() or c in "._-" for c in v):
             raise HTTPException(status_code=400, detail=f"bad {label}")
     state: AppState = request.app.state.cond
+    # Per-project budget cap (§5c) first — a project at its ceiling holds new dispatch even if the
+    # fleet has concurrency to spare. Measured spend, not an estimate.
+    proj = next((p for p in state.projects if p["id"] == pid), None)
+    if proj is not None:
+        over_budget, why = state._spend_meter.would_exceed(proj)
+        if over_budget:
+            return {"ok": False, "admitted": False, "result": why,
+                    "admission": state._dispatch_admission()[2]}
     ok, reason, meter = state._dispatch_admission()
     if not ok:
         # 429: not an error in the request, the fleet is just at capacity. Say why + the meter.

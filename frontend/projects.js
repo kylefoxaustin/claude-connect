@@ -13,6 +13,12 @@
 
 const svgEl = (n) => document.createElementNS("http://www.w3.org/2000/svg", n);
 const bare = (t) => String(t || "").replace(/^\[/, "").replace(/\]$/, "").replace(/^other:/, "");
+const humanTok = (n) => {
+  n = n || 0;
+  if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1) + "K";
+  return String(n);
+};
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
   (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -194,8 +200,17 @@ function renderDetail() {
     `<div class="proj-meta-goal"><span class="proj-state" style="background:${STATE_BADGE[p.state] || "#6e7681"}">${esc(p.state)}</span>`
     + `<h2>${esc(p.id)}</h2></div>`
     + `<div class="proj-goal-text">${esc(p.goal || "(no goal)")}</div>`
-    + `<div class="proj-members">${members || '<span class="proj-chip">no members yet</span>'}</div>`;
+    + `<div class="proj-members">${members || '<span class="proj-chip">no members yet</span>'}</div>`
+    + budgetBar(p);
   host.appendChild(meta);
+
+  // lead-death (§10.5): surfaced, not auto-reassigned — Kyle decides who inherits a half-run project.
+  if (p.lead_offline) {
+    const w = document.createElement("div");
+    w.className = "proj-lead-offline";
+    w.innerHTML = `⚠ lead <b>${esc(bare(p.lead))}</b> has no live session — its work is stalled until you relaunch it or hand the project to another session.`;
+    host.appendChild(w);
+  }
 
   // --- plan gate (only when a plan awaits review) ---
   if (p.state === "plan_review" && p.plan_status === "submitted") {
@@ -224,11 +239,31 @@ function renderDetail() {
   if (es.length) host.appendChild(escalationsPanel(p, es));
 }
 
+// The measured spend meter (§5c). A ceiling → a bar (green / amber at warn / red at cap); no ceiling
+// → the meter figure alone. Output tokens, humanized. lead_spend is shown as the lead's own overhead.
+function budgetBar(p) {
+  const spend = p.spend || 0;
+  const lead = p.lead_spend || 0;
+  const leadNote = lead ? ` · lead ${humanTok(lead)}` : "";
+  if (!p.ceiling) {
+    return `<div class="proj-budget"><span class="proj-budget-label">💰 measured spend `
+      + `<b>${humanTok(spend)}</b> output tokens${leadNote} · no cap</span></div>`;
+  }
+  const pct = Math.min(100, p.spend_pct || 0);
+  const cls = p.over_budget ? "over" : (p.budget_warn ? "warn" : "");
+  return `<div class="proj-budget">`
+    + `<div class="proj-budget-bar ${cls}"><div class="proj-budget-fill" style="width:${pct}%"></div></div>`
+    + `<span class="proj-budget-label">💰 <b>${humanTok(spend)}</b> / ${humanTok(p.ceiling)} `
+    + `(${p.spend_pct}%)${leadNote}${p.over_budget ? " · <b>at cap — new dispatch held</b>" : (p.budget_warn ? " · warn" : "")}</span>`
+    + `</div>`;
+}
+
 function planGate(p) {
   const el = document.createElement("div");
   el.className = "proj-plan-gate";
   el.innerHTML =
     `<div class="proj-gate-head">📋 Plan awaiting your approval (Gate #1)`
+    + `${p.ceiling ? `<span class="proj-gate-note">budget ceiling: ${humanTok(p.ceiling)} tokens</span>` : ""}`
     + `${p.plan_notes ? `<span class="proj-gate-note">last note: ${esc(p.plan_notes)}</span>` : ""}</div>`
     + `<pre class="proj-gate-plan">${esc(p.plan)}</pre>`
     + `<div class="proj-gate-actions"><button class="proj-btn go">Approve plan</button>`

@@ -2124,3 +2124,17 @@ body.link-mode .tile-actions { visibility: hidden; }
 .proj-esc-why { color: var(--text-dim); font-size: 12px; }
 .proj-esc-ans { color: #3fb950; font-size: 12.5px; margin-top: 4px; }
 .proj-esc-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; align-items: center; }
+
+/* slice 5 — the measured spend meter + lead-death banner */
+.proj-budget { margin: 4px 0 14px; }
+.proj-budget-bar { height: 8px; border-radius: 999px; background: var(--border);
+  overflow: hidden; margin-bottom: 5px; max-width: 460px; }
+.proj-budget-fill { height: 100%; background: #3fb950; transition: width .4s ease; }
+.proj-budget-bar.warn .proj-budget-fill { background: #d29922; }
+.proj-budget-bar.over .proj-budget-fill { background: #f85149; }
+.proj-budget-label { color: var(--text-dim); font-size: 12px; }
+.proj-budget-label b { color: var(--text); }
+.proj-budget-bar.over ~ .proj-budget-label b { color: #f85149; }
+.proj-lead-offline { border: 1px solid #f85149; border-radius: 8px; padding: 8px 12px;
+  margin-bottom: 14px; color: var(--text); font-size: 12.5px;
+  background: color-mix(in srgb, #f85149 8%, var(--bg-panel)); }

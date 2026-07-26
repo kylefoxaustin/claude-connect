@@ -192,6 +192,8 @@ def show(p):
     print("  lead   : %s (%s)" % (lead or "—", p.get("lead_status") or "unassigned"))
     ps = p.get("plan_status", "none")
     print("  plan   : %s%s" % (ps, ("  ⚠ notes: " + p["plan_notes"]) if p.get("plan_notes") else ""))
+    if p.get("ceiling"):
+        print("  budget : %s output tokens (ceiling)" % "{:,}".format(p["ceiling"]))
     for n in p.get("nominations", []):
         extra = (" → " + n["suggested"]) if n.get("suggested") else ""
         if n.get("reason"): extra += "  (%s)" % n["reason"]
@@ -218,7 +220,7 @@ if verb in ("new",):
     if load(pid): die("project '%s' already exists" % pid)
     p = {"id": pid, "goal": goal, "created_by": ME, "created_epoch": NOW, "state": "draft",
          "lead": None, "lead_status": "unassigned", "nominations": [],
-         "plan": None, "plan_status": "none", "plan_notes": None,
+         "plan": None, "plan_status": "none", "plan_notes": None, "ceiling": 0,
          "jobs": [], "issues": [], "log": []}
     logline(p, "created")
     save(p); print("✅ project '%s' created. Next: project nominate %s <session>" % (pid, pid))
@@ -355,6 +357,28 @@ if verb == "revise":
     p["plan_status"] = "revise"; p["plan_notes"] = notes; p["state"] = "planning"
     logline(p, "plan sent back: " + notes)
     save(p); print("↩ plan for '%s' sent back to the lead with notes." % pid)
+    sys.exit(0)
+
+if verb == "budget":
+    # Set the project's token CEILING — a hard cap on measured spend (§5). Estimates are theater;
+    # this is the scope+ceiling Kyle approves. The lead proposes it (part of the plan); the meter is
+    # Conductor's (measured output tokens across the project's members). 0 clears it (meter only).
+    if p.get("lead") not in (ME, None) and ME != "operator":
+        die("only the lead ([%s]) or the operator may set the budget; you are [%s]" % (p.get("lead"), ME))
+    raw = (argv[2] if len(argv) > 2 else "").lower().replace(",", "").strip()
+    mult = 1
+    if raw.endswith("k"): mult, raw = 1000, raw[:-1]
+    elif raw.endswith("m"): mult, raw = 1_000_000, raw[:-1]
+    try:
+        ceiling = int(float(raw) * mult)
+    except ValueError:
+        die("usage: project budget <id> <tokens>  (e.g. 2m, 500k, 750000; 0 clears)")
+    p["ceiling"] = ceiling
+    logline(p, "budget ceiling set to %d output tokens" % ceiling)
+    save(p)
+    print("💰 budget for '%s' set to %s output tokens%s." % (
+        pid, "{:,}".format(ceiling) if ceiling else "0",
+        " (cap cleared — meter only)" if not ceiling else " — Conductor stops new dispatch near the cap."))
     sys.exit(0)
 
 # ---- slice 2: the DAG ----
