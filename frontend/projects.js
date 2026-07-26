@@ -87,8 +87,20 @@ export async function activate() {
   root.innerHTML = `
     <div class="proj-header">
       <span class="proj-title">🗂 Projects</span>
+      <button class="proj-new-btn" id="proj-new-btn" title="Start a new project">＋ New project</button>
       <span class="proj-admission" id="proj-admission"></span>
       <button class="proj-close" title="Close (Esc)">×</button>
+    </div>
+    <div class="proj-newform" id="proj-newform" hidden>
+      <h3>Start a project</h3>
+      <label>Name <input id="pnf-id" placeholder="neutron-support" autocomplete="off" /></label>
+      <label>Goal <textarea id="pnf-goal" rows="2" placeholder="What should the fleet accomplish?"></textarea></label>
+      <label>Lead <select id="pnf-lead"><option value="">— nominate later —</option></select></label>
+      <div class="proj-newform-actions">
+        <button class="proj-btn go" id="pnf-create">Create</button>
+        <button class="proj-btn" id="pnf-cancel">Cancel</button>
+        <span class="proj-err" id="pnf-err"></span>
+      </div>
     </div>
     <div class="proj-body">
       <aside class="proj-sidebar" id="proj-sidebar"></aside>
@@ -96,6 +108,7 @@ export async function activate() {
     </div>`;
   document.body.appendChild(root);
   root.querySelector(".proj-close").addEventListener("click", close);
+  wireNewForm();
   onKey = (e) => { if (e.key === "Escape") close(); };
   document.addEventListener("keydown", onKey);
   // Live: app.js calls this on every "projects" WS frame while we're open.
@@ -117,6 +130,63 @@ function close() {
   window.__projectsOnUpdate = null;
   if (onKey) document.removeEventListener("keydown", onKey);
   onKey = null;
+}
+
+// ＋ New project (Kyle's ask: start one from the UI, no terminal). The form runs `project new` +
+// (optionally) `project nominate` server-side — the nominate now wakes the lead, so it learns it
+// was picked. Everything after (the lead's plan, your approval) flows through the existing surfaces.
+function wireNewForm() {
+  const form = root.querySelector("#proj-newform");
+  const errEl = root.querySelector("#pnf-err");
+  const show = async (on) => {
+    form.hidden = !on;
+    if (!on) return;
+    errEl.textContent = "";
+    root.querySelector("#pnf-id").value = "";
+    root.querySelector("#pnf-goal").value = "";
+    // populate the lead dropdown from live sessions
+    const sel = root.querySelector("#pnf-lead");
+    sel.length = 1;                       // keep the "nominate later" option
+    try {
+      const r = await fetch("/api/sessions");
+      const d = r.ok ? await r.json() : {};
+      for (const s of (d.sessions || []).filter((x) => x.status !== "ended")) {
+        const tag = bare(s.tag) || s.name;
+        if (!tag) continue;
+        const o = document.createElement("option");
+        o.value = tag; o.textContent = tag;
+        sel.appendChild(o);
+      }
+    } catch { /* leave just the default option */ }
+    root.querySelector("#pnf-id").focus();
+  };
+  root.querySelector("#proj-new-btn").addEventListener("click", () => show(true));
+  root.querySelector("#pnf-cancel").addEventListener("click", () => show(false));
+  root.querySelector("#pnf-create").addEventListener("click", async () => {
+    const id = root.querySelector("#pnf-id").value.trim();
+    const goal = root.querySelector("#pnf-goal").value.trim();
+    const lead = root.querySelector("#pnf-lead").value;
+    if (!/^[A-Za-z0-9._-]+$/.test(id)) {
+      errEl.textContent = "name: letters, digits, . _ - only"; return;
+    }
+    const btn = root.querySelector("#pnf-create");
+    btn.disabled = true; btn.textContent = "Creating…";
+    try {
+      const r = await fetch("/api/projects", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, goal, lead: lead || null }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (j.ok === false) throw new Error(j.result || "couldn't create");
+      selectedId = id;
+      await show(false);
+      await reload();
+    } catch (e) {
+      errEl.textContent = String(e.message || e);
+    } finally {
+      btn.disabled = false; btn.textContent = "Create";
+    }
+  });
 }
 
 // The WS "projects" frame carries the full records but not the separately-computed open-escalations

@@ -31,6 +31,9 @@ ok  "state draft" "$(field neutron state)" "draft"
 okc "nominate" "$(ops nominate neutron 95emulator)" "nominated"
 ok  "state nominating" "$(field neutron state)" "nominating"
 ok  "lead recorded canonical" "$(field neutron lead)" "95emulator"
+# nominate WAKES the nominee: a directed bus message so the lead learns it was picked
+okc "nominate posts a directed wake" "$(cat "$BUS_FILE")" "to:95emulator"
+okc "wake tells the nominee to accept" "$(cat "$BUS_FILE")" "project accept neutron"
 
 # 3. a bystander cannot accept a nomination that is not theirs
 okc "bystander cannot accept" "$(other accept neutron)" "only the nominee"

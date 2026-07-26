@@ -2239,6 +2239,39 @@ async def get_projects(request: Request) -> dict[str, Any]:
             "admission": meter}
 
 
+class NewProject(BaseModel):
+    id: str
+    goal: str = ""
+    lead: str | None = None        # a session tag to nominate as lead (optional)
+
+
+@app.post("/api/projects")
+async def create_project(payload: NewProject, request: Request) -> dict[str, Any]:
+    """Start a project from the UI — no terminal (Kyle's ask). Runs ``project new`` and, if a lead
+    was picked, ``project nominate`` (which now wakes the nominee). Everything after — the lead's
+    plan, your approval — flows through the surfaces already built."""
+    pid = (payload.id or "").strip()
+    if not pid or not all(c.isalnum() or c in "._-" for c in pid):
+        raise HTTPException(status_code=400, detail="bad project id (letters, digits, . _ - only)")
+    state: AppState = request.app.state.cond
+    bus = str(state.settings.bus.script_path_resolved)
+    new = await asyncio.to_thread(
+        subprocess.run, [bus, "project", "new", pid, payload.goal or ""],
+        capture_output=True, text=True, timeout=15, env=_project_subenv())
+    if new.returncode != 0:
+        return {"ok": False, "result": (new.stdout or new.stderr or "").strip()}
+    nominated = ""
+    if payload.lead:
+        nom = await asyncio.to_thread(
+            subprocess.run, [bus, "project", "nominate", pid, payload.lead],
+            capture_output=True, text=True, timeout=15, env=_project_subenv())
+        nominated = (nom.stdout or nom.stderr or "").strip()
+    state.projects = await asyncio.to_thread(read_projects, state.coord_root)
+    await state.hub.broadcast("projects", {"projects": state.projects})
+    log.info("project created: %s (lead=%s)", pid, payload.lead or "-")
+    return {"ok": True, "id": pid, "result": (new.stdout or "").strip(), "nominated": nominated}
+
+
 class ProjectAction(BaseModel):
     notes: str | None = None       # for revise: what the lead should change
 

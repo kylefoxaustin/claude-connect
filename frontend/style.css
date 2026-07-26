@@ -2138,3 +2138,18 @@ body.link-mode .tile-actions { visibility: hidden; }
 .proj-lead-offline { border: 1px solid #f85149; border-radius: 8px; padding: 8px 12px;
   margin-bottom: 14px; color: var(--text); font-size: 12.5px;
   background: color-mix(in srgb, #f85149 8%, var(--bg-panel)); }
+
+/* ＋ New project form (slice 4c — start a project from the UI) */
+.proj-new-btn { background: var(--bg-panel); border: 1px solid var(--accent); color: var(--accent);
+  border-radius: 7px; padding: 5px 12px; cursor: pointer; font-size: 13px; }
+.proj-new-btn:hover { background: color-mix(in srgb, var(--accent) 12%, var(--bg-panel)); }
+.proj-newform { border-bottom: 1px solid var(--border); background: var(--bg-panel);
+  padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; max-width: 640px; }
+.proj-newform h3 { margin: 0; font-size: 15px; }
+.proj-newform label { display: flex; flex-direction: column; gap: 4px; font-size: 12px;
+  color: var(--text-dim); }
+.proj-newform input, .proj-newform textarea, .proj-newform select {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  border-radius: 7px; padding: 8px 10px; font-size: 13px; font-family: inherit; }
+.proj-newform textarea { resize: vertical; }
+.proj-newform-actions { display: flex; align-items: center; gap: 10px; margin-top: 2px; }

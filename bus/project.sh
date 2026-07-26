@@ -656,4 +656,23 @@ if verb == "escalations":
 die("unknown verb '%s'" % verb, 2)
 PYEOF
   ) 9>"$PROJECT_ROOT/.lock"
+  local _rc=$?
+  # WAKE THE NOMINEE. Like dispatch, `nominate` mutates state but told nobody — the nominated lead
+  # never learned it was picked (Kyle, 2026-07-25). Post a directed bus message so Conductor's
+  # auto-delivery wakes it and its hook surfaces the nomination; it reviews the goal, then accepts.
+  if [ "$verb" = "nominate" ] && [ "$_rc" -eq 0 ]; then
+    local _who="${2:-}" _pid="${1:-}"
+    local _bf="${BUS_FILE:-$HOME/Documents/claude-bus/messages.md}"
+    if [ -n "$_who" ] && { [ -w "$_bf" ] || [ -w "$(dirname "$_bf")" ]; }; then
+      {
+        echo ""; echo "## $(date '+%Y-%m-%d %H:%M') [$TAG]"; echo ""
+        printf 'to:%s — 🧭 You are nominated to LEAD project "%s".\n' "$_who" "$_pid"
+        printf '   Review the goal + scope, then accept / decline / suggest another:\n'
+        printf '     ~/.claude/bin/bus.sh project status %s\n' "$_pid"
+        printf '     ~/.claude/bin/bus.sh project accept %s\n' "$_pid"
+        printf '     (or) project decline %s "<why>"  ·  project suggest %s <who> "<why>"\n' "$_pid" "$_pid"
+      } >> "$_bf" 2>/dev/null
+    fi
+  fi
+  return "$_rc"
 }
