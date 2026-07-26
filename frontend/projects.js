@@ -93,8 +93,11 @@ export async function activate() {
     </div>
     <div class="proj-newform" id="proj-newform" hidden>
       <h3>Start a project</h3>
-      <label>Name <input id="pnf-id" placeholder="neutron-support" autocomplete="off" /></label>
-      <label>Goal <textarea id="pnf-goal" rows="2" placeholder="What should the fleet accomplish?"></textarea></label>
+      <label>Short name <span class="pnf-sub">a handle — spaces become dashes</span>
+        <input id="pnf-id" placeholder="ieee-paper" autocomplete="off" />
+        <span class="pnf-slug" id="pnf-slug"></span></label>
+      <label>Goal <span class="pnf-sub">the full description — this is where the sentence goes</span>
+        <textarea id="pnf-goal" rows="2" placeholder="What should the fleet accomplish?"></textarea></label>
       <label>Lead <select id="pnf-lead"><option value="">— nominate later —</option></select></label>
       <div class="proj-newform-actions">
         <button class="proj-btn go" id="pnf-create">Create</button>
@@ -135,9 +138,27 @@ function close() {
 // ＋ New project (Kyle's ask: start one from the UI, no terminal). The form runs `project new` +
 // (optionally) `project nominate` server-side — the nominate now wakes the lead, so it learns it
 // was picked. Everything after (the lead's plan, your approval) flows through the existing surfaces.
+// Turn any human input into a valid project handle: lowercase, spaces/punctuation → dashes,
+// collapse + trim, cap length. "IEEE paper on how we…" → "ieee-paper-on-how-we…".
+function slugify(s) {
+  return String(s || "").toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-._]+|[-._]+$/g, "")
+    .slice(0, 40)
+    .replace(/[-._]+$/g, "");
+}
+
 function wireNewForm() {
   const form = root.querySelector("#proj-newform");
   const errEl = root.querySelector("#pnf-err");
+  const idInput = root.querySelector("#pnf-id");
+  const slugEl = root.querySelector("#pnf-slug");
+  // Live preview: show the handle the name will become, so it's never a surprise.
+  idInput.addEventListener("input", () => {
+    const s = slugify(idInput.value);
+    slugEl.textContent = (s && s !== idInput.value.trim().toLowerCase()) ? `→ ${s}` : "";
+  });
   const show = async (on) => {
     form.hidden = !on;
     if (!on) return;
@@ -163,11 +184,11 @@ function wireNewForm() {
   root.querySelector("#proj-new-btn").addEventListener("click", () => show(true));
   root.querySelector("#pnf-cancel").addEventListener("click", () => show(false));
   root.querySelector("#pnf-create").addEventListener("click", async () => {
-    const id = root.querySelector("#pnf-id").value.trim();
+    const id = slugify(root.querySelector("#pnf-id").value);
     const goal = root.querySelector("#pnf-goal").value.trim();
     const lead = root.querySelector("#pnf-lead").value;
-    if (!/^[A-Za-z0-9._-]+$/.test(id)) {
-      errEl.textContent = "name: letters, digits, . _ - only"; return;
+    if (!id) {
+      errEl.textContent = "give it a short name (e.g. ieee-paper)"; return;
     }
     const btn = root.querySelector("#pnf-create");
     btn.disabled = true; btn.textContent = "Creating…";
