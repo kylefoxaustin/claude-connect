@@ -245,5 +245,20 @@ okc "non-lead/non-operator refused" "$(other budget neutron 1m)" "only the lead"
 okc "operator may set it" "$(opas budget neutron 750000)" "750,000"
 okc "0 clears the cap" "$(lead budget neutron 0)" "cap cleared"
 
+# ===== slice 7: job priority (background default / urgent) — the wake states it, worker self-arbitrates =====
+jf(){ python3 -c "import json;p=json.load(open('$PROJECT_STATE_DIR/neutron.json'));j=[x for x in p['jobs'] if x['id']=='$1'][0];print(j.get('$2',''))"; }
+lead job add neutron bgjob to:qualcomm path:$DROP files:bg.md -- a background job >/dev/null
+lead job add neutron urgjob to:qualcomm path:$DROP files:urg.md prio:urgent -- an urgent job >/dev/null
+ok  "default prio is background" "$(jf bgjob prio)" "background"
+ok  "explicit prio urgent" "$(jf urgjob prio)" "urgent"
+okc "bad prio refused" "$(lead job add neutron xj to:qualcomm path:$DROP files:x.md prio:nope -- x)" "prio must be"
+okc "jobs view marks urgent" "$(ops jobs neutron)" "⚡urgent"
+# the wake message states the priority so the worker self-arbitrates (doesn't ask the operator)
+lead dispatch neutron bgjob >/dev/null
+okc "background wake tells worker to fit it around own work" "$(cat "$BUS_FILE")" "PRIORITY: BACKGROUND"
+okc "background wake says do NOT ask the operator" "$(cat "$BUS_FILE")" "do NOT ask the operator"
+lead dispatch neutron urgjob >/dev/null
+okc "urgent wake says prioritize over own work" "$(cat "$BUS_FILE")" "PRIORITY: URGENT"
+
 echo "---"; echo "project: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

@@ -582,6 +582,7 @@ class AppState:
         # Slice 5: the MEASURED spend meter (annotates spend/spend_pct/over_budget) + lead-death flag.
         self._spend_meter.update(projs, self._member_output_tokens)
         self._annotate_lead_offline(projs)
+        self._annotate_assignee_status(projs)
         # Budget alarm: a project crossing the warn threshold raises a Kyle-bound decision (extend /
         # checkpoint / finish) THROUGH the shield — reusing the queue+paging, not a new alarm class.
         if await self._check_budget_alarms(projs):
@@ -935,6 +936,20 @@ class AppState:
             lead = p.get("lead") or ""
             p["lead_offline"] = bool(p.get("state") == "active" and lead
                                      and self._member_session(lead) is None)
+
+    def _annotate_assignee_status(self, projs: list[dict[str, Any]]) -> None:
+        """Capacity-awareness (slice 7): tag each job with its assignee's live status, so the lead
+        and Kyle can SEE they're about to route work into a session that's already busy — the fix for
+        'dispatch a job to a working session and it has to ask the human which to do first'. Advisory:
+        it surfaces load, it doesn't block; prefer an idle peer, but a BACKGROUND job to a busy one is
+        fine (the worker fits it around its own work)."""
+        for p in projs:
+            for j in p.get("jobs") or []:
+                rec = self._member_session(j.get("to", "")) if j.get("to") else None
+                st = (rec.status.value if rec and hasattr(rec.status, "value")
+                      else str(rec.status) if rec else "offline")
+                j["assignee_status"] = st
+                j["assignee_busy"] = st in ("active", "warm")
 
     async def _check_budget_alarms(self, projs: list[dict[str, Any]]) -> bool:
         """Raise a Kyle-bound budget decision once when a project crosses the warn threshold. Reuses

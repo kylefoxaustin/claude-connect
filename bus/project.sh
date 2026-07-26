@@ -75,9 +75,11 @@ project_dispatch() {
     local orderid="proj-${pid}__${jobid}"
     local spec; spec="$(project_dispatch _dispatch_check "$pid" "$jobid")"; local rc=$?
     if [ "$rc" -ne 0 ]; then printf '%s\n' "$spec" >&2; return "$rc"; fi
-    # spec is TAB-separated: assignee<TAB>path<TAB>files<TAB>accept<TAB>desc
-    local assignee path files accept desc
-    IFS=$'\t' read -r assignee path files accept desc <<<"$spec"
+    # spec is \x1f-separated (unit separator): assignee|path|files|accept|desc|prio. \x1f (not tab)
+    # because tab is IFS-whitespace and `read` would collapse an empty accept field, shifting prio.
+    local assignee path files accept desc prio
+    IFS=$'\x1f' read -r assignee path files accept desc prio <<<"$spec"
+    [ -z "$prio" ] && prio="background"
     if ! command -v order_dispatch >/dev/null 2>&1; then
       echo "project: order.sh not available — can't dispatch a job as an order." >&2; return 1; fi
     local -a oargs=(place "$orderid" "to:$assignee" "path:$path" "files:$files")
@@ -97,6 +99,11 @@ project_dispatch() {
         echo ""; echo "## $(date '+%Y-%m-%d %H:%M:%S') [$TAG]"; echo ""
         printf 'to:%s — 📋 Project "%s": job "%s" is assigned to you.\n' "$assignee" "$pid" "$jobid"
         [ -n "$desc" ] && printf '   %s\n' "$desc"
+        if [ "$prio" = "urgent" ]; then
+          printf '   ⚡ PRIORITY: URGENT — please prioritize this over your own current work.\n'
+        else
+          printf '   🍃 PRIORITY: BACKGROUND — fit this around your OWN work; do NOT interrupt it, and do NOT ask the operator to choose. High-value, not time-urgent.\n'
+        fi
         printf '   Deliverable: %s in %s\n' "$files" "$path"
         printf '   Claim it, do the work, then deliver (it verifies the files landed):\n'
         printf '     ~/.claude/bin/bus.sh order claim %s\n' "$orderid"
@@ -272,9 +279,16 @@ if verb == "job":
         die("unknown dep(s): %s — a dependency must be a job already added to this project" % ",".join(unknown))
     if jid in deps:
         die("a job cannot depend on itself")
+    # PRIORITY vs the worker's OWN work (slice 7). Default BACKGROUND: "fit this around your own work,
+    # don't interrupt" — so a dispatched job stops implicitly demanding the worker drop everything (and
+    # then ask the human to arbitrate). URGENT: "please prioritize this over your own work." The wake
+    # message states which, so the worker self-arbitrates instead of kicking the decision to Kyle.
+    prio = (kw.get("prio", "background") or "background").lower()
+    if prio not in ("background", "urgent"):
+        die("prio must be 'background' (default — fit around own work) or 'urgent'")
     job = {"id": jid, "to": to, "desc": desc, "deps": deps,
            "size": (kw.get("size", "") or "").upper(), "accept": kw.get("accept", ""),
-           "path": jpath, "files": files, "state": "planned", "order_id": None}
+           "prio": prio, "path": jpath, "files": files, "state": "planned", "order_id": None}
     jobs_of(p).append(job)
     logline(p, "job %s added -> %s (deps: %s)" % (jid, to, ",".join(deps) or "none"))
     save(p)
@@ -406,8 +420,9 @@ if verb == "jobs":
         elif r == "ready":
             extra = "  ▶ dispatchable"
         sz = (" " + j["size"]) if j.get("size") else ""
-        print("  %s %-14s -> [%s]%s  deps=%s%s" % (
-            icon, j["id"], j.get("to", "?"), sz, ",".join(j.get("deps", [])) or "—", extra))
+        pr = " ⚡urgent" if j.get("prio") == "urgent" else ""
+        print("  %s %-14s -> [%s]%s%s  deps=%s%s" % (
+            icon, j["id"], j.get("to", "?"), sz, pr, ",".join(j.get("deps", [])) or "—", extra))
         if j.get("desc"):
             print("       %s" % j["desc"])
     sys.exit(0)
@@ -433,8 +448,12 @@ if verb == "_dispatch_check":
         die("job '%s' is blocked — waiting on: %s" % (jid, ",".join(blocking_deps(p, j))))
     # emit the order spec (tab-separated) + the desc, for the shell to place the order AND post the
     # directed wake to the assignee. \t and \n can't appear in these fields (ids/paths/one-line desc).
-    sys.stdout.write("\t".join([j["to"], j["path"], ",".join(j["files"]),
-                                j.get("accept", ""), (j.get("desc", "") or "").replace("\t", " ")]))
+    # Join with the UNIT SEPARATOR (\x1f), NOT a tab: tab is IFS-whitespace, so bash `read` collapses
+    # a consecutive run (an empty `accept` field) and shifts every field after it — which silently
+    # dropped `prio`. \x1f is non-whitespace, so empty fields survive.
+    sys.stdout.write("\x1f".join([j["to"], j["path"], ",".join(j["files"]),
+                                  j.get("accept", ""), (j.get("desc", "") or "").replace("\x1f", " "),
+                                  j.get("prio", "background")]))
     sys.exit(0)
 
 if verb == "_dispatch_mark":

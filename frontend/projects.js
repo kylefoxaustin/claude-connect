@@ -453,14 +453,17 @@ function renderDag(p, jobs) {
     g.appendChild(rect);
     const t1 = svgEl("text");
     t1.setAttribute("x", 10); t1.setAttribute("y", 20); t1.setAttribute("class", "proj-node-id");
-    t1.textContent = `${r.ic} ${j.id}`;
+    t1.textContent = `${j.prio === "urgent" ? "⚡" : r.ic} ${j.id}`;
     g.appendChild(t1);
     const t2 = svgEl("text");
     t2.setAttribute("x", 10); t2.setAttribute("y", 38); t2.setAttribute("class", "proj-node-sub");
-    t2.textContent = `→ ${bare(j.to)}${j.size ? " · " + j.size : ""}`;
+    // capacity-awareness (slice 7): mark an assignee that's busy, so routing into load is visible.
+    const busy = j.assignee_busy ? " ⏳busy" : "";
+    t2.textContent = `→ ${bare(j.to)}${j.size ? " · " + j.size : ""}${busy}`;
     g.appendChild(t2);
     const title = svgEl("title");
-    title.textContent = `${j.id} → ${bare(j.to)}\n${j.desc || ""}\n[${r.label}]`
+    title.textContent = `${j.id} → ${bare(j.to)} (${j.assignee_status || "?"})\n${j.desc || ""}\n`
+      + `[${r.label}${j.prio === "urgent" ? " · ⚡URGENT" : " · background"}]`
       + (j.readiness === "blocked" ? `\nwaiting on: ${(j.blocking_deps || []).join(", ")}` : "")
       + (j.order_id ? `\norder: ${j.order_id}` : "");
     g.appendChild(title);
