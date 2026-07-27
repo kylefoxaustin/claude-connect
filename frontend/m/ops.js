@@ -314,9 +314,15 @@ function decisionCard(d) {
         // locatable when it's the foreground tile). Persist an ACTIONABLE message IN STATE so it
         // survives the next poll (never a paint-then-wipe), and leave the button live so a retry
         // after focusing the window lands. This is the fix for "I keep hitting send and nothing takes".
+        // A 502 means Conductor could NOT safely aim the keystrokes and fail-closed — one of three
+        // ways, all with the SAME reliable remedy: (1) it can't locate the window; (2) the tilix
+        // tile-activate didn't move focus (session shares a Tilix process / minimized); (3) a human
+        // is active at the desktop and it won't race for focus. Advising "focus the window then
+        // retry" was WRONG — focusing can trip (3), and retrying can't fix (2). The guaranteed path
+        // is always: answer at the terminal keyboard. Say that.
         answerErr.set(d.session_id,
           e.status === 502
-            ? "Couldn't reach its terminal — focus that window, then tap again"
+            ? "Can't type it safely from here — answer it at that terminal's keyboard"
             : `Failed: ${e.message || "try again"}`);
         renderInbox();
       }
