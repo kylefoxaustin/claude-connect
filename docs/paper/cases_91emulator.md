@@ -15,10 +15,14 @@ session building the same block caught concurrently, from a different vantage.**
 fixed at T+2 — which the record (commit dates, bus timestamps, distinct branches) CAN settle. I do
 NOT argue "a smarter agent found it."*
 
-*Provenance, per Fleet Law: **MEASURED** = read from durable record I can point at (git `%ci` dates
-+ hashes; the qtest file at a given commit via `git show`; the assertion output I ran this session;
-the source I read; `93emulator`'s bus messages with their timestamps). **RECALLED** = my faithful
-account of the reasoning in the moment, not re-counted. **GAP** = a thing the record does not settle.*
+*Provenance, per Fleet Law: **MEASURED** = read from a record I can point at. Two durability tiers,
+not conflated (per `band`'s check): the **git** facts (commit `%ci` dates + hashes, the qtest file at
+a commit via `git show`, the source, and this section's re-executed recipe) live in a repo with a
+GitHub remote — durable against **hardware failure**. The **bus** facts (`93emulator`'s messages +
+timestamps) live in `~/Documents/claude-bus`, which survives the 30-day transcript wipe but is a
+**single non-git copy on one disk** — durable against the *policy*, not against the *disk*. Where a
+figure matters, it is anchored to the git tier. **RECALLED** = my faithful account of the reasoning
+in the moment, not re-counted. **GAP** = a thing the record does not settle.*
 
 ---
 
@@ -74,8 +78,13 @@ The fix (**MEASURED**: `7a322e875f`) required the clock in `running()`/`tx_activ
 ClockUpdate callback to freeze/resume the feed. I proved it with the test I'd been missing — enable
 MICFIL, clear its gate, drain the FIFO, assert the data register reads 0 — and mutation-proved it:
 reverting to the enable-only predicate leaves the gated block synthesising, and the data register
-reads **1,409,307,648** where the fix reads **0** (**MEASURED**: the assertion output I ran this
-session).
+reads **1,409,307,648** where the fix reads **0**. (**MEASURED — and EXECUTED, not merely
+"reproducible."** Per `band`'s "execute your own reproduction once, and say you did": from the
+committed `7a322e875f` state I reverted the `hz != 0` conjunct in `imx93_micfil_running()`, rebuilt,
+and reran `imx91-lpcg-test` — it reproduces `1,409,307,648 == 0` cleanly, no toolchain drift, no
+stale-revert (**MEASURED**, run 2026-07-26). This closes the tier-drop `band` named: a re-anchoring
+that swaps a run number for a *recipe* silently downgrades MEASURED to reproducible-in-principle
+until someone runs the recipe. I ran it.)
 
 ## Why this is a cross-tree audit finding (RQ3 vantage + timing), not just a bug I fixed
 
@@ -106,6 +115,14 @@ shipped-and-documented claim was false, that a separate-tree session named the e
 not see, and that the tests I held at ship time were structurally blind to it. RQ3 does not need the
 stronger claim; the ship-vs-audit vantage, which the timestamps settle, is enough.
 
+**A deliberate framing note (re openwebui-ollama's harness-contamination finding).** This case makes
+**no "a stateless clone would re-derive this from scratch" claim** — precisely the counterfactual
+openwebui-ollama showed the harness cannot cleanly support (default shell cwd inside the tree,
+pre-injected `git status` and memory index). I argue only from an *actual* second session on an
+*actual* separate tree, whose vantage and timing the record settles. So the contamination that
+threatens stateless-baseline claims does not reach this one — the auditor here was real, not a
+hypothesised clean-room clone.
+
 ## What it establishes for the paper
 
 - **A "green, documented, shipped" gate can be wired-but-broken in the one direction its tests never
@@ -116,7 +133,17 @@ stronger claim; the ship-vs-audit vantage, which the timestamps settle, is enoug
   reuse.** There, task N+1 was cheap because task N left a named trace. Here, two tasks running in
   *parallel* on sibling trees cross-checked into one correct model. Both are RQ4; the fleet gets
   competence from history *and* from lateral peers.
+- **This is a "believed-held-but-false" defect, which is the kind a tag cannot catch.** In
+  jaws/openwebui-ollama's emerging taxonomy — *a provenance tag catches a condition
+  measured-but-unstated; only an ablation catches a condition believed-held-but-false* — this case
+  is squarely the second kind. I believed "the gate stops the block" and had a green suite; no
+  provenance tag on my numbers would have flagged it, because every number I had was true *for the
+  gate-ON path I measured*. What exposed it was an ablation-shaped act — a sibling exercising the
+  complement (gate-OFF) as its assertion. The paper's recommendation should say so: shipping the tag
+  catches the cheap half; the expensive half needs someone to run the off-state, and a parallel peer
+  building the same block is a naturally-occurring source of that ablation.
 - **Provenance discipline is what makes the finding citable.** I can point to the commit that shipped
-  the false claim, the commit that proves the fix (mutation value and all), and the separate-tree
-  session that caught it — and I decline to claim the one thing the record cannot settle. That
-  decline is itself the method the paper argues for.
+  the false claim, the commit that proves the fix (mutation value and all — a recipe I *executed*
+  from the committed state, not a "reproducible-in-principle" claim, so the number rests on a
+  hardware-durable git tier), and the separate-tree session that caught it — and I decline to claim
+  the one thing the record cannot settle. That decline is itself the method the paper argues for.

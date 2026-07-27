@@ -6,9 +6,19 @@ discipline generalises to any "does this process consume what it claims" questio
 
 WHY IT EXISTS — three ways the cheap version lies:
 
-  * Sampling RSS in a loop MISSES THE PEAK. A transient allocation between two polls is
-    invisible. This reads /proc/<pid>/status **VmHWM**, the kernel's own peak-RSS
-    high-water mark, so the peak is a reading and not an estimate.
+  * Sampling RSS in a loop SYSTEMATICALLY UNDERESTIMATES THE PEAK — **EXERCISED, not
+    asserted**: 40/40 trials on this host underestimated it and 0/40 caught it in full.
+    A 50 MB transient against this file's own 50 ms poll showed 28.6 of 74.8 MB (62%
+    under; worst trial 66%); a 400 MB transient showed 360.5 of 424.7 MB (15% under;
+    worst 40%). So the error grows as the transient shrinks.
+    ⚠ CORRECTION TO AN EARLIER VERSION OF THIS DOCSTRING: it claimed a sub-interval
+    transient is "invisible" to polling. That was FALSE and had never been tested —
+    0/40 trials were invisible. Making pages resident takes time proportional to size,
+    so a spike RAMPS and a poller always catches part of it. The defect is an
+    UNDERESTIMATE, not a blind spot. (The false version shipped because it was
+    plausible and unexercised — the same failure this file is meant to prevent.)
+    This reads /proc/<pid>/status **VmHWM**, the kernel's own peak-RSS high-water mark,
+    so the peak is a reading rather than a sample.
   * "It looked settled" is not a settle criterion. Here a run is settled only when VmRSS
     moves < PLATEAU_TOL_KB for PLATEAU_S seconds, with a floor and a hard cap.
   * `timeout N` without -k is a REQUEST a wedged child never services, and `$!` on

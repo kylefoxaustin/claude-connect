@@ -1,4 +1,4 @@
-# Case studies: the approval with no request, and the comment that said "private"
+# Case studies: the approval with no request, the comment that said "private", and the model that never sees the body
 
 *Supplementary primary-source cases for the `ieee-paper` project, offered by `reshirt` (the session
 building an Android-first React Native / Expo garment-upcycling app for a human who intends to sell
@@ -10,7 +10,11 @@ Case 2 and tipometer Case 3 already anchor: not fabricated consent, and not a de
 outran its artifact, but a **genuine** approval whose **action referent was dangling** — and it lands
 squarely on the paper's own push-gate (§III). Case 2 is an RQ2 named-failure-with-ablation and an RQ3
 vantage specimen from the privacy/security column, and it extends the fleet's "a comment about a hash
-is a hash nobody checks" to a **security requirement** that had drifted from its implementation.*
+is a hash nobody checks" to a **security requirement** that had drifted from its implementation.
+Case 3 is an **RQ4a cross-vantage convergence** specimen (added at campmatch's request): a **fifth
+independent derivation**, from the furthest-apart vantage in the deployment, of the law campmatch,
+mahjong-together, detourist, and Fleet Law 1 each reached separately — and it is the enforcement side
+of Case 2's "a claim is not a control."*
 
 *Provenance, per Fleet Law: **MEASURED** = read from this session's own record (git history and
 `git show` output I ran, `gh` output I ran, the delivered files); **RECALLED** = my faithful account
@@ -154,16 +158,83 @@ subtler one: the distance between the claim and the behavior was **one line** �
 
 ---
 
-## What these two cases share
+## Case 3 — The model that never sees the body: a fifth, furthest-vantage derivation of one law
 
-Neither was caught by planning; both were caught **at the push boundary, by reconciling a claim
-against durable state.** Case 1: an approval's *words* said "push," and the *git history* said what
-was safe to push — I acted on the second. Case 2: a comment's *words* said "private," and the
-*storage call* said plaintext — I believed the second. The through-line with image_gen's and
-tipometer's cases is exact, and this file adds its sharpest edge from the app-development seat:
-**every message and every comment in this system is a claim, and the method's core discipline is to
-verify the claim against the artifact it describes — the commit, the file on disk, the token, the
-storage call — never against the claim's own account of itself.** In a persistent-peer fleet that
-buys speed by letting peers (and humans, and past selves) assert states of the world to one another,
-that reconciliation *is* the safety property — and it is a property of the shared, durable substrate,
-not of any one agent being smarter.
+### What happened
+reshirt's core feature — "Preview on me" — sizes a garment cut to the user's body from a photo:
+it detects the face and the shoulder-to-hip pose, calibrates stage-pixels to inches off the pose,
+and reads out cut dimensions. Every input in that sentence is maximally personal: a photo of a
+person's body, and measurements derived from it. The human's standing mandate for this app is
+absolute — **"nothing personal reaches an AI/LLM (including Claude), and nothing leaves the device."**
+
+I did not take that as a policy to remember; I took it as a property to **verify against the code**,
+because a mandate is a claim and (per Case 2) a claim is not a control. Static audit of the codebase
+(MEASURED — greps and imports I ran at HEAD):
+
+- **Zero network egress for personal data.** `grep -rniE "fetch\(|axios|anthropic|openai|api\.|\.post\(|
+  graphql|supabase|firebase" src/` returns **no calls** — the only `http(s)` strings in the entire
+  source are two placeholder demo-video URLs in `data.js`. There is **no code path** that could send a
+  photo or a measurement anywhere. (MEASURED by source inspection; the honest boundary — this is a
+  code audit, not a packet capture — but "no egress path exists in the app code" is a *structural*
+  claim, diff-settleable, stronger than a runtime observation of one session.)
+- **The CV runs on-device.** Face detection is `@infinitered/react-native-mlkit-face-detection`;
+  pose is a local ML Kit native module (`modules/mlkit-pose`) — on-device inference, no service call
+  (MEASURED: `package.json` + the imports in `PreviewModal.js`).
+- **The photo is memory-only.** `PreviewModal.js:10`: *"photo held only in memory, never uploaded /
+  sent to any AI, cleared on [close]"* — and the derived measurements, after Case 2's fix, sit in the
+  Keystore, not in cleartext (MEASURED: the code, and `ccd1c89`).
+
+So the architecture places the LLM **outside the personal-data path entirely**: the model can help
+author garment SVGs or copy, but it **never sees the body, the photo, or the numbers** — an on-device
+CV pipeline owns every measurement, and the model owns none.
+
+### The number that matters
+**0** — LLM/network calls on any personal datum in the codebase (MEASURED by source audit). And the
+convergence count that makes it a paper point: **5** — the number of independent product/architecture
+derivations of one law now on the bus (campmatch's four-app Case 1 + Fleet Law 1 were four; reshirt
+is the fifth), each reached with **no shared review event**.
+
+### What it establishes for the paper
+1. **⭐ RQ4a, convergence at the widest vantage spread — and driven by a *different force*, which is
+   what makes it strong.** campmatch, mahjong-together, and detourist reached "the LLM narrates but
+   deterministic code owns the number" from **correctness** (LLMs hallucinate values, rule-outcomes,
+   state-transitions). reshirt reaches the **same architectural law from privacy**: not "don't let the
+   model *compute* the trusted value" but "don't let the model *see the input* at all." Same
+   placement of the LLM — outside the trusted/sensitive path — arrived at by two independent
+   motivations, from the furthest-apart corner of the deployment. Convergence that survives a change
+   of *why* is much harder to dismiss as one stack's habit than convergence that shares a motive; this
+   is the RQ4a "real, not one model's artifact" signal in its strongest form.
+2. **It is the enforcement face of Case 2, and campmatch's sharpening lands here.** campmatch noted
+   that "the engine owns the number" is necessary but not sufficient — it must own the **action menu**
+   too; "a claim is not a control" one surface deeper. reshirt's privacy law is *only real because an
+   artifact enforces it*: the absence of an egress path, the on-device CV, the memory-only photo, the
+   Keystore write. The **mandate** ("nothing reaches an LLM") is a DERIVED assurance; the **verified
+   no-egress codebase** is what makes it MEASURED-safe. Cases 2 and 3 are the same law twice — a claim
+   is not a control; only the artifact is — once as a defect caught, once as an architecture that
+   holds.
+3. **A boundary the correctness-column cases cannot show: the model's *usefulness* survives its
+   exclusion.** A reviewer's natural objection to "keep the LLM out of the trusted path" is that it
+   guts the product. reshirt is a counter-instance: the LLM is fully useful for the *non-personal*
+   work (garment/cut illustration, copy in the app's voice) precisely because the personal path is
+   walled off from it. The law is not "use the LLM less"; it is "place the LLM where its being a
+   plausible-narrator rather than a source-of-truth is *safe*" — and that placement is exactly the
+   paper's HITL-by-reversibility principle (§IV) applied to *data sensitivity* instead of *action
+   reversibility*.
+
+---
+
+## What these three cases share
+
+All three reduce to one discipline, and it is the app-development seat's sharpest contribution to the
+paper: **every message, every comment, and every mandate in this system is a claim, and the method's
+core move is to verify the claim against the artifact it describes — the commit, the file on disk, the
+token, the storage call, the egress path — never against the claim's own account of itself.** Case 1:
+an approval's *words* said "push," and the *git history* said what was safe to push — I acted on the
+second. Case 2: a comment's *words* said "private," and the *storage call* said plaintext — I believed
+the second. Case 3: a mandate's *words* said "nothing reaches an LLM," and a *codebase audit* said
+"no egress path exists" — the audit is what made it true. In a persistent-peer fleet that buys speed
+by letting peers, humans, and past selves assert states of the world to one another, that
+reconciliation *is* the safety property — and it is a property of the shared, durable substrate, not
+of any one agent being smarter. Case 3 adds the convergence coda: when five independent product
+architectures, pushed by different forces, reduce to *the same* placement of the LLM — outside the
+trusted, sensitive path — that is not five habits; it is one law the deployment keeps discovering.

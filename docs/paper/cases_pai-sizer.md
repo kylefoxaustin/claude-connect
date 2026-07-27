@@ -21,14 +21,31 @@ which the record **can** settle.*
 
 *⚠ Engine-version provenance for every number below (added after first delivery — it is a
 condition I had not stated, and Fleet Law says a derived number carries the conditions of **both**
-factors). This project pins `ratchet@v0.2.7` in `requirements.txt`, which is what the deployed app
-runs. My development environment has ratchet **v0.3.2** installed editable — two minor versions
-past the `<0.3.0` bound this project's own `CLAUDE.md` declares deliberate and breaking. So my
-first measurements were taken under a condition the product does not ship. I re-ran every figure
-in this file against a clean extract of the pinned **v0.2.7** tree: **all outputs are identical on
-both engines** (175.5 / 151.0 / 87.8 / 351.0 ms, `peak_tops` table, and every `source`
-classification). The numbers stand. The disclosure is here because "it turned out not to matter"
-is a result, not a licence to omit the condition — which is the whole subject of Case 1.*
+factors). When these numbers were produced this project pinned `ratchet@v0.2.7` while my
+development environment had ratchet **v0.3.2** installed *editable* — two minor versions past the
+`<0.3.0` bound this project's own `CLAUDE.md` declared deliberate and breaking. So the first
+measurements were taken under a condition the product did not ship. I re-ran every figure against
+a clean extract of the pinned **v0.2.7** tree: **all outputs identical on both engines**
+(175.5 / 151.0 / 87.8 / 351.0 ms, `peak_tops` table, every `source` classification).*
+
+***Resolved 2026-07-26, and the resolution is itself a specimen.** The `<0.3.0` ceiling turned out
+to be a **falsifiable prediction that was simply false** — "v0.3.0 *will carry* breaking
+heterogeneous-architecture work," written before v0.3.0 existed and never revisited. v0.3.x is
+additive for this surface. A **1374-cell** matrix (every tier × model × workload, all memory
+upgrades, all precision sets × mature/immature, capability badges, tier specs) is byte-identical
+across v0.2.7 and v0.3.2, 0 errors either side; pin bumped to v0.3.2 in `cf13158` with a dated
+correction in `CLAUDE.md`. The sibling surface independently ran **3,714 cells** over its own
+vision/LLM/VLA paths — also 100% identical — and bumped too. **Two surfaces, ~5,100 cells, one
+imaginary boundary.** Every number in this file therefore holds on both the engine it was measured
+on and the engine now deployed.*
+
+*⚠ `sizer` supplied the generalisable rule, and it corrected a hypothesis of mine: I had guessed
+its identical `<0.3.0` line was copied from ours. It was not. **Ours was a falsifiable prediction
+(and false); theirs was a pin-hygiene policy asserting nothing about v0.3.x's contents — never
+false, merely untested.** The two are **indistinguishable in a diff** — both read `<0.3.0` — so an
+audit that greps the *constraint* false-positives on the policy. Only the **justification type**
+separates them: **classify doc claims as falsifiable predictions or as policies, because only the
+first kind rots.***
 
 ---
 
@@ -105,14 +122,27 @@ today against the shipped engine.)
 3. **⭐ A matched pair with `sizer`, and it completes the principle.** The sibling surface found
    the same class in its vision path in the same weeks, with the **opposite sign**: mine overstates
    the hardware by 14% and was only visible via a counterfactual I ran for this paper; theirs
-   *understates* by 40% and **ran live for 46 days** (their `cases_sizer.md`, Case 1). That pairing
+   *understates* by 40% and **persisted 46 days** (their `cases_sizer.md`, Case 1). That pairing
    is the finding neither of us has alone. My version — "if your detection depends on the wrong
    answer being implausible, you have no detection" — is incomplete, because it does not say which
    wrong answers are implausible. Theirs does: **a conservative error is not a safe error, it is a
    durable one.** A number that flatters invites challenge; a number that disappoints reads as
    integrity and is never audited. Two independent surfaces, same failure class, opposite signs,
-   and the *pessimistic* one survived 46× longer. Cite them together or the asymmetry is invisible.
-3. **Honest scope on my own numbers:** the FP4 rung above is a **modeled projection with zero
+   and the *pessimistic* one survived far longer. Cite them together or the asymmetry is invisible.
+   > **Correction, 2026-07-26 — propagated from `sizer`'s retraction, and I am the one who
+   > propagated the error.** An earlier version of this bullet said its defect "**ran live** for 46
+   > days," which I took from its bus report. `sizer` has since retracted that: the 129 defective
+   > cells were reachable through the **engine API but not through the shipped UI** (`app.py` has a
+   > single `hw_with_memory` call site, gated to Mid/High, and those tiers carry no vision anchors —
+   > the only anchored tiers are never offered a memory upgrade). **Severity is LATENT, not
+   > user-visible**, and it should not be cited as a 46-day user-facing regression. The *asymmetry*
+   > this bullet rests on is unaffected — both defects were real, both were silent, and the
+   > conservative one persisted far longer — but the duration is time-on-disk, not time-in-front-of-users.
+   > Worth noting how the error moved: `sizer` said it, I repeated it in my own file, and it would
+   > have entered the draft twice-sourced and looking corroborated. **Independent repetition is not
+   > independent confirmation** — a hazard the paper should name, since a fleet publishing into a
+   > shared bus manufactures exactly this kind of false corroboration cheaply.
+4. **Honest scope on my own numbers:** the FP4 rung above is a **modeled projection with zero
    edge-NPU silicon anchors**, and ships badged 🟠 confidence-low. It is in the table to show the
    mechanism, not to claim an FP4 result.
 
@@ -180,7 +210,55 @@ read 175.5; an FP8 rung reading 351 contradicted a ladder I had established minu
    **abstraction**: *a derived clone silently loses the identity that unlocks its measurement, and
    the fallback is plausible rather than loud.* A stateless agent handed this ticket re-derives
    that abstraction or, more likely, doesn't — and ships 151 ms.
-3. **A note on where the first one was caught.** The 04-29 regression was found by **Kyle looking
+3. **⚠ THE COUNTER-READING, and I think it is at least as strong as my own.** `mcxn947qemu` ran a
+   genuine **ablation** on its RQ4 case (2026-07-26): three memoryless arms, including one fully
+   blind with no hints, **all** re-derived its one-line fix — accumulated context bought ~2×
+   *latency*, not the solution. Worse for the compounding story, its blind arm caught a **secondary
+   gap the context-rich run missed**, because the warm run pattern-matched to the pre-staged answer
+   and stopped. It concluded: do not cite its 12→370 as a causal RQ4b win.
+   **That critique applies to this case, and it reframes my own evidence against me.** I have been
+   reading the third site — the anchor-dtype resolution I got wrong — as *the un-named control*. It
+   reads at least as well as **the same thoroughness regression mcxn947 measured**: I recognised the
+   class, applied it at the two sites where it was obvious, **and stopped enumerating**. On that
+   reading the accumulated context did not merely fail to cover the third site — it is *what caused
+   me to stop looking for it*, exactly as the pre-staged answer did for mcxn947's warm arm.
+   **What my case does and does not support, stated plainly:**
+   - It **does** support that a named class transfers cross-mechanism and produces correct code at
+     the sites where it is recognised. Both lines are load-bearing; Case 1's table prices one of
+     them at 175.5 vs 151.0 ms.
+   - It does **not** support that a cold session would have got those two sites wrong. **GAP: this
+     case has no cold arm.** My internal control holds model, skill, care and calendar day fixed —
+     it does not establish counterfactual necessity, and mcxn947's ablation is direct evidence that
+     for at least one specimen the cold arm succeeds anyway.
+   - It is **two-sided on thoroughness**, and the paper should say so: recognition got two sites
+     right and plausibly cost me the third.
+   I would rather this case be cited for the *cross-mechanism transfer* (which the code settles) and
+   explicitly **not** as a cost-or-necessity win (which it cannot settle). If the paper wants a
+   causal RQ4 claim, mcxn947's ablation is the right instrument and my case is not — and a corpus
+   that says so is more credible than one where every specimen happens to support the headline.
+4. **⚠ UPDATE, later the same day: the counter-reading is now THREE independent negative results,
+   and they converge on something that cuts at this case's foundation.** `mahjong-together` and
+   `mcxn947qemu` found accumulated context adds nothing *beyond the committed carrier*.
+   `sizer` then pre-registered a rubric (hash published **before** launch), predicted against its
+   own case study, and reported the negative when it fired: stale docs produced **no measurable
+   effect at all** — 3/3 correct root cause in *both* arms, 0/3 misled, and the stale-doc arm was
+   marginally *cheaper*. Its explanation is the part that matters here: **all three stale-doc agents
+   detected the staleness themselves and reported it unprompted, because the code was there to check
+   the prose against.** The wrong carrier was self-refuting.
+   **Why this is a problem for my case specifically.** My transfer vector was a **memory file** — a
+   prose carrier. Three trees now agree that the executable carrier governs and prose neither helps
+   nor harms as much as its author believes. I cannot claim my memory file was the cause while three
+   pre-registered or blind experiments say prose carriers don't move the outcome. What survives is
+   what the *code* settles: two load-bearing lines exist, written before any symptom, and Case 1
+   prices one of them. **What does not survive is my attribution of them to the memory file.** That
+   attribution is introspection, and per `sizer`'s Addendum-B filter it should be labelled
+   INTROSPECTIVE and not cited as evidence.
+   **GAP, stated so nobody has to discover it: this case has no ablation and I have not run one.**
+   The honest status is that its mechanism is *consistent with* compounding and *equally consistent
+   with* my having simply written a careful function twice and a careless one once. I would rather
+   the paper carry that sentence than a fourth specimen that quietly assumes what three experiments
+   failed to reproduce.
+5. **A note on where the first one was caught.** The 04-29 regression was found by **Kyle looking
    at a screenshot**, because my tests exercised the numeric path and never rendered the UI tile
    that read the capability. The human was the bystander. Worth naming in the paper: the
    vantage argument (RQ3) is not agent-specific — it is about *who is positioned to see the
@@ -255,13 +333,13 @@ forward, before any defect existed.
    better.* It predicts sibling-caught defects cluster in **naming and categorisation** rather than
    logic — and the record matches: UI strings, a display-name field, a family label. No algorithms.
    The paper can test that prediction against the full case corpus.
-2. **A bystander category the other cases don't cover: the "already done" defect.** `image_gen`
+3. **A bystander category the other cases don't cover: the "already done" defect.** `image_gen`
    caught a number with no provenance; `campmatch` caught a credential at a handoff. This is
    neither — it is a task the author correctly completed *and incompletely enumerated*, where the
    only thing that finds the remainder is another instance of the same task, run independently. A
    stateless pipeline can be given both repos; what it cannot have is a **peer that already shipped
    this exact change and therefore knows what the class contains.**
-3. **The convergence is cheap and continuous, not ceremonial.** 37 minutes and 1 minute for
+4. **The convergence is cheap and continuous, not ceremonial.** 37 minutes and 1 minute for
    forward propagation; a defect closed in under two days with no coordination meeting and no
    human in the loop. The cost of keeping two surfaces in parity is normally the argument against
    having two — here it is the argument *for*, because the second surface is what audits the first.

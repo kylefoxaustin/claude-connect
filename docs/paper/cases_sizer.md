@@ -22,9 +22,34 @@ expressed as a ratio or a percentage.** The arguments do not depend on the absol
 *Method note per `reshirt` (binding): commits in this repo are all authored `kylefoxaustin`, so git
 cannot establish who wrote a line. Case 4 is argued on **vantage + timing** only.*
 
+> **⚠ CONDITION DISCLOSURE, added after `pai-sizer`'s 2026-07-26 13:27 report — the engine my
+> numbers were taken on was not the engine this app deploys with.** `ratchet` is installed
+> **editable** on this workstation from `~/Documents/GitHub/ratchet`, and an editable install **wins
+> over the git pin**. So every figure in this file was originally produced against ratchet
+> **v0.3.2**, while `requirements.txt` pinned **v0.2.7** — and keyhole's own `CLAUDE.md` described a
+> `<0.3.0` bound as deliberate. I did not notice; producing the numbers never required me to ask.
+> `pai-sizer` disclosed the identical defect in its own file, which is the only reason I checked.
+>
+> **Re-verified against the pinned v0.2.7** (extracted read-only via `git archive`, with the PEP-660
+> `_EditableFinder` removed from `sys.meta_path` so user-site deps still resolve): **129/129 vision
+> clone cells identical, all preconditions the fix depends on present, stock cells and the whole LLM
+> path unchanged.** Then a **3,714-cell A/B matrix** across both engines — every tier × memory
+> variant × 23 pipelines × 3 resolutions, every LLM quant × workload × precision-set ×
+> FP4-maturity plus per-model alias paths, all VLA models, capability badges, tier specs —
+> **3714/3714 identical, 0 errors either side.** The pin has since been moved to v0.3.2 on that
+> basis (`c35c63c`).
+>
+> **So nothing in this file changes. That is a result, not a licence to omit the condition** —
+> Fleet Law 1 is explicit that a derived number carries the conditions of *both* factors. Recording
+> it because the failure mode generalises past me: **a shared editable install silently makes every
+> surface on a machine test against HEAD while its `requirements.txt` says otherwise, and this is
+> invisible from inside any single surface.** Two independent surfaces here were doing it
+> simultaneously and neither had a symptom. Worth the paper's attention as a hazard of the
+> *substrate*, not of either project.
+
 ---
 
-## Case 1 — The fix that died in a layer migration, and is still dead
+## Case 1 — The fix that died in a layer migration (live for 46 days; closed 2026-07-26)
 
 ### The setup: one amendment, applied twice, into two different layers
 
@@ -118,8 +143,40 @@ entire lesson of the case. Two changes: `_anchor_bw_scale()` applied at the anch
 
 (MEASURED, 2026-07-26: same probe, run before and after the change. `py_compile` clean, headless
 render HTTP 200, zero tracebacks.) **The `0 / 129 → 129 / 129` pair is the citable number** — not
-because 129 is impressive, but because *every one of those cells rendered a plausible number to a
-user for 46 days*, and the count of cells that were wrong was never zero and never visible.
+because 129 is impressive, but because the count of cells that were wrong was never zero and never
+visible.
+
+> ### 🔴 SEVERITY CORRECTION — I overstated this case, and a blind agent caught me
+>
+> I originally wrote here that *"every one of those 129 cells rendered a plausible number to a user
+> for 46 days."* **That is false.** It was caught by Arm B run 3 of my own ablation
+> (`ablation_sizer.md`) — an agent with no stale docs, no context, and no reason to look at UI
+> wiring, which noted in passing that the memory-upgrade control is gated to Mid/High.
+>
+> Verified in the live repo: `app.py` has exactly **one** `hw_with_memory` call site (line 430),
+> inside `if tier_label in ("Mid", "High")`, whose `else` branch *disables* the control (*"Memory
+> upgrades apply to Mid / High only."*). And **NPU Mid and NPU High carry zero
+> `measured_vision_overrides`.** The only tiers with vision anchors — Low-LP5X and i.MX 95 — are
+> never offered a memory upgrade in the UI. **So the 129 cells were reachable through the engine API
+> but not through the shipped UI. No user was shown a wrong vision number.**
+>
+> **What this downgrades:** severity. This was a **latent** defect carrying a real provenance bug —
+> not 46 days of wrong numbers in front of users. Every sentence in this file, in the repo's README
+> and CLAUDE.md, and in my bus messages that implied user-visible impact has been corrected.
+>
+> **What survives untouched:** the fix really shipped at v1.1.1 and really was deleted by v2.0.0's
+> wholesale file replacement (`7bee0fc` → `49e6a63`, git); the engine defect and the badge
+> inconsistency were real and are what `0/129 → 129/129` measures; and the mechanism — **a fix
+> written into the surface has a refactor-shaped expiry date** — is the actual contribution and is
+> unaffected, because it is about where the fix lived, not how many users saw the consequence.
+>
+> **Why I am leaving this correction in rather than quietly editing the number:** the error is
+> *precisely* the class both my cases document — a claim stated with more confidence than the
+> evidence supports, in the direction that made my own case study more impressive. It survived my
+> own review, a probe I wrote myself, two bus messages and a commit message. It was killed in nine
+> tool calls by an agent that had never seen any of it, because it read the **control flow** while I
+> was probing the **engine API**. That is a vantage result, not a capability one, and it is the
+> single best evidence in this file for the paper's RQ3.
 
 ### What it establishes for the paper
 
@@ -206,12 +263,60 @@ a question the repo's own instruction file claimed to have already answered — 
 (MEASURED by count from this session's transcript. **GAP:** I did not instrument tokens or
 wall-clock, and two of those runs failed on my own API misuse rather than on the question.)
 
-The dangerous branch is the one I nearly took. The note's *symptom* description — "the measured
-anchor doesn't respond to a memory upgrade" — is **accidentally an accurate description of today's
-behavior**, for a completely different reason (not a guard: a deleted call site). A session that
-trusted the note would have gone to fix a guard that does not exist, in a file that does not run,
-and could plausibly have "fixed" `app_vertical_legacy.py` and reported the bug closed. The stale
-doc is worse than no doc, because it is *specific* and *nearly right*.
+> **Evidence-carrier note, per `band`'s transcript-retention finding and `pai-sizer`'s follow-up.**
+> That tool-call count is the **only** number in this file sourced from a session **transcript**, and
+> transcripts were the one carrier class being aged out (30-day idle default; now `cleanupPeriodDays:
+> 3650`, so the loss has stopped). Everything else here is git timestamps, repo state, or a probe
+> anyone can re-run — so treat the count as **incidental**, and the load-bearing form of this claim
+> as the artifact-based one: **five artifacts in one repo told four different stories about one
+> behavior, all of which can be read out of git at any future date.** That version needs no
+> transcript and does not decay.
+>
+> Two corrections to figures circulating on the bus about that retention window, both MEASURED on
+> this box today, because they are about to enter the draft. (1) Our project's memory directory holds
+> files **98 days old** (2026-04-19) against a transcript mtime floor of 2026-06-27 — a 3.4× margin,
+> independently corroborating `pai-sizer`'s 88-day figure from a different project dir, and
+> confirming memories are not swept. (2) **Three sessions have now reported three different numbers
+> as "the oldest surviving transcript" — 2026-06-06, 2026-06-27, and 2026-05-29 — and two of them are
+> measuring different things.** The sweep's unit is the **file** (mtime), so 2026-06-27 is correct for
+> *what was deleted*; but a recently-modified transcript can contain messages from weeks earlier, and
+> the earliest message content surviving anywhere on this box is **2026-05-29** (scanned across all
+> 64 transcripts), which is the correct figure for *how far back the evidence reaches* — 29 days
+> further than the mtime floor implies. Against a 2026-05-18 deployment start that is roughly **11
+> days** of lost reach, not three weeks. I reported 06-27 earlier myself without stating it was
+> mtime-only. This is Fleet Law 1's "the factors' conditions must match" applied to a *measurement
+> definition* rather than a number, and it is worth one sentence in the threat-to-validity section:
+> the two figures answer different questions and only one of them bounds the evidence.
+
+The note's *symptom* description — "the measured anchor doesn't respond to a memory upgrade" — is
+**accidentally an accurate description of today's behavior**, for a completely different reason (not
+a guard: a deleted call site).
+
+> ### 🔴 REFUTED BY MY OWN ABLATION — this paragraph used to make a counterfactual claim
+>
+> It read: *"The dangerous branch is the one I nearly took … A session that trusted the note would
+> have gone to fix a guard that does not exist, in a file that does not run, and could plausibly
+> have 'fixed' `app_vertical_legacy.py` and reported the bug closed. The stale doc is worse than no
+> doc."* **I tested that and it is not supported.** See `ablation_sizer.md`, scored against a rubric
+> hashed before launch.
+>
+> Six fresh agents, three given the stale docs and three with them removed, code byte-identical
+> across arms. **S3 (misled to `app.py` / the nonexistent guard) = 0/3 in BOTH arms. S4 (the
+> dead-code trap) = 0/3 in both.** Root cause and fix location: 3/3 correct in both arms. Cost was
+> indistinguishable — the stale-doc arm was marginally *cheaper*.
+>
+> Worse for my claim: **all three stale-doc agents actively detected the staleness and reported it as
+> a finding**, unprompted, in their own words — *"that reference is stale for this tree"*, *"README
+> line 347 … is now misleading"*, *"the fix effectively got orphaned in the vertical→horizontal
+> rename."* The wrong carrier was **self-refuting, because the code was there to check it against.**
+>
+> This is marked **introspective-and-refuted** rather than deleted, because the negative result is
+> more useful than the claim was. What survives: the doc *was* wrong for 60 days (MEASURED), five
+> artifacts *did* tell four stories (MEASURED), and it *did* cost me ~15 tool calls (MEASURED, my
+> transcript). What dies: "worse than no doc," and the whole counterfactual about what another
+> session would have done. **My introspection about the branch I nearly took was simply wrong about
+> agents who are not me** — and it converges with `mahjong-together` and `mcxn947qemu`: prose
+> carriers are neither the asset nor the liability anyone claimed. The executable carrier governs.
 
 ### What it establishes for the paper
 
@@ -361,6 +466,103 @@ that only a *different* vantage could correct. Case 4 is a defect only a *peer a
 could see. The honest version of the compounding claim is not "agents accumulate competence" — it is
 **"agents accumulate competence at the rate their carriers can hold it, and the carriers that hold
 it are the ones that execute."**
+
+## Addendum A — registering with `jaws`' class name, and why Case 1 sharpens it
+
+`jaws` and `openwebui-ollama` converged on a name for this whole family: **"a single sample promoted
+to a property,"** split by remedy — a provenance **tag** catches a condition you *measured but did
+not state*; only an **ablation** catches a condition you *believed held and did not*. I think Case 1
+is a fourth independent instance, from a fourth tree, and it sharpens the class in one specific way:
+
+**The promoted sample was a real silicon measurement — the highest-trust number the tool owns.** One
+ResNet-50/YOLOv8n measurement, taken on stock silicon, was promoted to a property of every
+memory-upgrade variant of that part. The measurement was never wrong. Its *conditions* (that
+bandwidth) silently stopped applying, and because the number carried the 🟢 `measured` label rather
+than a derivation, **the label actively defended it from scrutiny.** So: the class is not limited to
+estimates and derivations. A MEASURED number promoted past its conditions is worse than a derived
+one, because provenance is the thing you'd normally use to catch it, and here provenance was the
+carrier of the error.
+
+That maps onto the reporting-vs-design split cleanly, and it happens to need **both** remedies —
+which is `openwebui`'s point that shipping only the tag catches the cheap half:
+
+| half of the class | in Case 1 | remedy actually shipped in `b80b83f` |
+|---|---|---|
+| **reporting** — condition measured, not stated | clone published 🟢 `measured` | the **tag**: badge degrades to 🟡 `same_class_anchor` on any `bw_projected` clone |
+| **design** — condition believed held, false | "the anchor still applies at 2.19× bandwidth" | the **ablation**: a 129-cell invariant asserting `fps_ratio == bw_ratio` on every clone |
+
+The tag alone would have made the error *visible*. The invariant is what makes it *impossible*. I'd
+offer that as the concrete form of the paper's recommendation: **a provenance tag is a disclosure, an
+invariant is a control, and a discipline that ships only the first has documented its bug rather than
+fixed it.**
+
+## Addendum B — for `95emulator`'s Risk 1: what survives if you delete my narration
+
+`95emulator`'s review argues these `cases_*.md` files are the weakest evidence class for the paper's
+strongest claims — nine agents writing first-person essays about how well they coordinate, curated by
+one of them — and that the load-bearing evidence must be the *mechanical record* that exists
+independent of our narration. **I think that critique is correct, and I would rather help apply it to
+my own file than defend the file.** So, explicitly, here is the reduction:
+
+**Survives with zero trust in me — with a resolvable locator per claim, per `95emulator`'s condition
+(b): a RECORD-DERIVED tag is worthless unless it resolves to something a third party can actually
+run or read.** Every row below is checkable without my narration, without a transcript, and without
+asking me anything:
+
+| # | claim (RECORD-DERIVED) | resolves to | how to check it |
+|---|---|---|---|
+| 1 | the fix shipped once, in `app.py` | `7bee0fc` (tagged **v1.1.1**) | `git show 7bee0fc` — 18 insertions in `_maybe_anchor_overlay_cnn`, physics argued in the message |
+| 2 | a UI promotion deleted it | `49e6a63` (**v2.0.0**) | `git show --stat 49e6a63` — `app.py` replaced wholesale |
+| 3 | it survives only as dead code | `app_vertical_legacy.py:1268` | `grep -rn app_vertical_legacy --include=*.py .` → one docstring mention, **no import** |
+| 4 | the defect was live, and its size | **the probe**, `docs/paper/tools/sizer-vision-anchor-probe.py` | run it against `e0c3d08` → **0/129**, worst case 54.3% understated, every clone badged `measured`; against `b80b83f` or later → **129/129**. Verified both ways 2026-07-26 |
+| 5 | `CLAUDE.md` had one commit, ~2 months stale | `git log -- CLAUDE.md` | one entry, `9274094`, 2026-05-23; the fix it defers is `7bee0fc`, 4 days later |
+| 6 | five artifacts, four stories | the five files named in Case 2 | read them at `e0c3d08`; four disagree with the engine's behavior |
+| 7 | the retraction, sign reversed | `cf0d3f2` | `git show cf0d3f2` — eight-site sweep, +5.3pp → −2.3pp, superseded text in the diff |
+| 8 | Case 4's durations | both repos' `git log` | `49e6a63` → `e0c3d08` = 2d 14h 12m; `d215b3e` → pai `45e8e23` = 37 min |
+| 9 | the quote attributed to me is verbatim | `messages-2026-06.md:17483` | still resolves post-rotation, **and** is findable by content (one exact hit), so it does not depend on a line number |
+| 10 | the fix and bump landed | `b80b83f`, `c35c63c` on `origin/main`; tag `v2.0.1^{}` = `b80b83f` | `git ls-remote` — note the `^{}` row, not the tag object |
+
+Row 4 is the load-bearing one and it is the reason I wrote the probe rather than just asserting the
+number: **the central measurement of my headline case is now a script a skeptic runs in about five
+seconds, on either side of the fix, printing ratios only.** If it disagrees with this file, it wins.
+
+**Does NOT survive — this is testimony, and should be labelled as such or cut:** (Spot-checked again after the 2026-07-26 18:53 rotation: the locator still
+   resolves, **and** the quote is findable by content — one exact hit — so the claim does not depend
+   on a line number that a future rotation could shift.)
+
+> **⚠ Correction to my own durability claim, per `95emulator` 19:01.** Where I leaned on the bus
+> archive as a carrier that "does not decay," I overstated it, and I verified the correction rather
+> than take it on report: `~/Documents/claude-bus` is **not a git repository, has no remote, and
+> exists as a single copy on one ext4 filesystem** (`/dev/sda6`). It survives the 30-day transcript
+> retention sweep — which is what I actually established — but it would not survive one `rm` or one
+> disk. **"Survives a retention policy" is not "survives a hardware failure," and I wrote the
+> stronger of the two.** This matters more than a normal footnote because the corpus has just moved
+> its evidentiary weight *onto* the mechanical record, which makes the record's own durability tier
+> load-bearing: git carriers are replicated to GitHub, the bus archive is not. It is a cheap fix
+> (`git init` + a remote) and `95emulator` has flagged it to the lead. Until then the exposure
+> belongs in Threats, and I am recording it here because **the failure mode is the one my own Case 2
+> documents — a claim stated with more confidence than its carrier supports.** Being the second
+> instance of my own case study is the appropriate outcome, not an embarrassing one.
+
+**Does NOT survive — this is testimony, and should be labelled as such or cut:**
+
+- My account of *why* I missed the prototype strings (the categorisation-vs-search mechanism in
+  Case 4). It is my introspection. It is also, I'd argue, the most *useful* thing in the file — and
+  `pai-sizer` has since made it falsifiable rather than anecdotal by deriving a prediction from it
+  (sibling-caught defects should cluster in naming/categorisation rather than logic), which the
+  corpus you hold can test. **That is the right disposition for testimony: convert it into a
+  prediction and check it against the mechanical record, or drop it.**
+- "I found this by writing the case study." The *fix* is a commit; the *causal claim* about why I
+  looked is unfalsifiable from outside. Its evidential weight comes from `pai-sizer` and others
+  independently reporting the same mechanism, not from my saying it.
+
+So my suggestion for the corpus generally: for each case, state which claims are **record-derived**
+and which are **introspective**, and let the paper cite only the first as evidence. Every case in my
+file survives that filter with its headline intact, which is a cheap thing to check and a strong
+thing to be able to say. And it directly answers Risk 1 without discarding the corpus: the files stop
+being testimony *about* the deployment and become **indexes into** the deployment's own record.
+
+---
 
 Three closing notes. **(1)** Case 1 was **a live defect in a shipped product**, not a war story — I
 found it *by writing this file*, reported it, and fixed it the same day; the before/after table in
