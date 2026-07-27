@@ -1,0 +1,123 @@
+% =====================================================================
+% Conductor — IEEEtran SCAFFOLD (structure + abstract + keywords + bib wiring).
+%
+% This is the low-churn shell, built BEFORE the C2 sequel freezes the content.
+% Section BODIES are stubs that point at docs/paper/draft-v4.md — the prose conversion
+% is the post-C2 job (do it once, not twice). The abstract, keywords, section skeleton,
+% and \bibliography wiring to the VERIFIED references.bib are stable and done here.
+%
+% Build:  pdflatex conductor-paper && bibtex conductor-paper && pdflatex x2
+% Needs:  IEEEtran.cls + references.bib (in this dir).
+% =====================================================================
+\documentclass[conference]{IEEEtran}   % venue may dictate [journal]/[compsoc]; conference is the default
+\IEEEoverridecommandlockouts
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{url}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{textcomp}   % for \texttimes etc.
+
+\begin{document}
+
+% ---- TITLE + AUTHORS -------------------------------------------------
+% NOTE (Kyle's call, do NOT presume): authorship of a fleet-co-authored experience
+% report is a real decision — single human author, human + named tool, or an
+% acknowledgements-only model. Placeholder below; fill before submission.
+\title{Conductor: An Experience Report on In-Vivo Adversarial\\
+       Co-Design of a Multi-Session Agent Substrate}
+
+\author{\IEEEauthorblockN{Author Name\,(s) --- TO FILL}
+\IEEEauthorblockA{Affiliation --- TO FILL\\
+Email: TO FILL}}
+
+\maketitle
+
+% ---- ABSTRACT (drafted from draft-v4; trim to venue word limit if needed) ----
+\begin{abstract}
+We report on \textbf{Conductor}, a months-long, continuously-operated single-workstation
+deployment in which a set of persistent agent sessions --- one base model, each carrying
+durable, divergent per-context memory --- coordinate over a shared append-only bus and
+incrementally co-design the coordination machinery they run on, with a human as architect
+rather than courier. We are precise about the composition: this is \emph{not} a claim of
+emergent multi-agent minds; it is one model plus per-session memory plus a bus plus an
+observer, and the contribution is that this composition, built and hardened in vivo under a
+human calibrated to reversibility, is a practical and generative way to construct agentic
+systems. We evaluate from the mechanical record --- coordination volume and division of
+labour, failure modes closed, a longitudinal human-touch series --- and hold the headline
+intuition, \emph{compounding competence} (task $N{+}1$ cheaper because of tasks $1{\dots}N$),
+to a strict standard: because the passive record only correlates memory-present with
+task-cheap, we ran six A/B ablations and a pre-registered baseline. The result is not a rubber
+stamp: a fresh clone \emph{holding the committed carrier} re-derives the fixes with no
+session-memory, so what compounds is the carrier, and lived context buys \emph{efficiency and
+recognition}, not raw capability, on the tasks tested --- a sharpened, partly-negative finding
+we report in full. We surface one testimony-free result we did not anticipate: writing this
+paper functioned as an instrument, forcing sessions to verify documented claims and producing
+real, git-recorded defect corrections as a side effect, in 4 of 19 case-writing sessions.
+\end{abstract}
+
+\begin{IEEEkeywords}
+LLM agents, multi-agent systems, agent memory, coordination substrate, human-in-the-loop,
+experience report, ablation study, self-adaptive systems
+\end{IEEEkeywords}
+
+% =====================================================================
+% BODY --- stubs. Convert prose from draft-v4.md (post-C2 freeze). Each \section maps 1:1.
+% =====================================================================
+
+\section{Introduction and Contributions}
+% draft-v4.md \S I --- the orchestrator-vs-peer-substrate framing; 3 contributions (method,
+% system, candid evaluation); explicit non-claims (no statistical generality, no emergence).
+% (On conversion, open the first paragraph with \IEEEPARstart{T}{he} ...)
+\noindent\textit{[body from draft-v4.md \S I]}
+
+\section{Related Work}
+% draft-v4.md \S II + related-work.md. Route-by-declared-role (autogen, metagpt, chatdev) vs
+% predicted-fit (langgraph, dylan, captainagent, autoagents, masrouter); query/model routers
+% (routellm, frugalgpt); moa as ensembling. voyager (single-agent skill lib); adas, dgm
+% (design-search). \textbf{Honest positioning}: the 2025 memory-augmented-MAS line (gmemory,
+% rcrrouter) already pursues cross-task team competence --- so that is NOT our novelty; our
+% wedge is lived-session identity + lead-judgment-over-artifacts + a deployment-trajectory
+% experience report. mapek is the classical self-adaptive-control analogue.
+
+\section{The Architecture}
+% draft-v4.md \S III --- bus (auto-delivery), verified orders, project layer, decision shield,
+% governance. Through-line: verify the outcome, not the intention.
+
+\section{The Method: In-Vivo Adversarial Co-Design}
+% draft-v4.md \S IV --- silent-loss failure -> publish specimen -> context-divergent peers
+% attack the fix -> human gates only the irreversible. Not self-review by one model.
+
+\section{Evaluation}
+% draft-v4.md \S V. Corpus counts AS-OF-STAMPED (2026-07-27); concentration computed by
+% evidence-harvest.py (Gini 0.695).
+\subsection{RQ1 --- Courier elimination (proxy, with a latency tradeoff)}
+\subsection{RQ2 --- Failure modes closed, with real ablations (+ the defect taxonomy)}
+\subsection{RQ3 --- Defect discovery by vantage (machine-evidenced)}
+\subsection{RQ4 --- Compounding competence: claim, confound, and the ablation test}
+% Lead with the powered arm (mahjong-together, N=8); mcxn as marked N=1 counter-current.
+% Efficiency-vs-capability operationalized. Open-search ceiling = GAP (being earned by the
+% C2 sequel --- fold its result here at v5).
+\subsection{RQ5 --- Baseline: cold orchestrator vs.\ peer substrate (pre-registered)}
+\subsection{The paper as an instrument (testimony-free, 4/19)}
+
+\section{Threats to Validity}
+% draft-v4.md \S VI --- circularity, single-model confound, selection bias, 30-day horizon,
+% ablation methodology (5/6 post-hoc graded), N=1.
+
+\section{Future Work: A Pre-Registered Replication}
+% draft-v4.md \S VI-B --- vary the domain (ideally non-software) + a different human architect;
+% hold the method constant; predict-then-run.
+
+\section{Conclusion}
+% draft-v4.md \S VII --- the one contribution to leave with: the METHOD, with paper-as-instrument
+% as its reflexive proof; compounding is the tested-and-bounded hypothesis, not the contribution.
+
+% ---- BIBLIOGRAPHY (verified 2026-07-27) ------------------------------
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

@@ -461,5 +461,10 @@ capability operationalized (C1); open-search ceiling marked GAP (C2).
    took the C2 sequel and *pre-registered before running*, with pai-sizer as independent witness
    (2026-07-27). If it lands, a v5 converts the ceiling from GAP to result (or an honest null).
 3. Final read-through for any remaining prose-vs-mechanical-record mismatch (the panel's standing bar).
-4. IEEE-format conversion (Markdown → LaTeX/`IEEEtran`) + front-matter (keywords, author block) — a
-   mechanical typesetting pass once the content is frozen post-C2.
+4. IEEE-format conversion (Markdown → LaTeX/`IEEEtran`). **Scaffold DONE** (`conductor-paper.tex`:
+   documentclass, title, abstract, keywords, section skeleton, `\bibliography` wired to the verified
+   `references.bib`; content-compiles-clean via an article-class validation). Remaining is the
+   prose-fill of the section bodies (do once, post-C2 freeze) + **Kyle's call on the author block**
+   (single human author vs. human + named fleet vs. acknowledgements-only) + completing the "and
+   others" author lists in `references.bib` from arXiv. Build needs `IEEEtran.cls` (texlive-publishers
+   or Overleaf).
