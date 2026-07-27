@@ -81,6 +81,13 @@ const told = new Set();     // cycle-keys we've already told. Survives re-render
 const answering = new Set(); // session_ids whose answer POST is in flight — same reason
                             // as `sending`: a refresh mid-POST would rebuild the card
                             // with a live Send button and invite a second answer.
+const answerErr = new Map(); // session_id -> a persistent, actionable error message. When the
+                            // answer POST fails in a way that ISN'T terminal (502 = Conductor
+                            // couldn't aim the keystrokes because the tab is backgrounded), the
+                            // guidance must SURVIVE the next refresh — so it lives in state and is
+                            // rebuilt on every render, never painted onto the button then wiped by
+                            // a background poll (the v2.24.3 lesson, and exactly why this read as
+                            // "nothing takes": the actionable message flashed for 1.5s then vanished).
 
 // ---------------------------------------------------------------- helpers
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
@@ -258,12 +265,17 @@ function decisionCard(d) {
   submit.style.width = "100%";
   submit.style.marginTop = "6px";
   const busy = answering.has(d.session_id);
+  const err = answerErr.get(d.session_id);          // persistent, rebuilt-from-state (not painted)
   submit.innerHTML = busy
     ? '<span class="spin"></span> Sending…'
-    : "Send answer";
+    : (err ? err : "Send answer");
+  if (err) submit.classList.add("btn-warn");        // visually distinct + still tappable to retry
+  // Stays enabled on an error so a retry (after focusing the terminal) lands — the failure is
+  // recoverable, not a dead end.
   submit.disabled = busy || sel.some((s) => s.size === 0);
   submit.addEventListener("click", async () => {
     if (answering.has(d.session_id)) return;
+    answerErr.delete(d.session_id);    // fresh attempt — drop any prior error message
     answering.add(d.session_id);
     renderInbox();                     // repaint FROM state, so a refresh can't undo it
     try {
@@ -272,6 +284,7 @@ function decisionCard(d) {
         body: JSON.stringify({ answers: sel.map((s) => [...s]) }),
       });
       selected.delete(d.session_id);
+      answerErr.delete(d.session_id);    // it landed — drop any lingering error state
       // No Undo here on purpose: the answer IS the keystroke, it has already landed in the
       // Claude, and there is nothing to take back. An Undo button would be a lie.
       answering.delete(d.session_id);
@@ -292,12 +305,20 @@ function decisionCard(d) {
             : () => showPane("fleet");
         }
       } else if (e.status === 409) {
-        // Benign: answered at the keyboard a moment ago.
+        // Benign: answered at the keyboard a moment ago. The card SHOULD disappear — refresh.
         if (b) b.textContent = "Already answered";
         setTimeout(refresh, 1500);
       } else {
-        if (b) b.textContent = `Failed: ${e.message}`;
-        setTimeout(refresh, 1500);
+        // Non-terminal, RECOVERABLE failure — most commonly 502: Conductor couldn't aim the
+        // keystrokes because the session's terminal tab is backgrounded (no TILIX_ID → it's only
+        // locatable when it's the foreground tile). Persist an ACTIONABLE message IN STATE so it
+        // survives the next poll (never a paint-then-wipe), and leave the button live so a retry
+        // after focusing the window lands. This is the fix for "I keep hitting send and nothing takes".
+        answerErr.set(d.session_id,
+          e.status === 502
+            ? "Couldn't reach its terminal — focus that window, then tap again"
+            : `Failed: ${e.message || "try again"}`);
+        renderInbox();
       }
     }
   });
