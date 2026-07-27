@@ -16,8 +16,13 @@ yet supply). Overclaiming is exactly what the `review` job is tasked to attack.*
   directed**.
 - **Division of labour (top contributors):** 95emulator 249, qualcomm 228, backend 208, 93emulator
   192, docs 180, 91emulator 169, mcxn947qemu 159, orb_slam 156, holobench 150, sizer 145,
-  claude-connect 113, ollama_95_neutron 99. Contribution is *distributed across many heterogeneous
-  peers*, not concentrated in one orchestrator — direct support for the peer-substrate claim.
+  claude-connect 113, ollama_95_neutron 99. **Concentration, computed (`evidence-harvest.py`
+  `_concentration`, as-of 2026-07-27): Gini 0.695, top-1 9.4%, top-3 25.6%, 13 of 55 senders carry
+  80%.** The honest reading (corrected from an earlier "distributed, not concentrated"): contribution
+  is **spread across many heterogeneous peers with a real head — no single orchestrator dominates
+  (top sender <10%), but it is a genuine concentration, not a flat distribution.** That still supports
+  the peer-substrate claim (load is genuinely shared, not funneled through one node), stated at the
+  precision the number actually warrants.
 
 ## RQ1 — Autonomy: does the substrate eliminate the human courier?
 

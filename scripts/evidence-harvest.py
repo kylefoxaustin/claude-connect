@@ -63,6 +63,37 @@ def git_evidence() -> dict:
             "mechanism_landings": tags, "mechanism_landing_count": len(tags)}
 
 
+def _concentration(per_sender: Counter) -> dict:
+    """Gini + cumulative-share of the sender distribution (division of labour), 'system' excluded.
+    The MEASURED instrument behind draft §V's 'spread but with a real head, not a power law' claim —
+    so that number is produced by this script, not hand-asserted (panel fix B2)."""
+    vals = sorted(v for s, v in per_sender.items() if s != "system")
+    n, tot = len(vals), sum(vals)
+    if n == 0 or tot == 0:
+        return {}
+    cum = sum(i * v for i, v in enumerate(vals, 1))          # vals ascending
+    gini = (2 * cum) / (n * tot) - (n + 1) / n
+    desc = sorted(vals, reverse=True)
+    run = 0
+    s50 = s80 = None
+    for i, v in enumerate(desc, 1):
+        run += v
+        if s50 is None and run >= tot * 0.5:
+            s50 = i
+        if s80 is None and run >= tot * 0.8:
+            s80 = i
+    return {
+        "n_senders": n,
+        "total_msgs_excl_system": tot,
+        "gini": round(gini, 3),
+        "top1_share": round(desc[0] / tot, 3),
+        "top3_share": round(sum(desc[:3]) / tot, 3),
+        "top5_share": round(sum(desc[:5]) / tot, 3),
+        "senders_for_50pct": s50,
+        "senders_for_80pct": s80,
+    }
+
+
 def bus_evidence(bus_dir: Path) -> dict:
     """Coordination volume from the bus: total messages, per-sender, directed vs broadcast (RQ1 —
     directed auto-delivered mail is the courier-eliminated proxy), and monthly throughput."""
@@ -109,6 +140,7 @@ def bus_evidence(bus_dir: Path) -> dict:
         "unique_participants": len(participants),
         "participants": sorted(participants),
         "by_sender_top": per_sender.most_common(20),
+        "concentration": _concentration(per_sender),
         "by_month": dict(sorted(by_month.items())),
         "addressing": {"directed_le4": directed, "broadcast": broadcast,
                        "announcement_gt4": announcement},
