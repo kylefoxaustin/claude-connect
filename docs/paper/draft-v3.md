@@ -64,11 +64,28 @@ We claim neither statistical generality (N=1 deployment) nor emergent intelligen
 ## II. Related Work (compressed)
 
 *(Full treatment: `related-work.md`.)* Capability-aware routing exists but is keyed on **declared**
-role (AutoGen/CrewAI/MetaGPT) or **predicted** fit (LangGraph, Mixture-of-Agents, DyLAN,
-Captain-Agent) over **stateless, same-model** agents; Voyager accumulates competence for a *single*
-agent; ADAS / Darwin Gödel Machine operate at design-search time. The classical control analogue is
-**MAPE-K** self-adaptive systems. Our distinction is routing on **lived, per-context memory** across
-long-lived peers, and studying the resulting **trajectory** — not a starting capability.
+role (AutoGen [2308.08155]; MetaGPT [2308.00352]; CrewAI, *stateless by default*) or **predicted**
+fit (LangGraph supervisor; DyLAN [2310.02170]; Captain-Agent [2405.19425]; AutoAgents [2309.17288];
+MasRouter [2502.11133]) over agents that are stateless-by-default — with **query-level** model routers
+(RouteLLM [2406.18665], FrugalGPT [2305.05176]) a separate axis, and Mixture-of-Agents [2406.04692]
+an **ensemble that aggregates all proposers, not a router** (reclassified per review). Voyager
+[2305.16291] accumulates competence for a *single* agent; ADAS [2408.08435] / Darwin Gödel Machine
+[2505.22954] evolve a *population of agent designs* at design-search time; **MAPE-K** (Kephart & Chess,
+IEEE Computer 2003) is the classical self-adaptive-control analogue.
+
+**Honest positioning (we do not overclaim novelty).** A **2025 memory-augmented-MAS line does pursue
+cross-task team competence** — most pointedly **G-Memory** [2506.07398, NeurIPS 2025] (hierarchical
+memory "nurturing the progressive evolution of agent teams," i.e. task *N+1* better because of
+1…*N* across a team), plus **RCR-Router** [2508.04903] (routing *structured memory to agents within a
+task*) and the **transactive-memory** framing for agents. So "team competence accumulates" is *not* our
+novelty. What differs, and survives: (i) each peer is a **long-lived, human-in-the-loop *session
+identity* that actually *lived* the work** — not an ephemeral agent doing retrieval over a shared
+memory store; (ii) routing is a **lead's grounded judgment over real artifacts** (bus, asset cards,
+`CLAUDE.md`); and (iii) this is an **experience report on a continuously-running deployment**, studying
+the *trajectory*, where the above are benchmark evaluations of a mechanism. We frame our contribution
+as *under-explored relative to* that line, from which we differ in kind — not as a gap nobody has
+touched. ⚠ *Citation IDs above are from a single web-verification pass and several (esp. 2406.04692)
+are flagged UNCONFIRMED — all must be checked against primary sources before camera-ready.*
 
 ## III. The Architecture
 
@@ -104,10 +121,15 @@ mechanistically, not assume.
 
 ## V. Evaluation (from the mechanical record)
 
-*Corpus, MEASURED from git + bus + `history.jsonl`: 259 commits; 47 version landings; 2,575 bus
-messages / 52 sessions (949 directed, 1,105 broadcast, 514 announcement); 6,263 human prompts across
-44 projects back to 2026-01-14. Division of labour is distributed across many peers (top senders
-95emulator 249, qualcomm 228, backend 208, …) — a fact of the bus, not testimony.*
+*Corpus, MEASURED from git + bus + `history.jsonl`: 259 commits; 47 version landings; 2,703 bus
+messages / 55 sessions (949 directed, 1,105 broadcast, 514 announcement); 6,263 human prompts across
+44 projects back to 2026-01-14. Division of labour is **spread but with a real head, not a power law**:
+**Gini 0.69**, the top sender is ~9% of traffic, the top-3 are 26%, and it takes **13 of 55 senders to
+reach 80%** — many peers carry load, no single dominant author, but a genuine concentration we report
+rather than round off to "distributed." **Reflexivity confound (owned):** this paper's own authoring
+threads inflate exactly the head we are measuring — the top senders (95emulator, qualcomm, backend)
+are top partly *because of the review/ablation traffic this paper generated*; the measurement is
+perturbed by the act of measuring, and this is a fact of the bus, not testimony.*
 
 ### A. RQ1 — Courier elimination (PROXY, with an honest counterexample)
 949 directed messages were auto-delivered — hand-offs a human would otherwise relay (a *ceiling on
@@ -116,6 +138,14 @@ dispatched to a peer failed to auto-wake it (stale watermark), and **the human r
 report the counterexample. The correct human-touch **instrument** is `history.jsonl` (un-swept,
 back to January), *not* transcripts (a 30-day cleanup horizon, §VI) which also carry an **11.9×
 `tool_result` overcount** trap. **GAP:** normalizing touches against work-delivered.
+
+**And RQ1 is a *tradeoff*, not a pure win — stated because hiding it is less credible.** Coordination
+over an async bus + a lead's wake cycle can be **slower in wall-clock than a synchronous human
+courier**: in this deployment a directed wake took **minutes**, and in the counterexample above the
+mechanism failed outright and the human was faster. The substrate optimizes the **human's attention**
+(fewer relays to run), and can *worsen* the **critical-path latency** of any single hand-off. The
+honest claim is *attention saved*, not *time saved* — RQ5 (§V-E) shows the same shape at the
+single-agent level (context bought steps and wall-clock but *more* tokens).
 
 ### B. RQ2 — Failure modes closed, with real ablations
 MEASURED: of 35 `fix` commits, ~20 close *named coordination failure modes*. Several are
@@ -152,19 +182,29 @@ cheaper than a designed one, and record-visible: cross-tree agreement on differe
 derived-not-copied). *Shipping only the tag documents the bug rather than fixing it.*
 
 ### C. RQ3 — Defect discovery by vantage (machine-evidenced)
-Because all commits share one identity, git cannot attribute a *find* — but **tool-call sequences +
-timestamps are machine-generated.** MEASURED (jaws): a 38-Bash-call build had **17 measurement calls**
-(12 `/proc` probes, 4 runs) — a vantage a browser assistant could not occupy, proven from the event
-log. Bystander catches are on the bus, not in narration: the `backend` tag-flip caught by another
-session; holobench's "+64s stall" that was its own scorer's backlog, refuted by rt1180 with the
-bytes; orb_slam's cross-check catching *four* independent measurement errors, each by a different
-party. **Cases are illustration; the events are the evidence.**
+We split two claims review conflated. **(i) A measurement vantage exists** (supporting, not the RQ3
+claim): MEASURED (jaws), a 38-Bash-call build had **17 measurement calls** (12 `/proc` probes, 4
+runs) — a vantage a browser assistant could not occupy, proven from the event log. **(ii) A peer
+caught what the author shipped** (the actual RQ3 claim, and it needs the *same* timestamp rigor — A
+ships at t0, B refutes at t1, both from the record): the `backend` tag-flip caught by another session;
+holobench's "+64 s stall" refuted by rt1180 *with the guest-side bytes* (rt1180 relocated the clock
+into the guest, re-acquisition 0.0 s — commit `4059f7633f`, after holobench's report); orb_slam's
+cross-check catching *four* independent measurement errors, each by a different party. **A new,
+clean, testimony-free instance from the ablations:** in `ablation_sizer` a **blind, zero-context**
+arm — with no reason to look at the UI — caught a **real overstatement in the author's own case**
+(129 defective cells reachable via the engine API but *not* the shipped UI) in **nine tool calls**,
+something the author had missed across an entire session. Author-ships-overstatement / blind-peer-
+refutes, on the record. **Cases are illustration; the events (order claims, timestamps, tool-call
+logs) are the evidence.**
 
 ### D. RQ4 — Compounding competence: the claim, its confound, and the test
 **Correlation, MEASURED:** context-carrying sessions recognized bug-classes fast (e.g. a
 register-coverage gate green over 12/370, the class recognized in seconds because prior tasks had
-named it; one-line fix → 12/370→370/370, surfacing a dead-time-zero shoot-through). Aggregate
-throughput rose ≈5.6×. **The confound (owned):** same model → this may be "persistent memory works,"
+named it; one-line fix → 12/370→370/370, surfacing a dead-time-zero shoot-through). *(We deliberately
+do **not** cite the tempting "≈5.6× aggregate throughput" figure: it is an uncontrolled aggregate over
+a period in which the model, the operator, the session count, and the task mix all moved — every
+variable confounded — so it is no evidence of compounding and a reviewer would rightly use it against
+us.)* **The confound (owned):** same model → this may be "persistent memory works,"
 a known result, and memory-*present* is not memory-*causal*. **The test (LANDED) — six A/B ablations + the RQ5 baseline, and the result is a *disconfirmation* of
 the naive claim.** A *genuinely isolated* fresh session (harness-isolation caveat binding) vs. a
 context-carrying one on the same task, measuring re-derivation cost:
@@ -208,10 +248,18 @@ bisects fast); on some specimens context is even associated with a **thoroughnes
 only one of six ablations pre-registered its rubric; the other five are honestly-run but *post-hoc
 graded*, a threat the fleet itself flags (§VI).
 
-**The independence sub-claim (RQ4-adjacent):** convergence among same-model peers is corroboration
-**only when conditioned on context divergence**; the primary source is a documented case where two
-sessions of one base model but different accumulated context disagreed-then-converged, the *context
-delta* (not the model) producing the catching disagreement.
+**The independence sub-claim (RQ4-adjacent), now *operationalized* — not an unfalsifiable escape
+clause.** Convergence among same-model peers is corroboration **only when conditioned on context
+divergence**, and we make "divergence" *measurable in principle* rather than asserted: three
+record-derived proxies — **disjoint task histories** (different project dirs / git trees), **low
+memory-file overlap** (per-session memory dirs), and **divergent tool-call sequences** on the shared
+problem (the event log). By these, the primary case (two sessions, one base model, different
+accumulated context, disagreed-then-converged) is a genuine independent estimate — *and it is no
+longer N=1:* the ablations supply further instances by construction (the **HARVEST** pattern of §V-B —
+91emulator↔93emulator on one shared model, sizer↔pai-sizer — are parallel peers on **separate trees**
+reaching agreement via **different fixes**, i.e. derived-not-copied). The honest residual: all still
+share the base model, the bus, and the operator's framing — so divergence is *reduced*, never zero,
+and we claim independence *relative to* these proxies, not absolutely.
 
 ### E. RQ5 — Baseline: cold orchestrator vs. peer substrate (MEASURED, human-run, pre-registered)
 One matched task, run both ways, **pre-registered** (frozen spec + black-box acceptance test +
@@ -239,16 +287,21 @@ test carried a latent defect (a crude substring assert tripping on a correct "NO
 refusal); it was **disclosed, not patched** — editing a frozen instrument post-hoc is the exact sin
 this paper studies (§V-F). Full protocol + both arms' diffs: `cases_rq5-baseline.md`.
 
-### F. ⭐ Unanticipated finding — the paper as an instrument (testimony-free, N≥2)
+### F. ⭐ Unanticipated finding — the paper as an instrument (testimony-free, *with a denominator*)
 Asking sessions to substantiate claims *to an external audience* forced verification of things taken
-on trust internally. MEASURED, in git: `sizer` found a **46-day production defect** (129 cells
-rendering wrong fps, count never zero, never visible) while writing its case — caught by *writing*,
-after 46 days of use/test/review found nothing; `pai-sizer` surfaced a validation-across-an-unsafe-
-version-boundary provenance defect the same way. The mechanism (pai-sizer): external writing forces a
-claim's *conditions* to be enumerated, and enumeration is when unexamined assumptions surface —
-predicting a distribution of mostly-small corrections, occasionally a live defect, which is what was
-observed. **This is evidence *for* the deployment, in the commit record, not about it** — and it is
-the paper's strongest result *because* it is not testimony.
+on trust internally. MEASURED, in git: `sizer` found a **46-day defect** (129 cells rendering wrong
+fps, count never zero, never visible) while writing its case — caught by *writing*, after 46 days of
+use/test/review found nothing; `pai-sizer` surfaced a validation-across-an-unsafe-version-boundary
+provenance defect the same way. **The denominator (review's #5 — the same selection bias recurring
+one level down, so we state it):** of **19** case-writing sessions, **at least 4 (~21%)** reported a
+correction surfaced by the writing itself (`sizer`, `pai-sizer`, `tipometer`, and the RQ5 apparatus's
+own frozen-test defect); the rest reported none. A ~1-in-5 hit-rate with the denominator stated is an
+honest result; two dramatic cases with no denominator would have been the very bias §VI disclaims.
+The mechanism (pai-sizer): external writing forces a claim's *conditions* to be enumerated, and
+enumeration is when unexamined assumptions surface — predicting a distribution of mostly-small
+corrections, occasionally a live defect, which is what the hit-rate shows. **This is evidence *for*
+the deployment, in the commit record, not about it** — and it is the paper's strongest result
+*because* it is not testimony.
 
 ## VI. Threats to Validity (expanded per the fleet review)
 
