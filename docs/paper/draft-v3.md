@@ -378,13 +378,26 @@ ablation refuting its own author's case) **is the very mechanism under study.**
 A/B ablations** (`ablation_{mcxn,mahjong-together,93emulator,imx95-media-test,sizer,sizer-PREREGISTERED}.md`),
 and the **pre-registered RQ5 baseline** (`cases_rq5-baseline.md` + the frozen spec/test + both arms'
 diffs). These carry the headline claims.
-**Illustration (dataset, not evidence):** twenty first-person `cases_*.md` specimens (image_gen,
-mcxn947, rt1180, holobench, tipometer, reshirt, ollama_95_neutron, imx95-isp, imx95-media-test, jaws,
-openwebui-ollama, docs, 91/93emulator, backend, campmatch, mahjong-together, pai-sizer, sizer) + the
-platform specimen `cases_cleanup-timer`. Retained to illustrate design patterns; not cited as proof
-of any headline claim. Note several cases were **corrected during the paper's own writing** (sizer's
-Case 1 severity downgraded from user-visible to latent; pai-sizer's propagated overstatement
-retracted) — logged as §V-F specimens, not hidden.
+**Illustration (dataset, not evidence).** Twenty first-person `cases_*.md` specimens + the platform
+specimen `cases_cleanup-timer`, retained to illustrate design patterns; not cited as proof of any
+headline claim. **Curated to five in-body illustrations, each mapping to a distinct claim** (the rest
+are the supporting dataset):
+1. **`sizer`** — paper-as-instrument (§V-F): a 46-day latent defect surfaced *by writing the case*,
+   and an ablation that *refuted the author's own Case 2* — the reflexive mechanism at its sharpest.
+2. **`rt1180` ↔ `holobench`** — RQ3 bystander/vantage: observer-vs-subject mutual correction
+   (holobench's "+64 s stall" was its own backlog; rt1180's guest-side clock settled it) — each
+   catches what the other structurally cannot.
+3. **`mcxn947`** (ablation) — RQ4b: the *thoroughness-regression* specimen (context pattern-matched a
+   staged answer and stopped; the blind arm caught the second register class) — the sharpest
+   disconfirmation.
+4. **`reshirt`** — RQ4a convergence: a 5th independent derivation of "the model narrates, deterministic
+   code owns the value" reached *from privacy* — convergence that survives a change of *force*.
+5. **`image_gen`** — lived-expertise routing (§IV): the GPU-lease-lying / cost-blow-up incidents it
+   was assigned to document *because it lived them* — the motivating case for routing on history.
+
+Several cases were **corrected during the paper's own writing** (sizer's Case 1 severity downgraded
+from user-visible to latent; pai-sizer's propagated overstatement retracted) — logged as §V-F
+specimens, not hidden.
 
 ### TODO for the `review` job (qualcomm — panel synthesis integrating review_95 + review_holobench)
 RQ5 and the six ablations **landed** (v3). Remaining: verify related-work citations; **attack the v3
