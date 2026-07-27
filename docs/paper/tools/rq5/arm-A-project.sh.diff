@@ -1,0 +1,129 @@
+--- /home/kyle/Documents/GitHub/claude-connect/bus/project.sh	2026-07-26 18:06:49.495148950 -0500
++++ /tmp/claude-1000/-home-kyle-Documents-GitHub-claude-connect/660dfecd-24e7-4e08-9632-367d3929ebd6/scratchpad/rq5-armA-repo/bus/project.sh	2026-07-26 21:12:39.582385590 -0500
+@@ -25,6 +25,16 @@
+ #   project jobs <id>                 show the DAG: per-job state + readiness (blocked/ready/…)
+ #   project dispatch <id> <job>       lead dispatches a READY job → places a directed order to:who
+ #   project sync <id>                 advance the DAG: a job whose order reached CLOSED becomes done
++#   project pause <id> [why…]         ⏸ hold NEW dispatch (in-flight work is untouched)
++#   project resume <id>               lift the pause — dispatch works normally again
++#
++# PAUSE is a BRAKE ON NEW DISPATCH AND NOTHING ELSE (and that narrowness is the point). It sets one
++# flag; it does not touch jobs, orders, the plan, the DAG, or the project's state — a job already
++# dispatched stays dispatched, its order keeps its lifecycle, and `sync` still advances the DAG when
++# that order closes. Stopping work already in flight is a different, destructive act (it strands a
++# worker mid-job and orphans a placed order), so pause deliberately cannot do it. Pause/resume are
++# idempotent: pausing a paused project (or resuming a running one) succeeds and says so, because a
++# brake you have to check the state of before pulling is a brake nobody pulls in a hurry.
+ #
+ # THE DAG (the genuinely new primitive, 93/95/image_gen): a job may depend on earlier jobs and can't
+ # be dispatched until they're CONFIRMED. Because a job's deps must reference jobs that ALREADY EXIST,
+@@ -192,8 +202,20 @@
+ def logline(p, msg): p.setdefault("log", []).append({"ts": NOW, "who": ME, "msg": msg})
+ def die(msg, code=1): print("project: " + msg, file=sys.stderr); sys.exit(code)
+ 
++def paused_note(p):
++    """The one-line reason a paused project is paused (empty when it isn't) — used everywhere the
++    pause has to be visible, so no view can show a dispatchable-looking job without saying why."""
++    if not p.get("paused"):
++        return ""
++    return (" (%s)" % p["paused_reason"]) if p.get("paused_reason") else ""
++
++
+ def show(p):
+-    print("=== project %s === [%s]" % (p["id"], p["state"]))
++    print("=== project %s === [%s]%s" % (
++        p["id"], p["state"], "  ⏸ PAUSED" if p.get("paused") else ""))
++    if p.get("paused"):
++        print("  paused : ⏸ YES%s — NEW dispatch is refused; in-flight jobs/orders are untouched. "
++              "Lift it with: project resume %s" % (paused_note(p), p["id"]))
+     print("  goal   : " + (p.get("goal") or "(none)"))
+     lead = p.get("lead")
+     print("  lead   : %s (%s)" % (lead or "—", p.get("lead_status") or "unassigned"))
+@@ -216,8 +238,9 @@
+     if not files: print("No projects."); sys.exit(0)
+     for f in files:
+         p = load(f[:-5])
+-        if p: print("  %-24s [%s]  lead=%s  %s" % (
+-            p["id"], p["state"], p.get("lead") or "—", (p.get("goal") or "")[:60]))
++        if p: print("  %-24s [%s]%s  lead=%s  %s" % (
++            p["id"], p["state"], " ⏸paused" if p.get("paused") else "",
++            p.get("lead") or "—", (p.get("goal") or "")[:60]))
+     sys.exit(0)
+ 
+ if verb in ("new",):
+@@ -228,6 +251,7 @@
+     p = {"id": pid, "goal": goal, "created_by": ME, "created_epoch": NOW, "state": "draft",
+          "lead": None, "lead_status": "unassigned", "nominations": [],
+          "plan": None, "plan_status": "none", "plan_notes": None, "ceiling": 0,
++         "paused": False, "paused_reason": None, "paused_by": None, "paused_epoch": 0,
+          "jobs": [], "issues": [], "log": []}
+     logline(p, "created")
+     save(p); print("✅ project '%s' created. Next: project nominate %s <session>" % (pid, pid))
+@@ -304,6 +328,30 @@
+ 
+ if verb == "status": show(p); sys.exit(0)
+ 
++if verb in ("pause", "resume"):
++    # ⏸ THE DISPATCH BRAKE. One flag, checked in exactly one place (_dispatch_check). Deliberately
++    # NOT gated on identity: a brake is a safety act — reversible, non-destructive, and it destroys
++    # nothing if pulled by the wrong hand — whereas a brake only its owner may pull is one nobody
++    # pulls when the owner is the session that's gone quiet. Who pulled it is recorded in the log.
++    why = " ".join(argv[2:]).strip()
++    was = bool(p.get("paused"))
++    if verb == "pause":
++        p["paused"] = True; p["paused_by"] = ME; p["paused_epoch"] = NOW
++        if why: p["paused_reason"] = why
++        logline(p, ("re-paused" if was else "paused") + ((": " + why) if why else ""))
++        save(p)
++        print("⏸ project '%s' is PAUSED%s%s — NEW dispatch is refused. Jobs, orders, the plan and "
++              "the DAG are untouched: anything already dispatched keeps running and still completes. "
++              "Lift it with: project resume %s" % (
++                  pid, paused_note(p), "  (already paused)" if was else "", pid))
++    else:
++        p["paused"] = False; p["paused_reason"] = None; p["paused_by"] = ME; p["paused_epoch"] = NOW
++        logline(p, "resumed" if was else "resume (was not paused)")
++        save(p)
++        print("▶ project '%s' RESUMED%s — dispatch works normally again. Ready jobs: "
++              "project jobs %s" % (pid, "" if was else "  (was not paused)", pid))
++    sys.exit(0)
++
+ if verb == "nominate":
+     if len(argv) < 3: die("usage: project nominate <id> <session>")
+     who = argv[2]
+@@ -408,7 +456,12 @@
+     if not js:
+         print("project '%s' has no jobs yet. Add: project job add %s <jobid> to:<who> …" % (pid, pid))
+         sys.exit(0)
+-    print("=== jobs for %s === [%s]" % (pid, p["state"]))
++    print("=== jobs for %s === [%s]%s" % (pid, p["state"], "  ⏸ PAUSED" if p.get("paused") else ""))
++    if p.get("paused"):
++        # A job that is ready-but-for-the-pause must not read as "▶ dispatchable" — that's the
++        # readiness view telling a comfortable lie about a dispatch that will be refused.
++        print("  ⏸ dispatch is PAUSED%s — ready jobs will NOT go out until: project resume %s"
++              % (paused_note(p), pid))
+     for j in js:
+         r = readiness(p, j)
+         icon = {"done": "✅", "dispatched": "📤", "ready": "▶", "blocked": "⛔"}[r]
+@@ -418,7 +471,7 @@
+         elif r == "dispatched" and j.get("order_id"):
+             extra = "  order:%s (%s)" % (j["order_id"], order_state(j["order_id"]) or "?")
+         elif r == "ready":
+-            extra = "  ▶ dispatchable"
++            extra = "  ⏸ ready, but dispatch is PAUSED" if p.get("paused") else "  ▶ dispatchable"
+         sz = (" " + j["size"]) if j.get("size") else ""
+         pr = " ⚡urgent" if j.get("prio") == "urgent" else ""
+         print("  %s %-14s -> [%s]%s%s  deps=%s%s" % (
+@@ -431,6 +484,13 @@
+     # internal: validate a job is dispatchable and EMIT its order spec (tab-separated) for the shell
+     # to hand to order_dispatch. No write here — placement happens in the shell, then _dispatch_mark.
+     jid = argv[2] if len(argv) > 2 else ""
++    # ⏸ PAUSED: refuse BEFORE anything is emitted. This runs under the project flock and writes
++    # nothing, so the refusal is total — no order is placed and the job stays 'planned'. It is
++    # checked here (the single choke point every dispatcher goes through: the lead, and Conductor
++    # admitting on the lead's behalf) rather than at a call site, so a future caller cannot forget.
++    if p.get("paused"):
++        die("project '%s' is PAUSED%s — dispatch refused. Nothing was placed and job '%s' is "
++            "unchanged. Resume it first: project resume %s" % (pid, paused_note(p), jid, pid))
+     j = job_by_id(p, jid)
+     if j is None:
+         die("no job '%s' in project '%s'" % (jid, pid))

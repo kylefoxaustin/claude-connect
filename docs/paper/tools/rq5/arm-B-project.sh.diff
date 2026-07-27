@@ -1,0 +1,69 @@
+--- /home/kyle/Documents/GitHub/claude-connect/bus/project.sh	2026-07-26 18:06:49.495148950 -0500
++++ /tmp/claude-1000/-home-kyle-Documents-GitHub-claude-connect/660dfecd-24e7-4e08-9632-367d3929ebd6/scratchpad/rq5-armB-repo/bus/project.sh	2026-07-26 21:39:28.984229948 -0500
+@@ -18,6 +18,9 @@
+ #   project approve <id>              operator approves the plan → project goes active (Gate #1)
+ #   project revise <id> <notes…>      operator sends the plan back with notes
+ #   project status <id> | project list
++#   project pause <id>                operational hold: REFUSE new dispatch (jobs/orders/plan/DAG
++#                                     untouched); status shows ⏸ PAUSED. Idempotent.
++#   project resume <id>               clear the hold — ready jobs dispatch as usual. Idempotent.
+ #
+ # Slice 2 — jobs, the dependency DAG, and dispatch-as-orders (§6):
+ #   project job add <id> <job> to:<who> path:<dir> files:<a,b> [deps:<x,y>] [size:S|M|L] \
+@@ -193,7 +196,11 @@
+ def die(msg, code=1): print("project: " + msg, file=sys.stderr); sys.exit(code)
+ 
+ def show(p):
+-    print("=== project %s === [%s]" % (p["id"], p["state"]))
++    print("=== project %s === [%s]%s" % (
++        p["id"], p["state"], "  ⏸ PAUSED" if p.get("paused") else ""))
++    if p.get("paused"):
++        print("  paused : ⏸ YES — new dispatch is REFUSED (project resume %s to clear). "
++              "Jobs/orders/plan/DAG are unaffected." % p["id"])
+     print("  goal   : " + (p.get("goal") or "(none)"))
+     lead = p.get("lead")
+     print("  lead   : %s (%s)" % (lead or "—", p.get("lead_status") or "unassigned"))
+@@ -304,6 +311,29 @@
+ 
+ if verb == "status": show(p); sys.exit(0)
+ 
++if verb in ("pause", "resume"):
++    # PAUSE is an operational hold on NEW dispatch only — it does not touch the state machine, the
++    # plan, the jobs, the orders, or the DAG. A paused project stays whatever it was (usually
++    # 'active'); _dispatch_check refuses while `paused` is set, and nothing else reads it. Stored as
++    # a plain boolean so it's orthogonal to `state` (a project can be paused in any state, and resume
++    # restores exactly the prior behavior). Idempotent by construction: pausing an already-paused
++    # project (or resuming one that wasn't) just re-asserts the flag and succeeds (rc 0). A missing
++    # id already failed above at load(), so requirement 5 (non-existent id → non-zero) is free.
++    want = (verb == "pause")
++    already = bool(p.get("paused")) == want
++    p["paused"] = want
++    logline(p, ("paused" if want else "resumed") + (" (no change — already %s)" % (
++        "paused" if want else "not paused") if already else ""))
++    save(p)
++    if want:
++        print("⏸ project '%s' PAUSED%s. New dispatch is now REFUSED until resume; "
++              "already-dispatched jobs, orders, the plan and the DAG are untouched. "
++              "Resume: project resume %s" % (pid, " (already paused)" if already else "", pid))
++    else:
++        print("▶ project '%s' RESUMED%s. Normal dispatch restored — ready jobs dispatch as usual." % (
++            pid, " (was not paused)" if already else ""))
++    sys.exit(0)
++
+ if verb == "nominate":
+     if len(argv) < 3: die("usage: project nominate <id> <session>")
+     who = argv[2]
+@@ -438,6 +468,13 @@
+     # fleet load and places it on the lead's behalf — so both may dispatch, but no other session.
+     if p.get("lead") != ME and ME != "operator":
+         die("only the lead ([%s]) may dispatch jobs; you are [%s]" % (p.get("lead"), ME))
++    # PAUSE gate: refuse to EMIT a spec while paused. This is inside the project flock and BEFORE the
++    # shell places any order.sh order or calls _dispatch_mark, so a paused dispatch places no order
++    # and the job stays 'planned' (never flips to 'dispatched'). die() → non-zero exit → the shell
++    # sees rc!=0 and returns without placement.
++    if p.get("paused"):
++        die("project '%s' is PAUSED — new dispatch is refused. Resume it first: project resume %s. "
++            "(job '%s' NOT dispatched; no order placed)" % (pid, pid, jid))
+     if p.get("state") != "active":
+         die("project '%s' is '%s' — approve the plan before dispatching jobs" % (pid, p.get("state")))
+     if j["state"] == "dispatched":
