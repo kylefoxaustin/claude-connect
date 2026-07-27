@@ -81,7 +81,7 @@ MasRouter [2502.11133]) over agents that are stateless-by-default — with **que
 an **ensemble that aggregates all proposers, not a router** (reclassified per review). Voyager
 [2305.16291] accumulates competence for a *single* agent; ADAS [2408.08435] / Darwin Gödel Machine
 [2505.22954] evolve a *population of agent designs* at design-search time; **MAPE-K** (Kephart & Chess,
-IEEE Computer 2003) is the classical self-adaptive-control analogue.
+*Computer* 36(1), 2003) is the classical self-adaptive-control analogue.
 
 **Honest positioning (we do not overclaim novelty).** A **2025 memory-augmented-MAS line does pursue
 cross-task team competence** — most pointedly **G-Memory** [2506.07398, NeurIPS 2025] (hierarchical
@@ -94,8 +94,9 @@ memory store; (ii) routing is a **lead's grounded judgment over real artifacts**
 `CLAUDE.md`); and (iii) this is an **experience report on a continuously-running deployment**, studying
 the *trajectory*, where the above are benchmark evaluations of a mechanism. We frame our contribution
 as *under-explored relative to* that line, from which we differ in kind — not as a gap nobody has
-touched. ⚠ *Citation IDs above are from a single web-verification pass and several (esp. 2406.04692)
-are flagged UNCONFIRMED — all must be checked against primary sources before camera-ready.*
+touched. ✓ *All 15 arXiv IDs above VERIFIED 2026-07-27 by fetching each arxiv.org page (title + first
+author match, incl. MoA 2406.04692 and G-Memory 2506.07398) — CONFIRMED, no mismatches; see
+`related-work-verification.md`.*
 
 ## III. The Architecture
 
@@ -453,9 +454,12 @@ mcxn demoted to marked counter-current (C3); concentration now computed by `evid
 capability operationalized (C1); open-search ceiling marked GAP (C2).
 
 **Remaining before submission (camera-ready):**
-1. **Verify every arXiv ID against primary sources** (`related-work-verification.md`; esp. MoA
-   2406.04692 UNCONFIRMED, G-Memory/RCR-Router/MasRouter/ChatDev). No number ships unverified.
-2. **The RQ4b open-search ceiling is a GAP** (§V-D): earning it needs pai-sizer's out-of-corpus
-   prediction run on a task nobody in-fleet authored (jaws' out-of-fleet instrument) — a sequel A/B,
-   not a v4 edit.
+1. ✅ **arXiv IDs VERIFIED** (2026-07-27): all 15 fetched from arxiv.org, title + first author match,
+   CONFIRMED with no mismatches (incl. MoA 2406.04692 + G-Memory 2506.07398); MAPE-K confirmed
+   (masthead *Computer* 36(1), 2003). See `related-work-verification.md`. **No open citation risk.**
+2. **The RQ4b open-search ceiling is a GAP** (§V-D) — and it is being EARNED live: imx95-media-test
+   took the C2 sequel and *pre-registered before running*, with pai-sizer as independent witness
+   (2026-07-27). If it lands, a v5 converts the ceiling from GAP to result (or an honest null).
 3. Final read-through for any remaining prose-vs-mechanical-record mismatch (the panel's standing bar).
+4. IEEE-format conversion (Markdown → LaTeX/`IEEEtran`) + front-matter (keywords, author block) — a
+   mechanical typesetting pass once the content is frozen post-C2.

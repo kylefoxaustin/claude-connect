@@ -4,9 +4,11 @@
 Status: DRAFT v2 by the lead (claude-connect) — revised after a web citation-verification pass
 (`related-work-verification.md`), which reclassified Mixture-of-Agents, added the 2025
 memory-augmented-MAS line (G-Memory et al.) that bounds our novelty, added MAPE-K, and softened the
-compounding-competence claim to its ablation-tested form. Every ⚠VERIFY citation (arXiv IDs included)
-is a single-pass lead, NOT a warrant — all must be confirmed against primary sources before
-camera-ready (esp. MoA 2406.04692, flagged UNCONFIRMED).*
+compounding-competence claim to its ablation-tested form. **All 15 arXiv IDs were VERIFIED on
+2026-07-27 by fetching each arxiv.org abstract page (title + first author match, incl. MoA 2406.04692
+and G-Memory 2506.07398) — CONFIRMED, no mismatches;** see `related-work-verification.md`. The MAPE-K
+reference (Kephart & Chess, *Computer* 36(1), 2003, doi:10.1109/MC.2003.1160055) is confirmed —
+masthead is *Computer* (IEEE Computer Society), commonly cited informally as "IEEE Computer."*
 
 ## The question this section answers
 
@@ -28,8 +30,8 @@ We survey the field by *how it routes*, then draw the two distinctions that cons
 
 ## A taxonomy of task-to-agent routing
 
-**(1) Role-assignment frameworks.** AutoGen [⚠VERIFY: Wu et al., 2023], CrewAI, MetaGPT [⚠VERIFY:
-Hong et al., 2023], and ChatDev [⚠VERIFY: Qian et al., 2023] assign agents *roles* — "researcher,"
+**(1) Role-assignment frameworks.** AutoGen [✓arXiv-verified 2026-07-27: Wu et al., 2023], CrewAI, MetaGPT [✓arXiv-verified 2026-07-27:
+Hong et al., 2023], and ChatDev [✓arXiv-verified 2026-07-27: Qian et al., 2023] assign agents *roles* — "researcher,"
 "architect," "reviewer," "product manager" — and route tasks to those roles. The decisive property
 is that the roles are **personas assigned up front via system prompts**, and the agents are
 typically **one base model wearing different hats**. The "coder" is not experienced at coding; it is
@@ -38,44 +40,44 @@ typically **one base model wearing different hats**. The "coder" is not experien
 
 **(2) Router / supervisor patterns.** A supervisor LLM or a learned router selects a sub-agent,
 tool, or model from **declared descriptions** or **predicted difficulty/cost** — LangGraph's
-supervisor graphs, **MasRouter** [⚠VERIFY: 2502.11133, ACL 2025] (a learned controller allocating
+supervisor graphs, **MasRouter** [✓arXiv-verified 2026-07-27: 2502.11133, ACL 2025] (a learned controller allocating
 collaboration mode + roles + model per query), and query/model routers such as **RouteLLM**
-[⚠VERIFY: 2406.18665] (strong-vs-weak *different* models by predicted difficulty) and **FrugalGPT**
-[⚠VERIFY: Chen et al., 2305.05176, 2023]. This *is* capability-aware, but the capability is *asserted
+[✓arXiv-verified 2026-07-27: 2406.18665] (strong-vs-weak *different* models by predicted difficulty) and **FrugalGPT**
+[✓arXiv-verified 2026-07-27: Chen et al., 2305.05176, 2023]. This *is* capability-aware, but the capability is *asserted
 in a description* or *inferred from difficulty*, not earned by doing. **(Note: Mixture-of-Agents**
-[⚠VERIFY: Wang et al., 2406.04692 — ID UNCONFIRMED, ICLR 2025] **is *not* a router — it runs all
+[✓arXiv-verified 2026-07-27: Wang et al., 2406.04692, ICLR 2025] **is *not* a router — it runs all
 proposers in parallel and *aggregates* their outputs; it belongs with ensembling, not fit-based
 selection, and we reclassify it accordingly.)**
 
-**(3) Dynamic agent selection — the nearest neighbour to our work.** DyLAN [⚠VERIFY: Liu et al.,
+**(3) Dynamic agent selection — the nearest neighbour to our work.** DyLAN [✓arXiv-verified 2026-07-27: Liu et al.,
 2023] ranks agents by an inference-time "importance" score; AutoGen's Captain Agent / AutoBuild and
-AutoAgents [⚠VERIFY] *build a team* by selecting or generating agents for a task from a library.
+AutoAgents [✓arXiv-verified 2026-07-27] *build a team* by selecting or generating agents for a task from a library.
 These systems genuinely *score or select* agents per task — the closest anyone comes to "who is best
 for this." But the selection is still, in the main, **benchmark-optimized choice among
 prompt-differentiated agents**: "which generated persona fits this task," not "which of these
 sessions has actually done this kind of work before."
 
 **(4) Model-level and skill-library mechanisms.** Mixture-of-Experts routes *tokens* to expert
-subnetworks — learned routing, but at the neural level, not the agent/task level. Voyager [⚠VERIFY:
+subnetworks — learned routing, but at the neural level, not the agent/task level. Voyager [✓arXiv-verified 2026-07-27:
 Wang et al., 2023] accumulates and reuses a *skill library* in Minecraft — the closest prior work to
 "accumulated competence," but it is a *single* agent reusing its *own* skills, not a division of
 labour among peers with divergent histories.
 
-**(5) Automated agent design.** ADAS (Automated Design of Agentic Systems) [⚠VERIFY: Hu et al.,
-2408.08435, 2024] searches the space of agent programs; the Darwin Gödel Machine [⚠VERIFY:
+**(5) Automated agent design.** ADAS (Automated Design of Agentic Systems) [✓arXiv-verified 2026-07-27: Hu et al.,
+2408.08435, 2024] searches the space of agent programs; the Darwin Gödel Machine [✓arXiv-verified 2026-07-27:
 2505.22954, 2025] evolves a **population/archive of self-modifying coding agents** (not a single
 agent). These operate at *design-search* time, not at *runtime* over a standing team, and they
 optimize an agent *program*, not the allocation of work to experienced peers. The classical
 self-adaptive-systems analogue is **MAPE-K** (Monitor–Analyze–Plan–Execute over shared Knowledge;
-[⚠VERIFY: Kephart & Chess, *The Vision of Autonomic Computing*, IEEE Computer 36(1), 2003]).
+[verified 2026-07-27 (non-arXiv): Kephart & Chess, *The Vision of Autonomic Computing*, *Computer* 36(1), 2003, doi:10.1109/MC.2003.1160055]).
 
 **(6) Memory-augmented multi-agent systems — the *nearest* neighbour, and the reason we do not claim
 compounding as our novelty.** A 2025 line gives multi-agent systems persistent cross-task memory:
-**G-Memory** [⚠VERIFY: 2506.07398, NeurIPS 2025] maintains a hierarchical memory (insight / query /
+**G-Memory** [✓arXiv-verified 2026-07-27: 2506.07398, NeurIPS 2025] maintains a hierarchical memory (insight / query /
 interaction graphs) that stores cross-task insights and prior collaboration trajectories, so the
 team's success *improves over successive tasks* — task *N+1* better because of 1…*N*, across a team.
 That is our Distinction 2 almost verbatim, and it must be cited and distinguished, not written around.
-**RCR-Router** [⚠VERIFY: 2508.04903, 2025] routes *structured memory to agents within a task*
+**RCR-Router** [✓arXiv-verified 2026-07-27: 2508.04903, 2025] routes *structured memory to agents within a task*
 (context-to-agent, not task-to-peer). The broader framing is **transactive memory** ("who knows
 what") for agent teams. The distinction that survives (§Distinction 2) is *what kind of memory and
 whose*: these are **retrieval over a shared memory store by ephemeral agents**, benchmarked; ours is

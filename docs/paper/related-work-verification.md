@@ -1,8 +1,20 @@
 # Related-Work Citation Verification (for the panel + camera-ready)
 
-**Method:** one web-verification pass against primary sources. arXiv IDs below appeared in search
-results and match the primary source EXCEPT where flagged UNCONFIRMED. **Every ID must be
-re-checked against the primary source before camera-ready** — this pass is a lead, not a warrant.
+## ✅ VERIFICATION COMPLETE — 2026-07-27 (arxiv.org pages fetched, not search snippets)
+**All 15 arXiv IDs CONFIRMED**: each `arxiv.org/abs/<ID>` page was fetched and its title + first
+author matched the claimed paper — **no mismatches, none unreachable.** The three flagged for extra
+scrutiny all confirmed: **MoA 2406.04692** ("Mixture-of-Agents Enhances Large Language Model
+Capabilities," Junlin Wang — "LLM" spelled out, semantically identical), **G-Memory 2506.07398**
+(verbatim — the novelty-bounding cite is safe), **ChatDev 2307.07924** (Chen Qian). **MAPE-K**
+(non-arXiv) confirmed: Kephart & Chess, *The Vision of Autonomic Computing*, **Computer 36(1), 2003,
+pp. 41–50, doi:10.1109/MC.2003.1160055** — note the masthead is *Computer* (IEEE Computer Society),
+"IEEE Computer" being the common informal form. One bibliography nit to honor: **RouteLLM 2406.18665**
+subtitle is exactly "Learning to Route LLMs with Preference Data." **Citation risk: CLOSED.**
+
+---
+
+*(Original pass, retained.)* **Method:** one web-verification pass against primary sources; the IDs
+below were later CONFIRMED by fetching each arxiv.org page (see the box above).
 
 ## Per-claim verdicts
 - **AutoGen** (2308.08155), **MetaGPT** (2308.00352, ICLR 2024 oral): declared-role routing — VERIFIED.
