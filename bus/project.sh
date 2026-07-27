@@ -105,6 +105,8 @@ project_dispatch() {
           printf '   🍃 PRIORITY: BACKGROUND — fit this around your OWN work; do NOT interrupt it, and do NOT ask the operator to choose. High-value, not time-urgent.\n'
         fi
         printf '   Deliverable: %s in %s\n' "$files" "$path"
+        printf '   PRE-AUTHORIZED: Kyle approved this project plan (Gate #1) — this job is human-authorized. CLAIM IT WITHOUT asking the operator again; if you cannot take it, DECLINE on the bus (do NOT go silent — a silent human-gate stalls the project). Verify anytime: ~/.claude/bin/bus.sh project authorized %s %s\n' "$pid" "$jobid"
+        printf '   Questions about this job go to the project LEAD on the bus, NEVER the operator prompt. The lead answers, or escalates to Kyle via the shield if it is genuinely his call.\n'
         printf '   Claim it, do the work, then deliver (it verifies the files landed):\n'
         printf '     ~/.claude/bin/bus.sh order claim %s\n' "$orderid"
         printf '     ~/.claude/bin/bus.sh order deliver %s\n' "$orderid"
@@ -303,6 +305,36 @@ pid = argv[1]; p = load(pid)
 if p is None: die("no project '%s'" % pid)
 
 if verb == "status": show(p); sys.exit(0)
+
+if verb == "authorized":
+    # Slice 8 (Gap 1): the machine-checkable PRE-AUTHORIZATION signal. A cautious worker runs this
+    # BEFORE it would human-gate: if a human passed this project's plan gate (Gate #1) AND this job
+    # is dispatched to ME, the work is already human-authorized — claim it without re-asking the
+    # operator. Replaces the prose habit ("I ask Kyle before fleet work") with a checkable fact, so
+    # approved project work is never double-gated. Pure read; no writes.
+    jid = argv[2] if len(argv) > 2 else ""
+    if not jid: die("usage: project authorized <id> <job>")
+    j = job_by_id(p, jid)
+    if j is None: die("no job '%s' in project '%s'" % (jid, pid))
+    gate_ok = p.get("plan_status") == "approved" and p.get("state") == "active"
+    mine = plain(j.get("to", "")) == ME
+    if gate_ok and mine:
+        who = p.get("lead") or "?"
+        print("✅ PRE-AUTHORIZED — Kyle approved project '%s' at the plan gate; job '%s' is dispatched "
+              "to you [%s]. This work is human-authorized: CLAIM IT without asking the operator again. "
+              "(Cannot take it? DECLINE on the bus to lead [%s] — do NOT go silent, a silent human-gate "
+              "stalls the project.) Questions about the job go to the lead, never the operator's prompt."
+              % (pid, jid, ME, who))
+        sys.exit(0)
+    reasons = []
+    if not gate_ok:
+        reasons.append("project is not plan-approved (state=%s, plan_status=%s)"
+                       % (p.get("state"), p.get("plan_status")))
+    if not mine:
+        reasons.append("job is assigned to [%s], not you [%s]" % (plain(j.get("to", "")), ME))
+    print("⛔ NOT pre-authorized: %s. Do not assume approval — route the question to the lead."
+          % "; ".join(reasons))
+    sys.exit(1)
 
 if verb == "nominate":
     if len(argv) < 3: die("usage: project nominate <id> <session>")

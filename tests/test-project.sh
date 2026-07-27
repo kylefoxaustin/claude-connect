@@ -260,5 +260,25 @@ okc "background wake says do NOT ask the operator" "$(cat "$BUS_FILE")" "do NOT 
 lead dispatch neutron urgjob >/dev/null
 okc "urgent wake says prioritize over own work" "$(cat "$BUS_FILE")" "PRIORITY: URGENT"
 
+# ===== slice 8: pre-authorization signal + question funnel (approved work is never double-gated) =====
+# neutron is active + plan-approved; bgjob was dispatched to qualcomm (= the `other` cwd) above.
+okc "authorized: assignee gets PRE-AUTHORIZED"      "$(other authorized neutron bgjob)" "PRE-AUTHORIZED"
+( other authorized neutron bgjob >/dev/null 2>&1 ); ok "authorized: assignee exit 0" "$?" "0"
+okc "authorized: non-assignee refused"             "$(lead authorized neutron bgjob)"  "NOT pre-authorized"
+( lead  authorized neutron bgjob >/dev/null 2>&1 ); ok "authorized: non-assignee exit 1" "$?" "1"
+okc "authorized: routes the question to the lead"  "$(other authorized neutron bgjob)" "never the operator"
+okc "authorized: unknown job refused"              "$(other authorized neutron nojob)" "no job"
+# a project that has NOT passed the plan gate is not pre-authorized
+ops  new s8draft 'wip' >/dev/null
+ops  nominate s8draft 95emulator >/dev/null
+lead accept s8draft >/dev/null
+printf 'A x -> qualcomm\n' | lead plan s8draft >/dev/null
+lead job add s8draft jx to:qualcomm path:$DROP files:x.md -- x >/dev/null 2>&1
+okc "authorized: unapproved project refused"       "$(other authorized s8draft jx)" "not plan-approved"
+# the dispatch wake message teaches the pre-authorization + the funnel (bgjob dispatched above)
+okc "wake carries PRE-AUTHORIZED"                   "$(cat "$BUS_FILE")" "PRE-AUTHORIZED"
+okc "wake carries the funnel line"                 "$(cat "$BUS_FILE")" "NEVER the operator prompt"
+okc "wake points to the authorized verify cmd"     "$(cat "$BUS_FILE")" "project authorized neutron"
+
 echo "---"; echo "project: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
