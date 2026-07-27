@@ -304,8 +304,21 @@ bisectable would have manufactured a *false null on the floor*, which the pre-re
 falsifier exists to prevent, and did.** We report the naive "memory makes task *N+1* dramatically
 cheaper" as **refuted on the tasks tested**, and the open-search ceiling as an **honest, reasoned
 GAP** — measurable floor, un-sandboxable ceiling — rather than a claim dressed as a result.
-*(Sequel artifacts: `ablation_imx95-media-test-C2-{PREREGISTERED,RESULTS}.md`; canonical commit SHAs
-cited once remote-published.)* **Honest asymmetry:** only one of six
+
+**⚠ A discipline the fleet imposed on us, and it is the sharper point:** the C2 null and `sizer`'s
+stale-doc null (§V-B/RQ2) are **NOT independent corroboration — they are one mechanism on two
+surfaces.** Both tasks were *bisectable by construction because the ground truth was inspectable in
+the artifacts*: sizer's arms scored 0/3-misled because the **code** was there to check the doc
+against; C2's arms scored 4/4-solved because the **answer** was `strings`-able out of the model file.
+By the convergence-provenance rule (§V-D independence), this is **common-dependency at the mechanism
+tier** (and shared-base-model) — near-zero independent weight. So we cite them as **two illustrations
+of one constraint (reproducibility ⊥ open-search), never as two nulls agreeing.** What *is*
+load-bearing is the **constraint itself**: it held across two domains (stale-doc/app vs
+converter/NPU) and two opposite failure directions (0/3 vs 4/4), which is evidence the constraint is
+real — *even though the two nulls do not independently corroborate it.* **The finding generalizes;
+the data points do not replicate** — stated exactly so a reviewer cannot read "two nulls" as
+"replicated." *(Sequel artifacts, remote-verified 2026-07-27: pre-registration
+`imx95-media-test@abeab3dc64cb`, results `@d35a64bf6d3a`, on github.com/kylefoxaustin/imx95-media-test.)* **Honest asymmetry:** only one of six
 ablations pre-registered its rubric; the other five are honestly-run but *post-hoc graded* (§VI).
 
 **The independence sub-claim (RQ4-adjacent), now *operationalized* — not an unfalsifiable escape
@@ -490,9 +503,10 @@ capability operationalized (C1); open-search ceiling marked GAP (C2).
 2. ✅ **The RQ4b open-search-ceiling sequel LANDED** (§V-D, v5): a pre-registered NULL — the symmetric
    falsifier fired, the constructed task was secretly bisectable, and the finding is *why* (reproducibility
    ⊥ open-search; the ceiling is un-sandboxable, not absent; the earning test is a field A/B). The
-   ceiling stays a **reasoned GAP**, not a claim. **Pending:** the sequel's commits
-   (`imx95-media-test@abeab3d` pre-reg, `@d35a64b` results) are approved-but-not-yet-pushed to their
-   remote — cite them only once remote-published (the carrier-ladder point, §VII).
+   ceiling stays a **reasoned GAP**, not a claim. ✅ **Sequel commits REMOTE-PUBLISHED + citable**
+   (`imx95-media-test@abeab3dc64cb` pre-reg, `@d35a64bf6d3a` results, verified on origin 2026-07-27);
+   cited canonically in §V-D. Also folded: imx95's caveat that the C2 null and sizer's null are one
+   mechanism, not independent corroboration.
 3. Final read-through for any remaining prose-vs-mechanical-record mismatch (the panel's standing bar).
 4. IEEE-format conversion (Markdown → LaTeX/`IEEEtran`). **Scaffold DONE** (`conductor-paper.tex`:
    documentclass, title, abstract, keywords, section skeleton, `\bibliography` wired to the verified
