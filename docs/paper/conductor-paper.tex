@@ -112,10 +112,12 @@ is not unfalsifiable: the method claim weakens if the failures the adversarial p
 have been caught as readily by ordinary single-author review, or if the primitives it converged on
 were worse than a competent up-front design. We offer one \emph{observational} signal consistent with
 the method (not a controlled test of it): across the deployment, \textbf{human prompts per active
-project fell $\approx$5.6$\times$} (from 203/project in the first full month to 36 in the latest)
-\emph{as} the number of concurrent projects grew from 10 to 34 (\S V-A) --- the human moving from
-courier toward architect, which is what the method is for. We report it as a trend with the usual
-longitudinal confounds, not as proof.
+project fell $\approx$1.9$\times$} over the steady-state months (70 to 36, May--Jul), \emph{as} the
+number of concurrent projects grew from 16 to 34 (\S V-A). Counting from the substrate's build-out
+month the drop is larger (5.6$\times$ endpoint-to-endpoint) but we do not lead with that figure, since
+April was when the substrate itself was being built. Either way the human moves from courier toward
+architect, which is what the method is for. We report it as a trend with the usual longitudinal
+confounds, not as proof.
 
 \section{Related Work}
 \emph{(Full treatment: \texttt{related-work.md}.)} Capability-aware routing exists but is
@@ -190,10 +192,12 @@ The through-line is \textbf{verify the outcome, not the intention.}
 The design loop that produced the above: (1) a session hits a \emph{silent-loss} failure in
 real work (a tool reports success while something is quietly wrong); (2) it publishes the
 specimen to the bus; (3) \textbf{context-divergent peers attack the proposed fix} --- and,
-because their divergence is real (different accumulated histories), they are genuinely
-independent estimators (\S V-D), not one distribution echoing itself; (4) the human gates only
-the irreversible. This is not self-review by one model --- the paper is careful here precisely
-because self-review by one model is void --- it is review by \textbf{estimators made
+because their divergence is real (different accumulated histories), they attack from \textbf{different
+empirical vantages}, which we measure and \emph{bound} in \S V-D: they are independent \emph{only
+relative to} that divergence, not absolutely, so this is not self-review by one model echoing itself,
+but neither do we claim uncorrelated errors in the estimator sense (\S V-D); (4) the human gates only
+the irreversible. This is not self-review by one model --- self-review by one model is void --- it is
+review by \textbf{estimators made
 independent through context divergence}, a property we must and do argue mechanistically, not
 assume.
 
@@ -222,23 +226,23 @@ repro.-in-principle & a recipe that outlives the record but has not been re-exec
 \end{table}
 
 \emph{Corpus, MEASURED from git + bus + \texttt{history.jsonl}, \textbf{as-of 2026-07-27
-09:38}} (every count carries this stamp --- the log is append-only and non-stationary, so a
-bare number is under-specified): 259 commits; 47 version landings; \textbf{2,719} bus messages
-/ \textbf{55} senders (1,085 directed, 1,107 broadcast, 520 announcement; directed share
-39.9\%); 6,263 human prompts across 44 projects back to 2026-01-14. Division of labour is
-\textbf{spread but with a real head, not a power law} --- and this is now computed by the
-harvester, not asserted (\texttt{evidence-harvest.py} \texttt{\_concentration}): \textbf{Gini
-0.695}, top sender 9.4\%, top-3 25.6\%, and \textbf{13 of 55 senders to reach 80\%.} Many
-peers carry load, no single dominant author, but a genuine concentration we report rather than
+22:38}} (every count carries this stamp --- the log is append-only and non-stationary, so a
+bare number is under-specified): 279 commits; 47 version landings; \textbf{2,738} bus messages
+/ \textbf{55} senders (1,103 directed, 1,107 broadcast, 521 announcement; directed share
+40.3\%); 6,307 human prompts across 46 projects back to 2026-01-14. Division of labour is
+\textbf{spread but with a real head, not a power law} --- computed by the harvester, not asserted
+(\texttt{evidence-harvest.py} \texttt{\_concentration}, over the 2,733 non-system messages):
+\textbf{Gini 0.693}, top sender 9.4\%, top-3 25.5\%, and \textbf{13 of 55 senders to reach 80\%.}
+Many peers carry load, no single dominant author, but a genuine concentration we report rather than
 round off to ``distributed.'' \textbf{Reflexivity confound --- controlled, not just conceded.}
-Because $\sim$194 of these messages are this paper's own review/ablation traffic, a concentration
-statistic computed over the whole log could be an artifact of the act of measuring. We therefore
+Because 194 of the 2,733 non-system messages are this paper's own review/ablation traffic, a
+concentration statistic over the whole log could be an artifact of the act of measuring. We therefore
 recompute it \emph{excluding} all paper-era messages (everything before the paper effort began,
-2026-07-24; $n{=}2{,}539$ messages, 52 senders): \textbf{Gini $0.693$, top sender 9.4\%, top-3
-26.4\%, 13 of 55 senders to 80\%} --- statistically \emph{indistinguishable} from the full-log
-figures above (Gini $0.693$ vs.\ $0.693$; top-3 26.4\% vs.\ 25.5\%). The head is a property of the
-\emph{organic} deployment, not of the paper's own threads; the reflexivity we flag elsewhere does
-\emph{not} contaminate this result, and we report both numbers so the reader can see that it does not.
+2026-07-24; $n{=}2{,}539$ non-system messages, 52 senders): \textbf{Gini $0.693$, top sender 9.4\%,
+top-3 26.4\%, 13 of 52 senders to 80\%} --- \emph{indistinguishable} from the full-log figures above
+(Gini $0.693$ vs.\ $0.693$; top-3 26.4\% vs.\ 25.5\%). The head is a property of the \emph{organic}
+deployment, not of the paper's own threads; the reflexivity we flag elsewhere does \emph{not}
+contaminate this result, and we report both numbers so the reader can see that it does not.
 \subsection{RQ1 --- Courier elimination (proxy, with a latency tradeoff)}
 949 directed messages were auto-delivered --- hand-offs a human would otherwise relay (a
 \emph{ceiling on relays avoided}, v2.19+). But the mechanism is unreliable: in this paper's
@@ -250,19 +254,24 @@ transcripts (a 30-day cleanup horizon, \S VI) which also carry an \textbf{11.9$\
 
 \textbf{The longitudinal human-touch series (the method's clearest observational signal).}
 From \texttt{history.jsonl} (human prompts only, un-swept back to January), we normalize touches by
-\emph{active project} per month (Table~\ref{tab:touch}). Human prompts per active project fall from
-203 in the deployment's first full month to 36 in the latest --- a $\approx$5.6$\times$ reduction ---
-\emph{while} concurrent projects grow from 10 to 34. This is the one longitudinal result that speaks
-to the \emph{method} claim rather than the compounding claim: as the substrate matures and carries
-more work in parallel, the human's per-project involvement drops sharply, which is the courier
-$\rightarrow$ architect shift the method is for. We report it with the standard longitudinal
-confounds --- the task mix changed, the operator learned, and per-\emph{active}-project is a proxy for
-per-\emph{delivered}-project --- so it is a trend, not a controlled measurement.
+\emph{active project} per month (Table~\ref{tab:touch}). Over the \textbf{steady-state months}
+(May--Jul) human prompts per active project fall from 70 to 36 --- a $\approx$\textbf{1.9$\times$}
+reduction --- \emph{while} concurrent projects grow from 16 to 34. We lead with this figure rather than
+the larger endpoint-to-endpoint one ($5.6\times$, counting from April's 203): \textbf{April was the
+substrate's build-out month} --- when the coordination primitives themselves were being written --- so
+its per-project touch is bootstrap-heavy and not comparable to steady-state operation, exactly as
+January and March are omitted. Either way, this is the one longitudinal result that speaks to the
+\emph{method} claim rather than the compounding claim: as the substrate matures and carries more work
+in parallel, the human's per-project involvement drops, which is the courier $\rightarrow$ architect
+shift the method is for. We report it with the standard longitudinal confounds --- the task mix
+changed, the operator learned, and per-\emph{active}-project is a proxy for per-\emph{delivered}-project
+--- so it is a trend, not a controlled measurement.
 
 \begin{table}[t]
 \centering\footnotesize
-\caption{Human touch per active project over the deployment (\texttt{history.jsonl}). Jan/Mar
-(1 and 7 prompts) are the pre-ramp startup and omitted.}
+\caption{Human touch per active project (\texttt{history.jsonl}). Jan/Mar (1 and 7 prompts) are
+pre-ramp startup and omitted. April is the substrate's build-out month (bootstrap-heavy); the headline
+$1.9\times$ is the steady-state May--Jul reduction, not the endpoint-to-endpoint $5.6\times$.}
 \label{tab:touch}
 \begin{tabular}{lrrr}
 \toprule
@@ -362,11 +371,7 @@ timestamps, tool-call logs) are the evidence.}
 \textbf{Correlation, MEASURED:} context-carrying sessions recognized bug-classes fast (e.g.\ a
 register-coverage gate green over 12/370, the class recognized in seconds because prior tasks
 had named it; one-line fix $\rightarrow$ 12/370$\rightarrow$370/370, surfacing a
-dead-time-zero shoot-through). \emph{(We deliberately do \textbf{not} cite the tempting
-``$\approx$5.6$\times$ aggregate throughput'' figure: it is an uncontrolled aggregate over a
-period in which the model, the operator, the session count, and the task mix all moved --- every
-variable confounded --- so it is no evidence of compounding and a reviewer would rightly use it
-against us.)} \textbf{The confound (owned):} same model $\rightarrow$ this may be ``persistent
+dead-time-zero shoot-through). \textbf{The confound (owned):} same model $\rightarrow$ this may be ``persistent
 memory works,'' a known result, and memory-\emph{present} is not memory-\emph{causal}.
 \textbf{The test (LANDED) --- six A/B ablations + the RQ5 baseline, and the result is a
 \emph{disconfirmation} of the naive claim.} A \emph{genuinely isolated} fresh session
@@ -433,7 +438,7 @@ search a fresh agent cannot cheaply bisect} and \textbf{least on a crisp symptom
 objective oracle} (any agent bisects fast); on some specimens context even shows a
 \textbf{thoroughness regression} (pattern-match-and-stop). \textbf{This bound is half-measured:
 the crisp-symptom FLOOR is MEASURED (all six ablations bisected fast); the open-search CEILING
-resists measurement --- and v5 reports the \emph{pre-registered sequel that tried to measure it
+resists measurement --- and we report the \emph{pre-registered sequel that tried to measure it
 and why it could not.}} A fresh attempt (imx95-media-test, rubric hashed and bus-published +
 independently witnessed BEFORE any arm ran) built a ``hard'' open-search task in a sterile,
 reproducible sandbox; its pre-registered symmetric falsifier fired: all 4 fresh arms reached
@@ -481,7 +486,7 @@ generative prior, so their reasoning errors can correlate even with different in
 directly rather than waving at it. We classified all \textbf{14 record-attested cross-session catches}
 (\S V-C) as \textbf{factual/local} (a discrete fact the catcher held differently) vs.\
 \textbf{reasoning-shaped} (the catcher reasoned to a different conclusion). The split is
-$\approx$\textbf{1:1} ($\sim$6--7 factual, 7 reasoning-shaped) --- which \emph{at face value would
+$\approx$\textbf{1:1} (6 or 7 factual, 7 reasoning-shaped) --- which \emph{at face value would
 refute} an ``input-divergence-only'' reading. But the honest reading is narrower, and it is the one
 the record supports: \textbf{every reasoning-shaped catch was made by a peer at a different
 \emph{empirical vantage}} --- a measurement relocated into the subject (a guest-emitted clock),
@@ -544,7 +549,7 @@ result.
 
 \section{Threats to Validity}
 \begin{itemize}
-\item \textbf{Self-evidencing circularity (the review's \#1).} A corpus of first-person cases
+\item \textbf{Self-evidencing circularity.} A corpus of first-person cases
   about coordination, curated for a paper about coordination, is self-report at scale.
   Mitigation: cases are demoted to illustration; every load-bearing claim rests on the
   mechanical record.
@@ -557,7 +562,7 @@ result.
 \item \textbf{30-day record horizon.} The platform silently deleted transcripts $>$30 days (now
   disabled); the pre-June transcript record is GAP. Longitudinal claims use \texttt{history.jsonl}
   + git, which survive.
-\item \textbf{Ablation methodology (new in v3, flagged by the fleet itself).} (a) \emph{Grading
+\item \textbf{Ablation methodology.} (a) \emph{Grading
   asymmetry} --- only one of six ablations (\texttt{sizer}) published its rubric hash
   \emph{before} results; the other five are honestly-run but \textbf{post-hoc graded}, so
   retrofitting is disavowed, not detectable. (b) \emph{Isolation is a claim, not a given} --- the
@@ -570,6 +575,12 @@ result.
 \item \textbf{$N{=}1$, one operator, one workstation, one model family.}
 \item \textbf{Self-authorship}, including \emph{this reframe} --- written by an interested lead,
   corrected by peers; we prefer machine evidence throughout and mark recollection RECALLED.
+\item \textbf{The bystander-catch corpus contracted under audit.} While preparing this paper, two
+  claimed cross-session catches did not survive record-checking --- a ``\texttt{backend} tag-flip
+  caught by a peer'' was in fact self-caught, and ``orb\_slam caught four independent errors'' had no
+  case-file or bus record --- and both were removed (\S V-C). We report the contraction rather than
+  quietly correcting it, because it is itself evidence for the provenance discipline the paper claims:
+  the corpus is what the record supports (14 catches), not what narration remembered.
 \end{itemize}
 
 \section{Future Work: A Pre-Registered Replication}
@@ -606,9 +617,11 @@ Conductor is an experience report on a specific, nameable composition --- one mo
 per-context memory, a shared bus, a human-as-architect gate calibrated to reversibility ---
 hardened \emph{in vivo} by its own context-divergent peers. Its most defensible results are on
 the mechanical record: a load-sharing division of labour (many peers, a measured head --- Gini
-0.695 --- but no dominant orchestrator), named failure modes closed with at least one live
-ablation, machine-evidenced bystander discovery, and the unanticipated finding that writing the
-report was itself a working instrument. Its headline intuition --- compounding competence ---
+0.693 --- but no dominant orchestrator), named failure modes closed with at least one live
+ablation, and machine-evidenced bystander discovery (a cross-session catch corpus of 14, audited and
+bounded in \S V-D). The paper-as-instrument effect (\S V-F) is reported separately as an operational
+finding with a stated hit-rate and no control arm, not among these. Its headline intuition ---
+compounding competence ---
 was \textbf{put to the test} (six A/B ablations + a pre-registered baseline) and the naive form
 was \textbf{disconfirmed}: what compounds is the \emph{committed carrier}, and lived context
 buys \emph{efficiency and recognition}, not raw capability, most on open searches a fresh agent
