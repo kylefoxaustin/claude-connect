@@ -1,6 +1,6 @@
-<img src="assets/conductor.svg" width="104" align="right" alt="Claude Connect logo — a glowing bus core wired to session nodes" />
+<img src="assets/conductor.svg" width="104" align="right" alt="Conductor logo — a glowing bus core wired to session nodes" />
 
-# Claude Connect
+# Conductor
 
 **A local dashboard for watching all your Claude Code sessions at once — in your browser or as a standalone desktop app — plus an optional _message bus_ (a shared log your sessions post to) that lets them talk to each other.**
 
@@ -10,7 +10,7 @@
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 <p align="center">
-  <img src="assets/hero.png" alt="Claude Connect — a glowing violet bus core wired to six session panels, one cable carrying a message pulse; title reads Claude Connect: watch every Claude Code session at once, and let them talk" width="900" />
+  <img src="assets/hero.png" alt="Conductor — a glowing violet bus core wired to six session panels, one cable carrying a message pulse; title reads Conductor: watch every Claude Code session at once, and let them talk" width="900" />
 </p>
 
 ```
@@ -23,13 +23,13 @@
 └────────────────────────────────┘  └────────────────────────────────┘
 ```
 
-> 💡 **Heads up on names:** the repo is `claude-connect`; the app (and its Python package) is `conductor`. Same project — you'll see both names throughout.
+> 💡 **Heads up on names:** the project — and its Python package — is **Conductor**. The GitHub repo keeps its original name `claude-connect` (so existing clone URLs, links, and tooling keep working), so you'll still see that slug in the URL and a few paths. Same project.
 
 ## Why?
 
 If you're like us, you're running 3, 4, or 8 Claude Code sessions at once across different projects. You forget which terminal is doing what. You miss when one finishes and goes quiet. You wish they could *coordinate* — "hey, the API change is in, you can start on the frontend."
 
-**Claude Connect solves both problems:**
+**Conductor solves both problems:**
 
 - **See everything at a glance.** One tile per live Claude session — status dot, live preview of what it's saying, time since last activity. Click a tile to jump to that terminal.
 - **Let your Claudes talk.** Wire up the optional message bus and your sessions can `/msg-send` each other across projects. The dashboard shows the traffic with animated connection lines.
@@ -510,7 +510,7 @@ Click **Compose** in the top bar to send your own message on the bus — like em
 - **Specific sessions** — uncheck "All" and pick recipients. The message is soft-addressed with a leading `@to [tag] …` line, so receivers (and the dashboard's connection-line animation) know who it's for. It's still on the shared log; addressing is advisory, not private.
 - **Ping recipients** — also injects `/msg-check` into the chosen sessions so they read it immediately (specific recipients only — broadcast-ping would steal focus across every window). `Ctrl/⌘+Enter` sends.
 
-> Sending makes Claude Connect a *writer* on the bus (it still never touches Claude's own state). Requires the markdown bus adapter.
+> Sending makes Conductor a *writer* on the bus (it still never touches Claude's own state). Requires the markdown bus adapter.
 
 ### ⚙ Settings
 
@@ -531,7 +531,7 @@ Theme, connection lines (incl. **Lines behind tiles** to drop the wires behind t
 
 > *Optional, but the killer feature.*
 
-The 📬 features ride on a **shared markdown message log**. Claude sessions append to it with `/msg-send` and read it with `/msg-check`; hooks make each session aware of new messages. Claude Connect tails the same log to drive the bus tile.
+The 📬 features ride on a **shared markdown message log**. Claude sessions append to it with `/msg-send` and read it with `/msg-check`; hooks make each session aware of new messages. Conductor tails the same log to drive the bus tile.
 
 ### Setup
 
@@ -542,7 +542,7 @@ cp bus/commands/*.md ~/.claude/commands/
 # Then merge bus/settings.hooks.example.json into ~/.claude/settings.json
 ```
 
-Point Claude Connect at the log in the `[bus]` section of `settings.toml`. Full setup docs and format spec:
+Point Conductor at the log in the `[bus]` section of `settings.toml`. Full setup docs and format spec:
 
 - 📖 [`bus/README.md`](bus/README.md) — install + slash commands + **🎛️ resource reservation** and **📦 agentic orders**
 - 📖 [`docs/claude-bus.md`](docs/claude-bus.md) — message format spec
@@ -559,7 +559,7 @@ say *delivered*, and the requester owns the acceptance test. `bus.sh order` /
 
 ### What if a session isn't on the bus?
 
-Claude Connect works fully without it. Session discovery comes from OS process state, not from the bus, so:
+Conductor works fully without it. Session discovery comes from OS process state, not from the bus, so:
 
 - ✅ An un-wired Claude still appears as a normal tile — status, preview, message count, click-to-focus all work
 - ❌ It just won't show a 📬 badge or a connection line to the Bus tile
@@ -572,7 +572,7 @@ This is actually useful — if you wire up some sessions and leave others out, t
 
 A single terminal server (Tilix, `gnome-terminal-server`) owns all its windows, so they share one PID — and a tiled window shows only the *active* tile's title at a time. So matching purely on **window title** is ambiguous: a backgrounded tile has no title of its own on the window, and a stray same-named terminal (e.g. a shell `cd`'d into the project dir) can win the match.
 
-**Tilix gets an exact path.** Each tilix tile stamps its shell with a `TILIX_ID` env var, so Claude Connect reads that UUID from the Claude process and tells tilix (over its `com.gexperts.Tilix` D-Bus interface) to focus that precise tile — **raising the window *and* switching to the exact tile**, even inside a combined/tiled window where several Claudes share one window. No wrapper, no setup; it just works if you run Claude inside tilix.
+**Tilix gets an exact path.** Each tilix tile stamps its shell with a `TILIX_ID` env var, so Conductor reads that UUID from the Claude process and tells tilix (over its `com.gexperts.Tilix` D-Bus interface) to focus that precise tile — **raising the window *and* switching to the exact tile**, even inside a combined/tiled window where several Claudes share one window. No wrapper, no setup; it just works if you run Claude inside tilix.
 
 > Scope: this exact-tile path is **tilix-only** and only tested on tilix. Other terminals fall through to the title-matching path below — no regression, just less precise.
 
@@ -583,7 +583,7 @@ sudo install -m755 scripts/claude-tracked /usr/local/bin/
 claude-tracked api-server --resume
 ```
 
-Without either the tilix path or the wrapper, focus is best-effort: Claude Connect raises the terminal window owning the Claude PID, but can't switch between tabs packed into one window.
+Without either the tilix path or the wrapper, focus is best-effort: Conductor raises the terminal window owning the Claude PID, but can't switch between tabs packed into one window.
 
 ---
 

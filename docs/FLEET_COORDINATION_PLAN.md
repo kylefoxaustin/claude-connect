@@ -1,6 +1,6 @@
 # Fleet Coordination — Architecture Plan (PROPOSAL)
 
-> Status: **plan only, nothing built.** A design study for evolving Claude Connect from
+> Status: **plan only, nothing built.** A design study for evolving Conductor from
 > *observing* the fleet to helping it *coordinate* — showing who's blocked on whom, letting
 > Kyle approve the few things that need him from one place, letting the Claudes handshake the
 > rest among themselves, and making a bad instruction retractable before it does damage.
