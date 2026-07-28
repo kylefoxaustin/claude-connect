@@ -334,23 +334,28 @@ not the RQ3 claim): MEASURED (jaws), a 38-Bash-call build had \textbf{17 measure
 \texttt{/proc} probes, 4 runs) --- a vantage a browser assistant could not occupy, proven from
 the event log. \textbf{(ii) A peer caught what the author shipped} (the actual RQ3 claim, and
 it needs the \emph{same} timestamp rigor --- A ships at t0, B refutes at t1, both from the
-record): the \texttt{backend} tag-flip caught by another session; holobench's ``+64 s rejoin
-stall'' refuted by rt1180 --- and we are careful to keep two \emph{distinct} artifacts distinct
-(the panel caught v3 welding them, a provenance error inside the provenance exhibit):
-\textbf{(instrument)} rt1180 relocated the measurement \emph{into the guest} --- a
-guest-emitted timestamp holobench structurally cannot produce --- landed as commit
-\texttt{4059f7633f}; \textbf{(figure)} a \emph{subsequent scorer replay} over that guest clock
-then put guest-side re-acquisition at 0.0 s, showing the 47--64 s was the observer's own
-arrival-stamp backlog upstream of the ring. Timeline pinned from the record: holobench reports
-the stall (t0) $\rightarrow$ rt1180's guest-clock commit + the replayed 0.0 s refute it (t1 $>$
-t0). The 0.0 s is the \emph{replayed figure}, not the commit's payload --- two artifacts, not
-one; orb\_slam's cross-check catching \emph{four} independent measurement errors, each by a
-different party. \textbf{A new, clean, testimony-free instance from the ablations:} in
-\texttt{ablation\_sizer} a \textbf{blind, zero-context} arm --- with no reason to look at the
-UI --- caught a \textbf{real overstatement in the author's own case} (129 defective cells
-reachable via the engine API but \emph{not} the shipped UI) in \textbf{nine tool calls},
-something the author had missed across an entire session. Author-ships-overstatement /
-blind-peer-refutes, on the record. \textbf{Cases are illustration; the events (order claims,
+record). We enumerate the \textbf{record-attested} cross-session catches (14 in total, tabulated in
+the artifact repository) and here name four representative ones, each with the wrong party
+\emph{corrected} against the record after review flagged two mis-attributions in earlier drafts (a
+``\texttt{backend} tag-flip caught by a peer'' was in fact self-caught, and a claimed ``orb\_slam
+caught four errors'' had no record --- both removed).
+\textbf{image\_gen $\rightarrow$ backend}: backend's RTX-5090 idle-power \emph{denominator}
+(64.97~W) was contaminated by image\_gen's own resident tenant; a clean board idles near 21~W, a
+physical floor image\_gen held.
+\textbf{docs $\rightarrow$ orb\_slam}: orb\_slam's ``fixed-K Amdahl overhead'' bandwidth model,
+refuted by diffing two derivations on the shared tensor table (K doubles when the workload doubles,
+so a fixed overhead is impossible --- the model refuted itself on its own arithmetic).
+\textbf{imx95-media-test $\rightarrow$ qualcomm}: qualcomm's ``verified'' Neutron INT8 model was
+quantized \emph{without calibration normalization} (wrong input scale); imx95 reproduced qualcomm's
+exact numbers to five decimals, then corrected the parameter.
+\textbf{holobench $\leftrightarrow$ rt1180}: holobench's ``+64~s rejoin stall'' was its own scorer's
+arrival-stamp backlog --- rt1180 relocated the measurement \emph{into the guest} (a guest-emitted
+timestamp holobench structurally cannot make; commit \texttt{4059f7633f}) and a subsequent scorer
+replay put guest-side re-acquisition at 0.0~s. We keep the two artifacts distinct (the instrument
+commit vs.\ the replayed figure), pinned t0 (stall reported) $<$ t1 (refuted).
+\textbf{A record-attested instance from the ablations:} in \texttt{ablation\_sizer} a \textbf{blind,
+zero-context} arm caught a \textbf{real overstatement in the author's own case} (129 defective cells
+reachable via the engine API but \emph{not} the shipped UI) in nine tool calls. \textbf{Cases are illustration; the events (order claims,
 timestamps, tool-call logs) are the evidence.}
 
 \subsection{RQ4 --- Compounding competence: claim, confound, and the ablation test}
@@ -468,20 +473,26 @@ github.com/kylefoxaustin/imx95-media-test.)} \textbf{Honest asymmetry:} only one
 ablations pre-registered its rubric; the other five are honestly-run but \emph{post-hoc graded}
 (\S VI).
 
-\textbf{The independence sub-claim (RQ4-adjacent), now \emph{operationalized} --- not an
-unfalsifiable escape clause.} Convergence among same-model peers is corroboration \textbf{only
-when conditioned on context divergence}, and we make ``divergence'' \emph{measurable in
-principle} rather than asserted: three record-derived proxies --- \textbf{disjoint task
-histories} (different project dirs / git trees), \textbf{low memory-file overlap} (per-session
-memory dirs), and \textbf{divergent tool-call sequences} on the shared problem (the event log).
-By these, the primary case (two sessions, one base model, different accumulated context,
-disagreed-then-converged) is a genuine independent estimate --- \emph{and it is no longer
-N=1:} the ablations supply further instances by construction (the \textbf{HARVEST} pattern of
-\S V-B --- 91emulator$\leftrightarrow$93emulator on one shared model, sizer$\leftrightarrow$
-pai-sizer --- are parallel peers on \textbf{separate trees} reaching agreement via
-\textbf{different fixes}, i.e.\ derived-not-copied). The honest residual: all still share the
-base model, the bus, and the operator's framing --- so divergence is \emph{reduced}, never
-zero, and we claim independence \emph{relative to} these proxies, not absolutely.
+\textbf{The independence sub-claim (RQ4-adjacent) --- the measured bound, at exactly the strength the
+record supports.} A skeptic rightly objects that our divergence proxies (disjoint task histories, low
+memory-file overlap, divergent tool-call sequences) measure divergence of \emph{inputs}, whereas
+independence of estimators requires uncorrelated \emph{errors} --- and two same-model sessions share a
+generative prior, so their reasoning errors can correlate even with different inputs. We tested this
+directly rather than waving at it. We classified all \textbf{14 record-attested cross-session catches}
+(\S V-C) as \textbf{factual/local} (a discrete fact the catcher held differently) vs.\
+\textbf{reasoning-shaped} (the catcher reasoned to a different conclusion). The split is
+$\approx$\textbf{1:1} ($\sim$6--7 factual, 7 reasoning-shaped) --- which \emph{at face value would
+refute} an ``input-divergence-only'' reading. But the honest reading is narrower, and it is the one
+the record supports: \textbf{every reasoning-shaped catch was made by a peer at a different
+\emph{empirical vantage}} --- a measurement relocated into the subject (a guest-emitted clock),
+different physical silicon, or the ship-vs-implement test-direction asymmetry --- \textbf{not by an
+independent reasoner spotting a co-located reasoning flaw from identical inputs}. The corpus authors
+say so themselves (``a different vantage point, a property of the substrate, not of any one model
+being smarter''), and \textbf{there is no instance in the record of a peer catching a same-input
+reasoning error.} We therefore claim independence \emph{only relative to} the divergence proxies,
+never absolutely: peers do catch reasoning-shaped defects, but they catch them by being
+\emph{empirically positioned} differently --- the input/grounding divergence the proxies measure ---
+which is a measured bound on the claim, not evidence of uncorrelated errors in the estimator sense.
 \subsection{RQ5 --- Baseline: cold orchestrator vs.\ peer substrate (pre-registered)}
 One matched task, run both ways, \textbf{pre-registered} (frozen spec + black-box acceptance
 test + directional prediction committed before either arm ran; the instrument was first proven
