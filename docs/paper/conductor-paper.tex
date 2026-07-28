@@ -242,8 +242,9 @@ contaminate this result, and we report both numbers so the reader can see that i
 \subsection{RQ1 --- Courier elimination (proxy, with a latency tradeoff)}
 1,090 directed messages (as-of the corpus stamp) are \emph{candidates} for auto-delivery ---
 hand-offs a human would otherwise relay --- so the count is a \textbf{ceiling on relays avoided},
-not a claim that all were delivered (auto-delivery is a runtime event the bus log does not record, so
-we report the ceiling the mechanism could eliminate, not the realized figure). Indeed the mechanism
+not a claim that all were delivered: the realized auto-delivery count is a \textbf{GAP} --- it is a
+runtime event the bus log does not record, so we report the ceiling the mechanism could eliminate, not
+the realized figure. Indeed the mechanism
 is unreliable: in this paper's own production, a directed job failed to auto-wake its peer (stale
 watermark) and \textbf{the human relayed it} --- an actual delivery below the ceiling. We report the
 counterexample. The correct human-touch
@@ -261,9 +262,10 @@ excluded as bootstrap-heavy, as January and March are). To check whether July's 
 single step, a \textbf{finer weekly breakdown} (14 weeks, artifact repo) shows the same downward
 \emph{direction} --- from the $\sim$35--40 band in early May to the $\sim$13 band by late July --- so
 we read it as a sustained decline, not a one-month artifact. \textbf{The weekly and monthly figures
-are not directly comparable in magnitude}: the weekly series divides by projects active \emph{that
-week} (fewer than in a month), so its per-project counts run lower; we use it only to confirm the
-\emph{shape}, not to sharpen the ratio. This is the one longitudinal signal that speaks to the
+are on different time bases and are not comparable in magnitude}: a week's prompt count (roughly a
+quarter of a month's) is divided by that week's active projects, so weekly per-project figures run
+lower --- the smaller numerator dominates. We use the weekly series only to confirm \emph{direction},
+not to sharpen the ratio. This is the one longitudinal signal that speaks to the
 \emph{method} claim rather than the compounding claim: as the substrate matures and carries more work
 in parallel, the human's per-project involvement drops, which is the courier $\rightarrow$ architect
 shift the method is for. We report it with the standard longitudinal confounds --- the task mix
@@ -348,8 +350,8 @@ not the RQ3 claim): MEASURED (jaws), a 38-Bash-call build had \textbf{17 measure
 the event log. \textbf{(ii) A peer caught what the author shipped} (the actual RQ3 claim, and
 it needs the \emph{same} timestamp rigor --- A ships at t0, B refutes at t1, both from the
 record). We enumerate the \textbf{record-attested} cross-session catches (14 attested, 13 classifiable; tabulated in
-the artifact repository) and here name four representative ones, each with the wrong party
-\emph{corrected} against the record after review flagged two mis-attributions in earlier drafts (a
+the artifact repository) and here name four representative ones, each with \emph{attribution
+corrected} against the record after review flagged two mis-attributions in earlier drafts (a
 ``\texttt{backend} tag-flip caught by a peer'' was in fact self-caught, and a claimed ``orb\_slam
 caught four errors'' had no record --- both removed).
 \textbf{image\_gen $\rightarrow$ backend}: backend's RTX-5090 idle-power \emph{denominator}
@@ -405,18 +407,24 @@ re-derivation cost:
   \textbf{cheap} (a runnable probe), \textbf{both arms 6/6 ship the right number} --- the base
   model just does it. The residual real effect is \emph{a disposition at a cost/effort fork},
   not added capability.
-\item \textbf{imx95-media-test} (INT8 class-score collapse; objective corr $>$ 0.90): the fresh
+\item \textbf{imx95-media-test (INT8)} (INT8 class-score collapse; objective corr $>$ 0.90): the fresh
   agent reached the \textbf{same root cause in $\sim$the same $\sim$4 steps}, solved it (6 m 44
   s, 16 calls, cls-corr 0.956). PARTIAL DISCONFIRMATION --- refines the claim to a \emph{bound}
   (below).
-\item \textbf{sizer} (\textbf{the only pre-registered ablation} --- rubric hash published to
+\item \textbf{sizer} (\textbf{one of the two pre-registered ablations} --- rubric hash published to
   the bus before any agent launched; N=3/arm): tests whether a \emph{wrong} carrier actively
   \textbf{harms}. It does \textbf{not} --- stale docs had \textbf{zero measurable effect}
   (misled-to-wrong-file 0/3 in \emph{both} arms; the stale-doc arm was marginally
-  \emph{cheaper}, and every agent detected the staleness unprompted). \emph{Bonus,
-  testimony-free:} a blind zero-context arm caught a real \textbf{overstatement in the author's
+  \emph{cheaper}, and every agent detected the staleness unprompted). \emph{Bonus:}
+  a blind zero-context arm caught a real \textbf{overstatement in the author's
   own case} in nine tool calls.
-\item \textbf{RQ5} (\S V-E): both arms correct with zero help; context bought 2.6$\times$
+\item \textbf{imx95-media-test (C2 open-search sequel)} (\textbf{the second pre-registered ablation}
+  --- rubric hashed and independently witnessed before any arm ran; 4 fresh arms): a distinct
+  experiment from the INT8 ablation above, testing the open-search \emph{ceiling}. Its symmetric
+  falsifier fired --- all 4 arms solved the constructed task at floor cost, so it was secretly
+  bisectable --- and it is reported as a \textbf{NULL}, with the finding \emph{why} (reproducibility
+  $\perp$ open-search; detailed below).
+\item \textbf{RQ5} (\S V-E, the baseline, not an ablation): both arms correct with zero help; context bought 2.6$\times$
   wall-clock and 36\% fewer steps but \textbf{more} tokens.
 \end{itemize}
 
@@ -478,9 +486,9 @@ independently corroborate it.} \textbf{The finding generalizes; the data points 
 replicate} --- stated exactly so a reviewer cannot read ``two nulls'' as ``replicated.''
 \emph{(Sequel artifacts, remote-verified 2026-07-27: pre-registration
 \texttt{imx95-media-test@abeab3dc64cb}, results \texttt{@d35a64bf6d3a}, on
-github.com/kylefoxaustin/imx95-media-test.)} \textbf{Honest asymmetry:} only one of six
-ablations pre-registered its rubric; the other five are honestly-run but \emph{post-hoc graded}
-(\S VI).
+github.com/kylefoxaustin/imx95-media-test.)} \textbf{Honest asymmetry:} two of the six
+ablations pre-registered their rubric (\texttt{sizer} and the C2 sequel); the other four are
+honestly-run but \emph{post-hoc graded} (\S VI).
 
 \textbf{The independence sub-claim (RQ4-adjacent) --- the measured bound, at exactly the strength the
 record supports.} A skeptic rightly objects that our divergence proxies (disjoint task histories, low
@@ -567,8 +575,8 @@ result.
   disabled); the pre-June transcript record is GAP. Longitudinal claims use \texttt{history.jsonl}
   + git, which survive.
 \item \textbf{Ablation methodology.} (a) \emph{Grading
-  asymmetry} --- only one of six ablations (\texttt{sizer}) published its rubric hash
-  \emph{before} results; the other five are honestly-run but \textbf{post-hoc graded}, so
+  asymmetry} --- two of six ablations (\texttt{sizer} and the C2 sequel) published a rubric hash
+  \emph{before} results; the other four are honestly-run but \textbf{post-hoc graded}, so
   retrofitting is disavowed, not detectable. (b) \emph{Isolation is a claim, not a given} --- the
   harness pre-injects a fresh agent's cwd, git status, and memory \emph{index}, so ``blind'' arms
   are mitigated, not sterile; the cleanest arms used \textbf{fictional subjects} (93emulator) or
@@ -646,7 +654,12 @@ revisions, the classes it was structurally positioned not to see --- \textbf{cro
 consistency} (a figure disavowed in one section and featured in another), \textbf{arithmetic} (three
 mismatches in a recompute), \textbf{missing prior art}, and a \textbf{venue-compliance} defect (an AI
 entity in the author block). Independent external review, occupying the \emph{submission} vantage,
-caught precisely those. Same mechanism as \S V-D --- a reviewer catches what its vantage exposes, and
+caught precisely those. \textbf{Each of these defects, and the vantage that caught it, is resolvable}:
+the numbered draft series (\texttt{draft-v1}--\texttt{v5.md}), the internal panel reviews, and the
+external review notes are archived in the artifact repository, and the git history shows when each
+defect entered and was fixed --- so this is not testimony, it is checkable in minutes.
+(By the paper's own rule, a claim a reviewer cannot resolve is not yet evidence; this one now can be.)
+Same mechanism as \S V-D --- a reviewer catches what its vantage exposes, and
 misses what it does not --- with this paper as the specimen: not ``the panel made it sharper,'' but a
 measured account of \emph{which vantage caught which class of defect}. The compounding intuition is
 the \emph{motivating hypothesis we tested and bounded}, not the contribution; the method, demonstrated
