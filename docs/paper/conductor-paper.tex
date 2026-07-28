@@ -112,12 +112,10 @@ is not unfalsifiable: the method claim weakens if the failures the adversarial p
 have been caught as readily by ordinary single-author review, or if the primitives it converged on
 were worse than a competent up-front design. We offer one \emph{observational} signal consistent with
 the method (not a controlled test of it): across the deployment, \textbf{human prompts per active
-project fell $\approx$1.9$\times$} over the steady-state months (70 to 36, May--Jul), \emph{as} the
-number of concurrent projects grew from 16 to 34 (\S V-A). Counting from the substrate's build-out
-month the drop is larger (5.6$\times$ endpoint-to-endpoint) but we do not lead with that figure, since
-April was when the substrate itself was being built. Either way the human moves from courier toward
-architect, which is what the method is for. We report it as a trend with the usual longitudinal
-confounds, not as proof.
+project declined} --- from $\sim$35--40 per project in early May to $\sim$13 by late July (weekly;
+\S V-A) --- \emph{as} the number of concurrent projects grew from 16 to 34. The human moves from
+courier toward architect, which is what the method is for. We report it as a trend with the usual
+longitudinal confounds, not as proof.
 
 \section{Related Work}
 \emph{(Full treatment: \texttt{related-work.md}.)} Capability-aware routing exists but is
@@ -196,10 +194,7 @@ because their divergence is real (different accumulated histories), they attack 
 empirical vantages}, which we measure and \emph{bound} in \S V-D: they are independent \emph{only
 relative to} that divergence, not absolutely, so this is not self-review by one model echoing itself,
 but neither do we claim uncorrelated errors in the estimator sense (\S V-D); (4) the human gates only
-the irreversible. This is not self-review by one model --- self-review by one model is void --- it is
-review by \textbf{estimators made
-independent through context divergence}, a property we must and do argue mechanistically, not
-assume.
+the irreversible.
 
 \section{Evaluation}
 Every quantitative claim below carries an explicit \emph{provenance tier}; the fleet adopted these as
@@ -226,12 +221,13 @@ repro.-in-principle & a recipe that outlives the record but has not been re-exec
 \end{table}
 
 \emph{Corpus, MEASURED from git + bus + \texttt{history.jsonl}, \textbf{as-of 2026-07-27
-22:38}} (every count carries this stamp --- the log is append-only and non-stationary, so a
-bare number is under-specified): 279 commits; 47 version landings; \textbf{2,738} bus messages
-/ \textbf{55} senders (1,103 directed, 1,107 broadcast, 521 announcement; directed share
-40.3\%); 6,307 human prompts across 46 projects back to 2026-01-14. Division of labour is
-\textbf{spread but with a real head, not a power law} --- computed by the harvester, not asserted
-(\texttt{evidence-harvest.py} \texttt{\_concentration}, over the 2,733 non-system messages):
+22:54}} (every count carries this stamp --- the log is append-only and non-stationary, so a
+bare number is under-specified): 280 commits (38 of type \texttt{fix}); 47 version landings;
+\textbf{2,738} bus messages, of which \textbf{2,733} are non-system, from \textbf{55} senders
+(1,090 directed + 1,117 broadcast + 526 announcement $=$ 2,733; directed share 39.9\%);
+6,307 human prompts across 46 projects back to 2026-01-14. Division of labour is
+\textbf{spread but with a real head, not a power law} --- the concentration computed by the harvester
+(\texttt{evidence-harvest.py} \texttt{\_concentration}), the addressing classified from the same log:
 \textbf{Gini 0.693}, top sender 9.4\%, top-3 25.5\%, and \textbf{13 of 55 senders to reach 80\%.}
 Many peers carry load, no single dominant author, but a genuine concentration we report rather than
 round off to ``distributed.'' \textbf{Reflexivity confound --- controlled, not just conceded.}
@@ -244,7 +240,7 @@ top-3 26.4\%, 13 of 52 senders to 80\%} --- \emph{indistinguishable} from the fu
 deployment, not of the paper's own threads; the reflexivity we flag elsewhere does \emph{not}
 contaminate this result, and we report both numbers so the reader can see that it does not.
 \subsection{RQ1 --- Courier elimination (proxy, with a latency tradeoff)}
-949 directed messages were auto-delivered --- hand-offs a human would otherwise relay (a
+1,090 directed messages (as-of the corpus stamp) were auto-delivered --- hand-offs a human would otherwise relay (a
 \emph{ceiling on relays avoided}, v2.19+). But the mechanism is unreliable: in this paper's
 own production, a job dispatched to a peer failed to auto-wake it (stale watermark), and
 \textbf{the human relayed it}. We report the counterexample. The correct human-touch
@@ -254,13 +250,14 @@ transcripts (a 30-day cleanup horizon, \S VI) which also carry an \textbf{11.9$\
 
 \textbf{The longitudinal human-touch series (the method's clearest observational signal).}
 From \texttt{history.jsonl} (human prompts only, un-swept back to January), we normalize touches by
-\emph{active project} per month (Table~\ref{tab:touch}). Over the \textbf{steady-state months}
-(May--Jul) human prompts per active project fall from 70 to 36 --- a $\approx$\textbf{1.9$\times$}
-reduction --- \emph{while} concurrent projects grow from 16 to 34. We lead with this figure rather than
-the larger endpoint-to-endpoint one ($5.6\times$, counting from April's 203): \textbf{April was the
-substrate's build-out month} --- when the coordination primitives themselves were being written --- so
-its per-project touch is bootstrap-heavy and not comparable to steady-state operation, exactly as
-January and March are omitted. Either way, this is the one longitudinal result that speaks to the
+\emph{active project} per month (Table~\ref{tab:touch}). \textbf{Three monthly buckets cannot
+establish a trend}, and the middle is non-monotonic (June $\approx$ May), so we report the \emph{shape},
+not a single ratio: prompts per active project sit near 70 across May--June, then \textbf{drop to 36 in
+July}, \emph{while} concurrent projects grow from 16 to 34 (April, the substrate's build-out month, is
+excluded as bootstrap-heavy, as January and March are). To check whether July's drop is a trend or a
+single step, a \textbf{finer weekly breakdown} (14 weeks, artifact repo) shows a consistent downward
+drift --- from $\sim$35--40 prompts/project in early May to $\sim$13 by late July --- so we read it as
+a sustained decline, not a one-month artifact. This is the one longitudinal signal that speaks to the
 \emph{method} claim rather than the compounding claim: as the substrate matures and carries more work
 in parallel, the human's per-project involvement drops, which is the courier $\rightarrow$ architect
 shift the method is for. We report it with the standard longitudinal confounds --- the task mix
@@ -270,8 +267,9 @@ changed, the operator learned, and per-\emph{active}-project is a proxy for per-
 \begin{table}[t]
 \centering\footnotesize
 \caption{Human touch per active project (\texttt{history.jsonl}). Jan/Mar (1 and 7 prompts) are
-pre-ramp startup and omitted. April is the substrate's build-out month (bootstrap-heavy); the headline
-$1.9\times$ is the steady-state May--Jul reduction, not the endpoint-to-endpoint $5.6\times$.}
+pre-ramp startup and April the substrate's build-out month, all bootstrap-heavy and omitted. Three
+buckets cannot establish a trend and June~$\approx$~May; we report the shape (near 70 May--June, then
+36 in July), corroborated by a 14-week breakdown (artifact repo).}
 \label{tab:touch}
 \begin{tabular}{lrrr}
 \toprule
@@ -295,7 +293,7 @@ is \emph{attention saved}, not \emph{time saved} --- RQ5 (\S V-E) shows the same
 single-agent level (context bought steps and wall-clock but \emph{more} tokens).
 
 \subsection{RQ2 --- Failure modes closed, with real ablations (+ the defect taxonomy)}
-MEASURED: of 35 \texttt{fix} commits, $\sim$20 close \emph{named coordination failure modes}.
+MEASURED: of the 38 \texttt{fix} commits (as-of the corpus stamp), $\sim$20 close \emph{named coordination failure modes}.
 Several are \textbf{ablation-structured} --- disable the mechanism, the failure returns --- and
 at least one ablation \emph{ran in operation}: the SHA-pinned push token, unpinned, would let
 an approval for commit A push commit B; the gate \textbf{refused a stale approval live} during
@@ -483,11 +481,11 @@ record supports.} A skeptic rightly objects that our divergence proxies (disjoin
 memory-file overlap, divergent tool-call sequences) measure divergence of \emph{inputs}, whereas
 independence of estimators requires uncorrelated \emph{errors} --- and two same-model sessions share a
 generative prior, so their reasoning errors can correlate even with different inputs. We tested this
-directly rather than waving at it. We classified all \textbf{14 record-attested cross-session catches}
-(\S V-C) as \textbf{factual/local} (a discrete fact the catcher held differently) vs.\
-\textbf{reasoning-shaped} (the catcher reasoned to a different conclusion). The split is
-$\approx$\textbf{1:1} (6 or 7 factual, 7 reasoning-shaped) --- which \emph{at face value would
-refute} an ``input-divergence-only'' reading. But the honest reading is narrower, and it is the one
+directly rather than waving at it. We classified the \textbf{13 solid record-attested cross-session
+catches} (\S V-C; a 14th is an incidental exposure, excluded) as \textbf{factual/local} (a discrete
+fact the catcher held differently) vs.\ \textbf{reasoning-shaped} (the catcher reasoned to a
+different conclusion). The split is \textbf{6 factual, 7 reasoning-shaped} --- $\approx$1:1, which
+\emph{at face value would refute} an ``input-divergence-only'' reading. But the honest reading is narrower, and it is the one
 the record supports: \textbf{every reasoning-shaped catch was made by a peer at a different
 \emph{empirical vantage}} --- a measurement relocated into the subject (a guest-emitted clock),
 different physical silicon, or the ship-vs-implement test-direction asymmetry --- \textbf{not by an
@@ -634,10 +632,19 @@ this honesty (peers refuting the lead over the bus, an ablation refuting its own
 \emph{the method} --- \textbf{in-vivo adversarial co-design of a coordination substrate by
 persistent, context-divergent peers under a human gating only irreversibility} --- offered as an
 existence proof with a mechanism, not a validated superiority. Its cleanest reflexive demonstration
-is that \textbf{the paper survived its own three-lens peer panel, getting sharper at each pass}, and
-that writing it functioned as an instrument (\S V-F, an operational finding with a stated hit-rate).
-The compounding intuition is the \emph{motivating hypothesis we tested and bounded}, not the
-contribution; the method, demonstrated on itself, is.
+is the paper's own review, and it is \emph{evidenced, not testimonial}, because it instantiates the
+very vantage bound of \S V-D one level up. The fleet's internal panel occupied the \emph{deployment}
+vantage --- it could see the substrate, the commits, the ablations --- and caught \textbf{substance}:
+a circularity, a single-model confound, unrun ablations. It \emph{missed}, across five internal
+revisions, the classes it was structurally positioned not to see --- \textbf{cross-section
+consistency} (a figure disavowed in one section and featured in another), \textbf{arithmetic} (three
+mismatches in a recompute), \textbf{missing prior art}, and a \textbf{venue-compliance} defect (an AI
+entity in the author block). Independent external review, occupying the \emph{submission} vantage,
+caught precisely those. Same mechanism as \S V-D --- a reviewer catches what its vantage exposes, and
+misses what it does not --- with this paper as the specimen: not ``the panel made it sharper,'' but a
+measured account of \emph{which vantage caught which class of defect}. The compounding intuition is
+the \emph{motivating hypothesis we tested and bounded}, not the contribution; the method, demonstrated
+on itself --- including on the limits of its own review --- is.
 
 \textbf{A transferable secondary contribution} the deployment produced, and one we think travels
 beyond this setting: a \emph{non-independence discipline for corroboration}. When two of the fleet's
@@ -660,10 +667,9 @@ moment, not yet evidence.
 
 \section*{Appendix: Evidence vs.\ Illustration}
 \textbf{Evidence (MEASURED):} the mechanical record (git, bus, \texttt{history.jsonl}, spend
-meter), the \textbf{six A/B ablations}
-(\texttt{ablation\_\{mcxn,mahjong-together,93emulator,imx95-media-test,sizer,sizer-PREREGISTERED\}.md}),
-and the \textbf{pre-registered RQ5 baseline} (\texttt{cases\_rq5-baseline.md} + the frozen
-spec/test + both arms' diffs). These carry the headline claims. \textbf{Illustration (dataset,
+meter), the \textbf{six A/B ablations} (the \texttt{ablation\_*.md} files, artifact repo), and the
+\textbf{pre-registered RQ5 baseline} (\texttt{cases\_rq5-baseline.md} plus the frozen spec/test and
+both arms' diffs). These carry the headline claims. \textbf{Illustration (dataset,
 not evidence):} twenty first-person \texttt{cases\_*.md} specimens + the platform specimen
 \texttt{cases\_cleanup-timer}, retained to illustrate design patterns, not cited as proof of
 any headline claim. Curated to five in-body illustrations, each mapping to a distinct claim:
@@ -701,8 +707,11 @@ records for the quantitative evidence. The \textbf{human author} set the goal, m
 irreversible decision (each \texttt{git push} was human-gated), chose the framing and the venue,
 took final responsibility for every claim, and is the sole party accountable for this submission. No
 text was accepted without human review. All quantitative results were re-derived from the primary
-records cited. Per ACM/IEEE authorship policy, the generative-AI system is \emph{not} an author; its
-contribution is disclosed here and acknowledged below.
+records cited. \textbf{Independent human external review} (two rounds) then caught defect classes the
+fleet's own review structurally could not --- cross-section consistency, arithmetic, and
+venue-compliance --- and drove the final revisions; \S VII notes why this split falls out of the
+paper's own thesis. Per ACM/IEEE authorship policy, the generative-AI system is \emph{not} an author;
+its contribution is disclosed here and acknowledged below.
 
 \section*{Acknowledgment}
 The author thanks the Conductor fleet --- the persistent \emph{Claude Code} sessions
