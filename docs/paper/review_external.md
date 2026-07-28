@@ -105,3 +105,33 @@ acknowledgment. For a paper about agent co-authorship, disclosure is *stronger* 
 - [ ] Artifact repos public + resolvable
 - [ ] Every citation verifiable (ICSE checks for hallucinated/fabricated refs)
 - [ ] All counts re-stamped to a fresh as-of date (non-stationary log)
+
+## 5. Subsequent review rounds (the external exchange, logged for §VIII resolvability)
+
+§VIII claims a specific defect was caught at each vantage; this log makes the *external* half of
+that claim resolvable, anchored to the commit that resolved each round. The section above (§0–§4) is
+round 1 (the desk-reject blocker + the first structural pass). Rounds 2+ arrived as review notes and
+were resolved in the paper's `.tex` git history:
+
+| round | what the external vantage caught | resolved in |
+|---|---|---|
+| 0 | AI entity in the author block (venue-compliance desk-reject) | `1118692` |
+| 1 | intro reframe (P0), human-touch series, prior art, 8 of 10 structural items + item 1.3 provenance | `63de2b3`, `87caf9d` |
+| 2 | v6 consistency — a disavowed-then-featured figure; three arithmetic mismatches in a recompute | `abc8061` |
+| 3 | the vantage-one-level-up reframe for §VIII; further numeric/consistency fixes | `ab9c372` |
+| 4 | first pass on the typeset two-column build — 8 small items | `6df6116` |
+| 5 | six-ablation count did not resolve (5 bulleted, 6 claimed); GAP tag; a vantage claim a reviewer couldn't check | `bc2f62b` |
+| 6 | **an external suggestion (round 5: bullet C2 to make the count resolve) had itself introduced a rigor overclaim** — promoting C2 to a pre-registered ablation moved the pre-registration count *up*, in the one section sworn to honest asymmetry | *(this round)* |
+
+**The round-6 observation, recorded because it is itself an instance of the paper's thesis (§V-D
+and §VIII):** the round-5 fix — a reviewer's own suggestion to make a count resolve — introduced an
+overclaim, which the round-6 external pass caught. A reviewer catches what its vantage exposes and
+misses what it does not, *including its own prior suggestion* — so the external vantage is visibly
+not privileged either. Resolution: on checking the record (`ablation_imx95-media-test-C2-PREREGISTERED.md`,
+which has a dedicated "Context arm (from record)" section, and `-C2-RESULTS.md`), the round-6
+*premise* was itself overturned — C2 **does** have a context-carrying arm (Arm A, scored from
+record; R1–R4 satisfied at ≈one message), so it is a genuine A/B ablation and "two of six
+pre-registered" stands. What did need fixing: C2's context arm was never *surfaced* in the prose,
+and C2 (a pre-registered NULL, its falsifier fired) was wrongly folded into the affirmative
+efficiency-not-capability verdict. Both corrected this round. Three vantages in series, each
+correcting the last — the specimen the paper is about.

@@ -419,10 +419,14 @@ re-derivation cost:
   a blind zero-context arm caught a real \textbf{overstatement in the author's
   own case} in nine tool calls.
 \item \textbf{imx95-media-test (C2 open-search sequel)} (\textbf{the second pre-registered ablation}
-  --- rubric hashed and independently witnessed before any arm ran; 4 fresh arms): a distinct
-  experiment from the INT8 ablation above, testing the open-search \emph{ceiling}. Its symmetric
-  falsifier fired --- all 4 arms solved the constructed task at floor cost, so it was secretly
-  bisectable --- and it is reported as a \textbf{NULL}, with the finding \emph{why} (reproducibility
+  --- rubric hashed and independently witnessed before any arm ran): a distinct
+  experiment from the INT8 ablation above, testing the open-search \emph{ceiling}, with the same
+  A/B shape --- \textbf{Arm~A} the context-carrying session (scored from record: it produced the
+  correct empirical rule immediately on the bus, R1--R4 satisfied at $\approx$one message) vs.\
+  \textbf{Arm~B} four fresh isolated agents. Its symmetric
+  falsifier fired --- all four fresh arms \emph{also} solved the constructed task at floor cost, so it
+  was secretly bisectable --- and it is reported as a \textbf{NULL} (no capability gap observed, but
+  no clean ceiling measurement either), with the finding \emph{why} (reproducibility
   $\perp$ open-search; detailed below).
 \item \textbf{RQ5} (\S V-E, the baseline, not an ablation): both arms correct with zero help; context bought 2.6$\times$
   wall-clock and 36\% fewer steps but \textbf{more} tokens.
@@ -439,19 +443,25 @@ check it against). \textbf{The efficiency/capability line, made operational (so 
 is falsifiable, not a relabel that absorbs every gain):} we score an ablation arm as a
 \textbf{capability} gain iff the context-carrying arm \emph{reaches a correct fix the fresh arm
 does NOT}, and as an \textbf{efficiency} gain iff it reaches the \emph{same} correct fix
-\emph{more cheaply} (fewer steps/tokens/time). Under that test the six ablations + RQ5 are
-\textbf{efficiency, not capability} --- every fresh arm reached a correct fix (16/16, 3/3, 6/6,
-both RQ5 arms), so the measured advantages (RQ5's 2.6$\times$ fewer steps; mahjong's flat
-outcome) are cheaper-path, not can-vs-cannot. \emph{This is a falsifiable claim: a single
+\emph{more cheaply} (fewer steps/tokens/time). Under that test the \textbf{five floor ablations +
+RQ5 are efficiency, not capability} --- across every arm the fresh agent reached a correct fix
+(mahjong 16/16, mcxn947 3/3, 93emulator 6/6, INT8 in $\sim$4 steps, sizer 0/3-misled in
+\emph{both} arms, both RQ5 arms), so the measured advantages (RQ5's 2.6$\times$ fewer steps;
+mahjong's flat outcome) are cheaper-path, not can-vs-cannot. \textbf{C2, the sixth ablation, is
+excluded from this verdict on purpose:} both its arms reached the answer, but its symmetric
+falsifier fired (the task was not genuinely open-search), so C2 yields \emph{no}
+capability-vs-efficiency signal about the ceiling --- it is a pre-registered NULL (below), not a
+data point in the efficiency finding. \emph{This is a falsifiable claim: a single
 ablation where the fresh arm FAILS and the context arm succeeds would move it to
 ``capability'' --- we looked and did not find one on the tasks tested.} The
 \textbf{defensible, bounded RQ4b claim:} accumulated context compounds \textbf{most on an open
 search a fresh agent cannot cheaply bisect} and \textbf{least on a crisp symptom with an
 objective oracle} (any agent bisects fast); on some specimens context even shows a
 \textbf{thoroughness regression} (pattern-match-and-stop). \textbf{This bound is half-measured:
-the crisp-symptom FLOOR is MEASURED (all six ablations bisected fast); the open-search CEILING
+the crisp-symptom FLOOR is MEASURED (the five floor ablations bisected fast, and even C2's ceiling
+attempt collapsed to a fast bisection); the open-search CEILING
 resists measurement --- and we report the \emph{pre-registered sequel that tried to measure it
-and why it could not.}} A fresh attempt (imx95-media-test, rubric hashed and bus-published +
+and why it could not.}} A fresh attempt (imx95-media-test, C2 --- rubric hashed and bus-published +
 independently witnessed BEFORE any arm ran) built a ``hard'' open-search task in a sterile,
 reproducible sandbox; its pre-registered symmetric falsifier fired: all 4 fresh arms reached
 the correct answer at floor cost ($\sim$4 tool calls, $\sim$60 s), so the task was secretly
@@ -655,9 +665,13 @@ consistency} (a figure disavowed in one section and featured in another), \textb
 mismatches in a recompute), \textbf{missing prior art}, and a \textbf{venue-compliance} defect (an AI
 entity in the author block). Independent external review, occupying the \emph{submission} vantage,
 caught precisely those. \textbf{Each of these defects, and the vantage that caught it, is resolvable}:
-the numbered draft series (\texttt{draft-v1}--\texttt{v5.md}), the internal panel reviews, and the
-external review notes are archived in the artifact repository, and the git history shows when each
-defect entered and was fixed --- so this is not testimony, it is checkable in minutes.
+the numbered draft series (\texttt{draft-v1}--\texttt{v5.md}) and the submitted
+\texttt{conductor-paper.tex} itself, the internal panel reviews, and the external review notes
+(\texttt{review\_external.md}, which records each round) are all archived and pushed in the artifact
+repository, and the git history of the paper shows when each defect entered and was fixed --- the
+internal-panel catches in the draft series, the external-review catches (the disavowed-then-featured
+figure, the arithmetic, the prior art, the author-block entity) in the post-v5 \texttt{.tex}
+revisions --- so this is not testimony, it is checkable in minutes.
 (By the paper's own rule, a claim a reviewer cannot resolve is not yet evidence; this one now can be.)
 Same mechanism as \S V-D --- a reviewer catches what its vantage exposes, and
 misses what it does not --- with this paper as the specimen: not ``the panel made it sharper,'' but a
@@ -720,13 +734,14 @@ This paper reports on, and was substantially produced by, a fleet of \emph{Claud
 We disclose the division of labour precisely, because for this subject it is itself a finding. The
 agent sessions: drafted the prose of every section across five revisions; \emph{adversarially
 peer-reviewed} one another's drafts on the shared bus and produced the three-lens review that forced
-the v2 and v4 reframes; designed, pre-registered, and executed the six A/B ablations, the RQ5
-baseline, and the RQ4b open-search-ceiling sequel; and mined the git, bus, and \texttt{history.jsonl}
+the v2 and v4 reframes; designed and executed the six A/B ablations --- two of them (\texttt{sizer}
+and the C2 open-search-ceiling sequel) pre-registered --- and the RQ5
+baseline; and mined the git, bus, and \texttt{history.jsonl}
 records for the quantitative evidence. The \textbf{human author} set the goal, made every
 irreversible decision (each \texttt{git push} was human-gated), chose the framing and the venue,
 took final responsibility for every claim, and is the sole party accountable for this submission. No
 text was accepted without human review. All quantitative results were re-derived from the primary
-records cited. \textbf{Independent human external review} (two rounds) then caught defect classes the
+records cited. \textbf{Independent human external review} (multiple rounds) then caught defect classes the
 fleet's own review structurally could not --- cross-section consistency, arithmetic, and
 venue-compliance --- and drove the final revisions; \S VIII notes why this split falls out of the
 paper's own thesis. Per ACM/IEEE authorship policy, the generative-AI system is \emph{not} an author;
