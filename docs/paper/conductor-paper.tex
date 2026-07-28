@@ -29,8 +29,8 @@
 % administrative DESK-REJECT. The fleet's contribution is instead DISCLOSED precisely (see the
 % "Disclosure: Use of Generative AI" section) + acknowledged. For a paper whose subject IS agent
 % co-authorship, an explicit division-of-labour disclosure is stronger than a byline anyway.
-\title{Conductor: An Experience Report on In-Vivo Adversarial\\
-       Co-Design of a Multi-Session Agent Substrate}
+\title{Conductor: An Experience Report on\\
+       In-Vivo Adversarial Co-Design of a Multi-Session Agent Substrate}
 
 \author{\IEEEauthorblockN{Kyle Fox}
 \IEEEauthorblockA{Independent Researcher\\
@@ -100,7 +100,7 @@ We claim neither statistical generality ($N{=}1$ deployment) nor emergent intell
 We are explicit about the epistemic status of each contribution up front, because they are not
 equal. \textbf{We set out to demonstrate \emph{compounding competence}} --- that a context-heavy
 peer substrate gets cheaper and better on task $N{+}1$ because of tasks $1{\dots}N$. \textbf{It did
-not survive.} Six pre-registered A/B ablations and a controlled baseline (\S V-D, \S V-E) show that a
+not survive.} Six A/B ablations and a pre-registered controlled baseline (\S V-D, \S V-E) show that a
 fresh session \emph{holding the committed carrier} re-derives the fixes with no session-memory: what
 compounds is the carrier, and lived context buys \emph{efficiency and recognition}, not raw
 capability. That negative is the paper's most solid \emph{evaluated} result, and it is stated as one.
@@ -112,10 +112,10 @@ is not unfalsifiable: the method claim weakens if the failures the adversarial p
 have been caught as readily by ordinary single-author review, or if the primitives it converged on
 were worse than a competent up-front design. We offer one \emph{observational} signal consistent with
 the method (not a controlled test of it): across the deployment, \textbf{human prompts per active
-project declined} --- from $\sim$35--40 per project in early May to $\sim$13 by late July (weekly;
-\S V-A) --- \emph{as} the number of concurrent projects grew from 16 to 34. The human moves from
-courier toward architect, which is what the method is for. We report it as a trend with the usual
-longitudinal confounds, not as proof.
+project declined} --- from near 70 across May--June to 36 in July (monthly; a finer weekly series in
+\S V-A shows the same direction) --- \emph{as} the number of concurrent projects grew from 16 to 34.
+The human moves from courier toward architect, which is what the method is for. We report it as a
+trend with the usual longitudinal confounds, not as proof.
 
 \section{Related Work}
 \emph{(Full treatment: \texttt{related-work.md}.)} Capability-aware routing exists but is
@@ -240,10 +240,13 @@ top-3 26.4\%, 13 of 52 senders to 80\%} --- \emph{indistinguishable} from the fu
 deployment, not of the paper's own threads; the reflexivity we flag elsewhere does \emph{not}
 contaminate this result, and we report both numbers so the reader can see that it does not.
 \subsection{RQ1 --- Courier elimination (proxy, with a latency tradeoff)}
-1,090 directed messages (as-of the corpus stamp) were auto-delivered --- hand-offs a human would otherwise relay (a
-\emph{ceiling on relays avoided}, v2.19+). But the mechanism is unreliable: in this paper's
-own production, a job dispatched to a peer failed to auto-wake it (stale watermark), and
-\textbf{the human relayed it}. We report the counterexample. The correct human-touch
+1,090 directed messages (as-of the corpus stamp) are \emph{candidates} for auto-delivery ---
+hand-offs a human would otherwise relay --- so the count is a \textbf{ceiling on relays avoided},
+not a claim that all were delivered (auto-delivery is a runtime event the bus log does not record, so
+we report the ceiling the mechanism could eliminate, not the realized figure). Indeed the mechanism
+is unreliable: in this paper's own production, a directed job failed to auto-wake its peer (stale
+watermark) and \textbf{the human relayed it} --- an actual delivery below the ceiling. We report the
+counterexample. The correct human-touch
 \textbf{instrument} is \texttt{history.jsonl} (un-swept, back to January), \emph{not}
 transcripts (a 30-day cleanup horizon, \S VI) which also carry an \textbf{11.9$\times$
 \texttt{tool\_result} overcount} trap.
@@ -255,9 +258,12 @@ establish a trend}, and the middle is non-monotonic (June $\approx$ May), so we 
 not a single ratio: prompts per active project sit near 70 across May--June, then \textbf{drop to 36 in
 July}, \emph{while} concurrent projects grow from 16 to 34 (April, the substrate's build-out month, is
 excluded as bootstrap-heavy, as January and March are). To check whether July's drop is a trend or a
-single step, a \textbf{finer weekly breakdown} (14 weeks, artifact repo) shows a consistent downward
-drift --- from $\sim$35--40 prompts/project in early May to $\sim$13 by late July --- so we read it as
-a sustained decline, not a one-month artifact. This is the one longitudinal signal that speaks to the
+single step, a \textbf{finer weekly breakdown} (14 weeks, artifact repo) shows the same downward
+\emph{direction} --- from the $\sim$35--40 band in early May to the $\sim$13 band by late July --- so
+we read it as a sustained decline, not a one-month artifact. \textbf{The weekly and monthly figures
+are not directly comparable in magnitude}: the weekly series divides by projects active \emph{that
+week} (fewer than in a month), so its per-project counts run lower; we use it only to confirm the
+\emph{shape}, not to sharpen the ratio. This is the one longitudinal signal that speaks to the
 \emph{method} claim rather than the compounding claim: as the substrate matures and carries more work
 in parallel, the human's per-project involvement drops, which is the courier $\rightarrow$ architect
 shift the method is for. We report it with the standard longitudinal confounds --- the task mix
@@ -341,7 +347,7 @@ not the RQ3 claim): MEASURED (jaws), a 38-Bash-call build had \textbf{17 measure
 \texttt{/proc} probes, 4 runs) --- a vantage a browser assistant could not occupy, proven from
 the event log. \textbf{(ii) A peer caught what the author shipped} (the actual RQ3 claim, and
 it needs the \emph{same} timestamp rigor --- A ships at t0, B refutes at t1, both from the
-record). We enumerate the \textbf{record-attested} cross-session catches (14 in total, tabulated in
+record). We enumerate the \textbf{record-attested} cross-session catches (14 attested, 13 classifiable; tabulated in
 the artifact repository) and here name four representative ones, each with the wrong party
 \emph{corrected} against the record after review flagged two mis-attributions in earlier drafts (a
 ``\texttt{backend} tag-flip caught by a peer'' was in fact self-caught, and a claimed ``orb\_slam
@@ -578,7 +584,7 @@ result.
   caught by a peer'' was in fact self-caught, and ``orb\_slam caught four independent errors'' had no
   case-file or bus record --- and both were removed (\S V-C). We report the contraction rather than
   quietly correcting it, because it is itself evidence for the provenance discipline the paper claims:
-  the corpus is what the record supports (14 catches), not what narration remembered.
+  the corpus is what the record supports (14 attested, 13 classifiable), not what narration remembered.
 \end{itemize}
 
 \section{Future Work: A Pre-Registered Replication}
@@ -616,7 +622,7 @@ per-context memory, a shared bus, a human-as-architect gate calibrated to revers
 hardened \emph{in vivo} by its own context-divergent peers. Its most defensible results are on
 the mechanical record: a load-sharing division of labour (many peers, a measured head --- Gini
 0.693 --- but no dominant orchestrator), named failure modes closed with at least one live
-ablation, and machine-evidenced bystander discovery (a cross-session catch corpus of 14, audited and
+ablation, and machine-evidenced bystander discovery (a cross-session catch corpus of 14 attested / 13 classifiable, audited and
 bounded in \S V-D). The paper-as-instrument effect (\S V-F) is reported separately as an operational
 finding with a stated hit-rate and no control arm, not among these. Its headline intuition ---
 compounding competence ---
@@ -709,7 +715,7 @@ took final responsibility for every claim, and is the sole party accountable for
 text was accepted without human review. All quantitative results were re-derived from the primary
 records cited. \textbf{Independent human external review} (two rounds) then caught defect classes the
 fleet's own review structurally could not --- cross-section consistency, arithmetic, and
-venue-compliance --- and drove the final revisions; \S VII notes why this split falls out of the
+venue-compliance --- and drove the final revisions; \S VIII notes why this split falls out of the
 paper's own thesis. Per ACM/IEEE authorship policy, the generative-AI system is \emph{not} an author;
 its contribution is disclosed here and acknowledged below.
 
