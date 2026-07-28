@@ -418,12 +418,13 @@ re-derivation cost:
   \emph{cheaper}, and every agent detected the staleness unprompted). \emph{Bonus:}
   a blind zero-context arm caught a real \textbf{overstatement in the author's
   own case} in nine tool calls.
-\item \textbf{imx95-media-test (C2 open-search sequel)} (\textbf{the second pre-registered ablation}
-  --- rubric hashed and independently witnessed before any arm ran): a distinct
+\item \textbf{imx95-media-test (C2 open-search sequel)} (\textbf{pre-registered rubric}
+  --- hashed and independently witnessed before the fresh arms ran; Arm~A scored \emph{post-hoc}
+  from the bus record): a distinct
   experiment from the INT8 ablation above, testing the open-search \emph{ceiling}, with the same
-  A/B shape --- \textbf{Arm~A} the context-carrying session (scored from record: it produced the
-  correct empirical rule immediately on the bus, R1--R4 satisfied at $\approx$one message) vs.\
-  \textbf{Arm~B} four fresh isolated agents. Its symmetric
+  A/B shape --- \textbf{Arm~A} the context-carrying session (scored post-hoc from record: it produced
+  the correct empirical rule immediately on the bus, R1--R4 satisfied at $\approx$one message) vs.\
+  \textbf{Arm~B} four fresh isolated agents run under the hashed rubric. Its symmetric
   falsifier fired --- all four fresh arms \emph{also} solved the constructed task at floor cost, so it
   was secretly bisectable --- and it is reported as a \textbf{NULL} (no capability gap observed, but
   no clean ceiling measurement either), with the finding \emph{why} (reproducibility
@@ -443,10 +444,10 @@ check it against). \textbf{The efficiency/capability line, made operational (so 
 is falsifiable, not a relabel that absorbs every gain):} we score an ablation arm as a
 \textbf{capability} gain iff the context-carrying arm \emph{reaches a correct fix the fresh arm
 does NOT}, and as an \textbf{efficiency} gain iff it reaches the \emph{same} correct fix
-\emph{more cheaply} (fewer steps/tokens/time). Under that test the \textbf{five floor ablations +
-RQ5 are efficiency, not capability} --- across every arm the fresh agent reached a correct fix
-(mahjong 16/16, mcxn947 3/3, 93emulator 6/6, INT8 in $\sim$4 steps, sizer 0/3-misled in
-\emph{both} arms, both RQ5 arms), so the measured advantages (RQ5's 2.6$\times$ fewer steps;
+\emph{more cheaply} (fewer steps/tokens/time). Under that test the \textbf{five floor ablations} (the five non-C2 ablations, all testing the
+crisp-symptom floor) \textbf{+ RQ5 are efficiency, not capability} --- across every arm the fresh agent reached a correct fix
+(mahjong 16/16, mcxn947 3/3, 93emulator 6/6, INT8 in $\sim$4 steps, sizer 3/3 correct in
+\emph{both} arms (0/3 misled), both RQ5 arms), so the measured advantages (RQ5's 2.6$\times$ fewer steps;
 mahjong's flat outcome) are cheaper-path, not can-vs-cannot. \textbf{C2, the sixth ablation, is
 excluded from this verdict on purpose:} both its arms reached the answer, but its symmetric
 falsifier fired (the task was not genuinely open-search), so C2 yields \emph{no}
@@ -587,11 +588,15 @@ result.
 \item \textbf{Ablation methodology.} (a) \emph{Grading
   asymmetry} --- two of six ablations (\texttt{sizer} and the C2 sequel) published a rubric hash
   \emph{before} results; the other four are honestly-run but \textbf{post-hoc graded}, so
-  retrofitting is disavowed, not detectable. (b) \emph{Isolation is a claim, not a given} --- the
+  retrofitting is disavowed, not detectable. \texttt{sizer} is the \emph{only} ablation whose
+  \textbf{both} arms ran under a pre-published rubric; C2's pre-registration covers its rubric and
+  its fresh (Arm~B) runs, but its Arm~A was scored post-hoc from record ((c) below), so C2 sits
+  partly in both categories. (b) \emph{Isolation is a claim, not a given} --- the
   harness pre-injects a fresh agent's cwd, git status, and memory \emph{index}, so ``blind'' arms
   are mitigated, not sterile; the cleanest arms used \textbf{fictional subjects} (93emulator) or
   audited each agent's actual tool calls. (c) \emph{Historical arms are not re-runnable} --- some
-  context-carrying arms are transcripts of past work (the answer already known), so they bound
+  context-carrying arms (the INT8 ablation's Arm~A and C2's Arm~A) are transcripts of past work
+  (the answer already known), so they bound
   rather than measure. (d) \emph{N is small} (1--8/arm) and outcomes are often categorical (no
   variance). Each is stated in the individual \texttt{ablation\_*.md}.
 \item \textbf{$N{=}1$, one operator, one workstation, one model family.}
@@ -732,7 +737,7 @@ logged as \S V-F specimens, not hidden.
 This paper reports on, and was substantially produced by, a fleet of \emph{Claude Code}
 (Anthropic) sessions --- the same system the paper studies --- under the human author's direction.
 We disclose the division of labour precisely, because for this subject it is itself a finding. The
-agent sessions: drafted the prose of every section across five revisions; \emph{adversarially
+agent sessions: drafted the prose of every section across the full draft series; \emph{adversarially
 peer-reviewed} one another's drafts on the shared bus and produced the three-lens review that forced
 the v2 and v4 reframes; designed and executed the six A/B ablations --- two of them (\texttt{sizer}
 and the C2 open-search-ceiling sequel) pre-registered --- and the RQ5
