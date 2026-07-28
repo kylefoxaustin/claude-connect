@@ -57,9 +57,9 @@ task-cheap, we ran six A/B ablations and a pre-registered baseline. The result i
 stamp: a fresh clone \emph{holding the committed carrier} re-derives the fixes with no
 session-memory, so what compounds is the carrier, and lived context buys \emph{efficiency and
 recognition}, not raw capability, on the tasks tested --- a sharpened, partly-negative finding
-we report in full. We surface one testimony-free result we did not anticipate: writing this
-paper functioned as an instrument, forcing sessions to verify documented claims and producing
-real, git-recorded defect corrections as a side effect, in 4 of 19 case-writing sessions.
+we report in full. We also surface an unanticipated operational finding (with a stated hit-rate and
+no control arm): writing this paper functioned as an instrument, prompting sessions to verify claims
+taken on trust and producing git-recorded defect corrections in 4 of 19 case-writing sessions.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -83,7 +83,10 @@ contributions, stated at the level the evidence supports:
   The substrate's primitives were not designed up front; they were \emph{provoked by
   silent-loss failures} the fleet hit in operation, proposed and attacked by peers on the bus,
   and gated by a human whose approval is scoped to \emph{irreversibility} (commits are free;
-  pushes, and anything that outlives the session, are gated). This is the reusable contribution.
+  pushes, and anything that outlives the session, are gated). We present it as a \emph{replicable
+  process with a stated mechanism and an existence proof} --- it produced and hardened a working
+  substrate --- \textbf{not} as a result validated against the alternative (an engineer designing
+  the primitives up front); we did not run that comparison, and we say so plainly (\S I-A).
 \item \textbf{A system} implementing it (bus, verified orders, a project layer, a decision
   shield, measured governance), described as an experience report with the mechanical record.
 \item \textbf{A candid evaluation} that separates what the deployment \emph{establishes} from
@@ -92,6 +95,27 @@ contributions, stated at the level the evidence supports:
 \end{enumerate}
 
 We claim neither statistical generality ($N{=}1$ deployment) nor emergent intelligence.
+
+\subsection{What we set out to show, and what survived}
+We are explicit about the epistemic status of each contribution up front, because they are not
+equal. \textbf{We set out to demonstrate \emph{compounding competence}} --- that a context-heavy
+peer substrate gets cheaper and better on task $N{+}1$ because of tasks $1{\dots}N$. \textbf{It did
+not survive.} Six pre-registered A/B ablations and a controlled baseline (\S V-D, \S V-E) show that a
+fresh session \emph{holding the committed carrier} re-derives the fixes with no session-memory: what
+compounds is the carrier, and lived context buys \emph{efficiency and recognition}, not raw
+capability. That negative is the paper's most solid \emph{evaluated} result, and it is stated as one.
+The \textbf{method} (contribution~1), by contrast, has \emph{no controlled evidence}: we did not run
+in-vivo adversarial co-design head-to-head against an engineer specifying the primitives up front, so
+we do not claim it is superior --- only that it is a replicable process with a described mechanism
+that demonstrably \emph{produced} a working, hardened substrate. Its \textbf{falsifier}, stated so it
+is not unfalsifiable: the method claim weakens if the failures the adversarial process caught would
+have been caught as readily by ordinary single-author review, or if the primitives it converged on
+were worse than a competent up-front design. We offer one \emph{observational} signal consistent with
+the method (not a controlled test of it): across the deployment, \textbf{human prompts per active
+project fell $\approx$5.6$\times$} (from 203/project in the first full month to 36 in the latest)
+\emph{as} the number of concurrent projects grew from 10 to 34 (\S V-A) --- the human moving from
+courier toward architect, which is what the method is for. We report it as a trend with the usual
+longitudinal confounds, not as proof.
 
 \section{Related Work}
 \emph{(Full treatment: \texttt{related-work.md}.)} Capability-aware routing exists but is
@@ -107,20 +131,36 @@ agent; ADAS \cite{adas} / Darwin G\"{o}del Machine \cite{dgm} evolve a \emph{pop
 agent designs} at design-search time; \textbf{MAPE-K} (Kephart \& Chess, \emph{Computer}
 36(1), 2003) \cite{mapek} is the classical self-adaptive-control analogue.
 
+\textbf{Prior art the substrate rediscovers (and we name it as such).} Several of Conductor's
+primitives are not new in isolation --- and saying so is evidence \emph{for} the method, not against
+it: an adversarial process that independently reconverged on known load-bearing designs is
+weak-but-real evidence the process finds \emph{real} designs. The append-only shared log that peers
+read and write, with a nominated lead coordinating, is a \textbf{blackboard architecture}
+(Hearsay-II \cite{hearsay2}; the blackboard-for-control model \cite{blackboard}); the verified-order
+lifecycle (deliver only if the artifact landed) is \textbf{two-phase commit}; and the human approval
+bound to an action token rather than conveyed in prose is \textbf{capability-based authorization}.
+Our contribution is not these mechanisms but the \emph{setting} --- long-lived, context-heavy,
+same-model peers rediscovering and composing them in vivo under a reversibility-gating human.
+
 \textbf{Honest positioning (we do not overclaim novelty).} A \textbf{2025
 memory-augmented-MAS line does pursue cross-task team competence} --- most pointedly
 \textbf{G-Memory} \cite{gmemory} (hierarchical memory ``nurturing the progressive evolution
 of agent teams,'' i.e.\ task $N{+}1$ better because of $1{\dots}N$ across a team), plus
 \textbf{RCR-Router} \cite{rcrrouter} (routing \emph{structured memory to agents within a
 task}) and the \textbf{transactive-memory} framing for agents. So ``team competence
-accumulates'' is \emph{not} our novelty. What differs, and survives: (i) each peer is a
-\textbf{long-lived, human-in-the-loop \emph{session identity} that actually \emph{lived} the
-work} --- not an ephemeral agent doing retrieval over a shared memory store; (ii) routing is a
-\textbf{lead's grounded judgment over real artifacts} (bus, asset cards, \texttt{CLAUDE.md});
-and (iii) this is an \textbf{experience report on a continuously-running deployment}, studying
-the \emph{trajectory}, where the above are benchmark evaluations of a mechanism. We frame our
-contribution as \emph{under-explored relative to} that line, from which we differ in kind ---
-not as a gap nobody has touched.
+accumulates'' is \emph{not} our novelty. Two things differ. \textbf{(i)} Each peer is a
+\textbf{long-lived, human-in-the-loop \emph{session identity} that lived the work} --- not an
+ephemeral agent doing retrieval over a shared memory store. We are careful to state what that buys,
+because our own ablations (\S V-D) constrain it: the lived identity does \emph{not} raise outcome
+\emph{capability} (a fresh session with the same committed carrier reaches the same fixes); what it
+buys is \textbf{efficiency and routing quality} --- fewer steps to a correct fix, and a lead who can
+route work by a peer's demonstrated history rather than a declared persona. \textbf{(ii)} Routing is
+therefore a \textbf{lead's grounded judgment over real artifacts} (bus, asset cards,
+\texttt{CLAUDE.md}), keyed on lived history rather than a self-described role. We do \emph{not} list
+``experience report vs.\ benchmark evaluation'' as a third differentiator: that is a difference in
+\emph{rigour}, and in the direction of less. We frame our contribution as \emph{under-explored
+relative to} that memory-augmented line, from which we differ in kind (efficiency-and-routing from
+\emph{lived} identities, studied as a running deployment) --- not as a gap nobody has touched.
 
 \section{The Architecture}
 One base model; each session a persistent identity with durable memory; a read-only observer
@@ -158,6 +198,29 @@ independent through context divergence}, a property we must and do argue mechani
 assume.
 
 \section{Evaluation}
+Every quantitative claim below carries an explicit \emph{provenance tier}; the fleet adopted these as
+a discipline and we define them once here (Table~\ref{tab:prov}). The rule the deployment enforces on
+itself: a derived or recalled number may never be reported bare, and a claim a reviewer cannot resolve
+is, at that moment, not yet evidence.
+
+\begin{table}[t]
+\centering\footnotesize
+\caption{Provenance tiers used throughout the evaluation.}
+\label{tab:prov}
+\begin{tabular}{ll}
+\toprule
+Tier & Meaning \\
+\midrule
+MEASURED & ran it on a censused system, with a resolvable receipt (commit/log) \\
+RECALLED & from memory/narration; may be wrong, flagged as such \\
+GAP & the honest absence of a measurement we would want \\
+LANDED & a mechanism shipped and is live in the running system \\
+NULL & a pre-registered test whose falsifier fired (reported as such) \\
+repro.-in-principle & a recipe that outlives the record but has not been re-executed \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \emph{Corpus, MEASURED from git + bus + \texttt{history.jsonl}, \textbf{as-of 2026-07-27
 09:38}} (every count carries this stamp --- the log is append-only and non-stationary, so a
 bare number is under-specified): 259 commits; 47 version landings; \textbf{2,719} bus messages
@@ -167,12 +230,15 @@ bare number is under-specified): 259 commits; 47 version landings; \textbf{2,719
 harvester, not asserted (\texttt{evidence-harvest.py} \texttt{\_concentration}): \textbf{Gini
 0.695}, top sender 9.4\%, top-3 25.6\%, and \textbf{13 of 55 senders to reach 80\%.} Many
 peers carry load, no single dominant author, but a genuine concentration we report rather than
-round off to ``distributed.'' \textbf{Reflexivity confound --- now MEASURED, not just
-conceded:} the count grew 2,575 (2026-07-25) $\rightarrow$ 2,703 (07-26 eve) $\rightarrow$
-2,719 (07-27 am), \textbf{+5.6\% in $\sim$2 days, and that growth is overwhelmingly this
-paper's own review/ablation traffic} --- the top senders (95emulator, qualcomm, backend) are
-top partly \emph{because of the threads this paper generated.} The instrument is perturbed by
-the act of measuring; we quantify the perturbation rather than only naming it.
+round off to ``distributed.'' \textbf{Reflexivity confound --- controlled, not just conceded.}
+Because $\sim$194 of these messages are this paper's own review/ablation traffic, a concentration
+statistic computed over the whole log could be an artifact of the act of measuring. We therefore
+recompute it \emph{excluding} all paper-era messages (everything before the paper effort began,
+2026-07-24; $n{=}2{,}539$ messages, 52 senders): \textbf{Gini $0.693$, top sender 9.4\%, top-3
+26.4\%, 13 of 55 senders to 80\%} --- statistically \emph{indistinguishable} from the full-log
+figures above (Gini $0.693$ vs.\ $0.693$; top-3 26.4\% vs.\ 25.5\%). The head is a property of the
+\emph{organic} deployment, not of the paper's own threads; the reflexivity we flag elsewhere does
+\emph{not} contaminate this result, and we report both numbers so the reader can see that it does not.
 \subsection{RQ1 --- Courier elimination (proxy, with a latency tradeoff)}
 949 directed messages were auto-delivered --- hand-offs a human would otherwise relay (a
 \emph{ceiling on relays avoided}, v2.19+). But the mechanism is unreliable: in this paper's
@@ -180,8 +246,35 @@ own production, a job dispatched to a peer failed to auto-wake it (stale waterma
 \textbf{the human relayed it}. We report the counterexample. The correct human-touch
 \textbf{instrument} is \texttt{history.jsonl} (un-swept, back to January), \emph{not}
 transcripts (a 30-day cleanup horizon, \S VI) which also carry an \textbf{11.9$\times$
-\texttt{tool\_result} overcount} trap. \textbf{GAP:} normalizing touches against
-work-delivered.
+\texttt{tool\_result} overcount} trap.
+
+\textbf{The longitudinal human-touch series (the method's clearest observational signal).}
+From \texttt{history.jsonl} (human prompts only, un-swept back to January), we normalize touches by
+\emph{active project} per month (Table~\ref{tab:touch}). Human prompts per active project fall from
+203 in the deployment's first full month to 36 in the latest --- a $\approx$5.6$\times$ reduction ---
+\emph{while} concurrent projects grow from 10 to 34. This is the one longitudinal result that speaks
+to the \emph{method} claim rather than the compounding claim: as the substrate matures and carries
+more work in parallel, the human's per-project involvement drops sharply, which is the courier
+$\rightarrow$ architect shift the method is for. We report it with the standard longitudinal
+confounds --- the task mix changed, the operator learned, and per-\emph{active}-project is a proxy for
+per-\emph{delivered}-project --- so it is a trend, not a controlled measurement.
+
+\begin{table}[t]
+\centering\footnotesize
+\caption{Human touch per active project over the deployment (\texttt{history.jsonl}). Jan/Mar
+(1 and 7 prompts) are the pre-ramp startup and omitted.}
+\label{tab:touch}
+\begin{tabular}{lrrr}
+\toprule
+Month & Human prompts & Active projects & Prompts / project \\
+\midrule
+2026-04 & 2{,}027 & 10 & 202.7 \\
+2026-05 & 1{,}117 & 16 & 69.8 \\
+2026-06 & 1{,}936 & 27 & 71.7 \\
+2026-07 & 1{,}219 & 34 & \textbf{35.9} \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \textbf{And RQ1 is a \emph{tradeoff}, not a pure win --- stated because hiding it is less
 credible.} Coordination over an async bus + a lead's wake cycle can be \textbf{slower in
@@ -313,10 +406,11 @@ re-derivation cost:
   wall-clock and 36\% fewer steps but \textbf{more} tokens.
 \end{itemize}
 
-\textbf{The convergent finding, and the honest reframe of the headline:} \emph{session-memory
-of a bug-class is not what compounds --- the committed \textbf{carrier} is.} A fresh clone
-\emph{holding the repo} re-derives the fix because \textbf{what compounds is what is still TRUE
-in the carrier when the next session reads it}, and the \textbf{executable} carrier governs
+\textbf{The result, stated plainly: the committed carrier is what compounds; lived context buys
+efficiency and recognition, not capability.} This is a powered negative that corrects a widely-held
+intuition, and we state it without hedge. A fresh clone \emph{holding the repo} re-derives the fix
+because \textbf{what compounds is what is still true in the carrier when the next session reads it},
+and the \textbf{executable} carrier governs
 (code / assert / invariant); a \emph{prose} carrier is ``neither the asset nor the liability
 anyone claimed'' (sizer's wrong-doc ablation is self-refuting because the code is there to
 check it against). \textbf{The efficiency/capability line, made operational (so ``efficiency''
@@ -418,23 +512,24 @@ crude substring assert tripping on a correct ``NOT dispatched'' refusal); it was
 \textbf{disclosed, not patched} --- editing a frozen instrument post-hoc is the exact sin this
 paper studies (\S V-F). Full protocol + both arms' diffs: \texttt{cases\_rq5-baseline.md}.
 
-\subsection{The paper as an instrument (testimony-free, 4/19)}
+\subsection{The paper as an instrument (an operational finding, not a controlled result)}
 Asking sessions to substantiate claims \emph{to an external audience} forced verification of
-things taken on trust internally. MEASURED, in git: \texttt{sizer} found a \textbf{46-day
-defect} (129 cells rendering wrong fps, count never zero, never visible) while writing its case
---- caught by \emph{writing}, after 46 days of use/test/review found nothing; \texttt{pai-sizer}
-surfaced a validation-across-an-unsafe-version-boundary provenance defect the same way.
-\textbf{The denominator (review's \#5 --- the same selection bias recurring one level down, so
-we state it):} of \textbf{19} case-writing sessions, \textbf{at least 4 ($\sim$21\%)} reported
-a correction surfaced by the writing itself (\texttt{sizer}, \texttt{pai-sizer},
-\texttt{tipometer}, and the RQ5 apparatus's own frozen-test defect); the rest reported none. A
-$\sim$1-in-5 hit-rate with the denominator stated is an honest result; two dramatic cases with
-no denominator would have been the very bias \S VI disclaims. The mechanism (pai-sizer):
-external writing forces a claim's \emph{conditions} to be enumerated, and enumeration is when
-unexamined assumptions surface --- predicting a distribution of mostly-small corrections,
-occasionally a live defect, which is what the hit-rate shows. \textbf{This is evidence
-\emph{for} the deployment, in the commit record, not about it} --- and it is the paper's
-strongest result \emph{because} it is not testimony.
+things taken on trust internally. In git: \texttt{sizer} found a \textbf{46-day defect} (129 cells
+rendering wrong fps, count never zero, never visible) while writing its case --- after 46 days of
+use/test/review found nothing; \texttt{pai-sizer} surfaced a validation-across-an-unsafe-version
+provenance defect the same way. We state the \textbf{hit-rate}: of \textbf{19} case-writing sessions,
+\textbf{4 ($\sim$21\%)} reported a correction surfaced during the writing (\texttt{sizer},
+\texttt{pai-sizer}, \texttt{tipometer}, the RQ5 apparatus's own frozen-test defect); the rest
+reported none. We are careful about what this is and is not. \textbf{It has no control arm:} we did
+not measure how many defects surface in 19 sessions of \emph{equivalent effort spent not writing for
+an external audience}, so 21\% has nothing to beat, and the underlying effect --- careful explanation
+to an outside reader surfaces latent defects --- is well established for design documents and code
+review; \emph{the only novel element here is that the writers were agents}. And it is not fully
+``testimony-free'': the \emph{commits} are machine evidence, but the \emph{attribution} (``the defect
+was surfaced by the act of writing'') is a causal judgment made and reported by the same sessions ---
+two different epistemic objects, which we keep separate. So we report it as an \textbf{unanticipated
+operational finding with a stated hit-rate and no control arm} --- worth recording, not a headline
+result.
 
 \section{Threats to Validity}
 \begin{itemize}
@@ -513,12 +608,21 @@ this honesty (peers refuting the lead over the bus, an ablation refuting its own
 
 \textbf{The one contribution to leave with} (honesty is not thinness): the reusable result is
 \emph{the method} --- \textbf{in-vivo adversarial co-design of a coordination substrate by
-persistent, context-divergent peers under a human gating only irreversibility} --- and its
-cleanest proof is reflexive and testimony-free: \textbf{writing this paper functioned as an
-instrument (4 of 19 sessions surfaced a real correction by writing), and the paper survived its
-own three-lens peer panel by getting sharper at each pass.} The compounding intuition is the
-\emph{motivating hypothesis we tested and bounded}, not the contribution; the method,
-demonstrated on itself, is.
+persistent, context-divergent peers under a human gating only irreversibility} --- offered as an
+existence proof with a mechanism, not a validated superiority. Its cleanest reflexive demonstration
+is that \textbf{the paper survived its own three-lens peer panel, getting sharper at each pass}, and
+that writing it functioned as an instrument (\S V-F, an operational finding with a stated hit-rate).
+The compounding intuition is the \emph{motivating hypothesis we tested and bounded}, not the
+contribution; the method, demonstrated on itself, is.
+
+\textbf{A transferable secondary contribution} the deployment produced, and one we think travels
+beyond this setting: a \emph{non-independence discipline for corroboration}. When two of the fleet's
+own null results (the C2 open-search null and \texttt{sizer}'s stale-doc null) agreed, the fleet
+declined to count them as replication --- they share a mechanism (both tasks were bisectable because
+their ground truth was inspectable), so by a common-dependency rule they carry near-zero independent
+weight. The rule --- \emph{before crediting two results as corroborating, check whether they share a
+generative mechanism, and if so discount them} --- is exactly what most authors would have banked as
+replication, and it applies to any convergence among same-family estimators (\S V-D).
 
 One last observation the deployment forced on us, because it kept mistaking a rung for the
 summit: a result is not durable until it is \emph{reachable by a reviewer}, and the fleet
