@@ -271,3 +271,26 @@ isn't. Enforced at the tool level, not by convention.
 - **Disable:** remove that `PreToolUse` entry from `settings.json` (or delete the
   hook). It fails *open* on anything that isn't a push, so removing it never breaks
   a session.
+
+**The pre-push enforcement layer** ([`git-hooks/pre-push`](git-hooks/pre-push)) closes a real
+hole in the tool-layer gate above: the PreToolUse hook only sees the Bash tool-call *string*, so a
+`git push` inside a script (`./snapshot.sh`), a `bash -c`, a `make` target, or a git alias sails
+straight through it. A global **`pre-push` git hook** fires on the *actual* push no matter how it
+was invoked, and git hands it the real refs+shas+remote — so it SHA-pins exactly, tells a genuine
+no-op from a real move, and enforces the same one-token-per-approval rule.
+
+- **How they cooperate:** an approved *direct* push has its token consumed by the tool-gate, which
+  drops a short-lived, SHA-matched *claim* the pre-push hook honours once — so the two layers never
+  double-deny. A *scripted* push never touches the tool-gate, so it gets no claim and the hook
+  enforces from the token alone. The fleet-backup exemption and the SHA-pin behave identically in
+  both layers. A repo that ships its own `pre-push` hook is preserved — the installed hook chains to
+  it first and never weakens it.
+- **Arm it** (from a *plain terminal* — it writes to `~/.claude/bin` and sets a global git config,
+  both deliberately the human's to make): `bash bus/install-push-hook.sh` (·`--status`·`--uninstall`).
+  It sets `git config --global core.hooksPath ~/.claude/git-hooks` and refuses to clobber one you
+  already set.
+- **Scope:** only `git push --no-verify` skips a pre-push hook — a deliberate bypass, outside the
+  honest-but-scripted threat model, and it still needs an existing approval to matter.
+- **Tests:** [`tests/test-pre-push-hook.sh`](../tests/test-pre-push-hook.sh) drives the real hook
+  through actual git pushes (bypass-closed, sha-pin, no-op, claim hand-off, expiry, fleet-backup
+  exempt, chaining).

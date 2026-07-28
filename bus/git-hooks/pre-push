@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# Global `pre-push` git hook — the REAL enforcer behind Kyle's one-click push OK.
+#
+# WHY THIS EXISTS (the hole it closes): the PreToolUse(Bash) gate (`push-gate.sh`) only greps the
+# Bash tool-call STRING for "push". So a `git push` that isn't literally in that string — a script
+# (`./snapshot.sh`), `bash -c 'git push'`, a `make deploy` target, or a git alias — sails straight
+# through (exit 0, gate never engages). A pre-push hook fires on the REAL push regardless of how it
+# was invoked, and git hands it the actual refs + shas + remote on stdin, so it can SHA-pin exactly
+# and tell a true no-op from a real ref move. It is strictly stronger than the tool-layer gate for
+# the honest-but-scripted case. (Only `git push --no-verify` skips a pre-push hook — a deliberate
+# bypass, outside this threat model, and it still needs an existing approval to be worth anything.)
+#
+# COORDINATION WITH THE PreToolUse GATE (so we don't double-deny an approved DIRECT push):
+#   • Direct `git push` with a valid token: PreToolUse consumes the token AND drops a short-lived
+#     CLAIM (push-claims/<key>). This hook then fires, finds no token but a fresh matching claim,
+#     honours it once, and deletes it.
+#   • Scripted push: PreToolUse never engaged, so there is NO claim → this hook enforces from the
+#     token alone (consume-on-approve, else DENY + file a request). That is the bypass, closed.
+#
+# Args:  $1 = remote name, $2 = remote URL.   Stdin: `<localref> <localsha> <remoteref> <remotesha>`
+# per ref being pushed (localsha all-zeros = a delete; a real push, still gated).
+set -uo pipefail
+
+COORD="${COORD_STATE_DIR:-$HOME/.claude/bus-state/coord}"
+TOKENS="$COORD/push-tokens"
+REQUESTS="$COORD/push-requests"
+CLAIMS="$COORD/push-claims"
+CLAIM_TTL="${PUSH_CLAIM_TTL:-120}"          # a claim older than this can never authorize a push
+ZERO='0000000000000000000000000000000000000000'
+
+REMOTE_NAME="${1:-origin}"
+REMOTE_URL="${2:-}"
+
+# Buffer stdin once — we both inspect it and (if chaining) replay it to the repo's own hook.
+STDIN="$(cat 2>/dev/null || true)"
+
+# ---- 1. Chain to a REPO-LOCAL pre-push hook first, if one exists -------------------------------
+# Setting core.hooksPath globally makes git stop looking in <gitdir>/hooks, so a repo that ships
+# its own pre-push (e.g. nanochat_rtx8000) would be silently disabled. Preserve it: run it first
+# with the same stdin+args; if it rejects (non-zero), so do we — never weaken a repo's own policy.
+GITDIR="$(git rev-parse --git-dir 2>/dev/null || true)"
+if [ -n "$GITDIR" ] && [ -x "$GITDIR/hooks/pre-push" ]; then
+  printf '%s' "$STDIN" | "$GITDIR/hooks/pre-push" "$@" || exit $?
+fi
+
+# ---- 2. Is anything actually MOVING? (a no-op push never needs approval) -----------------------
+# Collect the local shas that would become new remote tips (local != remote, local not all-zero).
+# All-zero local = a branch delete: that IS a real, gated push, so record a sentinel for it.
+MOVING=""; DELETING=0
+while read -r lref lsha rref rsha; do
+  [ -z "${lref:-}" ] && continue
+  if [ "$lsha" = "$ZERO" ]; then DELETING=1; continue; fi   # delete of rref
+  [ "$lsha" = "$rsha" ] && continue                          # this ref is up-to-date
+  MOVING="$MOVING $lsha"
+done <<EOF
+$STDIN
+EOF
+# Nothing moves and nothing is deleted → genuine no-op → allow, consume nothing.
+if [ -z "$MOVING" ] && [ "$DELETING" = 0 ]; then exit 0; fi
+
+# ---- 3. Identify the repo + its token key (same scheme as push-gate.sh) ------------------------
+REPO="$(git rev-parse --show-toplevel 2>/dev/null || printf '%s' "$PWD")"
+NAME="$(basename "$REPO")"
+KEY="$(printf '%s' "$REPO" | tr '/ ' '__' | sed 's/^_*//')"
+now="$(date +%s)"
+
+# ---- 4. Exemption: the private disaster-recovery backup repo auto-pushes ------------------------
+# Same policy + spoof-resistance as push-gate.sh: match the REMOTE SLUG, not the dir name. Here we
+# match against the URL git itself is pushing to ($2) — authoritative, not reconstructed.
+FLEET_BACKUP_SLUG="${FLEET_BACKUP_SLUG:-kylefoxaustin/fleet-backup}"
+_slug="$(printf '%s' "$REMOTE_URL" | sed -E 's#^(https?://[^/]+/|ssh://[^/]+/|[^/@]+@[^:]+:)##; s#\.git$##; s#/+$##')"
+if [ -z "$_slug" ]; then   # some invocations pass only the remote NAME as url; resolve it
+  _u="$(git remote get-url "$REMOTE_NAME" 2>/dev/null || true)"
+  _slug="$(printf '%s' "$_u" | sed -E 's#^(https?://[^/]+/|ssh://[^/]+/|[^/@]+@[^:]+:)##; s#\.git$##; s#/+$##')"
+fi
+if [ -n "$_slug" ] && [ "$_slug" = "$FLEET_BACKUP_SLUG" ]; then
+  rm -f "$REQUESTS/$KEY" 2>/dev/null || true
+  exit 0
+fi
+
+# ---- 5. A valid, unexpired, SHA-matching token → CONSUME and allow ------------------------------
+TOK="$TOKENS/$KEY"
+if [ -f "$TOK" ]; then
+  exp="$(grep -E '^expires=' "$TOK" 2>/dev/null | head -1 | cut -d= -f2-)"
+  [ -z "$exp" ] && exp="$(head -1 "$TOK" 2>/dev/null || echo 0)"   # legacy bare-epoch token
+  case "$exp" in ''|*[!0-9]*) exp=0 ;; esac
+  if [ "$now" -lt "$exp" ]; then
+    tok_sha="$(grep -E '^sha=' "$TOK" 2>/dev/null | head -1 | cut -d= -f2-)"
+    # SHA-pin: a legacy token with no sha is honoured (back-compat); otherwise the approved commit
+    # must be one of the shas actually being pushed. A delete carries no moving sha, so a pinned
+    # token can't silently authorize a delete of a different ref — it falls through to DENY.
+    ok=0
+    if [ -z "$tok_sha" ]; then ok=1
+    else for s in $MOVING; do [ "$s" = "$tok_sha" ] && ok=1 && break; done; fi
+    if [ "$ok" = 1 ]; then
+      rm -f "$TOK"                                   # one push per approval
+      rm -f "$REQUESTS/$KEY" "$CLAIMS/$KEY" 2>/dev/null || true
+      exit 0
+    fi
+  else
+    rm -f "$TOK"                                     # expired — clear it; fall through to DENY
+  fi
+fi
+
+# ---- 6. No token, but a FRESH matching claim from PreToolUse → honour once ----------------------
+# This is the approved-DIRECT-push path: PreToolUse already consumed the token at the tool layer.
+CLM="$CLAIMS/$KEY"
+if [ -f "$CLM" ]; then
+  c_sha="$(grep -E '^sha=' "$CLM" 2>/dev/null | head -1 | cut -d= -f2-)"
+  c_epoch="$(grep -E '^epoch=' "$CLM" 2>/dev/null | head -1 | cut -d= -f2-)"
+  case "$c_epoch" in ''|*[!0-9]*) c_epoch=0 ;; esac
+  if [ "$((now - c_epoch))" -le "$CLAIM_TTL" ]; then
+    for s in $MOVING; do
+      if [ "$s" = "$c_sha" ]; then
+        rm -f "$CLM" 2>/dev/null || true
+        exit 0
+      fi
+    done
+  fi
+  rm -f "$CLM" 2>/dev/null || true                   # stale / non-matching → drop it, then DENY
+fi
+
+# ---- 7. Nothing authorizes this push → file a request and DENY ---------------------------------
+HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || printf '%s' "${MOVING## }")"
+mkdir -p "$REQUESTS" 2>/dev/null || true
+{ echo "repo=$REPO"; echo "repo_name=$NAME"; echo "cwd=$PWD"
+  echo "cmd=git push $REMOTE_NAME"; echo "sha=$HEAD_SHA"; echo "epoch=$now"
+  echo "created=$(date '+%Y-%m-%d %H:%M')"; } > "$REQUESTS/$KEY" 2>/dev/null || true
+
+echo "🛑 Push to '$NAME' needs Kyle's approval (commits are fine — only pushes are gated). This was" >&2
+echo "   caught by the pre-push hook — a scripted/aliased push does not go through the tool-layer" >&2
+echo "   gate. Request filed in Conductor's push inbox; approve there or 'bus.sh push approve $NAME'," >&2
+echo "   then re-run. (Genuine no-ops and the fleet-backup repo are never gated.)" >&2
+exit 1

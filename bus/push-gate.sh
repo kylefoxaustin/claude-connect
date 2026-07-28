@@ -16,6 +16,7 @@ set -uo pipefail
 COORD="${COORD_STATE_DIR:-$HOME/.claude/bus-state/coord}"
 TOKENS="$COORD/push-tokens"
 REQUESTS="$COORD/push-requests"
+CLAIMS="$COORD/push-claims"   # short-lived hand-off to the pre-push enforcer (see below)
 
 INPUT="$(cat 2>/dev/null || true)"
 
@@ -156,6 +157,14 @@ if [ -f "$TOK" ]; then
     fi
     rm -f "$TOK"                                 # consume a VALID token — one push per approval
     rm -f "$REQUESTS/$KEY" 2>/dev/null || true   # clear the (now-satisfied) request
+    # Hand a short-lived CLAIM to the pre-push hook (the real enforcer, which fires next on the
+    # actual push). We just consumed the token, so pre-push would otherwise find nothing and DENY a
+    # push Kyle just approved. The claim says "this exact commit was approved-and-consumed at the
+    # tool layer moments ago"; pre-push honours it once (sha-matched, TTL-bounded) and deletes it.
+    # A scripted push never passes through THIS hook, so it never gets a claim — the bypass stays
+    # closed. (If the pre-push hook isn't installed, this file is harmless clutter that expires.)
+    mkdir -p "$CLAIMS" 2>/dev/null || true
+    { echo "sha=$HEAD_SHA"; echo "epoch=$now"; } > "$CLAIMS/$KEY" 2>/dev/null || true
     exit 0                                       # ALLOW (proceeds via normal perms)
     fi                                           # end SHA-pin: token's commit matches HEAD
   else
