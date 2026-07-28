@@ -24,25 +24,18 @@
 \begin{document}
 
 % ---- TITLE + AUTHORS -------------------------------------------------
-% AUTHORSHIP (Kyle's decision, 2026-07-27): co-authored with Claude Code (Anthropic).
-% ⚠ VENUE-POLICY NOTE for camera-ready: many publishers (IEEE/ACM/most journals) currently
-% hold that an AI system CANNOT be a formal author (it cannot take accountability or sign
-% copyright) and require AI contributions to be DISCLOSED instead (acknowledgements/methods).
-% If the target venue enforces that, flip to: single human author + a "Use of AI" disclosure
-% paragraph naming Claude Code and the fleet. Kept as co-author here per Kyle's choice and
-% because it is self-referentially apt for a paper about AI co-design; affiliation/email TO FILL
-% (email intentionally omitted here — Kyle fills it at submission).
+% AUTHORSHIP (revised per external review, 2026-07-27): SINGLE HUMAN AUTHOR. ACM/IEEE policy
+% (binding for the SEIP target) forbids a generative-AI system as an author — listing one is an
+% administrative DESK-REJECT. The fleet's contribution is instead DISCLOSED precisely (see the
+% "Disclosure: Use of Generative AI" section) + acknowledged. For a paper whose subject IS agent
+% co-authorship, an explicit division-of-labour disclosure is stronger than a byline anyway.
 \title{Conductor: An Experience Report on In-Vivo Adversarial\\
        Co-Design of a Multi-Session Agent Substrate}
 
 \author{\IEEEauthorblockN{Kyle Fox}
 \IEEEauthorblockA{Independent Researcher\\
 Austin, Texas, USA\\
-Email: \textit{[to fill at submission]}}
-\and
-\IEEEauthorblockN{Claude Code}
-\IEEEauthorblockA{Anthropic\\
-\textit{(the Conductor fleet)}}}
+Email: \textit{[to fill at submission]}}}
 
 \maketitle
 
@@ -567,6 +560,29 @@ any headline claim. Curated to five in-body illustrations, each mapping to a dis
 Several cases were \textbf{corrected during the paper's own writing} (sizer's Case 1 severity
 downgraded from user-visible to latent; pai-sizer's propagated overstatement retracted) ---
 logged as \S V-F specimens, not hidden.
+
+\section*{Disclosure: Use of Generative AI}
+This paper reports on, and was substantially produced by, a fleet of \emph{Claude Code}
+(Anthropic) sessions --- the same system the paper studies --- under the human author's direction.
+We disclose the division of labour precisely, because for this subject it is itself a finding. The
+agent sessions: drafted the prose of every section across five revisions; \emph{adversarially
+peer-reviewed} one another's drafts on the shared bus and produced the three-lens review that forced
+the v2 and v4 reframes; designed, pre-registered, and executed the six A/B ablations, the RQ5
+baseline, and the RQ4b open-search-ceiling sequel; and mined the git, bus, and \texttt{history.jsonl}
+records for the quantitative evidence. The \textbf{human author} set the goal, made every
+irreversible decision (each \texttt{git push} was human-gated), chose the framing and the venue,
+took final responsibility for every claim, and is the sole party accountable for this submission. No
+text was accepted without human review. All quantitative results were re-derived from the primary
+records cited. Per ACM/IEEE authorship policy, the generative-AI system is \emph{not} an author; its
+contribution is disclosed here and acknowledged below.
+
+\section*{Acknowledgment}
+The author thanks the Conductor fleet --- the persistent \emph{Claude Code} sessions
+\texttt{95emulator}, \texttt{qualcomm}, \texttt{backend}, \texttt{holobench}, \texttt{sizer},
+\texttt{pai-sizer}, \texttt{imx95-media-test}, \texttt{mcxn947}, \texttt{rt1180}, \texttt{image\_gen},
+and the other members named in the case corpus --- whose adversarial review, ablations, and
+first-person specimens are the substance of this report, and without which neither the system nor
+the paper would exist.
 
 % ---- BIBLIOGRAPHY (verified 2026-07-27) ------------------------------
 \bibliographystyle{IEEEtran}
