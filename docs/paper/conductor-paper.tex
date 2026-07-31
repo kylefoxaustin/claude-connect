@@ -1,13 +1,11 @@
 % =====================================================================
-% Conductor — IEEEtran SCAFFOLD (structure + abstract + keywords + bib wiring).
-%
-% This is the low-churn shell, built BEFORE the C2 sequel freezes the content.
-% Section bodies converted from docs/paper/draft-v5.md (2026-07-27). Abstract, keywords, section
-% skeleton, and \bibliography wiring to the VERIFIED references.bib are complete. Author block is
-% Kyle Fox + Claude Code (Anthropic) per Kyle's decision (see the venue-policy note below).
+% "Context Compounds, Capability Does Not" — Conductor experience report.
+% Target: ICSE 2027 SEIP. SINGLE HUMAN AUTHOR (Kyle Fox); the fleet's role is
+% disclosed in the "Disclosure: Use of Generative AI" section, not as a byline
+% (ACM/IEEE policy forbids an AI author). All counts carry one as-of stamp: 2026-07-31.
 %
 % Build:  pdflatex conductor-paper && bibtex conductor-paper && pdflatex x2
-% Needs:  IEEEtran.cls + references.bib (in this dir).
+% Needs:  IEEEtran.cls + IEEEtran.bst + references.bib (in this dir).
 % =====================================================================
 \documentclass[10pt,conference]{IEEEtran}   % ICSE SEIP format: 10pt conference, NO compsoc
 \IEEEoverridecommandlockouts
@@ -194,7 +192,7 @@ specimen to the bus; (3) \textbf{context-divergent peers attack the proposed fix
 because their divergence is real (different accumulated histories), they attack from \textbf{different
 empirical vantages}, which we measure and \emph{bound} in \S V-D: they are independent \emph{only
 relative to} that divergence, not absolutely, so this is not self-review by one model echoing itself,
-but neither do we claim uncorrelated errors in the estimator sense (\S V-D); (4) the human gates only
+but neither do we claim uncorrelated errors in the estimator sense; (4) the human gates only
 the irreversible.
 
 \section{Evaluation}
@@ -262,7 +260,7 @@ is unreliable: in this paper's own production, a directed job failed to auto-wak
 watermark) and \textbf{the human relayed it} --- an actual delivery below the ceiling. We report the
 counterexample. The correct human-touch
 \textbf{instrument} is \texttt{history.jsonl} (un-swept, back to January), \emph{not}
-transcripts (a 30-day cleanup horizon, \S VI) which also carry an \textbf{11.9$\times$
+transcripts (a 30-day cleanup horizon, \S VII) which also carry an \textbf{11.9$\times$
 \texttt{tool\_result} overcount} trap.
 
 \textbf{The longitudinal human-touch series (the method's clearest observational signal).}
@@ -402,6 +400,9 @@ reachable via the engine API but \emph{not} the shipped UI) in nine tool calls. 
 timestamps, tool-call logs) are the evidence.}
 
 \subsection{RQ4 --- Compounding competence: claim, confound, and the ablation test}
+We split the claim into \textbf{RQ4a} (the crisp-symptom floor: does context lower re-derivation cost
+on a task with an objective oracle?) and \textbf{RQ4b} (the open-search ceiling: does it on a task a
+fresh agent cannot cheaply bisect?), and test both below.
 \textbf{Correlation, MEASURED:} context-carrying sessions recognized bug-classes fast (e.g.\ a
 register-coverage gate green over 12/370, the class recognized in seconds because prior tasks
 had named it; one-line fix $\rightarrow$ 12/370$\rightarrow$370/370, surfacing a
@@ -788,7 +789,7 @@ took final responsibility for every claim, and is the sole party accountable for
 text was accepted without human review. All quantitative results were re-derived from the primary
 records cited. \textbf{Independent human external review} (multiple rounds) then caught defect classes the
 fleet's own review structurally could not --- cross-section consistency, arithmetic, and
-venue-compliance --- and drove the final revisions; \S VIII notes why this split falls out of the
+venue-compliance --- and drove the final revisions; \S IX notes why this split falls out of the
 paper's own thesis. Per ACM/IEEE authorship policy, the generative-AI system is \emph{not} an author;
 its contribution is disclosed here and acknowledged below.
 
