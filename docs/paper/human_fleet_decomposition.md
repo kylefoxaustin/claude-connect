@@ -22,12 +22,13 @@ line (before the em-dash); 0 = broadcast, ≤4 = directed, >4 = announcement. Sa
 
 ## Result
 
-| category | total | share | directed | broadcast | announce (>4) |
-|---|---:|---:|---:|---:|---:|
-| **fleet** | 2,614 | **95.5%** | 996 | 1,101 | 517 |
-| **automated** | 97 | 3.5% | 92 | 5 | 0 |
-| **human** (`operator`) | 26 | **0.9%** | 21 | 1 | 4 |
-| total | 2,737 | | 1,109 | 1,107 | 521 |
+| category | total | share | directed |
+|---|---:|---:|---:|
+| **fleet** | 2,621 | **95.5%** | 996 |
+| **automated** | 92 | 3.4% | 92 |
+| **human** (`operator`) | 26 | **0.9%** | 21 |
+| **system** | 5 | 0.2% | 0 |
+| total | 2,744 | | 1,109 |
 
 - **The human authored 0.9% of all bus coordination, and 1.9% of the directed (routing) mail** (21 of
   1,109). Over 98% of coordination on the shared channel originates from the fleet itself.

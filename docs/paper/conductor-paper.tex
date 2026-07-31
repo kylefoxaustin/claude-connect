@@ -121,7 +121,7 @@ have been caught as readily by ordinary single-author review, or if the primitiv
 were worse than a competent up-front design. We offer one \emph{observational} signal consistent with
 the method (not a controlled test of it): across the deployment, \textbf{human prompts per active
 project declined} --- from near 70 across May--June to 36 in July (monthly; a finer weekly series in
-\S V-A shows the same direction) --- \emph{as} the number of concurrent projects grew from 16 to 34.
+\S V-A shows the same direction) --- \emph{as} the number of concurrent projects grew from 16 to 35.
 The human moves from courier toward architect, which is what the method is for --- a trend with the
 usual longitudinal confounds, not proof.
 
@@ -228,23 +228,24 @@ repro.-in-principle & a recipe that outlives the record but has not been re-exec
 \end{tabular}
 \end{table}
 
-\emph{Corpus, MEASURED from git + bus + \texttt{history.jsonl}, \textbf{as-of 2026-07-27
-22:54}} (every count carries this stamp --- the log is append-only and non-stationary, so a
-bare number is under-specified): 280 commits (38 of type \texttt{fix}); 47 version landings;
-\textbf{2,738} bus messages, of which \textbf{2,733} are non-system, from \textbf{55} senders
-(1,090 directed + 1,117 broadcast + 526 announcement $=$ 2,733; directed share 39.9\%);
-6,307 human prompts across 46 projects back to 2026-01-14. Division of labour is
+\emph{Corpus, MEASURED from git + bus + \texttt{history.jsonl}, \textbf{as-of 2026-07-31}} (every
+count carries this stamp --- the log is append-only and non-stationary, so a
+bare number is under-specified): 290 commits (38 of type \texttt{fix}); 52 version landings;
+\textbf{2,744} bus messages, of which \textbf{2,739} are non-system, from \textbf{56} senders
+(1,109 directed + 1,107 broadcast + 521 announcement; directed share 40.4\%);
+6,358 human prompts across 47 projects back to 2026-01-14. Division of labour is
 \textbf{spread but with a real head, not a power law} --- the concentration computed by the harvester
-(\texttt{evidence-harvest.py} \texttt{\_concentration}), the addressing classified from the same log:
-\textbf{Gini 0.693}, top sender 9.4\%, top-3 25.5\%, and \textbf{13 of 55 senders to reach 80\%.}
+(\texttt{evidence-harvest.py} \texttt{\_concentration}), the addressing classified from the same log,
+over \emph{all} non-system senders:
+\textbf{Gini 0.698}, top sender 9.4\%, top-3 25.4\%, and \textbf{13 of 56 senders to reach 80\%.}
 Many peers carry load, no single dominant author, but a genuine concentration we report rather than
 round off to ``distributed.'' \textbf{Reflexivity confound --- controlled, not just conceded.}
-Because 194 of the 2,733 non-system messages are this paper's own review/ablation traffic, a
+Because 196 of the 2,739 non-system messages are this paper's own review/ablation traffic, a
 concentration statistic over the whole log could be an artifact of the act of measuring. We therefore
 recompute it \emph{excluding} all paper-era messages (everything before the paper effort began,
-2026-07-24; $n{=}2{,}539$ non-system messages, 52 senders): \textbf{Gini $0.693$, top sender 9.4\%,
+2026-07-24; $n{=}2{,}543$ non-system messages, 52 senders): \textbf{Gini $0.693$, top sender 9.4\%,
 top-3 26.4\%, 13 of 52 senders to 80\%} --- \emph{indistinguishable} from the full-log figures above
-(Gini $0.693$ vs.\ $0.693$; top-3 26.4\% vs.\ 25.5\%). The head is a property of the \emph{organic}
+(Gini $0.693$ vs.\ $0.698$; top-3 26.4\% vs.\ 25.4\%). The head is a property of the \emph{organic}
 deployment, not of the paper's own threads; the reflexivity we flag elsewhere does \emph{not}
 contaminate this result (both numbers are shown).
 \textbf{Why roles emerged at all --- no one assigned them.} Specialization was not designed; it is an
@@ -253,13 +254,13 @@ a subsystem holds the most context about it, so the cheapest place to route the 
 that same session --- and routing it there deepens the advantage, a positive feedback that concentrates
 each domain onto whoever first worked it. \textbf{Repeated exposure} then hardens it: memory and the bus
 make yesterday's work legible today, so a returning session resumes its domain rather than re-learning a
-new one. That the resulting head is a \emph{spread} one (Gini 0.693, no dominant author) is because these
+new one. That the resulting head is a \emph{spread} one (Gini 0.698, no dominant author) is because these
 forces are \emph{local} --- one attractor per domain --- not because anyone balanced the load. Role
 identity is an emergent property of continuity-plus-routing, not an org chart --- which is why it is the
 foundation the later findings rest on rather than a policy that could be tuned away.
 
 \subsection{RQ1 --- Courier elimination (proxy, with a latency tradeoff)}
-1,090 directed messages (as-of the corpus stamp) are \emph{candidates} for auto-delivery ---
+1,109 directed messages (as-of the corpus stamp) are \emph{candidates} for auto-delivery ---
 hand-offs a human would otherwise relay --- so the count is a \textbf{ceiling on relays avoided},
 not a claim that all were delivered: the realized auto-delivery count is a \textbf{GAP} --- it is a
 runtime event the bus log does not record, so we report the ceiling the mechanism could eliminate, not
@@ -276,7 +277,7 @@ From \texttt{history.jsonl} (human prompts only, un-swept back to January), we n
 \emph{active project} per month (Table~\ref{tab:touch}). \textbf{Three monthly buckets cannot
 establish a trend}, and the middle is non-monotonic (June $\approx$ May), so we report the \emph{shape},
 not a single ratio: prompts per active project sit near 70 across May--June, then \textbf{drop to 36 in
-July}, \emph{while} concurrent projects grow from 16 to 34 (April, the substrate's build-out month, is
+July}, \emph{while} concurrent projects grow from 16 to 35 (April, the substrate's build-out month, is
 excluded as bootstrap-heavy, as January and March are). To check whether July's drop is a trend or a
 single step, a \textbf{finer weekly breakdown} (14 weeks, artifact repo) shows the same downward
 \emph{direction} --- from the $\sim$35--40 band in early May to the $\sim$13 band by late July --- so
@@ -296,9 +297,10 @@ that the human is the real router.} We categorized every bus sender (MEASURED,
 \texttt{human\_fleet\_decomposition.md}) as \textbf{human} (\texttt{[operator]}, the tag Conductor
 posts under when Kyle drives the bus by hand), \textbf{automated} (\texttt{[system]}/watchdog/broker),
 or \textbf{fleet} (a Claude session). The human authored \textbf{0.9\%} of all coordination messages
-(26 of 2{,}737) and \textbf{1.9\%} of the \emph{directed} routing mail (21 of 1{,}109); over 98\%
+(26 of 2{,}744) and \textbf{1.9\%} of the \emph{directed} routing mail (21 of 1{,}109); over 98\%
 originates from the fleet. And that fleet coordination is \textbf{load-shared, not funneled through a
-lead}: among the 52 fleet senders the busiest is 9.8\% of fleet mail, the top three 26.6\%, and it
+lead}: among the 52 fleet senders the busiest is 9.8\% of fleet mail, the top three 26.6\% (fleet-only
+denominator, so slightly above the 25.4\% all-sender figure above), and it
 takes 7 to reach half --- there is no human-proxy hub routing the traffic. \textbf{The honest limit:}
 the bus is the Claude$\leftrightarrow$Claude channel \emph{by construction}, so this bounds the human's
 share of the \emph{shared} channel, not the prompt channel above --- but the two agree, and that is the
@@ -320,7 +322,7 @@ Month & Human prompts & Active projects & Prompts / project \\
 2026-04 & 2{,}027 & 10 & 202.7 \\
 2026-05 & 1{,}117 & 16 & 69.8 \\
 2026-06 & 1{,}936 & 27 & 71.7 \\
-2026-07 & 1{,}219 & 34 & \textbf{35.9} \\
+2026-07 & 1{,}270 & 35 & \textbf{36.3} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -701,7 +703,7 @@ is arguably more useful, and less expected. We summarize the study in four findi
 \textbf{Finding 1 --- persistent specialist sessions produced stable role differentiation and a
 load-sharing division of labour.} Long-lived sessions did not remain interchangeable: they developed
 durable domain ownership and predictable routing --- a division measured on the mechanical record as
-a many-peer load-share with a busy head but \emph{no} dominant orchestrator (Gini 0.693, \S V-A).
+a many-peer load-share with a busy head but \emph{no} dominant orchestrator (Gini 0.698, \S V-A).
 Role identity emerged from continuity and repeated exposure, not explicit assignment, and it is the
 foundation every later effect rests on.
 
