@@ -103,24 +103,20 @@ central hypothesis, disconfirmed. Findings 1--3 are what makes the fleet useful;
 and \emph{independent of} the capability gain we set out to find and did not.
 
 \subsection{What we set out to show, and what survived}
-The contributions are not epistemically equal. \textbf{We set out to demonstrate \emph{compounding competence}} --- that a context-heavy
-peer substrate gets cheaper and better on task $N{+}1$ because of tasks $1{\dots}N$. \textbf{It did
-not survive.} Six A/B ablations and a pre-registered controlled baseline (\S V-D, \S V-E) show that a
-fresh session \emph{holding the committed carrier} re-derives the fixes with no session-memory: what
-compounds is the carrier, and lived context buys \emph{efficiency and recognition}, not raw
-capability. That negative is the paper's most solid \emph{evaluated} result.
-The \textbf{method} (contribution~1), by contrast, has \emph{no controlled evidence}: we did not run
-in-vivo adversarial co-design head-to-head against an engineer specifying the primitives up front, so
-we do not claim it is superior --- only that it is a replicable process with a described mechanism
-that demonstrably \emph{produced} a working, hardened substrate. Its \textbf{falsifier}: the method
-claim weakens if the failures the adversarial process caught would
+The contributions are not epistemically equal. The compounding-competence hypothesis --- a
+context-heavy peer substrate cheaper on task $N{+}1$ because of tasks $1{\dots}N$ --- \textbf{did
+not survive} (\S V-D, \S V-E): what compounds is the committed carrier, the paper's most solid
+\emph{evaluated} result. The \textbf{method} (contribution~1), by contrast, has \emph{no controlled
+evidence}: we did not run in-vivo adversarial co-design head-to-head against an engineer specifying
+the primitives up front, so we do not claim it is superior --- only that it is a replicable process
+with a described mechanism that demonstrably \emph{produced} a working, hardened substrate. Its
+falsifier: the method claim weakens if the failures the adversarial process caught would
 have been caught as readily by ordinary single-author review, or if the primitives it converged on
-were worse than a competent up-front design. We offer one \emph{observational} signal consistent with
-the method (not a controlled test of it): across the deployment, \textbf{human prompts per active
-project declined} --- from near 70 across May--June to 36 in July (monthly; a finer weekly series in
-\S V-A shows the same direction) --- \emph{as} the number of concurrent projects grew from 16 to 35.
-The human moves from courier toward architect, which is what the method is for --- a trend with the
-usual longitudinal confounds, not proof.
+were worse than a competent up-front design. One \emph{observational} signal is consistent with it
+(not a controlled test): human prompts per active project declined --- from near 70 across May--June
+to 36 in July (monthly; a finer weekly series in \S V-A shows the same direction) --- \emph{as}
+concurrent projects grew from 16 to 35. The human moves from courier toward architect, which is what
+the method is for --- a trend with the usual longitudinal confounds, not proof.
 
 \section{Related Work}
 \emph{(Full treatment: \texttt{related-work.md}.)} Capability-aware routing exists but is
@@ -472,11 +468,11 @@ because \textbf{what compounds is what is still true in the carrier when the nex
 and the \textbf{executable} carrier governs
 (code / assert / invariant); a \emph{prose} carrier is ``neither the asset nor the liability
 anyone claimed'' (sizer's wrong-doc ablation is self-refuting because the code is there to
-check it against). \textbf{The efficiency/capability line, made operational (so ``efficiency''
-is falsifiable, not a relabel that absorbs every gain):} we score an ablation arm as a
-\textbf{capability} gain iff the context-carrying arm \emph{reaches a correct fix the fresh arm
-does NOT}, and as an \textbf{efficiency} gain iff it reaches the \emph{same} correct fix
-\emph{more cheaply} (fewer steps/tokens/time). Under that test the \textbf{five floor ablations} (the five non-C2 ablations, all testing the
+check it against). The efficiency/capability line, made operational (so ``efficiency''
+is falsifiable, not a relabel that absorbs every gain): we score an ablation arm as a
+\emph{capability} gain iff the context-carrying arm reaches a correct fix the fresh arm
+does NOT, and an \emph{efficiency} gain iff it reaches the \emph{same} correct fix
+\emph{more cheaply} (fewer steps/tokens/time). Under that test the five floor ablations (the five non-C2 ablations, all testing the
 crisp-symptom floor) \textbf{+ RQ5 are efficiency, not capability} --- across every arm the fresh agent reached a correct fix
 (mahjong 16/16, mcxn947 3/3, 93emulator 6/6, INT8 in $\sim$4 steps, sizer 3/3 correct in
 \emph{both} arms (0/3 misled), both RQ5 arms), so the measured advantages (RQ5's 2.6$\times$ fewer steps;
@@ -487,10 +483,10 @@ capability-vs-efficiency signal about the ceiling --- it is a pre-registered NUL
 data point in the efficiency finding. \emph{This is a falsifiable claim: a single
 ablation where the fresh arm FAILS and the context arm succeeds would move it to
 ``capability'' --- we looked and did not find one on the tasks tested.} The
-\textbf{defensible, bounded RQ4b claim:} accumulated context compounds \textbf{most on an open
-search a fresh agent cannot cheaply bisect} and \textbf{least on a crisp symptom with an
-objective oracle} (any agent bisects fast); on some specimens context even shows a
-\textbf{thoroughness regression} (pattern-match-and-stop). \textbf{This bound is half-measured:
+defensible, bounded RQ4b claim: accumulated context compounds most on an open
+search a fresh agent cannot cheaply bisect and least on a crisp symptom with an
+objective oracle (any agent bisects fast); on some specimens context even shows a
+\emph{thoroughness regression} (pattern-match-and-stop). \textbf{This bound is half-measured:
 the crisp-symptom FLOOR is MEASURED (the five floor ablations bisected fast, and even C2's ceiling
 attempt collapsed to a fast bisection); the open-search CEILING
 resists measurement --- and we report the \emph{pre-registered sequel that tried to measure it
@@ -525,13 +521,12 @@ illustrations of one constraint (reproducibility $\perp$ open-search), never as 
 agreeing.} What \emph{is} load-bearing is the \textbf{constraint itself}: it held across two
 domains (stale-doc/app vs converter/NPU) and two opposite failure directions (0/3 vs 4/4),
 which is evidence the constraint is real --- \emph{even though the two nulls do not
-independently corroborate it.} \textbf{The finding generalizes; the data points do not
-replicate} --- stated exactly so a reviewer cannot read ``two nulls'' as ``replicated.''
+independently corroborate it.} The finding generalizes; the data points do not
+replicate.
 \emph{(Sequel artifacts, remote-verified 2026-07-27: pre-registration
 \texttt{imx95-media-test@abeab3dc64cb}, results \texttt{@d35a64bf6d3a}, on
-github.com/kylefoxaustin/imx95-media-test.)} \textbf{Honest asymmetry:} two of the six
-ablations pre-registered their rubric (\texttt{sizer} and the C2 sequel); the other four are
-honestly-run but \emph{post-hoc graded} (\S VI).
+github.com/kylefoxaustin/imx95-media-test.)} (Grading: two of the six ablations pre-registered
+their rubric, \texttt{sizer} and the C2 sequel; the rest are post-hoc graded --- \S VII.)
 
 \textbf{The independence sub-claim (RQ4-adjacent) --- the measured bound, at exactly the strength the
 record supports.} A skeptic rightly objects that our divergence proxies (disjoint task histories, low
@@ -774,9 +769,9 @@ any headline claim. Curated to five in-body illustrations, each mapping to a dis
   routing on history.
 \end{enumerate}
 
-Several cases were \textbf{corrected during the paper's own writing} (sizer's Case 1 severity
-downgraded from user-visible to latent; pai-sizer's propagated overstatement retracted) ---
-logged as \S V-F specimens, not hidden.
+Several cases were corrected during the paper's own writing (sizer's Case 1 severity
+downgraded from user-visible to latent; pai-sizer's propagated overstatement retracted),
+logged as \S V-F specimens.
 
 \section*{Disclosure: Use of Generative AI}
 This paper reports on, and was substantially produced by, a fleet of \emph{Claude Code}
