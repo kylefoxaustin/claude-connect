@@ -622,13 +622,13 @@ result.
 \section{Implications for Practitioners}
 The measured results reduce to four working rules; each carries the bounds of \S VII.
 
-1. Fund the carrier, not the session. Effort that moves knowledge into the committed,
+\textbf{1. Fund the carrier, not the session.} Effort that moves knowledge into the committed,
 executable carrier --- code, asserts, invariants, checked-in operating docs --- buys
 capability: a fresh clone holding it reached every fix we tested (\S V-D, \S V-E). Effort that
 preserves session memory buys speed, not correctness. When the two compete for budget, the
 carrier wins.
 
-2. Use lived context where efficiency and routing pay --- and audit it. Persistent
+\textbf{2. Use lived context where efficiency and routing pay --- and audit it.} Persistent
 sessions finished the matched task 2.6$\times$ faster with 36\% fewer steps, and let the lead
 route work on a peer's demonstrated history rather than a declared role. But context also
 produced the one failure class unique to it: the \emph{thoroughness regression}, in which a
@@ -636,12 +636,12 @@ context-carrying session pattern-matched a staged answer and stopped short of th
 a blind arm caught (\S V-D). Long-lived sessions therefore need a periodic fresh-eyes pass ---
 a blind clone on the same task --- as a standing control.
 
-3. Write fixes into the executable carrier, not into prose. The stale-doc ablation
+\textbf{3. Write fixes into the executable carrier, not into prose.} The stale-doc ablation
 found a wrong prose carrier to be ``neither the asset nor the liability'': every arm detected
 the staleness against the code (\S V-D). Prose narrates; code, tests, and invariants govern. A
 fix that exists only as narration has not compounded.
 
-4. Copy the cheap primitives first. The substrate's load-bearing mechanisms ---
+\textbf{4. Copy the cheap primitives first.} The substrate's load-bearing mechanisms ---
 verified orders that read the artifact back before acknowledging, SHA-pinned approval tokens,
 an observer-owned admission throttle --- are small, model-agnostic, and follow one rule:
 \emph{verify the outcome, not the intention} (\S III). They transfer whether or not one adopts
