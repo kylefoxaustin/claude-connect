@@ -41,25 +41,22 @@ Email: \textit{[to fill at submission]}}}
 
 % ---- ABSTRACT (drafted from draft-v4; trim to venue word limit if needed) ----
 \begin{abstract}
-We report on \textbf{Conductor}, a months-long, continuously-operated single-workstation
-deployment in which a set of persistent agent sessions --- one base model, each carrying
-durable, divergent per-context memory --- coordinate over a shared append-only bus and
-incrementally co-design the coordination machinery they run on, with a human as architect
-rather than courier. This is \emph{not} a claim of
-emergent multi-agent minds; it is one model plus per-session memory plus a bus plus an
-observer, and the contribution is that this composition, built and hardened in vivo under a
-human calibrated to reversibility, is a practical and generative way to construct agentic
-systems. We evaluate from the mechanical record --- coordination volume and division of
-labour, failure modes closed, a longitudinal human-touch series --- and hold the headline
-intuition, \emph{compounding competence} (task $N{+}1$ cheaper because of tasks $1{\dots}N$),
-to a strict standard: because the passive record only correlates memory-present with
-task-cheap, we ran six A/B ablations and a pre-registered baseline. The result is not a rubber
-stamp: a fresh clone \emph{holding the committed carrier} re-derives the fixes with no
-session-memory, so what compounds is the carrier, and lived context buys \emph{efficiency and
-recognition}, not raw capability, on the tasks tested --- a sharpened, partly-negative finding.
-We also surface an unanticipated operational finding (with a stated hit-rate and
-no control arm): writing this paper functioned as an instrument, prompting sessions to verify claims
-taken on trust and producing git-recorded defect corrections in 4 of 19 case-writing sessions.
+We set out to demonstrate \emph{compounding competence}: that a fleet of persistent,
+memory-divergent agent sessions --- one base model, durable per-session context, a shared
+append-only bus, and a human gating only irreversible actions (\textbf{Conductor}) --- gets
+cheaper and more capable on task $N{+}1$ because of tasks $1{\dots}N$. Six A/B ablations and a
+pre-registered baseline, run inside the live months-long deployment, disconfirm the naive form:
+a fresh session \emph{holding the committed carrier} re-derives the same fixes with no session
+memory. What compounds is the carrier. Lived context buys \emph{efficiency and recognition} ---
+2.6$\times$ wall-clock and 36\% fewer steps on the pre-registered task --- not capability, and
+on some tasks it produces a measurable \emph{thoroughness regression} (pattern-match-and-stop).
+Around that result we report the deployment itself: a coordination substrate the sessions
+co-designed and hardened in vivo under adversarial peer review, $\sim$20 named coordination
+failure modes closed, a record-attested corpus of cross-session defect catches explained by
+empirical vantage rather than independent reasoning, and human touches per active project
+falling by half while concurrent projects doubled. The practitioner consequence: invest in the
+committed, executable carrier for capability; use persistent sessions for speed and
+routing-by-history; and audit them for the regression.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -624,6 +621,34 @@ two different epistemic objects, which we keep separate. So we report it as an \
 operational finding with a stated hit-rate and no control arm} --- worth recording, not a headline
 result.
 
+\section{Implications for Practitioners}
+The measured results reduce to four working rules; each carries the bounds of \S VII.
+
+\textbf{1. Fund the carrier, not the session.} Effort that moves knowledge into the committed,
+executable carrier --- code, asserts, invariants, checked-in operating docs --- buys
+capability: a fresh clone holding it reached every fix we tested (\S V-D, \S V-E). Effort that
+preserves session memory buys speed, not correctness. When the two compete for budget, the
+carrier wins.
+
+\textbf{2. Use lived context where efficiency and routing pay --- and audit it.} Persistent
+sessions finished the matched task 2.6$\times$ faster with 36\% fewer steps, and let the lead
+route work on a peer's demonstrated history rather than a declared role. But context also
+produced the one failure class unique to it: the \emph{thoroughness regression}, in which a
+context-carrying session pattern-matched a staged answer and stopped short of the second defect
+a blind arm caught (\S V-D). Long-lived sessions therefore need a periodic fresh-eyes pass ---
+a blind clone on the same task --- as a standing control.
+
+\textbf{3. Write fixes into the executable carrier, not into prose.} The stale-doc ablation
+found a wrong prose carrier to be ``neither the asset nor the liability'': every arm detected
+the staleness against the code (\S V-D). Prose narrates; code, tests, and invariants govern. A
+fix that exists only as narration has not compounded.
+
+\textbf{4. Copy the cheap primitives first.} The substrate's load-bearing mechanisms ---
+verified orders that read the artifact back before acknowledging, SHA-pinned approval tokens,
+an observer-owned admission throttle --- are small, model-agnostic, and follow one rule:
+\emph{verify the outcome, not the intention} (\S III). They transfer whether or not one adopts
+the fleet.
+
 \section{Threats to Validity}
 \begin{itemize}
 \item \textbf{Self-evidencing circularity.} A corpus of first-person cases
@@ -694,89 +719,33 @@ This is the sequel experiment; naming it here is the honest acknowledgement that
 deployment, however rich, establishes a \emph{method worth replicating}, not a law.
 
 \section{Conclusion}
-Conductor is an experience report on a specific, nameable composition --- one model, durable
-per-context memory, a shared bus, a human-as-architect gate calibrated to reversibility ---
-hardened \emph{in vivo} by its own context-divergent peers. We set out to test whether persistent
-specialist context produces \textbf{compounding capability}. It does not. What it produces instead
-is arguably more useful, and less expected. We summarize the study in four findings.
+Conductor is an experience report on a nameable composition --- one model, durable per-session
+memory, a shared bus, a human gating only irreversibility --- that co-designed and hardened its
+own coordination substrate in vivo. Its headline intuition, compounding competence, was put to
+six A/B ablations and a pre-registered baseline, and the naive form was disconfirmed: what
+compounds is the committed carrier, and lived context buys efficiency and recognition, not
+capability --- most on open searches a fresh agent cannot cheaply bisect, least on crisp
+symptoms with an objective oracle. That bounded negative is the paper's most solid evaluated
+result, and the process that produced it --- peers refuting the lead on the bus, an ablation
+refuting its own author's case --- is the mechanism under study.
 
-\textbf{Finding 1 --- persistent specialist sessions produced stable role differentiation and a
-load-sharing division of labour.} Long-lived sessions did not remain interchangeable: they developed
-durable domain ownership and predictable routing --- a division measured on the mechanical record as
-a many-peer load-share with a busy head but \emph{no} dominant orchestrator (Gini 0.698, \S V-A).
-Role identity emerged from continuity and repeated exposure, not explicit assignment, and it is the
-foundation every later effect rests on.
+The reusable contribution is the method: in-vivo adversarial co-design by persistent,
+context-divergent peers under a reversibility-gating human, offered as an existence proof with
+a stated mechanism, not a validated superiority. Its cleanest demonstration is this paper's own
+review. The internal panel, at the deployment vantage, caught substance --- a circularity, a
+single-model confound, unrun ablations; independent external review, at the submission vantage,
+caught what the panel structurally could not --- cross-section consistency, arithmetic, and
+venue compliance. Which vantage caught which defect class is checkable in the archived draft
+series and the paper's own git history: the vantage bound of \S V-D, one level up.
 
-\textbf{Finding 2 --- the fleet co-designed and hardened its own coordination substrate.} Specialists
-did not merely execute work inside Conductor; they iteratively improved the coordination layer that
-connected them --- eliminating manual courier steps and closing named failure modes, each with at
-least one live ablation (\S V-B). The substrate that governed the collaboration was itself a product
-of it. This is the paper's reusable method: \textbf{in-vivo adversarial co-design of a coordination
-substrate by persistent, context-divergent peers under a human gating only irreversibility} ---
-offered as an existence proof with a mechanism, not a validated superiority.
-
-\textbf{Finding 3 --- peer review across divergent contexts exposed defects individual sessions and
-the human architect missed.} Because specialists carried different histories and priors, a peer
-session frequently surfaced errors neither the originating session nor the human detected: a
-machine-evidenced cross-session catch corpus (14 attested / 13 classifiable, audited and bounded in
-\S V-D). \emph{Divergence} of context, not depth of any single context, was the mechanism --- and it
-holds only relative to the divergence proxies we could measure, never absolutely (shared base model,
-bus, and operator framing remain). This is our strongest evidence that a fleet is qualitatively
-different from a single well-primed session.
-
-\textbf{Finding 4 --- context bought efficiency and routing, not task-solving capability.} Our central
-hypothesis --- that accumulated context raises the \emph{ceiling} of what an agent can solve --- did
-not survive. Under controlled comparison (six A/B ablations + a pre-registered baseline, \S V-D/E),
-additional context improved \emph{how quickly and how appropriately} work was routed and completed but
-did not change \emph{whether} a task was solved: every fresh arm reached a correct fix. In one
-specimen heavier context even showed a \emph{thoroughness regression} (pattern-match-and-stop), and
-the one open-search ceiling we tried to instrument returned a pre-registered null (reproducibility and
-open search are in tension, \S V-D). Memory, in this study, behaved like organizational
-infrastructure, not added intelligence.
-
-\textbf{Taken together}, the value of long-lived specialist agents here came from the
-\textbf{organizational ecosystem} they formed --- expertise concentration, reliable routing, and
-cross-context error correction --- rather than any measurable gain in raw capability. Persistent
-context created a functioning collaboration structure long before, and largely independent of, any
-capability advantage. We consider this the paper's primary contribution, and note that it emerged only
-\emph{after} the original compounding-capability hypothesis failed --- through peers refuting the lead
-over the bus and an ablation refuting its own author's case, which \textbf{is the very mechanism under
-study.} (The paper-as-instrument effect of \S V-F is reported separately, with a stated hit-rate and
-no control arm, and is not counted among these four.)
-
-\textbf{The method, demonstrated on itself.} The cleanest evidence for Finding~2's method is this
-paper's own review, and it is \emph{evidenced, not testimonial}, because it instantiates the vantage
-bound of \S V-D one level up. The fleet's internal panel occupied the \emph{deployment} vantage ---
-it could see the substrate, the commits, the ablations --- and caught \textbf{substance} (a
-circularity, a single-model confound, unrun ablations), but \emph{missed}, across the internal
-revisions, the classes it was structurally positioned not to see: \textbf{cross-section consistency}
-(a figure disavowed in one section and featured in another), \textbf{arithmetic} (three mismatches in
-a recompute), \textbf{missing prior art}, and a \textbf{venue-compliance} defect (an AI entity in the
-author block). Independent external review, at the \emph{submission} vantage, caught precisely those.
-\textbf{Each defect, and the vantage that caught it, is resolvable}: the draft series
-(\texttt{draft-v1}--\texttt{v5.md}), the submitted \texttt{.tex}, and the panel and external review
-notes (\texttt{review\_external.md}) are archived and pushed, and the git history shows when each
-entered and was fixed --- checkable in minutes, not testimony. Same mechanism as \S V-D, with this
-paper as the specimen: a measured account of \emph{which vantage caught which class of defect}.
-
-\textbf{A transferable secondary contribution} the deployment produced, and one we think travels
-beyond this setting: a \emph{non-independence discipline for corroboration}. When two of the fleet's
-own null results (the C2 open-search null and \texttt{sizer}'s stale-doc null) agreed, the fleet
-declined to count them as replication --- they share a mechanism (both tasks were bisectable because
-their ground truth was inspectable), so by a common-dependency rule they carry near-zero independent
-weight. The rule --- \emph{before crediting two results as corroborating, check whether they share a
-generative mechanism, and if so discount them} --- is exactly what most authors would have banked as
-replication, and it applies to any convergence among same-family estimators (\S V-D).
-
-One last observation the deployment forced on us, because it kept mistaking a rung for the
-summit: a result is not durable until it is \emph{reachable by a reviewer}, and the fleet
-walked that ladder three times in a day --- \textbf{untracked file $\rightarrow$
-tracked-but-local commit $\rightarrow$ pushed to a remote} --- each rung fixing a different
-failure mode (silent edit $\rightarrow$ machine loss $\rightarrow$ un-verifiability), and
-\emph{each one felt like the end of the job} (pai-sizer, on the C2 sequel's own artifacts).
-``Committed'' is not a synonym for ``durable,'' and neither is ``tracked.'' We state it because
-this paper's evidence \emph{is} those commits, and a claim a reviewer cannot resolve is, at that
-moment, not yet evidence.
+Three secondary observations travel beyond this deployment: the silent-defect taxonomy and its
+TAG$\rightarrow$ABLATE$\rightarrow$HARVEST remedy split (\S V-B); the non-independence
+discipline --- before crediting two results as corroboration, check for a shared generative
+mechanism, and discount if found (\S V-D); and the durability ladder --- untracked
+$\rightarrow$ committed $\rightarrow$ pushed --- because a claim a reviewer cannot resolve is,
+at that moment, not yet evidence. The working summary for practitioners is \S VI: fund the
+carrier, use sessions for speed and routing, audit for the regression, copy the cheap
+primitives.
 
 \section*{Appendix: Evidence vs.\ Illustration}
 \textbf{Evidence (MEASURED):} the mechanical record (git, bus, \texttt{history.jsonl}, spend
