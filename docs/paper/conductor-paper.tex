@@ -45,7 +45,7 @@ We report on \textbf{Conductor}, a months-long, continuously-operated single-wor
 deployment in which a set of persistent agent sessions --- one base model, each carrying
 durable, divergent per-context memory --- coordinate over a shared append-only bus and
 incrementally co-design the coordination machinery they run on, with a human as architect
-rather than courier. We are precise about the composition: this is \emph{not} a claim of
+rather than courier. This is \emph{not} a claim of
 emergent multi-agent minds; it is one model plus per-session memory plus a bus plus an
 observer, and the contribution is that this composition, built and hardened in vivo under a
 human calibrated to reversibility, is a practical and generative way to construct agentic
@@ -56,8 +56,8 @@ to a strict standard: because the passive record only correlates memory-present 
 task-cheap, we ran six A/B ablations and a pre-registered baseline. The result is not a rubber
 stamp: a fresh clone \emph{holding the committed carrier} re-derives the fixes with no
 session-memory, so what compounds is the carrier, and lived context buys \emph{efficiency and
-recognition}, not raw capability, on the tasks tested --- a sharpened, partly-negative finding
-we report in full. We also surface an unanticipated operational finding (with a stated hit-rate and
+recognition}, not raw capability, on the tasks tested --- a sharpened, partly-negative finding.
+We also surface an unanticipated operational finding (with a stated hit-rate and
 no control arm): writing this paper functioned as an instrument, prompting sessions to verify claims
 taken on trust and producing git-recorded defect corrections in 4 of 19 case-writing sessions.
 \end{abstract}
@@ -86,36 +86,35 @@ contributions, stated at the level the evidence supports:
   pushes, and anything that outlives the session, are gated). We present it as a \emph{replicable
   process with a stated mechanism and an existence proof} --- it produced and hardened a working
   substrate --- \textbf{not} as a result validated against the alternative (an engineer designing
-  the primitives up front); we did not run that comparison, and we say so plainly (\S I-A).
+  the primitives up front); we did not run that comparison (\S I-A).
 \item \textbf{A system} implementing it (bus, verified orders, a project layer, a decision
   shield, measured governance), described as an experience report with the mechanical record.
-\item \textbf{A candid evaluation} that separates what the deployment \emph{establishes} from
-  what it only \emph{suggests}, and an honest account of the method's own failure modes ---
+\item \textbf{An evaluation} that separates what the deployment \emph{establishes} from
+  what it only \emph{suggests}, and an account of the method's own failure modes ---
   including a circularity we fell into and were corrected on.
 \end{enumerate}
 
 We claim neither statistical generality ($N{=}1$ deployment) nor emergent intelligence.
 
 \subsection{What we set out to show, and what survived}
-We are explicit about the epistemic status of each contribution up front, because they are not
-equal. \textbf{We set out to demonstrate \emph{compounding competence}} --- that a context-heavy
+The contributions are not epistemically equal. \textbf{We set out to demonstrate \emph{compounding competence}} --- that a context-heavy
 peer substrate gets cheaper and better on task $N{+}1$ because of tasks $1{\dots}N$. \textbf{It did
 not survive.} Six A/B ablations and a pre-registered controlled baseline (\S V-D, \S V-E) show that a
 fresh session \emph{holding the committed carrier} re-derives the fixes with no session-memory: what
 compounds is the carrier, and lived context buys \emph{efficiency and recognition}, not raw
-capability. That negative is the paper's most solid \emph{evaluated} result, and it is stated as one.
+capability. That negative is the paper's most solid \emph{evaluated} result.
 The \textbf{method} (contribution~1), by contrast, has \emph{no controlled evidence}: we did not run
 in-vivo adversarial co-design head-to-head against an engineer specifying the primitives up front, so
 we do not claim it is superior --- only that it is a replicable process with a described mechanism
-that demonstrably \emph{produced} a working, hardened substrate. Its \textbf{falsifier}, stated so it
-is not unfalsifiable: the method claim weakens if the failures the adversarial process caught would
+that demonstrably \emph{produced} a working, hardened substrate. Its \textbf{falsifier}: the method
+claim weakens if the failures the adversarial process caught would
 have been caught as readily by ordinary single-author review, or if the primitives it converged on
 were worse than a competent up-front design. We offer one \emph{observational} signal consistent with
 the method (not a controlled test of it): across the deployment, \textbf{human prompts per active
 project declined} --- from near 70 across May--June to 36 in July (monthly; a finer weekly series in
 \S V-A shows the same direction) --- \emph{as} the number of concurrent projects grew from 16 to 34.
-The human moves from courier toward architect, which is what the method is for. We report it as a
-trend with the usual longitudinal confounds, not as proof.
+The human moves from courier toward architect, which is what the method is for --- a trend with the
+usual longitudinal confounds, not proof.
 
 \section{Related Work}
 \emph{(Full treatment: \texttt{related-work.md}.)} Capability-aware routing exists but is
@@ -169,7 +168,7 @@ operation:
 
 \begin{itemize}
 \item \textbf{Bus} --- append-only shared log; directed mail is \textbf{auto-delivered} (idle
-  recipient woken), which is the courier-elimination mechanism (and, honestly, an
+  recipient woken), which is the courier-elimination mechanism (and an
   \emph{unreliable} one --- \S V-A).
 \item \textbf{Verified orders} --- \texttt{deliver} reads the artifact back and refuses unless
   it landed.
@@ -238,7 +237,7 @@ recompute it \emph{excluding} all paper-era messages (everything before the pape
 top-3 26.4\%, 13 of 52 senders to 80\%} --- \emph{indistinguishable} from the full-log figures above
 (Gini $0.693$ vs.\ $0.693$; top-3 26.4\% vs.\ 25.5\%). The head is a property of the \emph{organic}
 deployment, not of the paper's own threads; the reflexivity we flag elsewhere does \emph{not}
-contaminate this result, and we report both numbers so the reader can see that it does not.
+contaminate this result (both numbers are shown).
 \subsection{RQ1 --- Courier elimination (proxy, with a latency tradeoff)}
 1,090 directed messages (as-of the corpus stamp) are \emph{candidates} for auto-delivery ---
 hand-offs a human would otherwise relay --- so the count is a \textbf{ceiling on relays avoided},
@@ -306,8 +305,7 @@ Month & Human prompts & Active projects & Prompts / project \\
 \end{tabular}
 \end{table}
 
-\textbf{And RQ1 is a \emph{tradeoff}, not a pure win --- stated because hiding it is less
-credible.} Coordination over an async bus + a lead's wake cycle can be \textbf{slower in
+\textbf{And RQ1 is a \emph{tradeoff}, not a pure win.} Coordination over an async bus + a lead's wake cycle can be \textbf{slower in
 wall-clock than a synchronous human courier}: in this deployment a directed wake took
 \textbf{minutes}, and in the counterexample above the mechanism failed outright and the human
 was faster. The substrate optimizes the \textbf{human's attention} (fewer relays to run), and
@@ -450,7 +448,7 @@ re-derivation cost:
 
 \textbf{The result, stated plainly: the committed carrier is what compounds; lived context buys
 efficiency and recognition, not capability.} This is a powered negative that corrects a widely-held
-intuition, and we state it without hedge. A fresh clone \emph{holding the repo} re-derives the fix
+intuition. A fresh clone \emph{holding the repo} re-derives the fix
 because \textbf{what compounds is what is still true in the carrier when the next session reads it},
 and the \textbf{executable} carrier governs
 (code / assert / invariant); a \emph{prose} carrier is ``neither the asset nor the liability
