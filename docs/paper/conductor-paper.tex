@@ -272,6 +272,21 @@ shift the method is for. We report it with the standard longitudinal confounds -
 changed, the operator learned, and per-\emph{active}-project is a proxy for per-\emph{delivered}-project
 --- so it is a trend, not a controlled measurement.
 
+\textbf{Who originates the coordination? A direct decomposition, answering the sharpest objection ---
+that the human is the real router.} We categorized every bus sender (MEASURED,
+\texttt{human\_fleet\_decomposition.md}) as \textbf{human} (\texttt{[operator]}, the tag Conductor
+posts under when Kyle drives the bus by hand), \textbf{automated} (\texttt{[system]}/watchdog/broker),
+or \textbf{fleet} (a Claude session). The human authored \textbf{0.9\%} of all coordination messages
+(26 of 2{,}737) and \textbf{1.9\%} of the \emph{directed} routing mail (21 of 1{,}109); over 98\%
+originates from the fleet. And that fleet coordination is \textbf{load-shared, not funneled through a
+lead}: among the 52 fleet senders the busiest is 9.8\% of fleet mail, the top three 26.6\%, and it
+takes 7 to reach half --- there is no human-proxy hub routing the traffic. \textbf{The honest limit:}
+the bus is the Claude$\leftrightarrow$Claude channel \emph{by construction}, so this bounds the human's
+share of the \emph{shared} channel, not the prompt channel above --- but the two agree, and that is the
+point: $<$1\% of bus traffic \emph{and} a falling per-project prompt intensity both point away from a
+human doing the routing. What the human owns --- goals, framing, the irreversibility gate --- is
+\textbf{architect} work, not \textbf{courier} work, which is precisely the claim.
+
 \begin{table}[t]
 \centering\footnotesize
 \caption{Human touch per active project (\texttt{history.jsonl}). Jan/Mar (1 and 7 prompts) are
@@ -521,6 +536,25 @@ reasoning error.} We therefore claim independence \emph{only relative to} the di
 never absolutely: peers do catch reasoning-shaped defects, but they catch them by being
 \emph{empirically positioned} differently --- the input/grounding divergence the proxies measure ---
 which is a measured bound on the claim, not evidence of uncorrelated errors in the estimator sense.
+\textbf{A second pre-registered instrument on the same catches agrees.} A rubric hashed before any
+classification (\texttt{sizer}'s, executed by a non-author, \texttt{rq3\_categorisation\_test-*}) tested
+a sharper form --- whether peer catches cluster in \textbf{naming/categorisation} rather than
+\textbf{logic} (the ``an author cannot search for what they mis-filed'' hypothesis). It was
+\textbf{refuted} ($L{=}8$, $N{=}6$; robust to every borderline call, and with two biases --- a
+write-up selection effect and an $N$-generous tie-break --- both running \emph{toward} naming and it
+still lost): peer catches are a \emph{mix}, not a naming cluster, the same picture the factual/reasoning
+split gives. \textbf{A shared-lineage counter-specimen makes that divergence concrete at the artifact
+level}
+(owner-confirmed on three trees; \texttt{cases\_91emulator\_flexspi-three-way.md}): the same QEMU model
+family (i.MX 91/93/95) encoded \emph{one} FlexSPI lock register \textbf{three different ways} --- 91
+buggy (lock keyed off the wrong bit $\rightarrow$ a 5\,ms stall), 93 clean-and-faithful, 95
+clean-but-latent-wrong (a hardcoded lock, wrong at reset). A defect on one tree was \emph{structurally
+impossible} on its siblings from the same lineage, and even the two passes diverged in fidelity. So
+\textbf{shared model is a prior to \emph{check}, never a finding to \emph{inherit}} --- what discharges
+it per tree is a receipt (file:line + a test), not the lineage. Same generative prior, three distinct
+implementations: exactly the divergence the proxies measure. (Honest limit, which the specimen states:
+the three ports share a bus, so we cannot claim the encodings were arrived at \emph{independently} ---
+only that the artifacts diverged and each tree confirmed its own by test.)
 \subsection{RQ5 --- Baseline: cold orchestrator vs.\ peer substrate (pre-registered)}
 One matched task, run both ways, \textbf{pre-registered} (frozen spec + black-box acceptance
 test + directional prediction committed before either arm ran; the instrument was first proven
