@@ -29,8 +29,8 @@
 % administrative DESK-REJECT. The fleet's contribution is instead DISCLOSED precisely (see the
 % "Disclosure: Use of Generative AI" section) + acknowledged. For a paper whose subject IS agent
 % co-authorship, an explicit division-of-labour disclosure is stronger than a byline anyway.
-\title{Conductor: An Experience Report on\\
-       In-Vivo Adversarial Co-Design of a Multi-Session Agent Substrate}
+\title{Context Compounds, Capability Does Not:\\
+       An Experience Report on a Persistent Multi-Agent System}
 
 \author{\IEEEauthorblockN{Kyle Fox}
 \IEEEauthorblockA{Independent Researcher\\
@@ -95,6 +95,15 @@ contributions, stated at the level the evidence supports:
 \end{enumerate}
 
 We claim neither statistical generality ($N{=}1$ deployment) nor emergent intelligence.
+
+\textbf{Summary of findings (\S V), up front:} \emph{context compounds; capability does not.}
+(1)~persistent sessions formed stable roles and a load-shared division of labour (no dominant
+orchestrator, and the human originates $<$1\% of coordination); (2)~the fleet co-designed and hardened
+its own coordination substrate --- the reusable method; (3)~cross-context peer review caught defects
+individual sessions and the human missed; (4)~under six A/B ablations and a pre-registered baseline,
+accumulated context bought \emph{efficiency and routing}, not task-solving \emph{capability} --- the
+central hypothesis, disconfirmed. Findings 1--3 are what makes the fleet useful; they held \emph{before}
+and \emph{independent of} the capability gain we set out to find and did not.
 
 \subsection{What we set out to show, and what survived}
 The contributions are not epistemically equal. \textbf{We set out to demonstrate \emph{compounding competence}} --- that a context-heavy
@@ -238,6 +247,17 @@ top-3 26.4\%, 13 of 52 senders to 80\%} --- \emph{indistinguishable} from the fu
 (Gini $0.693$ vs.\ $0.693$; top-3 26.4\% vs.\ 25.5\%). The head is a property of the \emph{organic}
 deployment, not of the paper's own threads; the reflexivity we flag elsewhere does \emph{not}
 contaminate this result (both numbers are shown).
+\textbf{Why roles emerged at all --- no one assigned them.} Specialization was not designed; it is an
+attractor of two forces the substrate creates. \textbf{Continuity and ownership:} a session that built
+a subsystem holds the most context about it, so the cheapest place to route the next related task is
+that same session --- and routing it there deepens the advantage, a positive feedback that concentrates
+each domain onto whoever first worked it. \textbf{Repeated exposure} then hardens it: memory and the bus
+make yesterday's work legible today, so a returning session resumes its domain rather than re-learning a
+new one. That the resulting head is a \emph{spread} one (Gini 0.693, no dominant author) is because these
+forces are \emph{local} --- one attractor per domain --- not because anyone balanced the load. Role
+identity is an emergent property of continuity-plus-routing, not an org chart --- which is why it is the
+foundation the later findings rest on rather than a policy that could be tuned away.
+
 \subsection{RQ1 --- Courier elimination (proxy, with a latency tradeoff)}
 1,090 directed messages (as-of the corpus stamp) are \emph{candidates} for auto-delivery ---
 hand-offs a human would otherwise relay --- so the count is a \textbf{ceiling on relays avoided},
