@@ -7,10 +7,15 @@ audit, and the outcome is checked for robustness against the debatable rows. As-
 
 ## Outcome: **REFUTED** (pre-committed: REFUTED iff L ≥ N)
 
-**L = 8, N = 6, A = 0, n = 14** → L ≥ N. Peer-caught defects did **not** cluster in
+**L = 7, N = 6, A = 0, n = 13** → L ≥ N. Peer-caught defects did **not** cluster in
 naming/categorisation; logic-shaped catches slightly outnumbered them. Reported as refuted, per the
 pre-registration's own instruction ("I will record my prediction as refuted… and say so, as
 prominently").
+
+Scored over the **same 13 classifiable catches** the paper's factual/reasoning split uses (§V-D): the
+14th, an *incidental exposure* (row 14 below, qualcomm→95emulator), is excluded from both instruments
+for consistency. Including it would make it L=8/N=6/n=14 — same verdict, but the 13-set is the paper's
+convention.
 
 ## Classification (one row per record-attested peer catch, from `rq3_cross_session_catches.md`)
 
@@ -32,15 +37,17 @@ text a human reads** → **N**; genuinely unsettled → **A**. §5's mandated ca
 | 11 | campmatch→Mahjong: client-side `callClaude` leaks the key | move the call server-side (code) | **L** |
 | 12 | holobench→peer: wrong magic constant (`"LB3!"` vs `0xB5B6B7C0`) | change the constant/identifier (label; borderline L) | **N** |
 | 13 | orb_slam→ratchet: A55 clock 2.0 GHz shipped, live 1.7 GHz | correct the spec number (text, like a version string) | **N** |
-| 14 | qualcomm→95emulator (incidental): missing mailbox RESET | add the missing operation (code) | **L** |
+| — | qualcomm→95emulator (incidental): missing mailbox RESET | add the missing operation (code) | *excluded (would be L)* |
+
+**Tally over the 13 classifiable: N = 6 (rows 1, 2, 8, 10, 12, 13), L = 7 (rows 3–7, 9, 11), A = 0.**
 
 ## Robustness (does the outcome survive the debatable calls?)
 
 The only genuinely borderline rows are the N-leaning ones (1, 2, 10, 12 — wrong values/claims fixed in
-text). The eight L rows are near-unambiguous code fixes (3–7, 9, 11, 14; row 7 is rubric-mandated).
+text). The seven L rows are near-unambiguous code fixes (3–7, 9, 11; row 7 is rubric-mandated).
 To flip the verdict from REFUTED to N>L you would have to move ≥2 rows *from* L *to* N — but the L rows
 are all executed-expression changes, none of which plausibly reclassify as text-only. And even the
-most N-favorable legal reading (every A→N; there are no A's) leaves L=8 ≥ N=6. **The REFUTED verdict is
+most N-favorable legal reading (every A→N; there are no A's) leaves L=7 ≥ N=6. **The REFUTED verdict is
 robust.**
 
 ## Why this is a *strong* negative, not a weak one — two biases ran *toward* the prediction and it still lost
@@ -65,7 +72,7 @@ make peer catches *predominantly* naming.
 
 - One non-author classifier, not blind. Per-row calls are shown above so the verdict is checkable; the
   robustness argument is what carries it, not any single call.
-- n = 14 is small; the pre-registration set n ≥ 8 as the floor and this clears it, but a larger corpus
+- n = 13 is small; the pre-registration set n ≥ 8 as the floor and this clears it, but a larger corpus
   could shift the margin (not, on this evidence, the direction).
 - Rows are not fully independent (some share authoring sessions); since the verdict is REFUTED and
   robust, per-author subsetting cannot rescue the prediction (it could only weaken N further).
