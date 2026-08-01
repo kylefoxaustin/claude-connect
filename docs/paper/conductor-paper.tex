@@ -121,10 +121,29 @@ with a described mechanism that demonstrably \emph{produced} a working, hardened
 falsifier: the method claim weakens if the failures the adversarial process caught would
 have been caught as readily by ordinary single-author review, or if the primitives it converged on
 were worse than a competent up-front design. One \emph{observational} signal is consistent with it
-(not a controlled test): human prompts per active project declined --- from near 70 across May--June
-to 36 in July (monthly; a finer weekly series in \S V-A shows the same direction) --- \emph{as}
-concurrent projects grew from 16 to 35. The human moves from courier toward architect, which is what
-the method is for --- a trend with the usual longitudinal confounds, not proof.
+(not a controlled test): human prompts per active project declined (Table~\ref{tab:touch}) --- from
+near 70 across May--June to 36 in July (monthly; a finer weekly series in \S V-A shows the same
+direction) --- \emph{as} concurrent projects grew from 16 to 35. The human moves from courier toward
+architect, which is what the method is for --- a trend with the usual longitudinal confounds, not proof.
+
+\begin{table}[t]
+\centering\footnotesize
+\caption{Human touch per active project (\texttt{history.jsonl}). Jan/Mar (1 and 7 prompts) are
+pre-ramp startup and April the substrate's build-out month, all bootstrap-heavy and omitted. Three
+buckets cannot establish a trend and June~$\approx$~May; we report the shape (near 70 May--June, then
+36 in July), corroborated by a 14-week breakdown (artifact repo). Analyzed in \S V-A.}
+\label{tab:touch}
+\begin{tabular}{lrrr}
+\toprule
+Month & Human prompts & Active projects & Prompts / project \\
+\midrule
+2026-04 & 2{,}027 & 10 & 202.7 \\
+2026-05 & 1{,}117 & 16 & 69.8 \\
+2026-06 & 1{,}936 & 27 & 71.7 \\
+2026-07 & 1{,}270 & 35 & 36.3 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \section{Related Work}
 \emph{(Full treatment: \texttt{related-work.md}.)} Capability-aware routing exists but is
@@ -246,7 +265,7 @@ is, at that moment, not yet evidence.
 \centering\footnotesize
 \caption{Provenance tiers used throughout the evaluation.}
 \label{tab:prov}
-\begin{tabular}{ll}
+\begin{tabular}{@{}l p{0.60\columnwidth}@{}}
 \toprule
 Tier & Meaning \\
 \midrule
@@ -346,25 +365,6 @@ share of the \emph{shared} channel, not the prompt channel above --- but the two
 point: $<$1\% of bus traffic \emph{and} a falling per-project prompt intensity both point away from a
 human doing the routing. What the human owns --- goals, framing, the irreversibility gate --- is
 architect work, not courier work, which is precisely the claim.
-
-\begin{table}[t]
-\centering\footnotesize
-\caption{Human touch per active project (\texttt{history.jsonl}). Jan/Mar (1 and 7 prompts) are
-pre-ramp startup and April the substrate's build-out month, all bootstrap-heavy and omitted. Three
-buckets cannot establish a trend and June~$\approx$~May; we report the shape (near 70 May--June, then
-36 in July), corroborated by a 14-week breakdown (artifact repo).}
-\label{tab:touch}
-\begin{tabular}{lrrr}
-\toprule
-Month & Human prompts & Active projects & Prompts / project \\
-\midrule
-2026-04 & 2{,}027 & 10 & 202.7 \\
-2026-05 & 1{,}117 & 16 & 69.8 \\
-2026-06 & 1{,}936 & 27 & 71.7 \\
-2026-07 & 1{,}270 & 35 & 36.3 \\
-\bottomrule
-\end{tabular}
-\end{table}
 
 And RQ1 is a \emph{tradeoff}, not a pure win. Coordination over an async bus + a lead's wake cycle can be slower in
 wall-clock than a synchronous human courier: in this deployment a directed wake took
