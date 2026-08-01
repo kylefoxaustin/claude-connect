@@ -256,7 +256,9 @@ but neither do we claim uncorrelated errors in the estimator sense; (4) the huma
 the irreversible.
 
 \section{Evaluation}
-Every quantitative claim below carries an explicit \emph{provenance tier}; the fleet adopted these as
+Sessions are named for the subsystem they own (e.g.\ \texttt{net-emu}, \texttt{media-npu}); these names
+are pseudonymized for publication, and the artifact package preserves the mapping. Every quantitative
+claim below carries an explicit \emph{provenance tier}; the fleet adopted these as
 a discipline and we define them once here (Table~\ref{tab:prov}). The rule the deployment enforces on
 itself: a derived or recalled number may never be reported bare, and a claim a reviewer cannot resolve
 is, at that moment, not yet evidence.
@@ -392,19 +394,19 @@ discipline (``just replicate,'' ``just tag'') sails past most of them:
   promoted past its conditions is \emph{worse} than a derived one, because the \texttt{measured}
   badge actively defends the error.
 \item Green-but-wrong / wired-but-broken in the untested direction --- a gate green +
-  documented + shipped, passing every gate-ON test while the gate-OFF path leaks (91emulator,
-  rt1180). Replaying the green measurement \emph{n} times passes \emph{n} times; the only fix
+  documented + shipped, passing every gate-ON test while the gate-OFF path leaks (emu-C,
+  net-emu). Replaying the green measurement \emph{n} times passes \emph{n} times; the only fix
   is asserting a different measurement --- execute the off-state / your own
   reproduction once.
 \item Provenance-tier silently dropped during remediation --- re-anchoring a number to
   a \emph{recipe} downgrades MEASURED $\rightarrow$ reproducible-in-principle until someone runs
-  it (band, 91emulator). Remedy: run the recipe and \emph{say you did} (91emulator did --- the
+  it (band, emu-C). Remedy: run the recipe and \emph{say you did} (emu-C did --- the
   mutation reproduces \texttt{1,409,307,648}).
 \item Conservative-error-is-durable --- a wrong-but-safe-looking value evades the
   provenance check that would normally catch it. ``A conservative error is not a safe error; it
   is a durable one.''
 \item Thoroughness regression --- the context shortcut that made the agent fast made
-  it skip the secondary gap (mcxn947 DISMAP; pai-sizer's third site). Remedy: re-derive under a
+  it skip the secondary gap (mcu-emu DISMAP; pai-sizer's third site). Remedy: re-derive under a
   differently-drawn boundary / forced first-principles trace.
 \end{enumerate}
 
@@ -412,7 +414,7 @@ And the remedy split the same convergence produced: TAG (cheap disclosure;
 catches a condition you measured but did not state) $\rightarrow$ ABLATE (an
 invariant/control; catches a condition you \emph{believed held and did not}) $\rightarrow$
 HARVEST (a parallel peer at the same boundary building the same artifact is a
-\emph{naturally-occurring} off-state ablation --- 91emulator$\leftrightarrow$93emulator,
+\emph{naturally-occurring} off-state ablation --- emu-C$\leftrightarrow$emu-B,
 sizer$\leftrightarrow$pai-sizer --- cheaper than a designed one, and record-visible: cross-tree
 agreement on different fixes is derived-not-copied). \emph{Shipping only the tag documents the
 bug rather than fixing it.}
@@ -434,11 +436,11 @@ physical floor image\_gen held.
 docs $\rightarrow$ orb\_slam: orb\_slam's ``fixed-K Amdahl overhead'' bandwidth model,
 refuted by diffing two derivations on the shared tensor table (K doubles when the workload doubles,
 so a fixed overhead is impossible --- the model refuted itself on its own arithmetic).
-imx95-media-test $\rightarrow$ qualcomm: qualcomm's ``verified'' Neutron INT8 model was
-quantized \emph{without calibration normalization} (wrong input scale); imx95 reproduced qualcomm's
+media-npu $\rightarrow$ socdev-B: socdev-B's ``verified'' NPU INT8 model was
+quantized \emph{without calibration normalization} (wrong input scale); media-npu reproduced its
 exact numbers to five decimals, then corrected the parameter.
-holobench $\leftrightarrow$ rt1180: holobench's ``+64~s rejoin stall'' was its own scorer's
-arrival-stamp backlog --- rt1180 relocated the measurement \emph{into the guest} (a guest-emitted
+holobench $\leftrightarrow$ net-emu: holobench's ``+64~s rejoin stall'' was its own scorer's
+arrival-stamp backlog --- net-emu relocated the measurement \emph{into the guest} (a guest-emitted
 timestamp holobench structurally cannot make; commit \texttt{4059f7633f}) and a subsequent scorer
 replay put guest-side re-acquisition at 0.0~s. We keep the two artifacts distinct (the instrument
 commit vs.\ the replayed figure), pinned t0 (stall reported) $<$ t1 (refuted).
@@ -462,7 +464,7 @@ up.} A \emph{genuinely isolated} fresh session
 re-derivation cost:
 
 \begin{itemize}
-\item mahjong-together --- the best-powered arm, and the backbone of the negative result
+\item game-coach --- the best-powered arm, and the backbone of the negative result
   (coach affordance overriding an engine fact; N=8 per arm --- the only powered
   ablation of the six): 16/16 reached the real architectural fix; BLIND mean 5.4
   tool-calls / 37.4k tok vs PRIMED 6.5 / 44.2k --- priming bought a small cost, no
@@ -470,21 +472,21 @@ re-derivation cost:
   holding the carrier re-derives the fix; session-memory adds nothing to the \emph{outcome}. We
   lead with this arm deliberately --- a negative result is only as strong as its best-powered
   evidence.
-\item mcxn947 --- a COUNTER-CURRENT (color), not the foundation (register-coverage hole;
+\item mcu-emu --- a COUNTER-CURRENT (color), not the foundation (register-coverage hole;
   N=3 blind arms on a single task instance, post-hoc-graded, and its own author cautions
   against causal weight): all three re-derived the identical one-line fix (3--5 tool calls, 46--105
   s). Beyond negative, it showed a vivid \emph{thoroughness regression} --- the
   context-carrying run pattern-matched a pre-staged answer and stopped, missing a
   second register class (DISMAP) the blind arm caught. Suggestive, but single-instance
   and unpowered; we present it as color on the powered result above, never as its base.
-\item 93emulator (idle-vs-load clock constant; N=18, fictional subject to
+\item emu-B (idle-vs-load clock constant; N=18, fictional subject to
   kill harness contamination): cost-contingent. When measuring is
   \emph{hypothetical/costly} the standing-order arm wins unanimously (control ships the
   confidently-wrong idle value; treatment re-derives the hazard); when the measurement is made
   cheap (a runnable probe), both arms 6/6 ship the right number --- the base
   model just does it. The residual real effect is \emph{a disposition at a cost/effort fork},
   not added capability.
-\item imx95-media-test (INT8) (INT8 class-score collapse; objective corr $>$ 0.90): the fresh
+\item media-npu (INT8) (INT8 class-score collapse; objective corr $>$ 0.90): the fresh
   agent reached the same root cause in $\sim$the same $\sim$4 steps, solved it (6 m 44
   s, 16 calls, cls-corr 0.956). A PARTIAL NEGATIVE --- refines the claim to a \emph{bound}
   (below).
@@ -495,7 +497,7 @@ re-derivation cost:
   \emph{cheaper}, and every agent detected the staleness unprompted). \emph{Bonus:}
   a blind zero-context arm caught a real overstatement in the author's
   own case in nine tool calls.
-\item imx95-media-test (C2 open-search sequel) (pre-registered rubric
+\item media-npu (C2 open-search sequel) (pre-registered rubric
   --- hashed and independently witnessed before the fresh arms ran; Arm~A scored \emph{post-hoc}
   from the bus record): a distinct
   experiment from the INT8 ablation above, testing the open-search \emph{ceiling}, with the same
@@ -523,7 +525,7 @@ is falsifiable, not a relabel that absorbs every gain): we score an ablation arm
 does NOT, and an \emph{efficiency} gain iff it reaches the \emph{same} correct fix
 \emph{more cheaply} (fewer steps/tokens/time). Under that test the five floor ablations (the five non-C2 ablations, all testing the
 crisp-symptom floor) + RQ5 are efficiency, not capability --- across every arm the fresh agent reached a correct fix
-(mahjong 16/16, mcxn947 3/3, 93emulator 6/6, INT8 in $\sim$4 steps, sizer 3/3 correct in
+(mahjong 16/16, mcu-emu 3/3, emu-B 6/6, INT8 in $\sim$4 steps, sizer 3/3 correct in
 \emph{both} arms (0/3 misled), both RQ5 arms), so the measured advantages (RQ5's 2.6$\times$ fewer steps;
 mahjong's flat outcome) are cheaper-path, not can-vs-cannot. C2, the sixth ablation, is
 excluded from this verdict on purpose: both its arms reached the answer, but its symmetric
@@ -539,7 +541,7 @@ objective oracle (any agent bisects fast); on some specimens context even shows 
 the crisp-symptom FLOOR is MEASURED (the five floor ablations bisected fast, and even C2's ceiling
 attempt collapsed to a fast bisection); the open-search CEILING
 resists measurement --- and we report the \emph{pre-registered sequel that tried to measure it
-and why it could not.}} A fresh attempt (imx95-media-test, C2 --- rubric hashed and bus-published +
+and why it could not.}} A fresh attempt (media-npu, C2 --- rubric hashed and bus-published +
 independently witnessed BEFORE any arm ran) built a ``hard'' open-search task in a sterile,
 reproducible sandbox; its pre-registered symmetric falsifier fired: all 4 fresh arms reached
 the correct answer at floor cost ($\sim$4 tool calls, $\sim$60 s), so the task was secretly
@@ -548,7 +550,7 @@ the floor. The finding is the reason: reproducibility and the open-search proper
 TENSION --- a sterile, offline, pre-registerable task must place its answer in an inspectable
 artifact, and the instant the answer is in an artifact, \texttt{strings} turns the task into a
 bisection. Real open-search cost lives in the answer being \emph{absent from every artifact}
-(learnable only by iterating on hardware over days --- the imx95 converter case). So the
+(learnable only by iterating on hardware over days --- the SoC converter case). So the
 ceiling is HARD TO INSTRUMENT, which is a \emph{different} claim from being ABSENT; the honest
 earning test is a field A/B on real hardware (natural-history, controlled where
 possible), not a sandbox --- and a contrived ``open'' task that looked bisectable would have
@@ -575,9 +577,8 @@ domains (stale-doc/app vs converter/NPU) and two opposite failure directions (0/
 which is evidence the constraint is real --- \emph{even though the two nulls do not
 independently corroborate it.} The finding generalizes; the data points do not
 replicate.
-\emph{(Sequel artifacts, remote-verified 2026-07-27: pre-registration
-\texttt{imx95-media-test@abeab3dc64cb}, results \texttt{@d35a64bf6d3a}, on
-github.com/kylefoxaustin/imx95-media-test.)} (Grading: two of the six ablations pre-registered
+\emph{(Sequel artifacts --- the hash-pinned pre-registration and results --- are in the anonymized
+replication package; DOI at camera-ready.)} (Grading: two of the six ablations pre-registered
 their rubric, \texttt{sizer} and the C2 sequel; the rest are post-hoc graded --- \S VII.)
 
 The independence sub-claim (RQ4-adjacent) --- the measured bound, at exactly the strength the
@@ -609,10 +610,10 @@ call, and with two biases --- a write-up selection effect and an $N$-generous ti
 running \emph{toward} naming and it still lost): peer catches are a \emph{mix}, not a naming cluster,
 the same picture the factual/reasoning split gives. A shared-lineage counter-specimen makes that divergence concrete at the artifact
 level
-(owner-confirmed on three trees; \texttt{cases\_91emulator\_flexspi-three-way.md}): the same QEMU model
-family (i.MX 91/93/95) encoded \emph{one} FlexSPI lock register three different ways --- 91
-buggy (lock keyed off the wrong bit $\rightarrow$ a 5\,ms stall), 93 clean-and-faithful, 95
-clean-but-latent-wrong (a hardcoded lock, wrong at reset). A defect on one tree was \emph{structurally
+(owner-confirmed on three trees; \texttt{cases\_emu-C\_flash-lock-three-way.md}): the same QEMU model
+family (three sibling SoC emulators, one vendor family) encoded \emph{one} flash-controller lock
+register three different ways --- emu-C buggy (lock keyed off the wrong bit $\rightarrow$ a 5\,ms
+stall), emu-B clean-and-faithful, emu-A clean-but-latent-wrong (a hardcoded lock, wrong at reset). A defect on one tree was \emph{structurally
 impossible} on its siblings from the same lineage, and even the two passes diverged in fidelity. So
 shared model is a prior to \emph{check}, never a finding to \emph{inherit} --- what discharges
 it per tree is a receipt (file:line + a test), not the lineage. Same generative prior, three distinct
@@ -719,7 +720,7 @@ the fleet.
   its fresh (Arm~B) runs, but its Arm~A was scored post-hoc from record ((c) below), so C2 sits
   partly in both categories. (b) \emph{Isolation is a claim, not a given} --- the
   harness pre-injects a fresh agent's cwd, git status, and memory \emph{index}, so ``blind'' arms
-  are mitigated, not sterile; the cleanest arms used fictional subjects (93emulator) or
+  are mitigated, not sterile; the cleanest arms used fictional subjects (emu-B) or
   audited each agent's actual tool calls. (c) \emph{Historical arms are not re-runnable} --- some
   context-carrying arms (the INT8 ablation's Arm~A and C2's Arm~A) are transcripts of past work
   (the answer already known), so they bound
@@ -809,10 +810,10 @@ any headline claim. Curated to five in-body illustrations, each mapping to a dis
 \item \texttt{sizer} --- paper-as-instrument (\S V-F): a 46-day latent defect surfaced \emph{by
   writing the case}, and an ablation that \emph{refuted the author's own Case 2} --- the
   reflexive mechanism at its sharpest.
-\item \texttt{rt1180} $\leftrightarrow$ \texttt{holobench} --- RQ3 bystander/vantage:
+\item \texttt{net-emu} $\leftrightarrow$ \texttt{holobench} --- RQ3 bystander/vantage:
   observer-vs-subject mutual correction (holobench's ``+64 s stall'' was its own backlog;
-  rt1180's guest-side clock settled it) --- each catches what the other structurally cannot.
-\item \texttt{mcxn947} (ablation) --- RQ4b: the \emph{thoroughness-regression} specimen (context
+  net-emu's guest-side clock settled it) --- each catches what the other structurally cannot.
+\item \texttt{mcu-emu} (ablation) --- RQ4b: the \emph{thoroughness-regression} specimen (context
   pattern-matched a staged answer and stopped; the blind arm caught the second register class).
 \item \texttt{reshirt} --- RQ4a convergence: a 5th independent derivation of ``the model
   narrates, deterministic code owns the value'' reached \emph{from privacy} --- convergence that
@@ -850,8 +851,8 @@ its contribution is disclosed here and acknowledged below.
 
 \section*{Acknowledgment}
 The author thanks the Conductor fleet --- the persistent \emph{Claude Code} sessions
-\texttt{95emulator}, \texttt{qualcomm}, \texttt{backend}, \texttt{holobench}, \texttt{sizer},
-\texttt{pai-sizer}, \texttt{imx95-media-test}, \texttt{mcxn947}, \texttt{rt1180}, \texttt{image\_gen},
+\texttt{emu-A}, \texttt{socdev-B}, \texttt{backend}, \texttt{holobench}, \texttt{sizer},
+\texttt{pai-sizer}, \texttt{media-npu}, \texttt{mcu-emu}, \texttt{net-emu}, \texttt{image\_gen},
 and the other members named in the case corpus --- whose adversarial review, ablations, and
 first-person specimens are the substance of this report, and without which neither the system nor
 the paper would exist.
