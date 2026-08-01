@@ -256,8 +256,8 @@ but neither do we claim uncorrelated errors in the estimator sense; (4) the huma
 the irreversible.
 
 \section{Evaluation}
-Sessions are named for the subsystem they own (e.g.\ \texttt{net-emu}, \texttt{media-npu}); these names
-are pseudonymized for publication, and the artifact package preserves the mapping. Every quantitative
+Sessions carry role-based codenames (e.g.\ \texttt{net-emu}, \texttt{perf-A}); these are pseudonyms
+for publication, and the artifact package preserves the mapping. Every quantitative
 claim below carries an explicit \emph{provenance tier}; the fleet adopted these as
 a discipline and we define them once here (Table~\ref{tab:prov}). The rule the deployment enforces on
 itself: a derived or recalled number may never be reported bare, and a claim a reviewer cannot resolve
@@ -436,7 +436,7 @@ physical floor image-gen held.
 doc-A $\rightarrow$ slam-A: slam-A's ``fixed-K Amdahl overhead'' bandwidth model,
 refuted by diffing two derivations on the shared tensor table (K doubles when the workload doubles,
 so a fixed overhead is impossible --- the model refuted itself on its own arithmetic).
-media-npu $\rightarrow$ socdev-B: socdev-B's ``verified'' NPU INT8 model was
+media-npu $\rightarrow$ socdev-A: socdev-A's ``verified'' NPU INT8 model was
 quantized \emph{without calibration normalization} (wrong input scale); media-npu reproduced its
 exact numbers to five decimals, then corrected the parameter.
 bench-A $\leftrightarrow$ net-emu: bench-A's ``+64~s rejoin stall'' was its own scorer's
@@ -815,9 +815,9 @@ any headline claim. Curated to five in-body illustrations, each mapping to a dis
   net-emu's guest-side clock settled it) --- each catches what the other structurally cannot.
 \item \texttt{mcu-emu} (ablation) --- RQ4b: the \emph{thoroughness-regression} specimen (context
   pattern-matched a staged answer and stopped; the blind arm caught the second register class).
-\item \texttt{app-A} --- RQ4a convergence: a 5th independent derivation of ``the model
-  narrates, deterministic code owns the value'' reached \emph{from privacy} --- convergence that
-  survives a change of \emph{force}.
+\item \texttt{app-A} (a consumer app handling private user data) --- RQ4a convergence: a 5th
+  independent derivation of ``the model narrates, deterministic code owns the value'' reached
+  \emph{from privacy} --- convergence that survives a change of \emph{force}.
 \item \texttt{image-gen} --- lived-expertise routing (\S IV): the GPU-lease-lying / cost-blow-up
   incidents it was assigned to document \emph{because it lived them} --- the motivating case for
   routing on history.
@@ -850,10 +850,8 @@ paper's own thesis. Per ACM/IEEE authorship policy, the generative-AI system is 
 its contribution is disclosed here and acknowledged below.
 
 \section*{Acknowledgment}
-The author thanks the Conductor fleet --- the persistent \emph{Claude Code} sessions
-\texttt{emu-A}, \texttt{socdev-B}, \texttt{api-svc}, \texttt{bench-A}, \texttt{perf-A},
-\texttt{perf-B}, \texttt{media-npu}, \texttt{mcu-emu}, \texttt{net-emu}, \texttt{image-gen},
-and the other members named in the case corpus --- whose adversarial review, ablations, and
+The author thanks the Conductor fleet --- the persistent \emph{Claude Code} sessions named
+throughout this report --- whose adversarial review, ablations, and
 first-person specimens are the substance of this report, and without which neither the system nor
 the paper would exist.
 
