@@ -441,7 +441,7 @@ quantized \emph{without calibration normalization} (wrong input scale); media-np
 exact numbers to five decimals, then corrected the parameter.
 bench-A $\leftrightarrow$ net-emu: bench-A's ``+64~s rejoin stall'' was its own scorer's
 arrival-stamp backlog --- net-emu relocated the measurement \emph{into the guest} (a guest-emitted
-timestamp bench-A structurally cannot make; commit \texttt{4059f7633f}) and a subsequent scorer
+timestamp bench-A structurally cannot make; a pinned commit in the replication package) and a subsequent scorer
 replay put guest-side re-acquisition at 0.0~s. We keep the two artifacts distinct (the instrument
 commit vs.\ the replayed figure), pinned t0 (stall reported) $<$ t1 (refuted).
 A record-attested instance from the ablations: in \texttt{ablation\_perf-A} a blind,
@@ -525,9 +525,9 @@ is falsifiable, not a relabel that absorbs every gain): we score an ablation arm
 does NOT, and an \emph{efficiency} gain iff it reaches the \emph{same} correct fix
 \emph{more cheaply} (fewer steps/tokens/time). Under that test the five floor ablations (the five non-C2 ablations, all testing the
 crisp-symptom floor) + RQ5 are efficiency, not capability --- across every arm the fresh agent reached a correct fix
-(mahjong 16/16, mcu-emu 3/3, emu-B 6/6, INT8 in $\sim$4 steps, perf-A 3/3 correct in
+(game-coach 16/16, mcu-emu 3/3, emu-B 6/6, INT8 in $\sim$4 steps, perf-A 3/3 correct in
 \emph{both} arms (0/3 misled), both RQ5 arms), so the measured advantages (RQ5's 2.6$\times$ fewer steps;
-mahjong's flat outcome) are cheaper-path, not can-vs-cannot. C2, the sixth ablation, is
+game-coach's flat outcome) are cheaper-path, not can-vs-cannot. C2, the sixth ablation, is
 excluded from this verdict on purpose: both its arms reached the answer, but its symmetric
 falsifier fired (the task was not genuinely open-search), so C2 yields \emph{no}
 capability-vs-efficiency signal about the ceiling --- it is a pre-registered NULL (below), not a
