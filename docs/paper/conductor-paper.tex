@@ -390,7 +390,7 @@ discipline (``just replicate,'' ``just tag'') sails past most of them:
 
 \begin{enumerate}
 \item Single sample promoted to a property --- a condition true of one run asserted as
-  general. Remedy: replicate + tag. Sharpened (sizer): a \emph{measured} number
+  general. Remedy: replicate + tag. Sharpened (perf-A): a \emph{measured} number
   promoted past its conditions is \emph{worse} than a derived one, because the \texttt{measured}
   badge actively defends the error.
 \item Green-but-wrong / wired-but-broken in the untested direction --- a gate green +
@@ -406,7 +406,7 @@ discipline (``just replicate,'' ``just tag'') sails past most of them:
   provenance check that would normally catch it. ``A conservative error is not a safe error; it
   is a durable one.''
 \item Thoroughness regression --- the context shortcut that made the agent fast made
-  it skip the secondary gap (mcu-emu DISMAP; pai-sizer's third site). Remedy: re-derive under a
+  it skip the secondary gap (mcu-emu DISMAP; perf-B's third site). Remedy: re-derive under a
   differently-drawn boundary / forced first-principles trace.
 \end{enumerate}
 
@@ -415,36 +415,36 @@ catches a condition you measured but did not state) $\rightarrow$ ABLATE (an
 invariant/control; catches a condition you \emph{believed held and did not}) $\rightarrow$
 HARVEST (a parallel peer at the same boundary building the same artifact is a
 \emph{naturally-occurring} off-state ablation --- emu-C$\leftrightarrow$emu-B,
-sizer$\leftrightarrow$pai-sizer --- cheaper than a designed one, and record-visible: cross-tree
+perf-A$\leftrightarrow$perf-B --- cheaper than a designed one, and record-visible: cross-tree
 agreement on different fixes is derived-not-copied). \emph{Shipping only the tag documents the
 bug rather than fixing it.}
 
 \subsection{RQ3 --- Defect discovery by vantage (machine-evidenced)}
 We split two claims review conflated. (i) A measurement vantage exists (supporting,
-not the RQ3 claim): MEASURED (jaws), a 38-Bash-call build had 17 measurement calls (12
+not the RQ3 claim): MEASURED (build-A), a 38-Bash-call build had 17 measurement calls (12
 \texttt{/proc} probes, 4 runs) --- a vantage a browser assistant could not occupy, proven from
 the event log. (ii) A peer caught what the author shipped (the actual RQ3 claim, and
 it needs the \emph{same} timestamp rigor --- A ships at t0, B refutes at t1, both from the
 record). We enumerate the record-attested cross-session catches (14 attested, 13 classifiable; tabulated in
 the replication package) and here name four representative ones, each with \emph{attribution
 corrected} against the record after review flagged two mis-attributions in earlier drafts (a
-``\texttt{backend} tag-flip caught by a peer'' was in fact self-caught, and a claimed ``orb\_slam
+``\texttt{api-svc} tag-flip caught by a peer'' was in fact self-caught, and a claimed ``slam-A
 caught four errors'' had no record --- both removed).
-image\_gen $\rightarrow$ backend: backend's RTX-5090 idle-power \emph{denominator}
-(64.97~W) was contaminated by image\_gen's own resident tenant; a clean board idles near 21~W, a
-physical floor image\_gen held.
-docs $\rightarrow$ orb\_slam: orb\_slam's ``fixed-K Amdahl overhead'' bandwidth model,
+image-gen $\rightarrow$ api-svc: api-svc's RTX-5090 idle-power \emph{denominator}
+(64.97~W) was contaminated by image-gen's own resident tenant; a clean board idles near 21~W, a
+physical floor image-gen held.
+doc-A $\rightarrow$ slam-A: slam-A's ``fixed-K Amdahl overhead'' bandwidth model,
 refuted by diffing two derivations on the shared tensor table (K doubles when the workload doubles,
 so a fixed overhead is impossible --- the model refuted itself on its own arithmetic).
 media-npu $\rightarrow$ socdev-B: socdev-B's ``verified'' NPU INT8 model was
 quantized \emph{without calibration normalization} (wrong input scale); media-npu reproduced its
 exact numbers to five decimals, then corrected the parameter.
-holobench $\leftrightarrow$ net-emu: holobench's ``+64~s rejoin stall'' was its own scorer's
+bench-A $\leftrightarrow$ net-emu: bench-A's ``+64~s rejoin stall'' was its own scorer's
 arrival-stamp backlog --- net-emu relocated the measurement \emph{into the guest} (a guest-emitted
-timestamp holobench structurally cannot make; commit \texttt{4059f7633f}) and a subsequent scorer
+timestamp bench-A structurally cannot make; commit \texttt{4059f7633f}) and a subsequent scorer
 replay put guest-side re-acquisition at 0.0~s. We keep the two artifacts distinct (the instrument
 commit vs.\ the replayed figure), pinned t0 (stall reported) $<$ t1 (refuted).
-A record-attested instance from the ablations: in \texttt{ablation\_sizer} a blind,
+A record-attested instance from the ablations: in \texttt{ablation\_perf-A} a blind,
 zero-context arm caught a real overstatement in the author's own case (129 defective cells
 reachable via the engine API but \emph{not} the shipped UI) in nine tool calls. \textbf{Cases are illustration; the events (order claims,
 timestamps, tool-call logs) are the evidence.}
@@ -490,7 +490,7 @@ re-derivation cost:
   agent reached the same root cause in $\sim$the same $\sim$4 steps, solved it (6 m 44
   s, 16 calls, cls-corr 0.956). A PARTIAL NEGATIVE --- refines the claim to a \emph{bound}
   (below).
-\item sizer (one of the two pre-registered ablations --- rubric hash published to
+\item perf-A (one of the two pre-registered ablations --- rubric hash published to
   the bus before any agent launched; N=3/arm): tests whether a \emph{wrong} carrier actively
   harms. It does not --- stale docs had zero measurable effect
   (misled-to-wrong-file 0/3 in \emph{both} arms; the stale-doc arm was marginally
@@ -518,14 +518,14 @@ intuition. A fresh clone \emph{holding the repo} re-derives the fix
 because what compounds is what is still true in the carrier when the next session reads it,
 and the executable carrier governs
 (code / assert / invariant); a \emph{prose} carrier is ``neither the asset nor the liability
-anyone claimed'' (sizer's wrong-doc ablation is self-refuting because the code is there to
+anyone claimed'' (perf-A's wrong-doc ablation is self-refuting because the code is there to
 check it against). The efficiency/capability line, made operational (so ``efficiency''
 is falsifiable, not a relabel that absorbs every gain): we score an ablation arm as a
 \emph{capability} gain iff the context-carrying arm reaches a correct fix the fresh arm
 does NOT, and an \emph{efficiency} gain iff it reaches the \emph{same} correct fix
 \emph{more cheaply} (fewer steps/tokens/time). Under that test the five floor ablations (the five non-C2 ablations, all testing the
 crisp-symptom floor) + RQ5 are efficiency, not capability --- across every arm the fresh agent reached a correct fix
-(mahjong 16/16, mcu-emu 3/3, emu-B 6/6, INT8 in $\sim$4 steps, sizer 3/3 correct in
+(mahjong 16/16, mcu-emu 3/3, emu-B 6/6, INT8 in $\sim$4 steps, perf-A 3/3 correct in
 \emph{both} arms (0/3 misled), both RQ5 arms), so the measured advantages (RQ5's 2.6$\times$ fewer steps;
 mahjong's flat outcome) are cheaper-path, not can-vs-cannot. C2, the sixth ablation, is
 excluded from this verdict on purpose: both its arms reached the answer, but its symmetric
@@ -564,9 +564,9 @@ identifying that the work needs doing at all, a step every ablation and the base
 construction --- which is what the field replication (\S VIII) is designed to expose.
 
 A discipline the fleet imposed on us, and it is the sharper point: the C2 null and
-\texttt{sizer}'s stale-doc null (\S V-B/RQ2) are NOT independent corroboration --- they
+\texttt{perf-A}'s stale-doc null (\S V-B/RQ2) are NOT independent corroboration --- they
 are one mechanism on two surfaces. Both tasks were \emph{bisectable by construction because
-the ground truth was inspectable in the artifacts}: sizer's arms scored 0/3-misled because the
+the ground truth was inspectable in the artifacts}: perf-A's arms scored 0/3-misled because the
 code was there to check the doc against; C2's arms scored 4/4-solved because the
 answer was \texttt{strings}-able out of the model file. By the convergence-provenance
 rule (\S V-D independence), this is common-dependency at the mechanism tier (and
@@ -579,7 +579,7 @@ independently corroborate it.} The finding generalizes; the data points do not
 replicate.
 \emph{(Sequel artifacts --- the hash-pinned pre-registration and results --- are in the anonymized
 replication package; DOI at camera-ready.)} (Grading: two of the six ablations pre-registered
-their rubric, \texttt{sizer} and the C2 sequel; the rest are post-hoc graded --- \S VII.)
+their rubric, \texttt{perf-A} and the C2 sequel; the rest are post-hoc graded --- \S VII.)
 
 The independence sub-claim (RQ4-adjacent) --- the measured bound, at exactly the strength the
 record supports. A skeptic rightly objects that our divergence proxies (disjoint task histories, low
@@ -602,7 +602,7 @@ never absolutely: peers do catch reasoning-shaped defects, but they catch them b
 \emph{empirically positioned} differently --- the input/grounding divergence the proxies measure ---
 which is a measured bound on the claim, not evidence of uncorrelated errors in the estimator sense.
 A second pre-registered instrument on the same catches agrees. A rubric hashed before any
-classification (\texttt{sizer}'s, executed by a non-author, \texttt{rq3\_categorisation\_test-*}) tested
+classification (\texttt{perf-A}'s, executed by a non-author, \texttt{rq3\_categorisation\_test-*}) tested
 a sharper form --- whether peer catches cluster in naming/categorisation rather than
 logic (the ``an author cannot search for what they mis-filed'' hypothesis). It was
 refuted over the same 13 classifiable catches ($L{=}7$, $N{=}6$; robust to every borderline
@@ -627,7 +627,7 @@ satisfiable via a throwaway reference impl, then proven to actually test the fea
 the unmodified baseline). Task: add \texttt{project pause/resume} to the $\sim$700-line
 \texttt{project.sh} state machine --- a \emph{new instance of a familiar class}, objectively
 gradeable on six behaviors. Arm A = a genuinely memoryless fresh session (separate
-\texttt{\$HOME}, no memory/bus/hooks, verified at run time). Arm B = \texttt{backend},
+\texttt{\$HOME}, no memory/bus/hooks, verified at run time). Arm B = \texttt{api-svc},
 the peer with the most lived \texttt{project.sh} history, business-as-usual (not told it was an
 experiment). Both worked from an identical repo copy that \emph{includes} \texttt{CLAUDE.md} (a
 real clone has it --- the conservative choice, it helps Arm A) but excludes the spec and
@@ -652,12 +652,12 @@ paper studies (\S V-F). Full protocol + both arms' diffs: \texttt{cases\_rq5-bas
 
 \subsection{The paper as an instrument (an operational finding, not a controlled result)}
 Asking sessions to substantiate claims \emph{to an external audience} forced verification of
-things taken on trust internally. In git: \texttt{sizer} found a 46-day defect (129 cells
+things taken on trust internally. In git: \texttt{perf-A} found a 46-day defect (129 cells
 rendering wrong fps, count never zero, never visible) while writing its case --- after 46 days of
-use/test/review found nothing; \texttt{pai-sizer} surfaced a validation-across-an-unsafe-version
+use/test/review found nothing; \texttt{perf-B} surfaced a validation-across-an-unsafe-version
 provenance defect the same way. We state the hit-rate: of 19 case-writing sessions,
-4 ($\sim$21\%) reported a correction surfaced during the writing (\texttt{sizer},
-\texttt{pai-sizer}, \texttt{tipometer}, the RQ5 apparatus's own frozen-test defect); the rest
+4 ($\sim$21\%) reported a correction surfaced during the writing (\texttt{perf-A},
+\texttt{perf-B}, \texttt{meter-A}, the RQ5 apparatus's own frozen-test defect); the rest
 reported none. We are careful about what this is and is not. It has no control arm: we did
 not measure how many defects surface in 19 sessions of \emph{equivalent effort spent not writing for
 an external audience}, so 21\% has nothing to beat, and the underlying effect --- careful explanation
@@ -713,9 +713,9 @@ the fleet.
   disabled); the pre-June transcript record is GAP. Longitudinal claims use \texttt{history.jsonl}
   + git, which survive.
 \item Ablation methodology. (a) \emph{Grading
-  asymmetry} --- two of six ablations (\texttt{sizer} and the C2 sequel) published a rubric hash
+  asymmetry} --- two of six ablations (\texttt{perf-A} and the C2 sequel) published a rubric hash
   \emph{before} results; the other four are honestly-run but post-hoc graded, so
-  retrofitting is disavowed, not detectable. \texttt{sizer} is the \emph{only} ablation whose
+  retrofitting is disavowed, not detectable. \texttt{perf-A} is the \emph{only} ablation whose
   both arms ran under a pre-published rubric; C2's pre-registration covers its rubric and
   its fresh (Arm~B) runs, but its Arm~A was scored post-hoc from record ((c) below), so C2 sits
   partly in both categories. (b) \emph{Isolation is a claim, not a given} --- the
@@ -730,8 +730,8 @@ the fleet.
 \item Self-authorship, including \emph{this reframe} --- written by an interested lead,
   corrected by peers; we prefer machine evidence throughout and mark recollection RECALLED.
 \item The bystander-catch corpus contracted under audit. While preparing this paper, two
-  claimed cross-session catches did not survive record-checking --- a ``\texttt{backend} tag-flip
-  caught by a peer'' was in fact self-caught, and ``orb\_slam caught four independent errors'' had no
+  claimed cross-session catches did not survive record-checking --- a ``\texttt{api-svc} tag-flip
+  caught by a peer'' was in fact self-caught, and ``slam-A caught four independent errors'' had no
   case-file or bus record --- and both were removed (\S V-C). We report the contraction rather than
   quietly correcting it, because it is itself evidence for the provenance discipline the paper claims:
   the corpus is what the record supports (14 attested, 13 classifiable), not what narration remembered.
@@ -807,24 +807,24 @@ of \S V-F --- one session contributed two) + the platform specimen
 any headline claim. Curated to five in-body illustrations, each mapping to a distinct claim:
 
 \begin{enumerate}
-\item \texttt{sizer} --- paper-as-instrument (\S V-F): a 46-day latent defect surfaced \emph{by
+\item \texttt{perf-A} --- paper-as-instrument (\S V-F): a 46-day latent defect surfaced \emph{by
   writing the case}, and an ablation that \emph{refuted the author's own Case 2} --- the
   reflexive mechanism at its sharpest.
-\item \texttt{net-emu} $\leftrightarrow$ \texttt{holobench} --- RQ3 bystander/vantage:
-  observer-vs-subject mutual correction (holobench's ``+64 s stall'' was its own backlog;
+\item \texttt{net-emu} $\leftrightarrow$ \texttt{bench-A} --- RQ3 bystander/vantage:
+  observer-vs-subject mutual correction (bench-A's ``+64 s stall'' was its own backlog;
   net-emu's guest-side clock settled it) --- each catches what the other structurally cannot.
 \item \texttt{mcu-emu} (ablation) --- RQ4b: the \emph{thoroughness-regression} specimen (context
   pattern-matched a staged answer and stopped; the blind arm caught the second register class).
-\item \texttt{reshirt} --- RQ4a convergence: a 5th independent derivation of ``the model
+\item \texttt{app-A} --- RQ4a convergence: a 5th independent derivation of ``the model
   narrates, deterministic code owns the value'' reached \emph{from privacy} --- convergence that
   survives a change of \emph{force}.
-\item \texttt{image\_gen} --- lived-expertise routing (\S IV): the GPU-lease-lying / cost-blow-up
+\item \texttt{image-gen} --- lived-expertise routing (\S IV): the GPU-lease-lying / cost-blow-up
   incidents it was assigned to document \emph{because it lived them} --- the motivating case for
   routing on history.
 \end{enumerate}
 
-Several cases were corrected during the paper's own writing (sizer's Case 1 severity
-downgraded from user-visible to latent; pai-sizer's propagated overstatement retracted),
+Several cases were corrected during the paper's own writing (perf-A's Case 1 severity
+downgraded from user-visible to latent; perf-B's propagated overstatement retracted),
 logged as \S V-F specimens.
 
 \section*{Disclosure: Use of Generative AI}
@@ -836,7 +836,7 @@ This paper reports on, and was substantially produced by, a fleet of \emph{Claud
 We disclose the division of labour precisely, because for this subject it is itself a finding. The
 agent sessions: drafted the prose of every section across the full draft series; \emph{adversarially
 peer-reviewed} one another's drafts on the shared bus and produced the three-lens review that forced
-the v2 and v4 reframes; designed and executed the six A/B ablations --- two of them (\texttt{sizer}
+the v2 and v4 reframes; designed and executed the six A/B ablations --- two of them (\texttt{perf-A}
 and the C2 open-search-ceiling sequel) pre-registered --- and the RQ5
 baseline; and mined the git, bus, and \texttt{history.jsonl}
 records for the quantitative evidence. The human author set the goal, made every
@@ -851,8 +851,8 @@ its contribution is disclosed here and acknowledged below.
 
 \section*{Acknowledgment}
 The author thanks the Conductor fleet --- the persistent \emph{Claude Code} sessions
-\texttt{emu-A}, \texttt{socdev-B}, \texttt{backend}, \texttt{holobench}, \texttt{sizer},
-\texttt{pai-sizer}, \texttt{media-npu}, \texttt{mcu-emu}, \texttt{net-emu}, \texttt{image\_gen},
+\texttt{emu-A}, \texttt{socdev-B}, \texttt{api-svc}, \texttt{bench-A}, \texttt{perf-A},
+\texttt{perf-B}, \texttt{media-npu}, \texttt{mcu-emu}, \texttt{net-emu}, \texttt{image-gen},
 and the other members named in the case corpus --- whose adversarial review, ablations, and
 first-person specimens are the substance of this report, and without which neither the system nor
 the paper would exist.
