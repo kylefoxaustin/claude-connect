@@ -14,6 +14,8 @@
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}
 \usepackage{booktabs}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,backgrounds}
 \usepackage{url}
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
@@ -101,16 +103,12 @@ This is an experience report, and we ask to be judged at that bar: the contribut
 months-long real deployment reveals --- we claim neither statistical generality ($N{=}1$ deployment)
 nor emergent intelligence.
 
-Summary of findings (\S V), up front: \emph{context compounds; capability does not.}
-\emph{What compounded} --- confirmed by the record: (1)~persistent sessions formed stable roles and a
-load-shared division of labour, with no dominant orchestrator and the human originating $<$1\% of
-coordination; (2)~the fleet co-designed and hardened its own coordination substrate --- the reusable
-method; (3)~cross-context peer review caught defects individual sessions and the human missed; and
-(4)~lived context bought real efficiency --- 2.6$\times$ wall-clock and 36\% fewer steps on the matched
-baseline. \emph{What did not compound} --- disconfirmed: task-solving capability. Under six A/B
-ablations and the pre-registered baseline, a fresh session holding the committed repository reached
-every fix a context-carrying session reached; the capability we set out to attribute to lived context
-resides in the carrier instead.
+Summary of findings (\S V): \emph{context compounds; capability does not.} \emph{What compounded}
+(confirmed by the record): (1)~stable roles and a load-shared division of labour; (2)~a fleet-designed,
+fleet-hardened coordination substrate --- the reusable method; (3)~cross-context peer review catching
+defects individual sessions and the human missed; and (4)~real efficiency from lived context.
+\emph{What did not compound} (disconfirmed): task-solving capability --- under six A/B ablations and the
+pre-registered baseline it resides in the committed carrier, not the session.
 
 \subsection{What we set out to show, and what survived}
 The contributions are not epistemically equal. The compounding-competence hypothesis --- a
@@ -175,8 +173,39 @@ relative to} that memory-augmented line, from which we differ in kind (efficienc
 
 \section{The Architecture}
 One base model; each session a persistent identity with durable memory; a read-only observer
-(Conductor) that never drives the agents. Primitives, each landed as a versioned mechanism in
-operation:
+(Conductor) that never drives the agents (Fig.~\ref{fig:arch}). Primitives, each landed as a versioned
+mechanism in operation:
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize, >={Stealth[length=4.5pt]},
+  every node/.style={inner sep=2.5pt},
+  b/.style={draw,rounded corners},
+]
+  \node[b,fill=black!3] (s1) {session};
+  \node[b,fill=black!3,right=6mm of s1] (s2) {session};
+  \node[b,fill=black!3,right=6mm of s2] (s3) {session};
+  \node[b,fill=black!10,minimum width=50mm,below=10mm of s2] (bus) {\textbf{Bus}: append-only shared log};
+  \draw[<->] (s1) -- (bus.north-|s1);
+  \draw[<->] (s2) -- (bus.north);
+  \draw[<->] (s3) -- (bus.north-|s3);
+  % verified-order loop, kept inside the column (label to the left of the curve)
+  \draw[->,dashed] (bus.north west) to[out=115,in=-115] node[left=1pt]{\scriptsize\textbf{Verified orders}} (s1.south west);
+  % human gate, left of centre below the bus
+  \node[b,below=10mm of bus.south,xshift=-13mm] (hum) {human};
+  \draw[->] (bus.south-|hum) -- node[left=1pt]{\scriptsize push (\textbf{Governance})} (hum);
+  % read-only observer, right of centre below the bus
+  \node[b,dashed,below=10mm of bus.south,xshift=15mm] (obs) {Conductor};
+  \draw[dotted,->] (bus.south-|obs) -- node[right=1pt]{\scriptsize observe} (obs);
+\end{tikzpicture}
+\caption{The composition: persistent \emph{sessions} post to and read an append-only \textbf{Bus}; a
+lead fans work as \textbf{Verified orders} (\texttt{deliver} reads the artifact back before
+acknowledging); the \emph{human} gates only irreversible acts (\textbf{Governance}: the SHA-pinned push
+gate); \emph{Conductor} observes read-only and never drives the agents. The through-line: \emph{verify
+the outcome, not the intention.}}
+\label{fig:arch}
+\end{figure}
 
 \begin{itemize}
 \item Bus --- append-only shared log; directed mail is auto-delivered (idle
