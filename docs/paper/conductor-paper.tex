@@ -39,22 +39,30 @@ Email: \textit{[to fill at submission]}}}
 
 % ---- ABSTRACT (drafted from draft-v4; trim to venue word limit if needed) ----
 \begin{abstract}
-We set out to demonstrate \emph{compounding competence}: that a fleet of persistent,
-memory-divergent agent sessions --- one base model, durable per-session context, a shared
-append-only bus, and a human gating only irreversible actions (Conductor) --- gets
-cheaper and more capable on task $N{+}1$ because of tasks $1{\dots}N$. Six A/B ablations and a
-pre-registered baseline, run inside the live months-long deployment, disconfirm the naive form:
-a fresh session \emph{holding the committed carrier} re-derives the same fixes with no session
-memory. What compounds is the carrier. Lived context buys \emph{efficiency and recognition} ---
-2.6$\times$ wall-clock and 36\% fewer steps on the pre-registered task --- not capability, and
-on some tasks it produces a measurable \emph{thoroughness regression} (pattern-match-and-stop).
-Around that result we report the deployment itself: a coordination substrate the sessions
-co-designed and hardened in vivo under adversarial peer review, $\sim$20 named coordination
-failure modes closed, a record-attested corpus of cross-session defect catches explained by
-empirical vantage rather than independent reasoning, and human touches per active project
-falling by half while concurrent projects doubled. The practitioner consequence: invest in the
-committed, executable carrier for capability; use persistent sessions for speed and
-routing-by-history; and audit them for the regression.
+Conductor is a fleet of persistent, memory-divergent agent sessions
+--- one base model, durable per-session context, a shared append-only
+bus, and a human gating only irreversible actions. Over a
+months-long live deployment it grew to 35 concurrent projects while
+human touches per project fell by half; the human originated under
+1\% of coordination traffic while the sessions co-designed and
+hardened their own coordination substrate in vivo under adversarial
+peer review --- closing $\sim$20 named failure modes --- and caught one
+another's defects from divergent empirical vantages. Our central
+finding: what compounds across tasks is the \emph{committed carrier} ---
+the code, asserts, and checked-in docs any fresh session can read ---
+not the session's lived context. Context buys \emph{efficiency and
+recognition} --- 2.6$\times$ wall-clock and 36\% fewer steps on the
+pre-registered task --- and, on some tasks, a measurable \emph{thoroughness
+regression} (pattern-match-and-stop). We establish this by testing
+the intuition such designs rest on --- that accumulated context makes
+a session more capable on task $N{+}1$ because of tasks $1{\dots}N$ ---
+under six A/B ablations and a pre-registered baseline: every fresh session
+holding the carrier re-derived every fix; memory changed the path
+cost, never the outcome. The practitioner consequence: run
+context-heavy sessions as the default workforce, routing work by
+demonstrated history; commit everything that must stay true to the
+carrier; and audit long-lived sessions with periodic fresh-eyed
+clones.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -513,6 +521,9 @@ exists to prevent, and did. We report the naive ``memory makes task \emph{N+1} d
 cheaper'' as refuted on the tasks tested, and the open-search ceiling as an
 \textbf{honest, reasoned GAP} --- measurable floor, un-sandboxable ceiling --- rather than a
 claim dressed as a result.
+We conjecture the unmeasured ceiling is task \emph{origination} ---
+identifying that the work needs doing at all, a step every ablation and the baseline held fixed by
+construction --- which is what the field replication (\S VIII) is designed to expose.
 
 A discipline the fleet imposed on us, and it is the sharper point: the C2 null and
 \texttt{sizer}'s stale-doc null (\S V-B/RQ2) are NOT independent corroboration --- they
