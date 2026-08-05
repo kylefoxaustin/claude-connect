@@ -586,6 +586,7 @@ _winddown_begin() {
     echo "to:all p:wake — 🛑 FLEET WIND-DOWN called by [$initiator]. Persist yourself, then ack. You are NEVER closed until you ack."
     echo ""
     echo "FIRST — two reasons NOT to wind down yet: (a) you hold an OPEN QUESTION for Kyle → leave it exactly as is, you are waited for; (b) you are MID-TASK → reach a safe stopping point first. Conductor waits for both and never interrupts."
+    echo "NOT trivially clean? Most cases you RESOLVE YOURSELF — do NOT ask Kyle: (1) validated uncommitted work → COMMIT it locally + ack (commits are free/reversible; only pushes are gated); (2) a task BLOCKED on something external (a reboot/rebuild/board) → write a one-line RESUME NOTE to memory + ack (the note makes it reconstitutable). Ask Kyle ONLY for a genuine DECISION (destructive / ambiguous / needs his input) — 'should I commit?' is yes, 'a task is blocked' is a note."
     echo "Otherwise, IN ORDER: (1) stop taking new work; (2) POST your open findings + open questions to the bus — you can rebuild a card from the bus, never an unposted thought; (3) WRITE your memory/card with what a cold session reading it tomorrow would not know; (4) COMMIT dirty repos LOCALLY and NAME anything unpushed (do NOT force a push, the gate stands); (5) /release your leases, and warn the bus if a board is left in a risky state; (6) note your cwd + repo/branch/HEAD."
     echo "(7) ACK — the signal you are safe to close:  bus.sh shutdown ack \"<one-line state + anything unpushed/parked>\""
     echo "Full protocol: bus/wind-down-orders.md"

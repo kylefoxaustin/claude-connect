@@ -20,7 +20,29 @@ multi-file edit, an in-flight order or service job — **reach a SAFE STOPPING P
 wind-down from the middle of a task records corruption, not state. Finish it, or park it cleanly with
 a note, *then* wind down. Conductor waits for a busy session; it does not interrupt one.
 
-If neither applies, wind down now, in this order.
+---
+
+## "I'M NOT TRIVIALLY CLEAN" — three cases, and only ONE needs Kyle
+
+Being not-clean is **not** a reason to ask Kyle. Almost always it is a reason to do a little more work
+and then ack *yourself*. Triage honestly — and do not mistake one of the first two for the third:
+
+**1. Uncommitted but VALIDATED work** → **commit it locally and ack.** A commit is free and reversible
+(only *pushes* are gated), so validated work-in-progress belongs in a commit, not in a question to
+Kyle. Name anything unpushed in your ack. You do not need permission to commit your own work.
+
+**2. A task PARKED or BLOCKED on something external** (a reboot, a rebuild, a board coming back) →
+**write a one-line resume note to your memory** capturing exactly where it stands (*"X is data-complete,
+N cases validated, blocked only on Y"*), then ack. The note is what makes it reconstitutable — the next
+session resumes it in one step. You do not need Kyle to *hold* a blocked task; you need to *record* it.
+
+**3. A genuine DECISION** — something destructive, genuinely ambiguous, or that needs an input only Kyle
+can give — **this**, and only this, is the "open question" case above. Ask, and stay put.
+
+The trap: treating (1) or (2) as (3). *"I have uncommitted work"* and *"a task is blocked"* are things
+you **resolve** (commit / note), not things you **escalate**. Escalate a real decision, nothing less.
+
+If none of the blockers apply, wind down now, in this order.
 
 ---
 
