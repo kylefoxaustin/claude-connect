@@ -559,6 +559,58 @@ retract_hook_lines() {  # myplain last_seen
   printf '%s' "$out"
 }
 
+# ---- Fleet wind-down: the ordered shutdown protocol (the mirror of session-start) ----
+# startup ORIENTS a session (session-start injects standing orders + catch-up); wind-down PERSISTS it
+# (flush findings + memory + commits + leases, then ACK). Conductor closes ONLY acked sessions; a busy
+# or question-open session is waited for, never interrupted or closed by surprise.
+WINDDOWN_DIR="$COORD_ROOT/wind-down"
+
+_winddown_begin() {
+  local now ts initiator; now="$(date +%s)"; ts="$(date '+%Y-%m-%d %H:%M:%S')"; initiator="$TAG"
+  mkdir -p "$WINDDOWN_DIR"
+  rm -f "$WINDDOWN_DIR"/*.done 2>/dev/null || true   # fresh wind-down: prior acks must not count
+  { echo "initiator=$initiator"; echo "created=$ts"; echo "epoch=$now"; } > "$WINDDOWN_DIR/active"
+  { echo ""; echo "## $ts [$initiator]"; echo ""
+    echo "to:all p:wake — 🛑 FLEET WIND-DOWN called by [$initiator]. Persist yourself, then ack. You are NEVER closed until you ack."
+    echo ""
+    echo "FIRST — two reasons NOT to wind down yet: (a) you hold an OPEN QUESTION for Kyle → leave it exactly as is, you are waited for; (b) you are MID-TASK → reach a safe stopping point first. Conductor waits for both and never interrupts."
+    echo "Otherwise, IN ORDER: (1) stop taking new work; (2) POST your open findings + open questions to the bus — you can rebuild a card from the bus, never an unposted thought; (3) WRITE your memory/card with what a cold session reading it tomorrow would not know; (4) COMMIT dirty repos LOCALLY and NAME anything unpushed (do NOT force a push, the gate stands); (5) /release your leases, and warn the bus if a board is left in a risky state; (6) note your cwd + repo/branch/HEAD."
+    echo "(7) ACK — the signal you are safe to close:  bus.sh shutdown ack \"<one-line state + anything unpushed/parked>\""
+    echo "Full protocol: bus/wind-down-orders.md"
+  } >> "$BUS_FILE"
+  echo "🛑 FLEET WIND-DOWN broadcast sent by [$initiator]. Reachable sessions are woken; none is closed until it acks."
+}
+
+_winddown_ack() {
+  local summary="$*" now ts plain; now="$(date +%s)"; ts="$(date '+%Y-%m-%d %H:%M:%S')"
+  [ -n "$summary" ] || { echo "usage: bus.sh shutdown ack \"<one-line state>\"" >&2; return 2; }
+  plain="$(_coord_plain "$(_cursor_name 2>/dev/null || echo "$TAG")")"
+  mkdir -p "$WINDDOWN_DIR"
+  { echo "tag=$TAG"; echo "plain=$plain"; echo "acked=$ts"; echo "epoch=$now"; echo "summary=$summary"; } > "$WINDDOWN_DIR/${plain}.done"
+  { echo ""; echo "## $ts [$TAG]"; echo ""; echo "to:all — ✅ WOUND DOWN [$TAG] — $summary"; } >> "$BUS_FILE"
+  echo "✅ Wound down [$TAG] — recorded, safe to close. State: $summary"
+}
+
+_winddown_status() {
+  if [ ! -f "$WINDDOWN_DIR/active" ]; then echo "No fleet wind-down active."; return 0; fi
+  local init created f n=0
+  init="$(grep -E '^initiator=' "$WINDDOWN_DIR/active" | cut -d= -f2-)"
+  created="$(grep -E '^created=' "$WINDDOWN_DIR/active" | cut -d= -f2-)"
+  echo "🛑 Fleet wind-down ACTIVE — called by [$init] at $created."
+  for f in "$WINDDOWN_DIR"/*.done; do [ -f "$f" ] || continue; n=$((n+1)); done
+  echo "  $n session(s) wound down (safe to close):"
+  for f in "$WINDDOWN_DIR"/*.done; do [ -f "$f" ] || continue
+    echo "   ✅ $(grep -E '^tag=' "$f" | cut -d= -f2-) — $(grep -E '^summary=' "$f" | cut -d= -f2-)"
+  done
+}
+
+_winddown_clear() {
+  local ts; ts="$(date '+%Y-%m-%d %H:%M:%S')"
+  rm -f "$WINDDOWN_DIR/active" 2>/dev/null || true
+  { echo ""; echo "## $ts [$TAG]"; echo ""; echo "to:all — 🟢 WIND-DOWN CANCELLED by [$TAG] — resume normal work."; } >> "$BUS_FILE"
+  echo "Wind-down cleared; cancellation broadcast to the fleet."
+}
+
 # ---- Push gate: approve/deny git-push requests the PreToolUse hook files ------
 PUSH_TOKENS="$COORD_ROOT/push-tokens"
 PUSH_REQUESTS="$COORD_ROOT/push-requests"
@@ -2118,6 +2170,18 @@ PYEOF
 
   supersede)
     _coord_retract CORRECTION "$@"
+    exit $?
+    ;;
+
+  shutdown)
+    action="${1:-begin}"; shift 2>/dev/null || true
+    case "$action" in
+      begin|start)  _winddown_begin ;;
+      ack)          _winddown_ack "$@" ;;
+      status)       _winddown_status ;;
+      clear|cancel) _winddown_clear ;;
+      *) echo "usage: bus.sh shutdown {begin|ack \"<state>\"|status|clear}"; exit 2 ;;
+    esac
     exit $?
     ;;
 
