@@ -467,3 +467,33 @@ def test_same_minute_directed_mail_is_not_lost(tmp_path):
 
     (sd / "other:worker.last-seen").write_text("2026-07-26 15:04\n")   # old minute watermark
     assert directed_unread_all(md, sd, ["[other:worker]"])["[other:worker]"]["count"] == 3, "minute-format broke"
+
+
+def test_read_winddown_none_when_inactive(tmp_path):
+    from conductor.coord import read_winddown
+    coord = tmp_path / "coord"; coord.mkdir()
+    r = read_winddown(coord)
+    assert r == {"active": None, "acks": {}}
+    # a wind-down dir with only acks but NO active marker still reads inactive
+    (coord / "wind-down").mkdir()
+    (coord / "wind-down" / "backend.done").write_text("plain=backend\nsummary=x\n")
+    assert read_winddown(coord)["active"] is None
+
+
+def test_read_winddown_keys_acks_on_plain_field(tmp_path):
+    """The done-marker is keyed on its `plain=` field (the member), not the filename stem —
+    so a session whose file is named oddly still matches the tag Conductor derives."""
+    from conductor.coord import read_winddown
+    coord = tmp_path / "coord"; wd = coord / "wind-down"; wd.mkdir(parents=True)
+    (wd / "active").write_text("initiator=operator\ncreated=2026-08-04 12:00:00\nepoch=1785880000\n")
+    (wd / "91emulator.done").write_text(
+        "tag=[other:91emulator]\nplain=91emulator\nacked=2026-08-04 12:05:00\n"
+        "verified=clean-tree,no-leases\nunpushed=2\nsummary=paper done; 2 unpushed on paper-delivery\n"
+    )
+    r = read_winddown(coord)
+    assert r["active"]["initiator"] == "operator"
+    assert set(r["acks"]) == {"91emulator"}
+    ack = r["acks"]["91emulator"]
+    assert ack["unpushed"] == "2"
+    assert ack["summary"] == "paper done; 2 unpushed on paper-delivery"  # partition keeps '=' free text
+    assert ack["verified"] == "clean-tree,no-leases"

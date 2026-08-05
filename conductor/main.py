@@ -11,6 +11,7 @@ import getpass
 import logging
 import json
 import os
+import sys
 import shutil
 import socket
 import subprocess
@@ -71,6 +72,7 @@ from .coord import (
     read_push_requests,
     read_retractions,
     read_wake_state,
+    read_winddown,
     write_wake_state,
 )
 from .deps import build_wait_graph, compute_lost_rc, open_ask_edges, silent_addressees
@@ -197,6 +199,15 @@ def _bare_tag(tag: str | None) -> str:
     the two directly never succeeds — normalize before comparing.
     """
     return (tag or "").strip().strip("[]")
+
+
+def _wd_plain(tag: str | None) -> str:
+    """Plain member name matching ``bus.sh``'s ``_coord_plain`` (which keys the wind-down acks):
+    ``[other:qualcomm]`` == ``other:qualcomm`` == ``qualcomm``."""
+    t = _bare_tag(tag)
+    if t.lower().startswith("other:"):
+        t = t[6:]
+    return t.lower()
 
 
 class _StripControlBytes(logging.Filter):
@@ -1819,7 +1830,136 @@ class AppState:
             "webpush": self._webpush_status(),  # can we actually page the phone? (2026-07-22)
             "fadeout_seconds": self.settings.ui.end_fadeout_seconds,
             "wmctrl_available": wmctrl_available(),
+            "winddown": self._winddown_payload(),  # fleet shutdown state, if a wind-down is active
         }
+
+    def _winddown_payload(self) -> dict[str, Any]:
+        """State of an in-progress fleet wind-down, for the shutdown panel.
+
+        Per session, the wind-down state is DERIVED, not self-reported: ``wound-down`` only if
+        the session has a VERIFIED ack on disk (``bus.sh shutdown ack`` wrote it after checking
+        git+leases); otherwise ``asking`` (open picker — never inject/close), ``busy`` (working —
+        wait, never interrupt), or ``flushing`` (reachable, not yet acked). This is what lets
+        Conductor close only what has provably persisted, and surface the rest for Kyle."""
+        wd = read_winddown(self.coord_root)
+        active = wd.get("active")
+        if not active:
+            return {"active": False}
+        acks = wd.get("acks", {})
+        rows: list[dict[str, Any]] = []
+        for r in self.sessions.values():
+            if r.status == Status.ENDED:
+                continue
+            plain = _wd_plain(r.tag or "")
+            ack = acks.get(plain)
+            if ack is not None:
+                st = "wound-down"
+            elif self._has_open_picker(r):
+                st = "asking"
+            elif r.status in _BUSY_STATUSES:
+                st = "busy"
+            else:
+                st = "flushing"
+            rows.append({
+                "tag": r.tag, "member": plain, "status": r.status.value, "state": st,
+                "summary": (ack or {}).get("summary", ""),
+                "unpushed": int((ack or {}).get("unpushed", 0) or 0),
+            })
+        counts: dict[str, int] = {}
+        for row in rows:
+            counts[row["state"]] = counts.get(row["state"], 0) + 1
+        return {
+            "active": True,
+            "initiator": active.get("initiator", ""),
+            "created": active.get("created", ""),
+            "sessions": rows,
+            "counts": counts,
+            "closable": counts.get("wound-down", 0),
+        }
+
+    async def begin_winddown(self) -> dict[str, Any]:
+        """Broadcast the wind-down protocol, then wake the sessions that can safely act on it.
+        Never prods a session that is asking Kyle a question (open picker) or busy (mid-task) —
+        the broadcast reaches those when they next pause; only reachable idle/waiting sessions
+        are woken. This is the whole safety property: we do not interrupt, and we do not corrupt
+        an open picker."""
+        proc = await asyncio.to_thread(
+            subprocess.run,
+            [str(self.settings.bus.script_path_resolved), "shutdown", "begin"],
+            capture_output=True, text=True, timeout=15,
+        )
+        woke: list[str] = []
+        skipped: list[dict[str, str]] = []
+        for r in list(self.sessions.values()):
+            if r.status == Status.ENDED:
+                continue
+            if self._has_open_picker(r):
+                skipped.append({"tag": r.tag, "why": "asking"})
+                continue
+            if r.status in _BUSY_STATUSES:
+                skipped.append({"tag": r.tag, "why": "busy"})
+                continue
+            await self._inject_msg_check(r, "fleet wind-down")
+            woke.append(r.tag)
+        log.info("fleet wind-down begun: woke %d, skipped %d (busy/asking)", len(woke), len(skipped))
+        return {"ok": proc.returncode == 0, "woke": woke, "skipped": skipped,
+                "result": (proc.stdout or "").strip()}
+
+    async def clear_winddown(self) -> dict[str, Any]:
+        proc = await asyncio.to_thread(
+            subprocess.run,
+            [str(self.settings.bus.script_path_resolved), "shutdown", "clear"],
+            capture_output=True, text=True, timeout=15,
+        )
+        return {"ok": proc.returncode == 0, "result": (proc.stdout or "").strip()}
+
+    async def close_wound_down(self) -> dict[str, Any]:
+        """Close ONLY sessions with a VERIFIED wound-down ack — inject ``/exit`` into each.
+
+        A session with no ack is never touched (it has not provably persisted); a busy or
+        picker-open session is never touched (defensive — an acked session should be neither).
+        After the last close, refresh the DR roster so a later Reconstitute rebuilds from the
+        wound-down state (Kyle's 'snapshot after flush')."""
+        wd = read_winddown(self.coord_root)
+        if not wd.get("active"):
+            return {"ok": False, "error": "no wind-down active", "closed": []}
+        acks = wd.get("acks", {})
+        closed: list[str] = []
+        refused: list[dict[str, str]] = []
+        for r in list(self.sessions.values()):
+            if r.status == Status.ENDED:
+                continue
+            if _wd_plain(r.tag or "") not in acks:
+                continue  # not acked → not closable; leave it, it is waited for
+            if self._has_open_picker(r):
+                refused.append({"tag": r.tag, "why": "asking"})  # never inject into a picker
+                continue
+            ok = await asyncio.to_thread(
+                send_keys_to_session, text="/exit", pid=r.pid,
+                terminal_pid=r.terminal_pid, title=r.title, window_title=r.window_title,
+            )
+            (closed if ok else refused).append(
+                r.tag if ok else {"tag": r.tag, "why": "close-failed"})
+            if ok:
+                log.info("wind-down: closed [%s] (/exit) after verified ack", r.tag)
+        snapshot = await self._winddown_snapshot()
+        return {"ok": True, "closed": closed, "refused": refused, "snapshot": snapshot}
+
+    async def _winddown_snapshot(self) -> dict[str, Any]:
+        """Refresh the DR roster after a wind-down so the reconstitution record reflects the
+        wound-down state. Best-effort: a failure here must never make the close look failed."""
+        script = Path(__file__).resolve().parent.parent / "scripts" / "fleet-roster.py"
+        if not script.exists():
+            return {"ok": False, "why": "fleet-roster.py not found"}
+        try:
+            proc = await asyncio.to_thread(
+                subprocess.run, [sys.executable, str(script)],
+                capture_output=True, text=True, timeout=60,
+            )
+            return {"ok": proc.returncode == 0, "result": (proc.stdout or "").strip()[-400:]}
+        except Exception as e:  # noqa: BLE001 — snapshot must never break the close
+            log.warning("wind-down roster snapshot failed: %s", e)
+            return {"ok": False, "why": str(e)}
 
     def _bus_payload(self) -> dict[str, Any]:
         # Per-tag pending counts pulled fresh so the bus tile badge stays accurate.
@@ -2691,6 +2831,32 @@ class ProposalAnswer(BaseModel):
 # earlier and would match it first, with key="proposals" and action="<the real key>" — so
 # every tap came back "unknown action". A route that is a strict prefix-shape of another
 # route is shadowed by whichever was registered first, silently. Its own namespace, no
+# ---- Fleet wind-down (the ordered shutdown; mirror of ⟳ Fleet recovery) ------
+@app.post("/api/shutdown")
+async def shutdown_begin(request: Request) -> dict[str, Any]:
+    """Call a fleet wind-down: broadcast the ordered protocol + wake the sessions that can
+    safely act on it. Sessions persist themselves and post a VERIFIED ack; none is closed here.
+    Busy and question-open sessions are never woken (they get it when they pause)."""
+    state: AppState = request.app.state.cond
+    return await state.begin_winddown()
+
+
+@app.post("/api/shutdown/clear")
+async def shutdown_clear(request: Request) -> dict[str, Any]:
+    """Cancel an in-progress wind-down and tell the fleet to resume normal work."""
+    state: AppState = request.app.state.cond
+    return await state.clear_winddown()
+
+
+@app.post("/api/shutdown/close")
+async def shutdown_close(request: Request) -> dict[str, Any]:
+    """Close every session that has a VERIFIED wound-down ack (inject ``/exit``), then refresh
+    the DR roster. Refuses to touch anything not acked — a session that has not provably
+    persisted is left open and waited for. User-triggered only, from the shutdown panel."""
+    state: AppState = request.app.state.cond
+    return await state.close_wound_down()
+
+
 # ambiguity possible.
 @app.post("/api/proposals/{key}")
 async def answer_proposal(key: str, payload: ProposalAnswer,

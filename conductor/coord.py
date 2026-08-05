@@ -60,6 +60,30 @@ def read_retractions(coord_root: Path, now: float | None = None) -> list[dict[st
     return out
 
 
+def read_winddown(coord_root: Path) -> dict[str, Any]:
+    """The active fleet wind-down (if any) + the per-member VERIFIED acks.
+
+    ``active`` is the initiator/created marker written by ``bus.sh shutdown begin`` (or None
+    when no wind-down is in progress); ``acks`` maps a member's plain name to its verified
+    done-record — the file ``bus.sh shutdown ack`` writes ONLY after checking the real git +
+    lease state on disk, so an ack here means the session provably completed the protocol,
+    not that it claimed to. That is what makes a session safe to close."""
+    base = coord_root / "wind-down"
+    active_f = base / "active"
+    if not active_f.exists():
+        return {"active": None, "acks": {}}
+    active = _parse(active_f)
+    acks: dict[str, dict[str, str]] = {}
+    try:
+        for f in sorted(base.glob("*.done")):
+            rec = _parse(f)
+            plain = (rec.get("plain") or f.stem).strip().lower()
+            acks[plain] = rec
+    except OSError:
+        pass
+    return {"active": active, "acks": acks}
+
+
 def read_wake_state(coord_root: Path) -> dict[str, tuple[str, float]]:
     """Which sessions we've already prodded to check the bus, and at what watermark.
 

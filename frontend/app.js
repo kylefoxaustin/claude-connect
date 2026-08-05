@@ -70,6 +70,7 @@ const state = {
   autonomy: { windows: [] },     // live "let them talk" windows
   services: { services: [] },    // service Claudes (image_gen…): serving + queue
   waiting: { edges: [], cycles: [], bottlenecks: [], blocked_count: 0 },  // who blocks whom
+  winddown: { active: false },   // fleet shutdown state (the 🛑 Wind down panel)
   fadeoutSeconds: 30,
   wmctrlAvailable: false,
 
@@ -277,6 +278,8 @@ function handleMessage({ kind, payload }) {
       state.collisions = payload.collisions || [];
       state.lost_rc = payload.lost_rc || [];
       state.webpush = payload.webpush || null;
+      state.winddown = payload.winddown || { active: false };
+      if (typeof renderWinddown === "function" && winddownModal && !winddownModal.classList.contains("hidden")) renderWinddown();
       sessionCountEl.textContent = `${state.sessions.length} session${state.sessions.length === 1 ? "" : "s"}`;
       renderGrid(state);
       renderFleetAlerts(state);
@@ -1156,6 +1159,101 @@ document.getElementById("waiting-modal-close")
   ?.addEventListener("click", () => waitingModal.classList.add("hidden"));
 waitingModal?.addEventListener("click", (e) => {
   if (e.target === waitingModal) waitingModal.classList.add("hidden");
+});
+
+// --- Wind down (ordered fleet shutdown; mirror of ⟳ Fleet recovery) ---------
+// A session is NEVER closed until it posts a VERIFIED ack (the bus checked git+leases
+// on disk). Asking-you and busy sessions are surfaced, never interrupted or closed.
+const winddownModal = document.getElementById("winddown-modal");
+const winddownList = document.getElementById("winddown-list");
+const winddownStatusEl = document.getElementById("winddown-status");
+const winddownBegin = document.getElementById("winddown-begin");
+const winddownCloseBtn = document.getElementById("winddown-close");
+const winddownCancelRun = document.getElementById("winddown-cancel-run");
+const winddownResult = document.getElementById("winddown-result");
+
+const WD_LABEL = {
+  "wound-down": { icon: "✅", txt: "wound down — safe to close" },
+  "asking":     { icon: "❓", txt: "asking YOU — answer it or leave it (never closed)" },
+  "busy":       { icon: "⏳", txt: "busy — waited for, not interrupted" },
+  "flushing":   { icon: "…", txt: "flushing — persisting its state" },
+};
+
+function renderWinddown() {
+  const wd = state.winddown || { active: false };
+  winddownList.innerHTML = "";
+  winddownResult.textContent = winddownResult.textContent || "";
+  if (!wd.active) {
+    winddownStatusEl.textContent =
+      "No wind-down in progress. Starting one broadcasts the ordered protocol to every session; each persists itself and posts a verified ack.";
+    winddownBegin.classList.remove("hidden");
+    winddownBegin.disabled = false;
+    winddownCloseBtn.classList.add("hidden");
+    winddownCancelRun.classList.add("hidden");
+    return;
+  }
+  winddownBegin.classList.add("hidden");
+  winddownCancelRun.classList.remove("hidden");
+  winddownCloseBtn.classList.remove("hidden");
+  const c = wd.counts || {};
+  const closable = wd.closable || 0;
+  winddownStatusEl.innerHTML =
+    `Wind-down active (called by <code>${wd.initiator || "?"}</code>). ` +
+    `✅ ${c["wound-down"] || 0} wound down · … ${c["flushing"] || 0} flushing · ` +
+    `⏳ ${c["busy"] || 0} busy · ❓ ${c["asking"] || 0} asking you.`;
+  for (const s of (wd.sessions || [])) {
+    const li = document.createElement("li");
+    const l = WD_LABEL[s.state] || { icon: "?", txt: s.state };
+    li.className = "winddown-row wd-" + s.state;
+    li.innerHTML =
+      `<span class="wd-icon">${l.icon}</span> <strong>${s.tag}</strong> — ${l.txt}` +
+      (s.summary ? ` <span class="wd-summary">“${s.summary}”</span>` : "") +
+      (s.unpushed ? ` <span class="wd-unpushed">${s.unpushed} unpushed</span>` : "");
+    winddownList.appendChild(li);
+  }
+  winddownCloseBtn.disabled = closable === 0;
+  winddownCloseBtn.textContent = closable ? `Close wound-down (${closable})` : "Close wound-down";
+}
+
+function openWinddown() { renderWinddown(); winddownModal.classList.remove("hidden"); }
+document.getElementById("winddown-btn")?.addEventListener("click", openWinddown);
+document.getElementById("winddown-modal-close")?.addEventListener("click", () => winddownModal.classList.add("hidden"));
+document.getElementById("winddown-dismiss")?.addEventListener("click", () => winddownModal.classList.add("hidden"));
+winddownModal?.addEventListener("click", (e) => { if (e.target === winddownModal) winddownModal.classList.add("hidden"); });
+
+winddownBegin?.addEventListener("click", async () => {
+  winddownBegin.disabled = true;
+  winddownResult.textContent = "Broadcasting wind-down…";
+  try {
+    const r = await fetch("/api/shutdown", { method: "POST" });
+    const j = await r.json();
+    winddownResult.textContent = j.ok
+      ? `Wind-down broadcast. Woke ${j.woke?.length || 0}; skipped ${j.skipped?.length || 0} (busy/asking — they'll get it when they pause).`
+      : "Failed to start wind-down.";
+  } catch { winddownResult.textContent = "Failed to start wind-down."; }
+});
+
+winddownCancelRun?.addEventListener("click", async () => {
+  try {
+    await fetch("/api/shutdown/clear", { method: "POST" });
+    winddownResult.textContent = "Wind-down cancelled; fleet told to resume normal work.";
+  } catch { winddownResult.textContent = "Cancel failed."; }
+});
+
+winddownCloseBtn?.addEventListener("click", async () => {
+  const n = state.winddown?.closable || 0;
+  if (!n) return;
+  if (!confirm(`Close ${n} wound-down session${n === 1 ? "" : "s"} with /exit?\nOnly sessions that posted a VERIFIED ack are touched; busy or asking sessions are left open.`)) return;
+  winddownCloseBtn.disabled = true;
+  winddownResult.textContent = "Closing wound-down sessions…";
+  try {
+    const r = await fetch("/api/shutdown/close", { method: "POST" });
+    const j = await r.json();
+    const snap = j.snapshot?.ok ? " DR roster refreshed." : "";
+    winddownResult.textContent =
+      `Closed ${j.closed?.length || 0}.` +
+      (j.refused?.length ? ` Refused ${j.refused.length}.` : "") + snap;
+  } catch { winddownResult.textContent = "Close failed."; }
 });
 
 // --- Relaunch (fleet recovery) ----------------------------------------------

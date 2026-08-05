@@ -559,6 +559,109 @@ retract_hook_lines() {  # myplain last_seen
   printf '%s' "$out"
 }
 
+# ---- Fleet wind-down: the ordered shutdown protocol (the mirror of session-start) ----
+# startup ORIENTS a session (session-start injects standing orders + catch-up); wind-down PERSISTS it
+# (flush findings + memory + commits + leases, then ACK). Conductor closes ONLY acked sessions; a busy
+# or question-open session is waited for, never interrupted or closed by surprise.
+WINDDOWN_DIR="$COORD_ROOT/wind-down"
+
+_winddown_begin() {
+  local now ts initiator; now="$(date +%s)"; ts="$(date '+%Y-%m-%d %H:%M:%S')"; initiator="$TAG"
+  mkdir -p "$WINDDOWN_DIR"
+  rm -f "$WINDDOWN_DIR"/*.done 2>/dev/null || true   # fresh wind-down: prior acks must not count
+  { echo "initiator=$initiator"; echo "created=$ts"; echo "epoch=$now"; } > "$WINDDOWN_DIR/active"
+  { echo ""; echo "## $ts [$initiator]"; echo ""
+    echo "to:all p:wake — 🛑 FLEET WIND-DOWN called by [$initiator]. Persist yourself, then ack. You are NEVER closed until you ack."
+    echo ""
+    echo "FIRST — two reasons NOT to wind down yet: (a) you hold an OPEN QUESTION for Kyle → leave it exactly as is, you are waited for; (b) you are MID-TASK → reach a safe stopping point first. Conductor waits for both and never interrupts."
+    echo "Otherwise, IN ORDER: (1) stop taking new work; (2) POST your open findings + open questions to the bus — you can rebuild a card from the bus, never an unposted thought; (3) WRITE your memory/card with what a cold session reading it tomorrow would not know; (4) COMMIT dirty repos LOCALLY and NAME anything unpushed (do NOT force a push, the gate stands); (5) /release your leases, and warn the bus if a board is left in a risky state; (6) note your cwd + repo/branch/HEAD."
+    echo "(7) ACK — the signal you are safe to close:  bus.sh shutdown ack \"<one-line state + anything unpushed/parked>\""
+    echo "Full protocol: bus/wind-down-orders.md"
+  } >> "$BUS_FILE"
+  echo "🛑 FLEET WIND-DOWN broadcast sent by [$initiator]. Reachable sessions are woken; none is closed until it acks."
+}
+
+# Which leases (if any) this member still holds — an orphaned board/GPU lease is a booby trap.
+_winddown_leases_held() {  # myplain -> space-separated resource names still owned by me
+  local myplain="$1" leasef owner res out=""
+  [ -d "$RES_ROOT" ] || { printf ''; return 0; }
+  for leasef in "$RES_ROOT"/*/lease; do
+    [ -f "$leasef" ] || continue
+    owner="$(grep -E '^owner=' "$leasef" 2>/dev/null | head -1 | cut -d= -f2-)"
+    [ -n "$owner" ] || continue
+    if [ "$(_coord_plain "$owner")" = "$myplain" ]; then
+      res="$(basename "$(dirname "$leasef")")"; out="$out $res"
+    fi
+  done
+  printf '%s' "${out# }"
+}
+
+# The ack is EARNED, not asserted. It VERIFIES the steps at the true endpoint (git + lease state on
+# disk), by code, and REFUSES to record wound-down if the work was not actually done — the same
+# discipline as `send` reading its own message back: acknowledge where the truth lives, never take the
+# session's word for it. The model narrates; deterministic code owns the value.
+_winddown_ack() {
+  local summary="$*" now ts plain root porcelain nfiles unpushed leases problems=""
+  now="$(date +%s)"; ts="$(date '+%Y-%m-%d %H:%M:%S')"
+  [ -n "$summary" ] || { echo "usage: bus.sh shutdown ack \"<one-line state>\"" >&2; return 2; }
+  plain="$(_coord_plain "$(_cursor_name 2>/dev/null || echo "$TAG")")"
+
+  # (1) VERIFY the working tree is clean — uncommitted work is the loss the wind-down exists to prevent.
+  unpushed=0
+  if root="$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null)" && [ -n "$root" ]; then
+    porcelain="$(git -C "$root" status --porcelain 2>/dev/null)"
+    if [ -n "$porcelain" ]; then
+      nfiles="$(printf '%s\n' "$porcelain" | grep -c .)"
+      problems="${problems}  ✗ UNCOMMITTED changes in ${root} (${nfiles} file(s)) — commit them (a commit is reversible; lost work is not).\n"
+    fi
+    if git -C "$root" rev-parse '@{u}' >/dev/null 2>&1; then
+      unpushed="$(git -C "$root" log --oneline '@{u}..HEAD' 2>/dev/null | grep -c .)"
+    fi
+  else
+    root="$CWD"
+  fi
+
+  # (2) VERIFY no leases remain — an orphaned lease outlives the session and blocks the next tenant.
+  leases="$(_winddown_leases_held "$plain")"
+  [ -n "$leases" ] && problems="${problems}  ✗ STILL HOLDING lease(s): ${leases} — /release them first.\n"
+
+  if [ -n "$problems" ]; then
+    echo "🛑 NOT wound down — verification failed. The protocol is not actually complete:" >&2
+    printf '%b' "$problems" >&2
+    echo "  Fix these and run the ack again. This checks the real state on disk; it does not take your word for it." >&2
+    return 1
+  fi
+
+  mkdir -p "$WINDDOWN_DIR"
+  { echo "tag=$TAG"; echo "plain=$plain"; echo "acked=$ts"; echo "epoch=$now"
+    echo "verified=clean-tree,no-leases"; echo "unpushed=$unpushed"; echo "root=$root"; echo "summary=$summary"; } > "$WINDDOWN_DIR/${plain}.done"
+  { echo ""; echo "## $ts [$TAG]"; echo ""
+    echo "to:all — ✅ WOUND DOWN [$TAG] (VERIFIED: clean tree, no leases$( [ "${unpushed:-0}" -gt 0 ] && printf ', %s commit(s) unpushed' "$unpushed" )) — $summary"; } >> "$BUS_FILE"
+  echo "✅ Wound down [$TAG] — VERIFIED (clean tree, no leases held). Safe to close."
+  [ "${unpushed:-0}" -gt 0 ] && echo "   note: ${unpushed} commit(s) unpushed in ${root} — recorded for reconstitution (do not force a push)."
+  return 0
+}
+
+_winddown_status() {
+  if [ ! -f "$WINDDOWN_DIR/active" ]; then echo "No fleet wind-down active."; return 0; fi
+  local init created f n=0
+  init="$(grep -E '^initiator=' "$WINDDOWN_DIR/active" | cut -d= -f2-)"
+  created="$(grep -E '^created=' "$WINDDOWN_DIR/active" | cut -d= -f2-)"
+  echo "🛑 Fleet wind-down ACTIVE — called by [$init] at $created."
+  for f in "$WINDDOWN_DIR"/*.done; do [ -f "$f" ] || continue; n=$((n+1)); done
+  echo "  $n session(s) wound down (safe to close):"
+  for f in "$WINDDOWN_DIR"/*.done; do [ -f "$f" ] || continue
+    echo "   ✅ $(grep -E '^tag=' "$f" | cut -d= -f2-) — $(grep -E '^summary=' "$f" | cut -d= -f2-)"
+  done
+}
+
+_winddown_clear() {
+  local ts; ts="$(date '+%Y-%m-%d %H:%M:%S')"
+  rm -f "$WINDDOWN_DIR/active" 2>/dev/null || true
+  { echo ""; echo "## $ts [$TAG]"; echo ""; echo "to:all — 🟢 WIND-DOWN CANCELLED by [$TAG] — resume normal work."; } >> "$BUS_FILE"
+  echo "Wind-down cleared; cancellation broadcast to the fleet."
+}
+
 # ---- Push gate: approve/deny git-push requests the PreToolUse hook files ------
 PUSH_TOKENS="$COORD_ROOT/push-tokens"
 PUSH_REQUESTS="$COORD_ROOT/push-requests"
@@ -2118,6 +2221,18 @@ PYEOF
 
   supersede)
     _coord_retract CORRECTION "$@"
+    exit $?
+    ;;
+
+  shutdown)
+    action="${1:-begin}"; shift 2>/dev/null || true
+    case "$action" in
+      begin|start)  _winddown_begin ;;
+      ack)          _winddown_ack "$@" ;;
+      status)       _winddown_status ;;
+      clear|cancel) _winddown_clear ;;
+      *) echo "usage: bus.sh shutdown {begin|ack \"<state>\"|status|clear}"; exit 2 ;;
+    esac
     exit $?
     ;;
 
