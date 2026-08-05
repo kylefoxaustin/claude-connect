@@ -581,14 +581,65 @@ _winddown_begin() {
   echo "🛑 FLEET WIND-DOWN broadcast sent by [$initiator]. Reachable sessions are woken; none is closed until it acks."
 }
 
+# Which leases (if any) this member still holds — an orphaned board/GPU lease is a booby trap.
+_winddown_leases_held() {  # myplain -> space-separated resource names still owned by me
+  local myplain="$1" leasef owner res out=""
+  [ -d "$RES_ROOT" ] || { printf ''; return 0; }
+  for leasef in "$RES_ROOT"/*/lease; do
+    [ -f "$leasef" ] || continue
+    owner="$(grep -E '^owner=' "$leasef" 2>/dev/null | head -1 | cut -d= -f2-)"
+    [ -n "$owner" ] || continue
+    if [ "$(_coord_plain "$owner")" = "$myplain" ]; then
+      res="$(basename "$(dirname "$leasef")")"; out="$out $res"
+    fi
+  done
+  printf '%s' "${out# }"
+}
+
+# The ack is EARNED, not asserted. It VERIFIES the steps at the true endpoint (git + lease state on
+# disk), by code, and REFUSES to record wound-down if the work was not actually done — the same
+# discipline as `send` reading its own message back: acknowledge where the truth lives, never take the
+# session's word for it. The model narrates; deterministic code owns the value.
 _winddown_ack() {
-  local summary="$*" now ts plain; now="$(date +%s)"; ts="$(date '+%Y-%m-%d %H:%M:%S')"
+  local summary="$*" now ts plain root porcelain nfiles unpushed leases problems=""
+  now="$(date +%s)"; ts="$(date '+%Y-%m-%d %H:%M:%S')"
   [ -n "$summary" ] || { echo "usage: bus.sh shutdown ack \"<one-line state>\"" >&2; return 2; }
   plain="$(_coord_plain "$(_cursor_name 2>/dev/null || echo "$TAG")")"
+
+  # (1) VERIFY the working tree is clean — uncommitted work is the loss the wind-down exists to prevent.
+  unpushed=0
+  if root="$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null)" && [ -n "$root" ]; then
+    porcelain="$(git -C "$root" status --porcelain 2>/dev/null)"
+    if [ -n "$porcelain" ]; then
+      nfiles="$(printf '%s\n' "$porcelain" | grep -c .)"
+      problems="${problems}  ✗ UNCOMMITTED changes in ${root} (${nfiles} file(s)) — commit them (a commit is reversible; lost work is not).\n"
+    fi
+    if git -C "$root" rev-parse '@{u}' >/dev/null 2>&1; then
+      unpushed="$(git -C "$root" log --oneline '@{u}..HEAD' 2>/dev/null | grep -c .)"
+    fi
+  else
+    root="$CWD"
+  fi
+
+  # (2) VERIFY no leases remain — an orphaned lease outlives the session and blocks the next tenant.
+  leases="$(_winddown_leases_held "$plain")"
+  [ -n "$leases" ] && problems="${problems}  ✗ STILL HOLDING lease(s): ${leases} — /release them first.\n"
+
+  if [ -n "$problems" ]; then
+    echo "🛑 NOT wound down — verification failed. The protocol is not actually complete:" >&2
+    printf '%b' "$problems" >&2
+    echo "  Fix these and run the ack again. This checks the real state on disk; it does not take your word for it." >&2
+    return 1
+  fi
+
   mkdir -p "$WINDDOWN_DIR"
-  { echo "tag=$TAG"; echo "plain=$plain"; echo "acked=$ts"; echo "epoch=$now"; echo "summary=$summary"; } > "$WINDDOWN_DIR/${plain}.done"
-  { echo ""; echo "## $ts [$TAG]"; echo ""; echo "to:all — ✅ WOUND DOWN [$TAG] — $summary"; } >> "$BUS_FILE"
-  echo "✅ Wound down [$TAG] — recorded, safe to close. State: $summary"
+  { echo "tag=$TAG"; echo "plain=$plain"; echo "acked=$ts"; echo "epoch=$now"
+    echo "verified=clean-tree,no-leases"; echo "unpushed=$unpushed"; echo "root=$root"; echo "summary=$summary"; } > "$WINDDOWN_DIR/${plain}.done"
+  { echo ""; echo "## $ts [$TAG]"; echo ""
+    echo "to:all — ✅ WOUND DOWN [$TAG] (VERIFIED: clean tree, no leases$( [ "${unpushed:-0}" -gt 0 ] && printf ', %s commit(s) unpushed' "$unpushed" )) — $summary"; } >> "$BUS_FILE"
+  echo "✅ Wound down [$TAG] — VERIFIED (clean tree, no leases held). Safe to close."
+  [ "${unpushed:-0}" -gt 0 ] && echo "   note: ${unpushed} commit(s) unpushed in ${root} — recorded for reconstitution (do not force a push)."
+  return 0
 }
 
 _winddown_status() {
