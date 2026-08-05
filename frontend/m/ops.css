@@ -410,3 +410,8 @@ body {
 
 /* the reassuring "nothing needs you" chip — calm, not an alert */
 .strip-counts .calm { color: var(--ok, #3fb950); }
+
+/* Broadcast (message-all) textarea */
+.bcast-text { width: 100%; box-sizing: border-box; margin: 10px 0; padding: 10px;
+  border-radius: 8px; border: 1px solid var(--line, #333); background: var(--bg-2, #16181d);
+  color: var(--fg, #e6e6e6); font: inherit; resize: vertical; }

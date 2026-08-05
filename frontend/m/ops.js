@@ -1822,3 +1822,31 @@ $("winddown-closebtn")?.addEventListener("click", async () => {
   } catch (e) { $("winddown-status").textContent = `Failed: ${e.message}`; }
   setTimeout(refresh, 1200);
 });
+
+// --- Broadcast: message the whole fleet as operator (the phone's Compose) ----
+const bcastText = $("bcast-text");
+function bcastRefresh() { const b = $("bcast-go"); if (b) b.disabled = !(bcastText && bcastText.value.trim()); }
+$("bcast-open")?.addEventListener("click", () => {
+  $("bcast-overlay").hidden = false;
+  $("bcast-status").textContent = "";
+  bcastRefresh();
+  setTimeout(() => bcastText?.focus(), 50);
+});
+$("bcast-x")?.addEventListener("click", () => { $("bcast-overlay").hidden = true; });
+bcastText?.addEventListener("input", bcastRefresh);
+$("bcast-go")?.addEventListener("click", async () => {
+  const text = (bcastText.value || "").trim();
+  if (!text) return;
+  const b = $("bcast-go"); b.disabled = true;
+  $("bcast-status").textContent = "Sending to all…";
+  try {
+    // recipients:[] => a to-all broadcast, sent as the operator sender tag (server side).
+    await api("/api/bus/send", { method: "POST", body: JSON.stringify({ text, recipients: [], ping: false }) });
+    $("bcast-status").textContent = "✅ Sent to the whole fleet as [operator].";
+    bcastText.value = "";
+    setTimeout(() => { $("bcast-overlay").hidden = true; }, 900);
+  } catch (e) {
+    $("bcast-status").textContent = `Failed: ${e.message}`;
+    b.disabled = false;
+  }
+});

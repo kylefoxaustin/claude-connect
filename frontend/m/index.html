@@ -51,6 +51,7 @@
           <h2 class="pane-h">Fleet</h2>
           <button id="recon-open" class="btn btn-sm" title="Rebuild the fleet from the DR backup">🧯 Reconstitute</button>
           <button id="winddown-open" class="btn btn-sm" title="Wind the fleet down cleanly — each session persists + posts a verified ack before you close it">🛑 Wind down</button>
+          <button id="bcast-open" class="btn btn-sm" title="Message the whole fleet at once, as operator">📣 All</button>
           <label class="sort-label">
             Sort
             <select id="fleet-sort">
@@ -160,6 +161,24 @@
           <button id="card-ov-close" class="recon-x">×</button>
         </div>
         <div id="card-ov-body" class="card-ov-body"></div>
+      </div>
+
+      <!-- Broadcast overlay: message the whole fleet as operator, from your phone. -->
+      <div id="bcast-overlay" class="recon-overlay" hidden>
+        <div class="recon-top">
+          <strong>📣 Message the whole fleet</strong>
+          <button id="bcast-x" class="recon-x">×</button>
+        </div>
+        <div class="recon-note">
+          Sends to <b>every</b> session as <b>[operator]</b> — a real to-all broadcast with your
+          authority (not a peer relaying you). Add <code>p:wake</code> to force everyone to read it now.
+        </div>
+        <textarea id="bcast-text" class="bcast-text" rows="5"
+          placeholder="Message to the whole fleet… (e.g. instructions during a wind-down)"></textarea>
+        <div class="recon-foot">
+          <span id="bcast-status" class="row-sub"></span>
+          <button id="bcast-go" class="btn btn-primary" disabled>Send to all</button>
+        </div>
       </div>
 
       <!-- Wind-down overlay: persist + close the fleet cleanly, from your phone. -->

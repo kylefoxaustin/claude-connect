@@ -566,7 +566,19 @@ retract_hook_lines() {  # myplain last_seen
 WINDDOWN_DIR="$COORD_ROOT/wind-down"
 
 _winddown_begin() {
-  local now ts initiator; now="$(date +%s)"; ts="$(date '+%Y-%m-%d %H:%M:%S')"; initiator="$TAG"
+  local now ts initiator force="${1:-}"
+  # GUARD (footgun fix): a session that runs `begin` — or `/shutdown` with no argument, which defaults
+  # to begin — while a wind-down is ALREADY ACTIVE would clear everyone's acks and re-broadcast,
+  # resetting the whole fleet's progress. Refuse unless deliberately forced. To wind YOURSELF down
+  # during an active wind-down, the command is `shutdown ack`, never `begin`.
+  if [ -f "$WINDDOWN_DIR/active" ] && [ "$force" != "--force" ] && [ -z "${BUS_SHUTDOWN_FORCE:-}" ]; then
+    local who; who="$(grep -E '^initiator=' "$WINDDOWN_DIR/active" 2>/dev/null | cut -d= -f2-)"
+    echo "🛑 A fleet wind-down is ALREADY ACTIVE (called by [$who]) — NOT re-broadcasting." >&2
+    echo "   To wind YOURSELF down, run:  bus.sh shutdown ack \"<one-line state>\"" >&2
+    echo "   ('begin' would reset everyone's progress; refused. 'shutdown clear' cancels it; 'begin --force' re-broadcasts on purpose.)" >&2
+    return 1
+  fi
+  now="$(date +%s)"; ts="$(date '+%Y-%m-%d %H:%M:%S')"; initiator="$TAG"
   mkdir -p "$WINDDOWN_DIR"
   rm -f "$WINDDOWN_DIR"/*.done 2>/dev/null || true   # fresh wind-down: prior acks must not count
   { echo "initiator=$initiator"; echo "created=$ts"; echo "epoch=$now"; } > "$WINDDOWN_DIR/active"
@@ -2227,7 +2239,7 @@ PYEOF
   shutdown)
     action="${1:-begin}"; shift 2>/dev/null || true
     case "$action" in
-      begin|start)  _winddown_begin ;;
+      begin|start)  _winddown_begin "$@" ;;
       ack)          _winddown_ack "$@" ;;
       status)       _winddown_status ;;
       clear|cancel) _winddown_clear ;;
