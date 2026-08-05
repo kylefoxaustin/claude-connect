@@ -2173,3 +2173,16 @@ body.link-mode .tile-actions { visibility: hidden; }
 }
 .proj-newform select:focus { border-color: var(--accent); }
 .proj-newform select option { color: var(--text); background: var(--bg-panel); }
+
+/* Wind-down (ordered fleet shutdown) panel */
+.winddown-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column;
+  gap: 4px; max-height: 42vh; overflow-y: auto; }
+.winddown-row { padding: 6px 8px; border-radius: 6px; background: var(--bg-panel, #1b1b1f);
+  border-left: 3px solid var(--border, #444); font-size: 0.9em; }
+.winddown-row .wd-icon { display: inline-block; width: 1.4em; text-align: center; }
+.winddown-row.wd-wound-down { border-left-color: #3fb950; }
+.winddown-row.wd-asking     { border-left-color: #d29922; background: rgba(210,153,34,0.08); }
+.winddown-row.wd-busy       { border-left-color: #58a6ff; }
+.winddown-row.wd-flushing   { border-left-color: #8b949e; }
+.wd-summary { color: var(--text-dim, #8b949e); font-style: italic; }
+.wd-unpushed { color: #d29922; font-size: 0.85em; margin-left: 4px; }

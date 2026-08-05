@@ -44,6 +44,7 @@
         <button id="pack-btn" title="Pull all tiles together into a tidy grid — your own layout is kept and restored when you turn this off">⊞ Tidy</button>
         <button id="relaunch-btn" title="Bring dormant sessions back (fleet recovery after a reboot or crash)">⟳ Relaunch</button>
         <button id="reconstitute-btn" title="Rebuild the fleet from the disaster-recovery backup — clone repos + resume sessions on a new machine">🧯 Reconstitute</button>
+        <button id="winddown-btn" title="Wind the fleet down cleanly — every session persists its state (memory, commits, leases) and posts a VERIFIED ack before you close it">🛑 Wind down</button>
         <button id="waiting-btn" title="Who is blocked on whom — bottlenecks, deadlocks, and the longest waits">⏳ Blocked</button>
         <button id="link-btn" title="Let these Claudes talk to each other unattended for a while — click tiles to select, then set a duration">🔗 Let them talk</button>
         <button id="groups-btn" title="Manage groups">▦ Groups</button>
@@ -219,6 +220,34 @@
     </div>
 
     <!-- Relaunch (fleet recovery) modal, hidden by default. -->
+    <div id="winddown-modal" class="modal hidden">
+      <div class="modal-card">
+        <header>
+          <h2>🛑 Wind down the fleet</h2>
+          <button id="winddown-modal-close">×</button>
+        </header>
+        <div class="relaunch-body">
+          <p class="settings-hint">
+            The mirror of session start: startup <em>orients</em> a session; wind-down
+            <em>persists</em> it. Each session posts its open findings, writes its memory, commits
+            dirty repos, and releases its leases — then posts a <strong>verified</strong> ack (the
+            bus checks git + leases on disk; it does not take the session’s word for it). A session
+            that is <strong>asking you a question</strong> or <strong>mid-task</strong> is never
+            interrupted or closed — it is waited for. You close only what has provably wound down.
+          </p>
+          <div id="winddown-status" class="settings-hint"></div>
+          <ul id="winddown-list" class="winddown-list"></ul>
+          <div class="relaunch-actions">
+            <button id="winddown-begin" class="link-go">Wind down fleet</button>
+            <button id="winddown-close" class="link-go" disabled>Close wound-down</button>
+            <button id="winddown-cancel-run" class="link-ghost hidden">Cancel wind-down</button>
+            <button id="winddown-dismiss" class="link-ghost">Close</button>
+          </div>
+          <div id="winddown-result" class="settings-hint"></div>
+        </div>
+      </div>
+    </div>
+
     <div id="relaunch-modal" class="modal hidden">
       <div class="modal-card">
         <header>
