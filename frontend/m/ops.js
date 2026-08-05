@@ -130,6 +130,7 @@ function render() {
   renderBlocked();
   renderResources();
   renderProjects();
+  const _wdo = $("winddown-overlay"); if (_wdo && !_wdo.hidden) renderWinddownM();  // live-update overlay as sessions ack
 
   // A resource whose owner is offline needs Kyle to reclaim it — the one resource state
   // that a human has to resolve, so it earns the tab badge.
@@ -1731,3 +1732,93 @@ async function start() {
     showGate();
   }
 })();
+
+// --- Wind down (ordered fleet shutdown; the phone overlay) -------------------
+// A session is NEVER closed until it posts a VERIFIED ack; asking/busy are surfaced,
+// never closed. Close is a two-tap arm (never one-tap-destructive on a phone).
+const WD_M = {
+  "wound-down": { i: "✅", t: "wound down — safe to close", c: "rb-live" },
+  "asking":     { i: "❓", t: "asking YOU — answer it (never closed)", c: "rb-blocked" },
+  "busy":       { i: "⏳", t: "busy — waited for, not interrupted", c: "rb-present" },
+  "flushing":   { i: "…", t: "flushing — persisting its state", c: "rb-clone" },
+};
+let wdCloseArmed = false;
+
+function renderWinddownM() {
+  const wd = (ops && ops.winddown) || { active: false };
+  const cards = $("winddown-cards");
+  if (!cards) return;
+  const beginB = $("winddown-begin"), closeB = $("winddown-closebtn"), cancelB = $("winddown-cancel");
+  if (!wd.active) {
+    $("winddown-note").textContent =
+      "Broadcasts the ordered protocol to every session; each persists itself (findings, memory, commits, leases) and posts a VERIFIED ack — the bus checks git + leases on disk, it does not take the session's word. Nothing closes without that ack plus your tap.";
+    cards.innerHTML = "";
+    $("winddown-status").textContent = "No wind-down in progress.";
+    beginB.hidden = false; beginB.disabled = false;
+    closeB.hidden = true; cancelB.hidden = true; wdCloseArmed = false;
+    return;
+  }
+  const c = wd.counts || {};
+  $("winddown-note").innerHTML =
+    `Called by <b>${esc(wd.initiator || "?")}</b>. A session asking you or busy is <b>never</b> closed — only verified-acked ones are.`;
+  $("winddown-status").textContent =
+    `✅ ${c["wound-down"] || 0} · … ${c["flushing"] || 0} flushing · ⏳ ${c["busy"] || 0} busy · ❓ ${c["asking"] || 0} asking`;
+  cards.innerHTML = "";
+  for (const s of (wd.sessions || [])) {
+    const l = WD_M[s.state] || { i: "?", t: s.state, c: "" };
+    const el = document.createElement("div");
+    el.className = "card wd-card";
+    el.innerHTML =
+      `<div class="recon-cardhead"><span class="recon-badge ${l.c}">${l.i}</span> <b>${esc(s.tag)}</b></div>`
+      + `<div class="row-sub" style="white-space:normal">${l.t}`
+      + (s.summary ? ` — “${esc(s.summary)}”` : "")
+      + (s.unpushed ? ` · ${s.unpushed} unpushed` : "") + `</div>`;
+    cards.appendChild(el);
+  }
+  const closable = wd.closable || 0;
+  beginB.hidden = true; cancelB.hidden = false; closeB.hidden = false;
+  closeB.disabled = closable === 0;
+  if (!wdCloseArmed) closeB.textContent = closable ? `Close wound-down (${closable})` : "Close wound-down";
+}
+
+function openWinddownM() { $("winddown-overlay").hidden = false; wdCloseArmed = false; renderWinddownM(); }
+$("winddown-open")?.addEventListener("click", openWinddownM);
+$("winddown-close-x")?.addEventListener("click", () => { $("winddown-overlay").hidden = true; wdCloseArmed = false; });
+
+$("winddown-begin")?.addEventListener("click", async () => {
+  const b = $("winddown-begin"); b.disabled = true;
+  $("winddown-status").textContent = "Broadcasting wind-down…";
+  try {
+    const r = await api("/api/shutdown", { method: "POST" });
+    $("winddown-status").textContent =
+      `Sent. Woke ${r.woke?.length || 0}; ${r.skipped?.length || 0} busy/asking get it when they pause.`;
+  } catch (e) { $("winddown-status").textContent = `Failed: ${e.message}`; b.disabled = false; }
+  setTimeout(refresh, 1200);
+});
+
+$("winddown-cancel")?.addEventListener("click", async () => {
+  try { await api("/api/shutdown/clear", { method: "POST" }); $("winddown-status").textContent = "Cancelled; fleet resumes."; }
+  catch (e) { $("winddown-status").textContent = `Failed: ${e.message}`; }
+  wdCloseArmed = false; setTimeout(refresh, 1000);
+});
+
+$("winddown-closebtn")?.addEventListener("click", async () => {
+  const n = (ops && ops.winddown && ops.winddown.closable) || 0;
+  if (!n) return;
+  const b = $("winddown-closebtn");
+  if (!wdCloseArmed) {                       // two-tap arm
+    wdCloseArmed = true;
+    b.textContent = `Tap again to close ${n} with /exit`;
+    setTimeout(() => { if (wdCloseArmed) { wdCloseArmed = false; renderWinddownM(); } }, 4000);
+    return;
+  }
+  wdCloseArmed = false; b.disabled = true;
+  $("winddown-status").textContent = "Closing wound-down sessions…";
+  try {
+    const r = await api("/api/shutdown/close", { method: "POST" });
+    const snap = r.snapshot?.ok ? " DR roster refreshed." : "";
+    $("winddown-status").textContent =
+      `Closed ${r.closed?.length || 0}${r.refused?.length ? `, refused ${r.refused.length}` : ""}.` + snap;
+  } catch (e) { $("winddown-status").textContent = `Failed: ${e.message}`; }
+  setTimeout(refresh, 1200);
+});

@@ -3038,6 +3038,7 @@ async def get_ops(request: Request) -> dict[str, Any]:
             "open_kyle": p.get("open_kyle_escalations", 0), "needs": p.get("needs"),
         } for p in state.projects],
         "webpush": state._webpush_status(),   # can we actually page this phone? (2026-07-22)
+        "winddown": state._winddown_payload(),  # fleet shutdown state (the 🛑 phone overlay)
         "counts": {
             "needs_you": (len(state.decisions) + len(state._push_requests)
                           + len(state._push_proposals) + len(state._persist_requests)

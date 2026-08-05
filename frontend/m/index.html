@@ -50,6 +50,7 @@
         <div class="pane-bar">
           <h2 class="pane-h">Fleet</h2>
           <button id="recon-open" class="btn btn-sm" title="Rebuild the fleet from the DR backup">🧯 Reconstitute</button>
+          <button id="winddown-open" class="btn btn-sm" title="Wind the fleet down cleanly — each session persists + posts a verified ack before you close it">🛑 Wind down</button>
           <label class="sort-label">
             Sort
             <select id="fleet-sort">
@@ -159,6 +160,22 @@
           <button id="card-ov-close" class="recon-x">×</button>
         </div>
         <div id="card-ov-body" class="card-ov-body"></div>
+      </div>
+
+      <!-- Wind-down overlay: persist + close the fleet cleanly, from your phone. -->
+      <div id="winddown-overlay" class="recon-overlay" hidden>
+        <div class="recon-top">
+          <strong>🛑 Wind down the fleet</strong>
+          <button id="winddown-close-x" class="recon-x">×</button>
+        </div>
+        <div id="winddown-note" class="recon-note"></div>
+        <div id="winddown-cards"></div>
+        <div class="recon-foot">
+          <span id="winddown-status" class="row-sub"></span>
+          <button id="winddown-begin" class="btn btn-primary">Wind down fleet</button>
+          <button id="winddown-closebtn" class="btn btn-primary" hidden disabled>Close wound-down</button>
+          <button id="winddown-cancel" class="btn btn-sm" hidden>Cancel wind-down</button>
+        </div>
       </div>
 
       <!-- Reconstitute overlay: rebuild the fleet from the DR backup, from your phone. -->
