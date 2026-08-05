@@ -1945,6 +1945,41 @@ class AppState:
         snapshot = await self._winddown_snapshot()
         return {"ok": True, "closed": closed, "refused": refused, "snapshot": snapshot}
 
+    async def close_idle_stragglers(self) -> dict[str, Any]:
+        """Close the passive tail: un-acked sessions that are IDLE (the 'flushing' state) — a
+        DELIBERATE, eyes-open close of sessions that never self-acked. This is NOT the safe path:
+        these sessions are NOT verified-clean, so the caller must warn. Still never touches a BUSY
+        or ASKING session (those are genuinely mid-something and stay waited-for). Closing via
+        ``/exit`` ends the session but does NOT delete its working tree — uncommitted changes remain
+        on disk and are captured by the post-close DR roster snapshot, recoverable later."""
+        wd = read_winddown(self.coord_root)
+        if not wd.get("active"):
+            return {"ok": False, "error": "no wind-down active", "closed": []}
+        acks = wd.get("acks", {})
+        closed: list[str] = []
+        skipped: list[dict[str, str]] = []
+        for r in list(self.sessions.values()):
+            if r.status == Status.ENDED:
+                continue
+            if _wd_plain(r.tag or "") in acks:
+                continue  # acked → use the safe verified close, not this
+            if self._has_open_picker(r):
+                skipped.append({"tag": r.tag, "why": "asking"})  # never close a session asking Kyle
+                continue
+            if r.status in _BUSY_STATUSES:
+                skipped.append({"tag": r.tag, "why": "busy"})  # never interrupt a working session
+                continue
+            ok = await asyncio.to_thread(
+                send_keys_to_session, text="/exit", pid=r.pid,
+                terminal_pid=r.terminal_pid, title=r.title, window_title=r.window_title,
+            )
+            (closed if ok else skipped).append(
+                r.tag if ok else {"tag": r.tag, "why": "close-failed"})
+            if ok:
+                log.warning("wind-down: closed IDLE un-acked [%s] (/exit) — NOT verified-clean", r.tag)
+        snapshot = await self._winddown_snapshot()
+        return {"ok": True, "closed": closed, "skipped": skipped, "snapshot": snapshot, "unverified": True}
+
     async def _winddown_snapshot(self) -> dict[str, Any]:
         """Refresh the DR roster after a wind-down so the reconstitution record reflects the
         wound-down state. Best-effort: a failure here must never make the close look failed."""
@@ -2855,6 +2890,15 @@ async def shutdown_close(request: Request) -> dict[str, Any]:
     persisted is left open and waited for. User-triggered only, from the shutdown panel."""
     state: AppState = request.app.state.cond
     return await state.close_wound_down()
+
+
+@app.post("/api/shutdown/close-idle")
+async def shutdown_close_idle(request: Request) -> dict[str, Any]:
+    """Close the passive tail: un-acked IDLE ('flushing') sessions that never self-acked. Deliberate
+    and eyes-open — these are NOT verified-clean (the UI warns). Still never touches busy or asking
+    sessions. /exit ends them without deleting their working tree; the DR snapshot captures state."""
+    state: AppState = request.app.state.cond
+    return await state.close_idle_stragglers()
 
 
 # ambiguity possible.

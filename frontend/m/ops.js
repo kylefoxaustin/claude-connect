@@ -1743,6 +1743,7 @@ const WD_M = {
   "flushing":   { i: "…", t: "flushing — persisting its state", c: "rb-clone" },
 };
 let wdCloseArmed = false;
+let wdIdleArmed = false;
 
 function renderWinddownM() {
   const wd = (ops && ops.winddown) || { active: false };
@@ -1779,6 +1780,12 @@ function renderWinddownM() {
   beginB.hidden = true; cancelB.hidden = false; closeB.hidden = false;
   closeB.disabled = closable === 0;
   if (!wdCloseArmed) closeB.textContent = closable ? `Close wound-down (${closable})` : "Close wound-down";
+  const idle = (wd.counts || {})["flushing"] || 0;
+  const idleB = $("winddown-closeidle");
+  if (idleB) {
+    idleB.hidden = idle === 0;
+    if (!wdIdleArmed) idleB.textContent = idle ? `Close idle (${idle})` : "Close idle";
+  }
 }
 
 function openWinddownM() { $("winddown-overlay").hidden = false; wdCloseArmed = false; renderWinddownM(); }
@@ -1820,6 +1827,27 @@ $("winddown-closebtn")?.addEventListener("click", async () => {
     $("winddown-status").textContent =
       `Closed ${r.closed?.length || 0}${r.refused?.length ? `, refused ${r.refused.length}` : ""}.` + snap;
   } catch (e) { $("winddown-status").textContent = `Failed: ${e.message}`; }
+  setTimeout(refresh, 1200);
+});
+
+$("winddown-closeidle")?.addEventListener("click", async () => {
+  const n = ((ops && ops.winddown && ops.winddown.counts) || {})["flushing"] || 0;
+  if (!n) return;
+  const b = $("winddown-closeidle");
+  if (!wdIdleArmed) {                          // two-tap arm — this one is NOT verified-clean
+    wdIdleArmed = true;
+    b.textContent = `⚠ ${n} are UNVERIFIED — tap again to /exit them`;
+    setTimeout(() => { if (wdIdleArmed) { wdIdleArmed = false; renderWinddownM(); } }, 4500);
+    return;
+  }
+  wdIdleArmed = false; b.disabled = true;
+  $("winddown-status").textContent = "Closing idle stragglers (unverified)…";
+  try {
+    const r = await api("/api/shutdown/close-idle", { method: "POST" });
+    const snap = r.snapshot?.ok ? " DR roster refreshed." : "";
+    $("winddown-status").textContent =
+      `Closed ${r.closed?.length || 0} idle (unverified)${r.skipped?.length ? `, skipped ${r.skipped.length} busy/asking` : ""}.` + snap;
+  } catch (e) { $("winddown-status").textContent = `Failed: ${e.message}`; b.disabled = false; }
   setTimeout(refresh, 1200);
 });
 
