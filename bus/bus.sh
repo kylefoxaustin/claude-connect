@@ -620,13 +620,18 @@ _winddown_ack() {
   plain="$(_coord_plain "$(_cursor_name 2>/dev/null || echo "$TAG")")"
 
   # (1) VERIFY the working tree is clean — uncommitted work is the loss the wind-down exists to prevent.
-  unpushed=0
+  # BLOCK only on TRACKED changes (modified/staged): `--untracked-files=no`. Untracked files are almost
+  # always intentional scratch (build dirs, notes, staged upstream), and blocking on them made sessions
+  # DODGE the ack by running it from a non-git dir (91emulator, live) — worse than not checking. We
+  # count untracked separately and RECORD it so reconstitution knows, but it does not block.
+  unpushed=0; untracked=0
   if root="$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null)" && [ -n "$root" ]; then
-    porcelain="$(git -C "$root" status --porcelain 2>/dev/null)"
+    porcelain="$(git -C "$root" status --porcelain --untracked-files=no 2>/dev/null)"
     if [ -n "$porcelain" ]; then
       nfiles="$(printf '%s\n' "$porcelain" | grep -c .)"
-      problems="${problems}  ✗ UNCOMMITTED changes in ${root} (${nfiles} file(s)) — commit them (a commit is reversible; lost work is not).\n"
+      problems="${problems}  ✗ UNCOMMITTED changes to TRACKED files in ${root} (${nfiles}) — commit them (a commit is reversible; lost work is not).\n"
     fi
+    untracked="$(git -C "$root" status --porcelain --untracked-files=normal 2>/dev/null | grep -c '^??' || true)"
     if git -C "$root" rev-parse '@{u}' >/dev/null 2>&1; then
       unpushed="$(git -C "$root" log --oneline '@{u}..HEAD' 2>/dev/null | grep -c .)"
     fi
@@ -647,7 +652,8 @@ _winddown_ack() {
 
   mkdir -p "$WINDDOWN_DIR"
   { echo "tag=$TAG"; echo "plain=$plain"; echo "acked=$ts"; echo "epoch=$now"
-    echo "verified=clean-tree,no-leases"; echo "unpushed=$unpushed"; echo "root=$root"; echo "summary=$summary"; } > "$WINDDOWN_DIR/${plain}.done"
+    echo "verified=tracked-tree-clean,no-leases"; echo "unpushed=$unpushed"; echo "untracked=$untracked"
+    echo "root=$root"; echo "summary=$summary"; } > "$WINDDOWN_DIR/${plain}.done"
   { echo ""; echo "## $ts [$TAG]"; echo ""
     echo "to:all — ✅ WOUND DOWN [$TAG] (VERIFIED: clean tree, no leases$( [ "${unpushed:-0}" -gt 0 ] && printf ', %s commit(s) unpushed' "$unpushed" )) — $summary"; } >> "$BUS_FILE"
   echo "✅ Wound down [$TAG] — VERIFIED (clean tree, no leases held). Safe to close."

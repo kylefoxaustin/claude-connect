@@ -415,3 +415,9 @@ body {
 .bcast-text { width: 100%; box-sizing: border-box; margin: 10px 0; padding: 10px;
   border-radius: 8px; border: 1px solid var(--line, #333); background: var(--bg-2, #16181d);
   color: var(--fg, #e6e6e6); font: inherit; resize: vertical; }
+
+/* Wind-down overlay: make the session list scroll (the #recon-cards rule is ID-scoped, so
+   #winddown-cards needs its own), and wrap long paths/hashes so cards don't clip horizontally. */
+#winddown-cards { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.wd-card { overflow-wrap: anywhere; word-break: break-word; }
+.wd-card .row-sub { overflow-wrap: anywhere; }
