@@ -60,15 +60,30 @@ mk_clean_repo() {
 # Captures output AND status from ONE invocation: running it twice would let the first call's side
 # effects satisfy the second call's assertions, which is its own species of passing for the wrong
 # reason.
+# A REAL ancestor named `claude`. The ack walks the actual process tree and (correctly) ignores
+# CLAUDE_PID_OVERRIDE, so the only faithful way to test it is to BE a claude child. We copy bash
+# to a file called `claude` so /proc/<pid>/comm reads "claude", start it with cwd=$sess_dir, and
+# run the ack from inside it — exactly the shape of a real session, including a shell that has
+# cd'd somewhere else.
+FAKE_CLAUDE="$ROOT/bin/claude"
+mkdir -p "$ROOT/bin"; cp "$(command -v bash)" "$FAKE_CLAUDE"
+
 ACK_OUT=""; ACK_ST=""
 run_ack_as_session() {
   local sess_dir="$1"; local shell_dir="$2"; shift 2
-  ( cd "$sess_dir" && exec sleep 60 ) & local sp=$!
-  local i=0
-  while [ ! -e "/proc/$sp/cwd" ] && [ $i -lt 50 ]; do i=$((i+1)); done
-  ACK_OUT="$( ( cd "$shell_dir" && CLAUDE_PID_OVERRIDE="$sp" bash "$BUS" shutdown ack "$@" ) 2>&1 )" \
+  # The fake `claude` is started with cwd=$sess_dir and NEVER cd's itself — the inner `cd` runs in
+  # a SUBSHELL, so it moves the shell without moving the session, which is precisely the shape of
+  # the /tmp dodge. bus.sh runs as a CHILD (not exec'd), so `claude` stays in its ancestry.
+  # The inner shell must be a REAL `bash`, not a subshell fork of the fake claude: a fork keeps
+  # comm="claude", so the ancestry walk would stop on IT and read the dodge dir as the session's
+  # cwd. Claude Code's Bash tool spawns an actual bash child, and the walk is written for that.
+  # `; exit $?` is NOT decoration: with a single simple command, `bash -c` EXECS it and the
+  # fake claude is REPLACED by the inner bash — leaving no claude in the ancestry at all, so the
+  # walk escapes the jail and finds this repo's real session. Two commands defeat that.
+  ACK_OUT="$( cd "$sess_dir" && "$FAKE_CLAUDE" -c \
+      'bash -c "cd \"$1\" && bash \"$2\" shutdown ack \"$3\"" _ "$1" "$2" "$3"; exit $?' \
+      _ "$shell_dir" "$BUS" "$1" 2>&1 )" \
     && ACK_ST=0 || ACK_ST=$?
-  kill "$sp" 2>/dev/null || true; wait "$sp" 2>/dev/null || true
 }
 # The ordinary case: the session's cwd and the shell's cwd are the same directory.
 run_ack() { local d="$1"; shift; run_ack_as_session "$d" "$d" "$@"; }
@@ -156,13 +171,50 @@ run_ack_as_session "$D7" "$ELSEWHERE" 'eta done'
 [ "$ACK_ST" = "0" ] && ok "exit 0 — verification followed the session, not the shell" \
                     || bad "over-blocked a genuinely clean session: $ACK_OUT"
 
-echo "== no claude ancestor (Kyle in a plain terminal) falls back to \$CWD =="
-D8="$(mk_clean_repo theta)"
+echo "== the ack IGNORES CLAUDE_PID_OVERRIDE — a verification cannot read its own subject =="
+# Found by the end-to-end rehearsal (2026-08-06), and it was a hole I introduced. `_claude_pid`
+# honours CLAUDE_PID_OVERRIDE, a test seam whose comment says it "confers NO authority" — true
+# while it only chose a cursor key. Once the ack used it to choose WHICH TREE GETS VERIFIED, a
+# session could point it at a clean directory and ack a dirty one. So the ack walks the real
+# ancestry via `_ack_session_dir` instead, and this proves it: the session lives in a DIRTY repo,
+# the override names a process sitting in a CLEAN one, and the ack must still refuse.
+DIRTY_S="$(mk_clean_repo omega)"
+echo uncommitted >> "$DIRTY_S/f.txt"
+CLEAN_S="$(mk_clean_repo sigma)"
 rm -rf "$WD"; mkdir -p "$WD"
-ACK_OUT="$( ( cd "$D8" && CLAUDE_PID_OVERRIDE=999999 bash "$BUS" shutdown ack 'theta by hand' ) 2>&1 )" \
-  && ACK_ST=0 || ACK_ST=$?
-[ "$ACK_ST" = "0" ] && ok "exit 0 using the shell's cwd" || bad "broke the human path: $ACK_OUT"
-[ -n "$(donefile)" ] && ok ".done written" || bad "no .done on the fallback path"
+# The decoy must itself be named `claude`: with a plain `sleep`, even a walk that STARTS at the
+# override climbs past it to the real session, and the test would pass for the wrong reason.
+# `; exit 0` again: without it bash EXECS the sleep and the decoy stops being named
+# `claude`, so even a walk that starts at the override climbs past it — and the test would pass
+# for the wrong reason while the hole was wide open.
+( cd "$CLEAN_S" && exec "$FAKE_CLAUDE" -c 'sleep 30; exit 0' ) & decoy=$!
+i=0; while [ ! -e "/proc/$decoy/cwd" ] && [ $i -lt 50 ]; do i=$((i+1)); done
+ACK_OUT="$( cd "$DIRTY_S" && CLAUDE_PID_OVERRIDE="$decoy" "$FAKE_CLAUDE" -c \
+    'bash -c "cd \"$1\" && CLAUDE_PID_OVERRIDE=\"$4\" bash \"$2\" shutdown ack \"$3\"" _ "$1" "$2" "$3" "$4"; exit $?' \
+    _ "$DIRTY_S" "$BUS" 'omega via a decoy pid' "$decoy" 2>&1 )" && ACK_ST=0 || ACK_ST=$?
+kill "$decoy" 2>/dev/null || true; wait "$decoy" 2>/dev/null || true
+[ "$ACK_ST" != "0" ] && ok "refused — the override did not redirect the check" \
+                     || bad "OVERRIDE HOLE IS BACK — a dirty session acked via a decoy pid"
+[ -z "$(donefile)" ] && ok "no .done written" || bad "the decoy wrote a .done"
+
+echo "== a session whose project is NOT a git repo acks fine =="
+# Real case, not hypothetical: Kyle's qualcomm/ is not a repo (v2.17.1). There is no tree to
+# verify, so the git block is skipped by design and the lease check still runs. This must not be
+# confused with the /tmp DODGE above — there the session DOES live in a repo and only its shell
+# moved, which is why that one is refused and this one is allowed.
+NOGIT="$BUS_PROJECTS_ROOT/plainproj"; mkdir -p "$NOGIT"
+rm -rf "$WD"; mkdir -p "$WD"
+run_ack "$NOGIT" 'plainproj — no repo here'
+[ "$ACK_ST" = "0" ] && ok "exit 0 for a non-repo project" || bad "blocked a non-repo session: $ACK_OUT"
+[ -n "$(donefile)" ] && ok ".done written" || bad "no .done for a non-repo session"
+[ "$(field "$(donefile)" unpushed)" = "0" ] && ok "unpushed=0 (nothing to compare against)" \
+  || bad "unpushed=$(field "$(donefile)" unpushed)"
+
+# NOT COVERED HERE, and deliberately not faked: the "no claude ancestor at all" path — Kyle
+# running the ack from a plain terminal, where `_ack_session_dir` returns nothing and $CWD takes
+# over. An 8-hop ancestry walk climbs out of any jail we can build from inside a claude session
+# and finds this repo's own live session, so every attempt to stage it measured the harness rather
+# than the script. It is exercised by the live rehearsal instead.
 
 echo
 echo "  ${pass} passed, ${fail} failed"

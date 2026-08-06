@@ -613,6 +613,36 @@ _winddown_leases_held() {  # myplain -> space-separated resource names still own
 # disk), by code, and REFUSES to record wound-down if the work was not actually done — the same
 # discipline as `send` reading its own message back: acknowledge where the truth lives, never take the
 # session's word for it. The model narrates; deterministic code owns the value.
+_ack_session_dir() {
+  # The working directory of the `claude` process this ack is running under — the tree the
+  # wind-down check must verify.
+  #
+  # DELIBERATELY NOT `_claude_pid`. That helper honours CLAUDE_PID_OVERRIDE, a test seam whose
+  # own comment says it "confers NO authority" — which was true while it only chose a cursor key.
+  # Here it would choose WHICH TREE GETS VERIFIED, so honouring it would let a session point the
+  # check at a clean directory and ack a dirty one. A verification must not read its subject from
+  # a variable its subject can set. (Caught by the end-to-end rehearsal, 2026-08-06 — the unit
+  # tests could not see it because they use the seam themselves.)
+  #
+  # Walks the real ancestry, and finds the `claude` process rather than the `bash -c "... claude;
+  # exec bash"` wrapper, which SURVIVES claude's death (v2.27.2) and would name a corpse's cwd.
+  # Prints nothing when there is no claude ancestor — Kyle running the ack from a plain terminal,
+  # where the caller correctly falls back to $CWD.
+  local p="$$" c i d
+  for i in 1 2 3 4 5 6 7 8; do
+    [ -r "/proc/$p/comm" ] || break
+    IFS= read -r c < "/proc/$p/comm" 2>/dev/null || break
+    if [ "$c" = "claude" ]; then
+      d="$(readlink "/proc/$p/cwd" 2>/dev/null || true)"
+      [ -n "$d" ] && [ -d "$d" ] && printf '%s\n' "$d"
+      return 0
+    fi
+    p="$(awk '{print $4}' "/proc/$p/stat" 2>/dev/null || true)"
+    case "$p" in ''|0|1) break ;; esac
+  done
+  return 0
+}
+
 _unpushed_count() {
   # Commits that exist on NO remote, across EVERY local branch.
   #
@@ -652,9 +682,8 @@ _winddown_ack() {
   # i.e. by skipping every check in this block. Sessions "VERIFIED: clean tree" that way verified
   # nothing. Fix the bug AND close the dodge, or the dodge stays the path of least resistance.
   # Falls back to $CWD when there is no claude ancestor (Kyle running it from a plain terminal).
-  local ackdir="" cpid=""
-  cpid="$(_claude_pid 2>/dev/null || true)"
-  [ -n "$cpid" ] && ackdir="$(readlink "/proc/$cpid/cwd" 2>/dev/null || true)"
+  local ackdir=""
+  ackdir="$(_ack_session_dir 2>/dev/null || true)"
   [ -n "$ackdir" ] && [ -d "$ackdir" ] || ackdir="$CWD"
   if root="$(git -C "$ackdir" rev-parse --show-toplevel 2>/dev/null)" && [ -n "$root" ]; then
     porcelain="$(git -C "$root" status --porcelain --untracked-files=no 2>/dev/null)"
