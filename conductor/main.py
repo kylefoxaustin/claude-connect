@@ -209,6 +209,37 @@ def _bare_tag(tag: str | None) -> str:
     return (tag or "").strip().strip("[]")
 
 
+def _known_request_key(key: str, directory: Path) -> bool:
+    """Is ``key`` safe to pass on as a request identifier?
+
+    Two ways to qualify, and the second exists because of a real nag (Kyle, 2026-08-06):
+
+      1. it is charset-clean (alnum plus ``._-``) — the fast path, and a path-traversal guard; or
+      2. it EXACTLY matches a file already sitting in ``directory``.
+
+    The gate that FILES these sanitizes with `tr '/ ' '__'` — slashes and spaces only — so any
+    repo path containing anything else (``$``, ``+``, ``(``, ``&``…) produced a request the API
+    then refused to act on with "bad request key". Filable but not dismissible: it sat in Kyle's
+    inbox re-ringing his phone every hour with no way to clear it from Conductor OR the phone.
+    A control surface that can raise an alarm it cannot lower is worse than one that never raised
+    it, because the only way out is to learn to ignore the alarm.
+
+    Matching against the actual directory listing is what keeps this safe: we never build a path
+    from the caller's string, we compare it to names that already exist, so ``../`` and friends
+    simply do not match anything."""
+    # `.` and `..` are CHARSET-CLEAN — `.` is in the allowed set — so the original check let them
+    # through on the fast path. Reject them before anything else, for both routes. (Found by the
+    # traversal test written for the fallback; the hole predates it.)
+    if not key or key in (".", "..") or "/" in key or "\\" in key or "\0" in key:
+        return False
+    if all(c.isalnum() or c in "._-" for c in key):
+        return True
+    try:
+        return key in {p.name for p in directory.iterdir()}
+    except OSError:
+        return False
+
+
 def _wd_plain(tag: str | None) -> str:
     """Plain member name matching ``bus.sh``'s ``_coord_plain`` (which keys the wind-down acks):
     ``[other:qualcomm]`` == ``other:qualcomm`` == ``qualcomm``."""
@@ -2463,9 +2494,9 @@ async def decide_push(key: str, action: str, request: Request) -> dict[str, Any]
     """
     if action not in ("approve", "deny", "revoke"):
         raise HTTPException(status_code=404, detail="unknown action")
-    if not key or not all(c.isalnum() or c in "._-" for c in key):
-        raise HTTPException(status_code=400, detail="bad request key")
     state: AppState = request.app.state.cond
+    if not _known_request_key(key, state.coord_root / "push-requests"):
+        raise HTTPException(status_code=400, detail="bad request key")
     # Grab the request BEFORE bus.sh consumes it — we need its cwd to tell the
     # asking session that it's cleared to go.
     req = next((r for r in state._push_requests if r.get("key") == key), None)
@@ -3185,9 +3216,9 @@ async def decide_persist(key: str, action: str, request: Request) -> dict[str, A
     """
     if action not in ("approve", "deny", "revoke"):
         raise HTTPException(status_code=404, detail="unknown action")
-    if not key or not all(c.isalnum() or c in "._-" for c in key):
-        raise HTTPException(status_code=400, detail="bad request key")
     state: AppState = request.app.state.cond
+    if not _known_request_key(key, state.coord_root / "persist-requests"):
+        raise HTTPException(status_code=400, detail="bad request key")
     req = next((r for r in state._persist_requests if r.get("key") == key), None)
     name = (req or {}).get("target_name") or key
     proc = await asyncio.to_thread(

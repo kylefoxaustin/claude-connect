@@ -81,7 +81,12 @@ printf '%s' "$CMD" | grep -Eq '(^|[;&|(])[[:space:]]*git([[:space:]]+(-[^[:space
 # so the request Kyle sees names the real repo, and the token is keyed to it.
 REPO="$(git -C "$PUSHDIR" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$PUSHDIR")"
 NAME="$(basename "$REPO")"
-KEY="$(printf '%s' "$REPO" | tr '/ ' '__' | sed 's/^_*//')"
+# Sanitize to EXACTLY the charset Conductor's API accepts for a request key. `tr '/ ' '__'`
+# replaced only slashes and spaces, so a repo path containing anything else ($ + ( & …) filed a
+# request the API then refused with "bad request key" — filable, but not dismissible from the
+# desktop OR the phone, re-ringing Kyle hourly with no way to clear it (2026-08-06). A gate that
+# can raise an alarm the operator cannot lower teaches the operator to ignore the alarm.
+KEY="$(printf '%s' "$REPO" | tr -c 'A-Za-z0-9._-' '_' | sed 's/^_*//')"
 now="$(date +%s)"
 
 # ---- exemption: the private disaster-recovery backup repo auto-pushes ------------
