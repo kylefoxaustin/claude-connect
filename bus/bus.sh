@@ -613,6 +613,25 @@ _winddown_leases_held() {  # myplain -> space-separated resource names still own
 # disk), by code, and REFUSES to record wound-down if the work was not actually done — the same
 # discipline as `send` reading its own message back: acknowledge where the truth lives, never take the
 # session's word for it. The model narrates; deterministic code owns the value.
+_unpushed_count() {
+  # Commits that exist on NO remote, across EVERY local branch.
+  #
+  # The old check was `git log @{u}..HEAD` — the CURRENT branch's upstream only. That misses a
+  # branch with no upstream set at all, which is exactly where unpushed work hides (drone-sizer's
+  # v0.2 branch survived a wind-down uncounted). `--branches --not --remotes` asks the question we
+  # actually mean: is there a commit here that no remote has?
+  #
+  # Uses `rev-list --count`, which prints a number and EXITS 0 for a count of zero — unlike
+  # `grep -c .`, whose exit-1-on-no-match is the bug this whole function was rewritten for. Do not
+  # reintroduce a counter whose exit code depends on the count.
+  local root="$1" n
+  # No remotes configured ⇒ nothing to be unpushed RELATIVE TO; `--not --remotes` would otherwise
+  # exclude nothing and report the repo's entire history as unpushed.
+  [ -n "$(git -C "$root" remote 2>/dev/null || true)" ] || { printf '0\n'; return 0; }
+  n="$(git -C "$root" rev-list --count --branches --not --remotes 2>/dev/null || true)"
+  printf '%s\n' "${n:-0}"
+}
+
 _winddown_ack() {
   local summary="$*" now ts plain root porcelain nfiles unpushed leases problems=""
   now="$(date +%s)"; ts="$(date '+%Y-%m-%d %H:%M:%S')"
@@ -625,18 +644,36 @@ _winddown_ack() {
   # DODGE the ack by running it from a non-git dir (91emulator, live) — worse than not checking. We
   # count untracked separately and RECORD it so reconstitution knows, but it does not block.
   unpushed=0; untracked=0
-  if root="$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null)" && [ -n "$root" ]; then
+  # WHICH TREE DO WE VERIFY? Not `$CWD` — the session's REAL working dir, read from
+  # /proc/<claude_pid>/cwd (the v2.30 "the PID is the join key" pattern). A `cd` inside a tool
+  # call moves the shell, NOT the claude process, so this cannot be dodged from inside the
+  # session. That matters because the whole fleet adopted `mkdir /tmp/<tag> && cd && ack` as a
+  # workaround for the set -e bug below — and that workaround WORKS by landing in a non-git dir,
+  # i.e. by skipping every check in this block. Sessions "VERIFIED: clean tree" that way verified
+  # nothing. Fix the bug AND close the dodge, or the dodge stays the path of least resistance.
+  # Falls back to $CWD when there is no claude ancestor (Kyle running it from a plain terminal).
+  local ackdir="" cpid=""
+  cpid="$(_claude_pid 2>/dev/null || true)"
+  [ -n "$cpid" ] && ackdir="$(readlink "/proc/$cpid/cwd" 2>/dev/null || true)"
+  [ -n "$ackdir" ] && [ -d "$ackdir" ] || ackdir="$CWD"
+  if root="$(git -C "$ackdir" rev-parse --show-toplevel 2>/dev/null)" && [ -n "$root" ]; then
     porcelain="$(git -C "$root" status --porcelain --untracked-files=no 2>/dev/null)"
     if [ -n "$porcelain" ]; then
-      nfiles="$(printf '%s\n' "$porcelain" | grep -c .)"
+      nfiles="$(printf '%s\n' "$porcelain" | grep -c . || true)"
       problems="${problems}  ✗ UNCOMMITTED changes to TRACKED files in ${root} (${nfiles}) — commit them (a commit is reversible; lost work is not).\n"
     fi
     untracked="$(git -C "$root" status --porcelain --untracked-files=normal 2>/dev/null | grep -c '^??' || true)"
-    if git -C "$root" rev-parse '@{u}' >/dev/null 2>&1; then
-      unpushed="$(git -C "$root" log --oneline '@{u}..HEAD' 2>/dev/null | grep -c .)"
-    fi
+    # `|| true` IS LOAD-BEARING, NOT TIDINESS. `grep -c .` prints 0 and EXITS 1 on no match, and
+    # with `set -e` (line 5) that killed this function HERE — before the .done was written, with
+    # no output and exit 1. Reported by band/91emulator/mcxn947qemu/imx95-isp, reproduced locally.
+    # ⭐ THE FAILURE SELECTED FOR THE CLEANEST SESSIONS: a session with unpushed commits gives grep
+    # a line to match, so it exits 0 and the ack SUCCEEDS. Only a session with EXACTLY ZERO
+    # unpushed commits — the ones most completely wound down — silently failed to ack.
+    # (v2.x c0cff35 added `|| true` to the untracked line above and announced the bug fixed while
+    # this line, one below it, still had it. Half a fix that was broadcast as a whole one.)
+    unpushed="$(_unpushed_count "$root")"
   else
-    root="$CWD"
+    root="$ackdir"
   fi
 
   # (2) VERIFY no leases remain — an orphaned lease outlives the session and blocks the next tenant.
@@ -654,10 +691,22 @@ _winddown_ack() {
   { echo "tag=$TAG"; echo "plain=$plain"; echo "acked=$ts"; echo "epoch=$now"
     echo "verified=tracked-tree-clean,no-leases"; echo "unpushed=$unpushed"; echo "untracked=$untracked"
     echo "root=$root"; echo "summary=$summary"; } > "$WINDDOWN_DIR/${plain}.done"
+
+  # READ THE RECORD BACK BEFORE CLAIMING THE ACK. The same discipline as `send` (v2.30), and for
+  # the same reason: this function's failure mode was SILENCE — no output, exit 1, no .done — and
+  # in shell convention silence reads as success. band nearly closed believing it had acked, and
+  # caught it only by running `ls` on the file by hand. A wind-down ack that reports its INTENTION
+  # rather than its OUTCOME under-counts exactly the population Kyle most wants closed.
+  if [ ! -s "$WINDDOWN_DIR/${plain}.done" ]; then
+    echo "🛑 ACK FAILED — could not write ${WINDDOWN_DIR}/${plain}.done. You are NOT wound down." >&2
+    echo "   Nothing was recorded, so do not close this session. Check the directory is writable." >&2
+    return 1
+  fi
+
   { echo ""; echo "## $ts [$TAG]"; echo ""
     echo "to:all — ✅ WOUND DOWN [$TAG] (VERIFIED: clean tree, no leases$( [ "${unpushed:-0}" -gt 0 ] && printf ', %s commit(s) unpushed' "$unpushed" )) — $summary"; } >> "$BUS_FILE"
-  echo "✅ Wound down [$TAG] — VERIFIED (clean tree, no leases held). Safe to close."
-  [ "${unpushed:-0}" -gt 0 ] && echo "   note: ${unpushed} commit(s) unpushed in ${root} — recorded for reconstitution (do not force a push)."
+  echo "✅ Wound down [$TAG] — VERIFIED (clean tree, no leases held) · record confirmed on disk. Safe to close."
+  [ "${unpushed:-0}" -gt 0 ] && echo "   note: ${unpushed} commit(s) unpushed in ${root} (all branches) — recorded for reconstitution (do not force a push)."
   return 0
 }
 

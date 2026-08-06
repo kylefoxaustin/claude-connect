@@ -21,6 +21,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
+import psutil
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -121,6 +122,12 @@ log = logging.getLogger("conductor")
 
 # Mirrors the frontend's ping guard: a session mid-task shouldn't get keystrokes.
 _BUSY_STATUSES = frozenset({Status.ACTIVE, Status.WARM})
+
+# Re-nudge schedule for un-acked sessions during a wind-down: 5m, 10m, 20m — then STOP.
+# WIDENING, and FINITE, on purpose. A fixed interval is how the v2.26.1 /msg-check storm happened;
+# and a session that has ignored three nudges has a reason a fourth won't fix, so it becomes a
+# decision for Kyle rather than a louder alarm. The list length IS the attempt cap.
+_WD_RENUDGE_BACKOFF_S = (300.0, 600.0, 1200.0)
 
 # Project Layer §5b — admission control. Dispatching a job spins up a worker session (which itself
 # fans out ~5× into subagents), so unbounded parallel dispatch is exactly the `overloaded` swamp the
@@ -372,6 +379,8 @@ class AppState:
         self._collisions: list[dict[str, Any]] = []           # two live sessions, one member (holobench)
         self._lost_rc: list[dict[str, Any]] = []              # live-but-lost-/RC alarm (§3.4.1, rt1180)
         self._x11: dict[str, Any] = {}                        # can we reach a display? (2026-08-05)
+        self._wd_nudges: dict[str, int] = {}                  # member -> wind-down nudges sent
+        self._wd_nudged_at: dict[str, float] = {}             # member -> epoch of the last one
         self._rc_ever: set[str] = set()                       # sids seen bridged (LOST vs never-had)
         self._lost_rc_since: dict[str, float] = {}            # sid -> when it went unbridged-after-bridged
         # Questions a Claude is BLOCKED ON, captured by the PreToolUse hook. Doubles as
@@ -721,6 +730,7 @@ class AppState:
         await self._deliver_push_notices()
         await self._deliver_remote_prompts()
         await self._deliver_rc_reconnects()
+        await self._renudge_unacked()
         await asyncio.to_thread(prune_ledger, self.settings.bus.state_dir_resolved)
         await self._notify()
 
@@ -1848,6 +1858,57 @@ class AppState:
             "winddown": self._winddown_payload(),  # fleet shutdown state, if a wind-down is active
         }
 
+    def _winddown_managers(self, wd: dict[str, Any] | None = None) -> set[str]:
+        """Members that must NEVER be auto-closed by a sweep: the session DRIVING the wind-down.
+
+        Kyle, 2026-08-05, live: "Close idle" closed the managing ``claude-connect`` session —
+        it was idle at tap-time, because orchestrating a wind-down means sitting at a prompt
+        waiting — and that killed the session running the wind-down, mid-wind-down. The sweep's
+        own operator is the one session whose idleness is EXPECTED rather than suspicious.
+
+        Two sources, because either alone leaves a hole: the recorded ``initiator`` (whoever
+        called ``shutdown begin``) and the configured operator console (``autodeliver_exempt``,
+        already the fleet's "this is Kyle's console" marker — a wind-down begun from the phone
+        has no session initiator at all)."""
+        wd = wd if wd is not None else read_winddown(self.coord_root)
+        managers = {_wd_plain(t) for t in self.settings.bus.autodeliver_exempt}
+        initiator = ((wd.get("active") or {}).get("initiator") or "").strip()
+        if initiator:
+            managers.add(_wd_plain(initiator))
+        managers.discard("")
+        return managers
+
+    @staticmethod
+    def _proc_start_epoch(pid: int | None) -> float:
+        """When this session's process started. 0.0 if unknowable."""
+        if not pid:
+            return 0.0
+        try:
+            return psutil.Process(pid).create_time()
+        except (psutil.Error, OSError):
+            return 0.0
+
+    def _restarted_since_winddown(self, r: SessionRecord, began: float) -> bool:
+        """Did this session start AFTER the wind-down was called?
+
+        Found live 2026-08-05: a wind-down marker SURVIVES A REBOOT. Yesterday's was still
+        `active` with 12 `.done` files while the fleet had since been restarted — so a session
+        brought back by ⟳ Fleet recovery was, on paper, a straggler of a wind-down it was never
+        part of, wearing a `.done` written by its previous incarnation. Two live hazards:
+        "Close wound-down" offered to close a freshly-relaunched session on a stale ack, and the
+        new re-nudge would have told every restored session to wind down again — turning fleet
+        RECOVERY into a second shutdown.
+
+        A process that did not exist when the order was given cannot have obeyed or ignored it.
+        So we compare the claude process's own start time against the wind-down epoch, which is
+        the one fact neither file can fake. Unknown start time ⇒ False (treat as part of it), so
+        a box where we cannot read /proc degrades to the old behaviour rather than silently
+        exempting the whole fleet."""
+        if not began:
+            return False
+        started = self._proc_start_epoch(r.pid)
+        return bool(started and started > began)
+
     def _winddown_payload(self) -> dict[str, Any]:
         """State of an in-progress fleet wind-down, for the shutdown panel.
 
@@ -1861,24 +1922,39 @@ class AppState:
         if not active:
             return {"active": False}
         acks = wd.get("acks", {})
+        managers = self._winddown_managers(wd)
+        began = float(active.get("epoch", 0) or 0)
         rows: list[dict[str, Any]] = []
         for r in self.sessions.values():
             if r.status == Status.ENDED:
                 continue
             plain = _wd_plain(r.tag or "")
             ack = acks.get(plain)
-            if ack is not None:
+            restarted = self._restarted_since_winddown(r, began)
+            if restarted:
+                # Started after the order was given: not a straggler, and any .done on disk
+                # belongs to its previous incarnation. Never closed, never nudged.
+                st = "restarted"
+                ack = None
+            elif ack is not None:
                 st = "wound-down"
             elif self._has_open_picker(r):
                 st = "asking"
             elif r.status in _BUSY_STATUSES:
                 st = "busy"
             else:
-                st = "flushing"
+                # "flushing" USED TO COVER BOTH OF THESE, and that was a lie of the reassuring
+                # kind (Kyle, 2026-08-05): a session woken by the wind-down that has done
+                # NOTHING since looked identical to one actively persisting its state. The first
+                # needs a nudge or a decision; the second needs patience. Split them on the only
+                # evidence we have — has the transcript moved since the wind-down began?
+                st = "flushing" if (began and (r.last_activity_at or 0) > began) else "idle-unacked"
             rows.append({
                 "tag": r.tag, "member": plain, "status": r.status.value, "state": st,
                 "summary": (ack or {}).get("summary", ""),
                 "unpushed": int((ack or {}).get("unpushed", 0) or 0),
+                "manager": plain in managers,   # never swept; it is running the wind-down
+                "nudges": self._wd_nudges.get(plain, 0),
             })
         counts: dict[str, int] = {}
         for row in rows:
@@ -1889,7 +1965,9 @@ class AppState:
             "created": active.get("created", ""),
             "sessions": rows,
             "counts": counts,
-            "closable": counts.get("wound-down", 0),
+            # Managers are excluded here too: the button's number must match what it will do.
+            "closable": sum(1 for r in rows if r["state"] == "wound-down" and not r["manager"]),
+            "idle_closable": sum(1 for r in rows if r["state"] == "idle-unacked" and not r["manager"]),
         }
 
     async def begin_winddown(self) -> dict[str, Any]:
@@ -1939,13 +2017,25 @@ class AppState:
         if not wd.get("active"):
             return {"ok": False, "error": "no wind-down active", "closed": []}
         acks = wd.get("acks", {})
+        managers = self._winddown_managers(wd)
+        began = float((wd.get("active") or {}).get("epoch", 0) or 0)
         closed: list[str] = []
         refused: list[dict[str, str]] = []
         for r in list(self.sessions.values()):
             if r.status == Status.ENDED:
                 continue
-            if _wd_plain(r.tag or "") not in acks:
+            plain = _wd_plain(r.tag or "")
+            if plain not in acks:
                 continue  # not acked → not closable; leave it, it is waited for
+            if self._restarted_since_winddown(r, began):
+                # Its .done was written by a PREVIOUS incarnation (a wind-down marker survives a
+                # reboot). Closing on that ack would close a freshly-recovered session using a
+                # verification of a process that no longer exists.
+                refused.append({"tag": r.tag, "why": "restarted"})
+                continue
+            if plain in managers:
+                refused.append({"tag": r.tag, "why": "manager"})  # do not close the driver
+                continue
             if self._has_open_picker(r):
                 refused.append({"tag": r.tag, "why": "asking"})  # never inject into a picker
                 continue
@@ -1953,10 +2043,22 @@ class AppState:
                 send_keys_to_session, text="/exit", pid=r.pid,
                 terminal_pid=r.terminal_pid, title=r.title, window_title=r.window_title,
             )
+            how = "/exit"
+            if not ok:
+                # PID FALLBACK — ONLY ON THIS PATH, and only because of what the ack proves.
+                # Every close rides keystroke injection, so a session whose window can't be
+                # resolved was uncloseable: the 2026-08-05 wind-down reached ~2 of 25 windows and
+                # Kyle closed the rest by hand. But a session with a VERIFIED ack has already been
+                # checked against disk — tracked tree committed, no leases held — so terminating
+                # it loses nothing that was not already persisted. That is exactly why the
+                # fallback is confined to the acked path and is NOT offered to the idle sweep,
+                # where the whole point is that the session never proved anything.
+                ok = await asyncio.to_thread(self._terminate_session, r)
+                how = "SIGTERM"
             (closed if ok else refused).append(
                 r.tag if ok else {"tag": r.tag, "why": "close-failed"})
             if ok:
-                log.info("wind-down: closed [%s] (/exit) after verified ack", r.tag)
+                log.info("wind-down: closed [%s] (%s) after verified ack", r.tag, how)
         snapshot = await self._winddown_snapshot()
         return {"ok": True, "closed": closed, "refused": refused, "snapshot": snapshot}
 
@@ -1971,13 +2073,26 @@ class AppState:
         if not wd.get("active"):
             return {"ok": False, "error": "no wind-down active", "closed": []}
         acks = wd.get("acks", {})
+        managers = self._winddown_managers(wd)
+        began = float((wd.get("active") or {}).get("epoch", 0) or 0)
         closed: list[str] = []
         skipped: list[dict[str, str]] = []
         for r in list(self.sessions.values()):
             if r.status == Status.ENDED:
                 continue
-            if _wd_plain(r.tag or "") in acks:
+            plain = _wd_plain(r.tag or "")
+            if plain in acks:
                 continue  # acked → use the safe verified close, not this
+            if self._restarted_since_winddown(r, began):
+                skipped.append({"tag": r.tag, "why": "restarted"})   # never part of this wind-down
+                continue
+            if plain in managers:
+                # THE SELF-SWEEP BUG (Kyle, 2026-08-05): this closed the session running the
+                # wind-down, because orchestrating one means sitting idle at a prompt — the sweep
+                # ate its own operator. A manager is never un-acked "suspiciously"; it is un-acked
+                # because it is still working.
+                skipped.append({"tag": r.tag, "why": "manager"})
+                continue
             if self._has_open_picker(r):
                 skipped.append({"tag": r.tag, "why": "asking"})  # never close a session asking Kyle
                 continue
@@ -1994,6 +2109,82 @@ class AppState:
                 log.warning("wind-down: closed IDLE un-acked [%s] (/exit) — NOT verified-clean", r.tag)
         snapshot = await self._winddown_snapshot()
         return {"ok": True, "closed": closed, "skipped": skipped, "snapshot": snapshot, "unverified": True}
+
+    def _terminate_session(self, r: SessionRecord) -> bool:
+        """SIGTERM a session's ``claude`` process. Blocking; call via ``to_thread``.
+
+        The close path of last resort, used ONLY for a session with a verified wind-down ack.
+        SIGTERM, never SIGKILL: claude handles TERM and shuts down in an orderly way, and the one
+        thing we must not do is turn "I couldn't find your window" into "I destroyed your process
+        mid-write". If it is still alive after the grace period we report FAILURE rather than
+        escalating — an honest 'could not close' is a state Kyle can act on; a forced kill is not
+        something he can undo."""
+        pid = r.pid
+        if not pid:
+            return False
+        try:
+            proc = psutil.Process(pid)
+            if proc.name() != "claude":
+                # The pid was recycled, or we were handed the wrapper shell (which SURVIVES
+                # claude's death — the v2.27.2 lesson). Killing either is killing a stranger.
+                log.warning("wind-down: refusing to terminate pid %s — it is %r, not claude",
+                            pid, proc.name())
+                return False
+            proc.terminate()
+            proc.wait(timeout=10)
+            return True
+        except psutil.NoSuchProcess:
+            return True          # already gone: the outcome we wanted
+        except (psutil.TimeoutExpired, psutil.AccessDenied, psutil.Error, OSError) as e:
+            log.warning("wind-down: SIGTERM to [%s] pid %s did not close it: %s", r.tag, pid, e)
+            return False
+
+    async def _renudge_unacked(self) -> None:
+        """While a wind-down is active, re-prod un-acked sessions on a WIDENING interval.
+
+        Kyle, 2026-08-05: un-acked sessions had to be re-tapped by hand, one at a time, across
+        ~25 sessions. But the obvious fix — a fixed-interval nudge — is how the /msg-check storm
+        happened (v2.26.1: ~450 injections overnight, 16 stacked on one session), because a busy
+        session QUEUES keystrokes and a re-nudge is never a repair. So this backs off and then
+        STOPS: a session that has ignored three nudges is not going to be fixed by a fourth, and
+        at that point it is a decision for Kyle, not a louder alarm.
+
+        Honours every existing guard — busy, open picker, and the manager set — and only ever
+        sends /msg-check (the wind-down order is already on the bus; this just makes them read it).
+        """
+        wd = read_winddown(self.coord_root)
+        if not wd.get("active"):
+            self._wd_nudges.clear(); self._wd_nudged_at.clear()
+            return
+        acks = wd.get("acks", {})
+        managers = self._winddown_managers(wd)
+        began = float((wd.get("active") or {}).get("epoch", 0) or 0)
+        now = time.time()
+        for r in list(self.sessions.values()):
+            if r.status == Status.ENDED:
+                continue
+            plain = _wd_plain(r.tag or "")
+            if plain in acks:
+                self._wd_nudges.pop(plain, None); self._wd_nudged_at.pop(plain, None)
+                continue                     # it acked — stop nudging, and forget it
+            if plain in managers or self._has_open_picker(r) or r.status in _BUSY_STATUSES:
+                continue                     # never prod the driver, a picker, or a working session
+            if self._restarted_since_winddown(r, began):
+                # A session recovered AFTER the order was given is not ignoring it. Nudging it
+                # would turn fleet recovery into a second shutdown — the marker outlives a reboot.
+                continue
+            n = self._wd_nudges.get(plain, 0)
+            if n >= len(_WD_RENUDGE_BACKOFF_S):
+                continue                     # exhausted: it is Kyle's call now, not another wake
+            due = self._wd_nudged_at.get(plain, 0) + _WD_RENUDGE_BACKOFF_S[n]
+            if now < due:
+                continue
+            # Claim BEFORE the await: _inject_text yields, and a concurrent scan pass that sees a
+            # stale count re-sends — the duplicate-wake race that gave qualcomm four retraction
+            # nudges in one burst.
+            self._wd_nudges[plain] = n + 1
+            self._wd_nudged_at[plain] = now
+            await self._inject_msg_check(r, f"wind-down re-nudge {n + 1}/{len(_WD_RENUDGE_BACKOFF_S)}")
 
     async def _winddown_snapshot(self) -> dict[str, Any]:
         """Refresh the DR roster after a wind-down so the reconstitution record reflects the

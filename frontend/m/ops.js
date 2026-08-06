@@ -1740,7 +1740,12 @@ const WD_M = {
   "wound-down": { i: "✅", t: "wound down — safe to close", c: "rb-live" },
   "asking":     { i: "❓", t: "asking YOU — answer it (never closed)", c: "rb-blocked" },
   "busy":       { i: "⏳", t: "busy — waited for, not interrupted", c: "rb-present" },
-  "flushing":   { i: "…", t: "flushing — persisting its state", c: "rb-clone" },
+  // Split in two (Kyle, 2026-08-05): "flushing" meant both "actively persisting" and "woken and
+  // did nothing", and the sweep button counted the combined total — so it offered to close
+  // sessions that were mid-flush.
+  "flushing":     { i: "…", t: "flushing — persisting its state (active since the call)", c: "rb-clone" },
+  "idle-unacked": { i: "🔸", t: "idle — nothing since the call, not yet acked", c: "rb-blocked" },
+  "restarted":    { i: "🔄", t: "restarted since this wind-down — not part of it", c: "rb-present" },
 };
 let wdCloseArmed = false;
 let wdIdleArmed = false;
@@ -1763,7 +1768,8 @@ function renderWinddownM() {
   $("winddown-note").innerHTML =
     `Called by <b>${esc(wd.initiator || "?")}</b>. A session asking you or busy is <b>never</b> closed — only verified-acked ones are.`;
   $("winddown-status").textContent =
-    `✅ ${c["wound-down"] || 0} · … ${c["flushing"] || 0} flushing · ⏳ ${c["busy"] || 0} busy · ❓ ${c["asking"] || 0} asking`;
+    `✅ ${c["wound-down"] || 0} · … ${c["flushing"] || 0} flushing · 🔸 ${c["idle-unacked"] || 0} idle · `
+    + `⏳ ${c["busy"] || 0} busy · ❓ ${c["asking"] || 0} asking`;
   cards.innerHTML = "";
   for (const s of (wd.sessions || [])) {
     const l = WD_M[s.state] || { i: "?", t: s.state, c: "" };
@@ -1772,6 +1778,8 @@ function renderWinddownM() {
     el.innerHTML =
       `<div class="recon-cardhead"><span class="recon-badge ${l.c}">${l.i}</span> <b>${esc(s.tag)}</b></div>`
       + `<div class="row-sub" style="white-space:normal">${l.t}`
+      + (s.manager ? ` · <b>running this wind-down — never closed</b>` : "")
+      + (s.nudges ? ` · nudged ${s.nudges}×` : "")
       + (s.summary ? ` — “${esc(s.summary)}”` : "")
       + (s.unpushed ? ` · ${s.unpushed} unpushed` : "") + `</div>`;
     cards.appendChild(el);
@@ -1780,7 +1788,10 @@ function renderWinddownM() {
   beginB.hidden = true; cancelB.hidden = false; closeB.hidden = false;
   closeB.disabled = closable === 0;
   if (!wdCloseArmed) closeB.textContent = closable ? `Close wound-down (${closable})` : "Close wound-down";
-  const idle = (wd.counts || {})["flushing"] || 0;
+  // Was counts["flushing"], which after the split would offer to close sessions that are
+  // mid-flush AND would include the wind-down's own driver. The backend computes exactly what
+  // the sweep will touch; the button must show that number and no other.
+  const idle = wd.idle_closable || 0;
   const idleB = $("winddown-closeidle");
   if (idleB) {
     idleB.hidden = idle === 0;
@@ -1831,7 +1842,7 @@ $("winddown-closebtn")?.addEventListener("click", async () => {
 });
 
 $("winddown-closeidle")?.addEventListener("click", async () => {
-  const n = ((ops && ops.winddown && ops.winddown.counts) || {})["flushing"] || 0;
+  const n = (ops && ops.winddown && ops.winddown.idle_closable) || 0;
   if (!n) return;
   const b = $("winddown-closeidle");
   if (!wdIdleArmed) {                          // two-tap arm — this one is NOT verified-clean

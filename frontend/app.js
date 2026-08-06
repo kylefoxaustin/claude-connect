@@ -1174,14 +1174,22 @@ const winddownList = document.getElementById("winddown-list");
 const winddownStatusEl = document.getElementById("winddown-status");
 const winddownBegin = document.getElementById("winddown-begin");
 const winddownCloseBtn = document.getElementById("winddown-close");
+const winddownCloseIdle = document.getElementById("winddown-close-idle");
 const winddownCancelRun = document.getElementById("winddown-cancel-run");
 const winddownResult = document.getElementById("winddown-result");
 
 const WD_LABEL = {
-  "wound-down": { icon: "✅", txt: "wound down — safe to close" },
-  "asking":     { icon: "❓", txt: "asking YOU — answer it or leave it (never closed)" },
-  "busy":       { icon: "⏳", txt: "busy — waited for, not interrupted" },
-  "flushing":   { icon: "…", txt: "flushing — persisting its state" },
+  "wound-down":   { icon: "✅", txt: "wound down — safe to close" },
+  "asking":       { icon: "❓", txt: "asking YOU — answer it or leave it (never closed)" },
+  "busy":         { icon: "⏳", txt: "busy — waited for, not interrupted" },
+  // "flushing" used to cover this row too, which made a session that had done NOTHING look
+  // identical to one actively persisting (Kyle, 2026-08-05). Same word, opposite meanings, and
+  // the reassuring one was the wrong one.
+  "flushing":     { icon: "…", txt: "flushing — persisting its state (active since the call)" },
+  "idle-unacked": { icon: "🔸", txt: "idle — nothing since the wind-down call, not yet acked" },
+  // A wind-down marker survives a reboot, so a recovered session can look like a straggler of a
+  // wind-down it was never part of. Never closed, never nudged.
+  "restarted":    { icon: "🔄", txt: "restarted since this wind-down — not part of it" },
 };
 
 function renderWinddown() {
@@ -1202,9 +1210,11 @@ function renderWinddown() {
   winddownCloseBtn.classList.remove("hidden");
   const c = wd.counts || {};
   const closable = wd.closable || 0;
+  const idleClosable = wd.idle_closable || 0;
   winddownStatusEl.innerHTML =
     `Wind-down active (called by <code>${wd.initiator || "?"}</code>). ` +
     `✅ ${c["wound-down"] || 0} wound down · … ${c["flushing"] || 0} flushing · ` +
+    `🔸 ${c["idle-unacked"] || 0} idle un-acked · ` +
     `⏳ ${c["busy"] || 0} busy · ❓ ${c["asking"] || 0} asking you.`;
   for (const s of (wd.sessions || [])) {
     const li = document.createElement("li");
@@ -1212,12 +1222,23 @@ function renderWinddown() {
     li.className = "winddown-row wd-" + s.state;
     li.innerHTML =
       `<span class="wd-icon">${l.icon}</span> <strong>${s.tag}</strong> — ${l.txt}` +
+      // The session driving the wind-down is never swept; say so, or its presence in the
+      // un-acked list reads as a straggler Kyle should chase.
+      (s.manager ? ` <span class="wd-manager">running this wind-down — never closed</span>` : "") +
+      (s.nudges ? ` <span class="wd-nudges">nudged ${s.nudges}×</span>` : "") +
       (s.summary ? ` <span class="wd-summary">“${s.summary}”</span>` : "") +
       (s.unpushed ? ` <span class="wd-unpushed">${s.unpushed} unpushed</span>` : "");
     winddownList.appendChild(li);
   }
   winddownCloseBtn.disabled = closable === 0;
   winddownCloseBtn.textContent = closable ? `Close wound-down (${closable})` : "Close wound-down";
+  // DESKTOP PARITY (#6): this straggler sweep was phone-only, so finishing a wind-down at the
+  // workstation meant picking up your phone.
+  if (winddownCloseIdle) {
+    winddownCloseIdle.classList.toggle("hidden", idleClosable === 0);
+    winddownCloseIdle.disabled = idleClosable === 0;
+    winddownCloseIdle.textContent = `Close idle (${idleClosable})`;
+  }
 }
 
 function openWinddown() { renderWinddown(); winddownModal.classList.remove("hidden"); }
@@ -1258,6 +1279,31 @@ winddownCloseBtn?.addEventListener("click", async () => {
     winddownResult.textContent =
       `Closed ${j.closed?.length || 0}.` +
       (j.refused?.length ? ` Refused ${j.refused.length}.` : "") + snap;
+  } catch { winddownResult.textContent = "Close failed."; }
+});
+
+winddownCloseIdle?.addEventListener("click", async () => {
+  const n = state.winddown?.idle_closable || 0;
+  if (!n) return;
+  // A REAL confirm, with the honest warning. These sessions never posted a verified ack, so
+  // unlike "Close wound-down" this is NOT the safe path — the tree is unchecked. Closing still
+  // leaves the working tree on disk (and the post-close roster snapshot records it), but Kyle
+  // should know he is choosing to stop waiting rather than being told everything is fine.
+  if (!confirm(
+    `Close ${n} idle session${n === 1 ? "" : "s"} that never acked?\n\n`
+    + `These are NOT verified clean — they may have uncommitted work. Their files stay on disk `
+    + `and the DR roster snapshot records them, but nothing has checked them.\n\n`
+    + `Busy and asking sessions are left open, as is the session running this wind-down.`
+  )) return;
+  winddownCloseIdle.disabled = true;
+  winddownResult.textContent = "Closing idle stragglers…";
+  try {
+    const r = await fetch("/api/shutdown/close-idle", { method: "POST" });
+    const j = await r.json();
+    const snap = j.snapshot?.ok ? " DR roster refreshed." : "";
+    winddownResult.textContent =
+      `Closed ${j.closed?.length || 0} un-acked.` +
+      (j.skipped?.length ? ` Skipped ${j.skipped.length}.` : "") + snap;
   } catch { winddownResult.textContent = "Close failed."; }
 });
 
