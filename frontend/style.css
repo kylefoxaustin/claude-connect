@@ -472,6 +472,9 @@ body.link-mode .tile-actions { display: none; }
 .alert-quiet strong { color: #e5c07b; }
 .alert-lostrc strong { color: #e5c07b; }   /* alive but lost /RC = amber: reconnect, don't relaunch */
 .alert-webpush strong { color: #e06c75; }  /* paging is down = red: you won't be alerted */
+/* No display = red, and the loudest of the set: not one dead feature, the whole action surface. */
+.alert-x11 strong { color: #e06c75; }
+.alert-x11 { border-left: 3px solid #e06c75; }
 
 /* Ephemeral toasts — feedback where the click happened (a declined wake isn't "broken"). */
 #toast-host { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);

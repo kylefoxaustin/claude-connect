@@ -112,6 +112,7 @@ from .windows import (
     send_key_sequence,
     send_keys_to_session,
     wmctrl_available,
+    x11_health,
 )
 from .ws import WSHub
 
@@ -370,6 +371,7 @@ class AppState:
         self._silent: list[dict[str, Any]] = []               # dead-reader alarm (holobench)
         self._collisions: list[dict[str, Any]] = []           # two live sessions, one member (holobench)
         self._lost_rc: list[dict[str, Any]] = []              # live-but-lost-/RC alarm (§3.4.1, rt1180)
+        self._x11: dict[str, Any] = {}                        # can we reach a display? (2026-08-05)
         self._rc_ever: set[str] = set()                       # sids seen bridged (LOST vs never-had)
         self._lost_rc_since: dict[str, float] = {}            # sid -> when it went unbridged-after-bridged
         # Questions a Claude is BLOCKED ON, captured by the PreToolUse hook. Doubles as
@@ -684,6 +686,18 @@ class AppState:
         if lost_rc != self._lost_rc:
             self._lost_rc = lost_rc
             await self.hub.broadcast("lost_rc", {"lost_rc": lost_rc})
+
+        # CAN WE REACH THE DISPLAY AT ALL? (Kyle, 2026-08-05) The meta-alarm. Focus, wake,
+        # /msg-check, decision answers and wind-down close ALL ride keystroke injection, and
+        # X11 tools report "Cannot open display" on stderr while exiting 0 — so without this
+        # the whole action surface dies silently and the dashboard keeps looking healthy.
+        # A monitor that cannot see its own blindness is the failure it exists to prevent.
+        x11 = await asyncio.to_thread(x11_health)
+        if x11 != self._x11:
+            if not x11["ok"] and (self._x11 or {}).get("ok") is not False:
+                log.warning("X11 unreachable: %s", x11["detail"])
+            self._x11 = x11
+            await self.hub.broadcast("x11", {"x11": x11})
 
         decisions = await asyncio.to_thread(read_decisions, self.coord_root)
         # Drop records whose session is gone — a session killed mid-picker leaves its
@@ -1828,6 +1842,7 @@ class AppState:
             "collisions": self._collisions,  # two live sessions, one member (holobench)
             "lost_rc": self._lost_rc,        # alive but lost /RC (§3.4.1, rt1180)
             "webpush": self._webpush_status(),  # can we actually page the phone? (2026-07-22)
+            "x11": self._x11,                # can we reach a display to type at all? (2026-08-05)
             "fadeout_seconds": self.settings.ui.end_fadeout_seconds,
             "wmctrl_available": wmctrl_available(),
             "winddown": self._winddown_payload(),  # fleet shutdown state, if a wind-down is active
@@ -3063,6 +3078,9 @@ async def get_ops(request: Request) -> dict[str, Any]:
         "silent": state._silent,
         "collisions": state._collisions,
         "lost_rc": state._lost_rc,        # live-but-lost-/RC alarm (§3.4.1, rt1180)
+        # If this is not ok, every button on this phone that types at a session is dead — the
+        # wake, the answer, the wind-down close. Say so here rather than letting taps no-op.
+        "x11": state._x11,                # can Conductor reach a display? (2026-08-05)
         "services": state.services.get("services", []),
         "resources": state.resources.get("resources", []),
         # Project Layer: only the operator-actionable subset (a plan awaiting approval, an empty

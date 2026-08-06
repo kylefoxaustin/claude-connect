@@ -7,6 +7,7 @@ frontend just dims the focus button.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -40,6 +41,182 @@ _TILE_SETTLE_S = 0.4
 # notice split across two Tilix panes, half landing on his shell prompt). No window-level guard can
 # catch this: panes share one X11 window, so the mis-delivery check is blind to which pane is focused.
 _HUMAN_ACTIVE_MS = 4000
+
+
+# ── X11 REACHABILITY ─────────────────────────────────────────────────────────────────────
+#
+# Conductor drives terminals with wmctrl / xdotool / tilix, every one of which needs DISPLAY
+# and XAUTHORITY. Two facts make that fragile in the worst possible way:
+#
+#   1. THE DURABLE SERVICE CAN START WITHOUT A DISPLAY, PERMANENTLY. systemd --user may bring
+#      conductor.service up before the graphical session pushes DISPLAY/XAUTHORITY into the
+#      user manager, and `systemctl --user import-environment` does NOT retroactively patch an
+#      already-running unit. Worse, the display TARGET DRIFTS across reboots (skippy has been
+#      both :1 and :0), so a value captured once at start rots even when it was right.
+#   2. wmctrl AND xdotool PRINT "Cannot open display" TO STDERR AND EXIT 0.
+#
+# Together those produce the worst failure this project ships: every wake, close and focus
+# becomes a silent no-op *that reports success*. Measured 2026-08-05 — a relaunch logged
+# "2/2 launched" while nothing spawned, and the wind-down before it reached ~2 of 25 sessions.
+# `_raise_window` returning True against a dead display is a lie, not a bug report.
+#
+# So this module holds two rules, and they are the whole fix:
+#   • RESOLVE THE DISPLAY AT CALL TIME — never inherit it once. Inheriting once is the bug.
+#   • JUDGE AN X11 CALL BY ITS STDERR, NEVER ITS EXIT CODE.
+#
+# An observability tool that cannot see its own blindness is worse than one that is merely
+# blind, so `x11_health()` exists to be shouted about on the dashboard.
+
+_DISPLAY_ERR_RE = re.compile(
+    r"can'?t open display|cannot open display|unable to open display|no protocol specified",
+    re.I,
+)
+
+# Processes worth stealing a DISPLAY from, best first. A compositor or the terminal server
+# itself is by definition attached to the session we want to type into.
+_X11_DONORS = ("gnome-shell", "tilix", "mutter", "xfwm4", "kwin_x11", "gnome-session", "Xorg")
+
+_X11_ENV_TTL_S = 60.0
+_x11_env_cache: tuple[float, dict[str, str] | None] = (0.0, None)
+
+
+def _read_environ(pid: str) -> dict[str, str]:
+    """Parse ``/proc/<pid>/environ``. Empty dict on any error (dead pid, not ours)."""
+    try:
+        with open(f"/proc/{pid}/environ", "rb") as f:
+            raw = f.read()
+    except OSError:
+        return {}
+    out: dict[str, str] = {}
+    for entry in raw.split(b"\0"):
+        if b"=" in entry:
+            k, v = entry.decode("utf-8", "replace").split("=", 1)
+            out[k] = v
+    return out
+
+
+def _proc_name(pid: str) -> str:
+    try:
+        with open(f"/proc/{pid}/comm", "r") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def _discover_display_env() -> dict[str, str] | None:
+    """Find a live X client of ours and borrow its DISPLAY/XAUTHORITY.
+
+    This is what makes the fix drift-proof: we ask the machine what display is *actually*
+    running right now instead of trusting a value captured when the unit started. Prefers a
+    compositor/terminal-server donor, then falls back to any of our processes that has a
+    DISPLAY. Returns None if nothing on the box has one (genuinely headless)."""
+    uid = os.getuid()
+    fallback: dict[str, str] | None = None
+    best: tuple[int, dict[str, str]] | None = None
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            if os.stat(f"/proc/{pid}").st_uid != uid:
+                continue
+        except OSError:
+            continue
+        env = _read_environ(pid)
+        disp = env.get("DISPLAY")
+        if not disp:
+            continue
+        got = {"DISPLAY": disp}
+        if env.get("XAUTHORITY"):
+            got["XAUTHORITY"] = env["XAUTHORITY"]
+        name = _proc_name(pid)
+        if name in _X11_DONORS:
+            rank = _X11_DONORS.index(name)
+            if best is None or rank < best[0]:
+                best = (rank, got)
+        elif fallback is None:
+            fallback = got
+    return best[1] if best else fallback
+
+
+def x11_env(*, force: bool = False) -> dict[str, str]:
+    """The environment X11 tools should run with, resolved at CALL TIME (cached briefly).
+
+    Our own env wins when it has a DISPLAY — that's the interactive/native-app case and it is
+    always right. Otherwise we discover one from a live X client, which is the systemd-service
+    case this exists for."""
+    global _x11_env_cache
+    now = time.monotonic()
+    ts, cached = _x11_env_cache
+    if not force and cached is not None and (now - ts) < _X11_ENV_TTL_S:
+        return dict(cached)
+    env = dict(os.environ)
+    if not env.get("DISPLAY"):
+        found = _discover_display_env()
+        if found:
+            env.update(found)
+            log.info("X11: no DISPLAY in our environment — borrowed %s from a live X client",
+                     found.get("DISPLAY"))
+    _x11_env_cache = (now, env)
+    return dict(env)
+
+
+def _display_failed(r: subprocess.CompletedProcess) -> bool:
+    """Did this X11 call fail to reach a display? Read from STDERR — the exit code lies."""
+    err = r.stderr
+    if isinstance(err, bytes):
+        err = err.decode("utf-8", "replace")
+    return bool(err and _DISPLAY_ERR_RE.search(err))
+
+
+def _run_x(cmd: list[str], *, check: bool = False, **kw) -> subprocess.CompletedProcess:
+    """Run an X11 tool with a call-time-resolved display, and make a display failure LOUD.
+
+    Every wmctrl/xdotool/gdbus invocation in this module goes through here. Two behaviours the
+    raw ``subprocess.run`` cannot give us:
+
+      • the resolved DISPLAY/XAUTHORITY are injected, so the systemd service works even though
+        it inherited neither, and keeps working when the display number changes under it;
+      • "Cannot open display" on stderr is converted into a NON-ZERO returncode (and a raised
+        ``CalledProcessError`` when ``check=True``), so every existing caller — whether it tests
+        ``returncode == 0`` or catches ``CalledProcessError`` — stops believing a no-op.
+
+    On a display failure we drop the cached env and retry ONCE with a freshly discovered one, so
+    a display that moved (reboot, session restart) self-heals without restarting Conductor."""
+    global _x11_env_cache
+    kw.setdefault("capture_output", True)
+    kw.setdefault("text", True)
+    for attempt in (0, 1):
+        r = subprocess.run(cmd, env=x11_env(force=attempt == 1), **kw)
+        if not _display_failed(r):
+            break
+        if attempt == 0:
+            _x11_env_cache = (0.0, None)   # invalidate; attempt 1 re-discovers
+            continue
+        log.warning("X11 unreachable — `%s` could not open a display (%s). Every focus, wake and "
+                    "close is a no-op until this is fixed.", cmd[0], (r.stderr or "").strip())
+        if r.returncode == 0:
+            r.returncode = 127             # the exit code lied; correct it before anyone reads it
+    if check and r.returncode != 0:
+        raise subprocess.CalledProcessError(r.returncode, cmd, r.stdout, r.stderr)
+    return r
+
+
+def x11_health() -> dict:
+    """Can Conductor reach a display right now? Drives the 🩺 fleet-health alarm.
+
+    This is the meta-check: if it says no, then focus, wake, `/msg-check`, decision answers and
+    wind-down close are ALL dead — and every one of them would otherwise report success. Cheap
+    (one `xdotool getactivewindow`), so the scan loop can call it every tick."""
+    if not xdotool_available():
+        return {"ok": False, "reason": "no_xdotool", "display": None,
+                "detail": "xdotool is not installed — Conductor cannot type into any session."}
+    r = _run_x(["xdotool", "getactivewindow"], timeout=3.0)
+    disp = x11_env().get("DISPLAY")
+    if _display_failed(r) or (r.returncode == 127 and not disp):
+        return {"ok": False, "reason": "no_display", "display": disp,
+                "detail": "No reachable X display. Focus, wake, /msg-check and wind-down close "
+                          "are all silent no-ops."}
+    return {"ok": True, "reason": "", "display": disp, "detail": ""}
 
 
 def _mutter_idle_ms() -> int | None:
@@ -120,7 +297,7 @@ def tilix_activate_terminal(uuid: str) -> bool:
     if not gdbus_available() or not _TILIX_UUID_RE.match(uuid):
         return False
     try:
-        r = subprocess.run(
+        r = _run_x(
             [
                 "gdbus", "call", "--session",
                 "--dest", "com.gexperts.Tilix",
@@ -128,7 +305,7 @@ def tilix_activate_terminal(uuid: str) -> bool:
                 "--method", "org.gtk.Actions.Activate",
                 "activate-terminal", f"[<'{uuid}'>]", "{}",
             ],
-            capture_output=True, timeout=3.0,
+            timeout=3.0,
         )
         return r.returncode == 0
     except (subprocess.TimeoutExpired, OSError) as e:
@@ -139,9 +316,7 @@ def tilix_activate_terminal(uuid: str) -> bool:
 def _active_window_id() -> int | None:
     """X11 id of the currently-focused window, via ``xdotool getactivewindow``."""
     try:
-        out = subprocess.run(
-            ["xdotool", "getactivewindow"], capture_output=True, text=True, timeout=2.0,
-        )
+        out = _run_x(["xdotool", "getactivewindow"], timeout=2.0)
         return int(out.stdout.strip()) if out.returncode == 0 else None
     except (subprocess.TimeoutExpired, OSError, ValueError):
         return None
@@ -152,13 +327,24 @@ def _active_window_name() -> str | None:
     for a tilix tile CLIENT window that carries no title of its own — that's why callers treat a
     MISSING name as 'can't verify' (accept) but a MISMATCHING name as 'wrong window' (reject)."""
     try:
-        out = subprocess.run(
-            ["xdotool", "getactivewindow", "getwindowname"],
-            capture_output=True, text=True, timeout=2.0,
-        )
+        out = _run_x(["xdotool", "getactivewindow", "getwindowname"], timeout=2.0)
         return out.stdout.strip() if out.returncode == 0 else None
     except (subprocess.TimeoutExpired, OSError):
         return None
+
+
+def _active_is_target(window_title: str | None) -> bool:
+    """True only when the active window is CONFIRMED to BE the target session.
+
+    The positive counterpart to ``_active_is_not_target``, and the distinction matters: that one
+    answers "is this provably the WRONG window?" (False when it can't tell), so it can never be
+    used as evidence that we are on the RIGHT one. This one requires the target's own X11 title
+    to actually appear in the active window's name — no title, no confirmation, no shortcut."""
+    wt = (window_title or "").strip()
+    if not wt:
+        return False
+    name = _active_window_name()
+    return bool(name) and wt.lower() in name.lower()
 
 
 def _active_is_not_target(title: str | None, window_title: str | None) -> bool:
@@ -190,11 +376,13 @@ def list_windows() -> list[tuple[int, int, str]]:
     if not wmctrl_available():
         return []
     try:
-        out = subprocess.run(
-            ["wmctrl", "-lp"], check=True, capture_output=True, text=True, timeout=2.0,
-        ).stdout
+        out = _run_x(["wmctrl", "-lp"], check=True, timeout=2.0).stdout
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
-        log.debug("wmctrl -lp failed: %s", e)
+        # NOT debug. An empty window list is indistinguishable from "no windows exist", and every
+        # caller reads it as "the session has no window" — which is how an unreachable display
+        # became "nothing to focus" instead of an error. Say it out loud.
+        log.warning("wmctrl -lp failed (%s) — treating the fleet as having NO windows; focus and "
+                    "injection will not work", e)
         return []
     rows: list[tuple[int, int, str]] = []
     for line in out.splitlines():
@@ -213,9 +401,9 @@ def list_windows() -> list[tuple[int, int, str]]:
 
 def _raise_window(wid: int) -> bool:
     try:
-        r = subprocess.run(
-            ["wmctrl", "-i", "-a", f"0x{wid:08x}"], capture_output=True, timeout=2.0,
-        )
+        # Via _run_x: raw wmctrl EXITS 0 when it cannot open a display, so the old
+        # `returncode == 0` here returned True for a raise that never happened.
+        r = _run_x(["wmctrl", "-i", "-a", f"0x{wid:08x}"], timeout=2.0)
         return r.returncode == 0
     except (subprocess.TimeoutExpired, OSError):
         return False
@@ -412,6 +600,17 @@ def _focus_session_input(
             if _active_window_id() != before:
                 moved = True
                 break                       # focus has moved off the previous window
+            # ALREADY THERE (Kyle, 2026-08-05). The moved-check below tests focus CHANGE as a
+            # proxy for focus ARRIVAL, and the two differ in exactly one case: we were already
+            # on the target. Then nothing moves, and the guard refuses precisely when it has
+            # succeeded — measured live on a freshly-relaunched qualcomm whose new window had
+            # grabbed focus, so /rc could never be injected. This must be a POSITIVE match on
+            # the target's own X11 title; `not _active_is_not_target(...)` would NOT do, because
+            # that returns False for "can't confirm" and would re-open the mis-delivery hole the
+            # moved-check exists to close.
+            if _active_is_target(window_title):
+                moved = True
+                break
             time.sleep(_FOCUS_POLL_STEP_S)
         # THE FIX (Kyle, 2026-07-23). This path used to `return True` here unconditionally — so if
         # the async activate never actually moved focus (target window minimised, or the user had
@@ -441,8 +640,7 @@ def _focus_session_input(
                     "session (%s / %s)", wid, window_title, title)
         return False
     try:
-        subprocess.run(["xdotool", "windowactivate", "--sync", str(wid)],
-                       check=True, capture_output=True, timeout=3.0)
+        _run_x(["xdotool", "windowactivate", "--sync", str(wid)], check=True, timeout=3.0)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
         log.debug("windowactivate failed: %s", e)
         return False
@@ -485,10 +683,7 @@ def send_key_sequence(
         for key in keys:
             # One key per call: the picker re-renders between keystrokes and a batched
             # `xdotool key a b c` can outrun the redraw.
-            subprocess.run(
-                ["xdotool", "key", "--clearmodifiers", key],
-                check=True, capture_output=True, timeout=3.0,
-            )
+            _run_x(["xdotool", "key", "--clearmodifiers", key], check=True, timeout=3.0)
             time.sleep(_KEY_STEP_S)
         return True
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
@@ -537,19 +732,11 @@ def _type_into_focused_window(
             log.warning("focus moved to a different session before typing — aborting (would "
                         "mis-deliver to %s / %s)", window_title, title)
             return False
-        subprocess.run(
-            ["xdotool", "key", "--clearmodifiers", "ctrl+u"],
-            check=True, capture_output=True, timeout=3.0,
-        )
-        subprocess.run(
-            ["xdotool", "type", "--clearmodifiers", "--delay", _TYPE_DELAY_MS, "--", text],
-            check=True, capture_output=True, timeout=8.0,
-        )
+        _run_x(["xdotool", "key", "--clearmodifiers", "ctrl+u"], check=True, timeout=3.0)
+        _run_x(["xdotool", "type", "--clearmodifiers", "--delay", _TYPE_DELAY_MS, "--", text],
+               check=True, timeout=8.0)
         time.sleep(_PRE_RETURN_S)
-        subprocess.run(
-            ["xdotool", "key", "Return"],
-            check=True, capture_output=True, timeout=3.0,
-        )
+        _run_x(["xdotool", "key", "Return"], check=True, timeout=3.0)
         return True
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
         log.debug("type-into-focused failed: %s", e)

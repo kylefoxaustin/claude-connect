@@ -91,8 +91,12 @@ def test_type_aborts_if_active_window_becomes_wrong(monkeypatch):
 def test_type_proceeds_when_active_is_target(monkeypatch):
     _fast(monkeypatch)
     monkeypatch.setattr(w, "_active_is_not_target", lambda t, wt: False)           # still on target
+    # `stderr` is NOT optional padding: a real CompletedProcess always carries it, and the X11
+    # display check reads it (the exit code lies — wmctrl/xdotool exit 0 on "Cannot open display").
+    # A fake missing a field the real object always has is a fake that passes while production
+    # crashes on the same line — the v2.26.1 lesson, which this fake reproduced verbatim.
     monkeypatch.setattr(w.subprocess, "run",
-                        lambda *a, **k: type("R", (), {"returncode": 0, "stdout": ""})())
+                        lambda *a, **k: type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})())
     assert w._type_into_focused_window("x", title="t", window_title="Project X") is True
 
 

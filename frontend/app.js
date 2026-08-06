@@ -278,6 +278,7 @@ function handleMessage({ kind, payload }) {
       state.collisions = payload.collisions || [];
       state.lost_rc = payload.lost_rc || [];
       state.webpush = payload.webpush || null;
+      state.x11 = payload.x11 || null;
       state.winddown = payload.winddown || { active: false };
       if (typeof renderWinddown === "function" && winddownModal && !winddownModal.classList.contains("hidden")) renderWinddown();
       sessionCountEl.textContent = `${state.sessions.length} session${state.sessions.length === 1 ? "" : "s"}`;
@@ -297,6 +298,10 @@ function handleMessage({ kind, payload }) {
       break;
     case "lost_rc":
       state.lost_rc = (payload && payload.lost_rc) || [];
+      renderFleetAlerts(state);
+      break;
+    case "x11":
+      state.x11 = (payload && payload.x11) || null;
       renderFleetAlerts(state);
       break;
     case "session": {
@@ -1615,11 +1620,32 @@ function renderFleetAlerts(state) {
   const quiet = silent.filter((s) => !s.dead);   // addressed + silent but a process is still alive
   const wp = state.webpush;                       // can we page the phone? (2026-07-22)
   const wpBroken = wp && wp.healthy === false;
-  if (!collisions.length && !lostRc.length && !dead.length && !quiet.length && !wpBroken) {
+  const x11 = state.x11;                          // can we reach a display AT ALL? (2026-08-05)
+  const x11Broken = x11 && x11.ok === false;
+  if (!collisions.length && !lostRc.length && !dead.length && !quiet.length && !wpBroken && !x11Broken) {
     box.hidden = true; box.replaceChildren(); return;
   }
   box.hidden = false;
   const rows = [];
+  if (x11Broken) {
+    // FIRST, and its own severity. This is not one broken feature — it is the whole ACTION
+    // surface. Focus, wake, /msg-check, decision answers and wind-down close all type into a
+    // terminal, and X11 tools exit 0 while printing "Cannot open display", so every one of them
+    // silently no-ops and reports success. Conductor read as healthy through a 25-session
+    // wind-down it could not reach (2026-08-05). Never let that be quiet again.
+    const row = document.createElement("div");
+    row.className = "alert-row alert-x11";
+    row.innerHTML =
+      `<strong>🖥️ Conductor can't reach the display — it cannot type at ANY session</strong>`
+      + `<div class="alert-sub" style="margin-top:4px">${escapeHtml(x11.detail || "")} `
+      + `Focus, wake, <code>/msg-check</code>, decision answers and wind-down close are all `
+      + `no-ops right now — the fleet is <em>observable but not drivable</em>.</div>`
+      + `<div class="alert-sub" style="margin-top:4px">Fix: `
+      + `<code>systemctl --user import-environment DISPLAY XAUTHORITY &amp;&amp; systemctl --user restart conductor</code>`
+      + (x11.reason === "no_xdotool" ? ` (and install <code>xdotool</code>)` : "")
+      + `</div>`;
+    rows.push(row);
+  }
   if (wpBroken) {
     // An app that can't alert you should at least TELL you it can't — the 2026-07-22
     // incident (paging dead 6h, a Claude blocked the whole time, nothing said so).
@@ -1689,6 +1715,7 @@ function renderFleetAlerts(state) {
   if (dead.length) parts.push(`${dead.length} dead reader${dead.length > 1 ? "s" : ""}`);
   if (quiet.length) parts.push(`${quiet.length} unresponsive`);
   if (wpBroken) parts.push(`notifications down`);
+  if (x11Broken) parts.push(`DISPLAY unreachable`);
   title.textContent = `🩺 Fleet health — ${parts.join(" · ")}`;
   box.replaceChildren(title, ...rows);
 }
