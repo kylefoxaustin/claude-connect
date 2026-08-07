@@ -1,5 +1,6 @@
 % references.bib — verified bibliography for the Conductor paper (IEEEtran style).
-% Every entry's arXiv ID / venue was VERIFIED against the primary source 2026-07-27
+% Every entry's arXiv ID / venue was VERIFIED against the primary source 2026-07-27; the five
+% SE-method / missing-data entries at the foot of this file were added and verified 2026-08-06
 % (see related-work-verification.md). First authors are confirmed; where the FULL author
 % list was not captured in verification it is marked "and others" and MUST be completed from
 % the arXiv page at camera-ready (flagged per entry). Titles are as they appear on arxiv.org.
@@ -145,4 +146,70 @@
   year    = {2003},
   doi     = {10.1109/MC.2003.1160055},
   note    = {{IEEE} Computer Society},
+}
+
+% ---- The system under study (Fable round-4 reminder). STAGED, uncited so it does NOT yet appear in
+% the PDF. FINAL RE-STAMP: (1) \cite{claudecode} from the Disclosure's first sentence; (2) set the
+% real access date below; (3) re-verify 10pp (the §I Summary-of-findings trim is the fallback if it
+% overflows). Cited -> it becomes reference [19].
+@misc{claudecode,
+  author       = {{Anthropic}},
+  title        = {{Claude Code}},
+  howpublished = {software},
+  note         = {\url{https://claude.com/claude-code}, accessed FILL-AT-RE-STAMP},
+  year         = {2026},
+}
+
+% ---- Software-engineering method lineage the design loop rediscovers -------------------
+% Added 2026-08-06. Cited in §II (Related Work, "prior art the substrate rediscovers") and
+% at point of use in §IV. NOTE davis1992 is vol 9 — IEEE Software vol 1 = 1984, so 1992 = 9.
+@incollection{floyd1984,
+  author    = {Floyd, Christiane},
+  title     = {A Systematic Look at Prototyping},
+  booktitle = {Approaches to Prototyping},
+  publisher = {Springer},
+  year      = {1984},
+  pages     = {1--18},
+}
+
+@article{davis1992,
+  author  = {Davis, Alan M.},
+  title   = {Operational Prototyping: A New Development Approach},
+  journal = {IEEE Software},
+  volume  = {9},
+  number  = {5},
+  year    = {1992},
+  pages   = {70--78},
+}
+
+@article{boehm1988,
+  author  = {Boehm, Barry W.},
+  title   = {A Spiral Model of Software Development and Enhancement},
+  journal = {Computer},
+  volume  = {21},
+  number  = {5},
+  year    = {1988},
+  pages   = {61--72},
+}
+
+@article{basiri2016,
+  author  = {Basiri, Ali and Behnam, Niosha and de Rooij, Ruud and Hochstein, Lorin and
+             Kosewski, Luke and Reynolds, Justin and Rosenthal, Casey},
+  title   = {Chaos Engineering},
+  journal = {IEEE Software},
+  volume  = {33},
+  number  = {3},
+  year    = {2016},
+  pages   = {35--41},
+}
+
+% ---- Missing-data framing for the monitoring specimen (§V-B, class 2) ------------------
+@article{rubin1976,
+  author  = {Rubin, Donald B.},
+  title   = {Inference and Missing Data},
+  journal = {Biometrika},
+  volume  = {63},
+  number  = {3},
+  year    = {1976},
+  pages   = {581--592},
 }
