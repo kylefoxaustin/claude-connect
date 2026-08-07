@@ -165,8 +165,10 @@ it: an adversarial process that independently reconverged on known load-bearing 
 weak-but-real evidence the process finds \emph{real} designs. The append-only shared log that peers
 read and write, with a nominated lead coordinating, is a blackboard architecture
 (Hearsay-II \cite{hearsay2}; the blackboard-for-control model \cite{blackboard}); the verified-order
-lifecycle (deliver only if the artifact landed) is two-phase commit; and the human approval
-bound to an action token rather than conveyed in prose is capability-based authorization.
+lifecycle (deliver only if the artifact landed) is two-phase commit; the human approval
+bound to an action token rather than conveyed in prose is capability-based authorization; and the
+design loop itself rediscovers evolutionary prototyping \cite{floyd1984,davis1992}, the spiral
+model \cite{boehm1988}, and game-day/chaos-engineering practice \cite{basiri2016}.
 Our contribution is not these mechanisms but the \emph{setting} --- long-lived, context-heavy,
 same-model peers rediscovering and composing them in vivo under a reversibility-gating human.
 
@@ -255,6 +257,20 @@ relative to} that divergence, not absolutely, so this is not self-review by one 
 but neither do we claim uncorrelated errors in the estimator sense; (4) the human gates only
 the irreversible.
 
+The loop's \emph{shape} is deliberately unoriginal and we claim no novelty for it: operating a
+system to learn what it should have required is evolutionary prototyping
+\cite{floyd1984,davis1992}, the spiral model \cite{boehm1988}, and game-day/chaos-engineering
+practice \cite{basiri2016}, which runs at scales far beyond this deployment. One post-corpus
+exercise (2026-08-05, a dated addendum outside the stamp) cuts against the usual prototyping
+argument. The first live run of a newly-shipped fleet wind-down protocol, across 31 sessions,
+surfaced two silent-success root causes, both in taxonomy class~2 (\S V-B) and both violating the
+architecture's own through-line --- \emph{verify the outcome, not the intention} (\S III). The
+instructive part is not that the drill found them: \textbf{the requirement they violate was
+already published in our own record months earlier}, and was simply not enforced on a later
+actuator. The gap was \textbf{compliance, not knowledge} --- a weaker and more useful claim than
+requirements-unknowability: a through-line stated once does not propagate itself to each new
+actuator, and the drill is what detects the drift.
+
 \section{Evaluation}
 A note on names: throughout the evaluation, a codename in parentheses (e.g.\ \texttt{net-emu},
 \texttt{perf-A}) identifies an \emph{individual Claude Code session} --- the participant that
@@ -285,7 +301,8 @@ repro.-in-principle & a recipe that outlives the record but has not been re-exec
 
 \emph{Corpus, MEASURED from git + bus + \texttt{history.jsonl}, as-of 2026-07-31} (every
 count carries this stamp --- the log is append-only and non-stationary, so a
-bare number is under-specified): 290 commits (38 of type \texttt{fix}); 52 version landings;
+bare number is under-specified; events after the stamp are reported as dated addenda and are
+\emph{never} counted, in either direction): 290 commits (38 of type \texttt{fix}); 52 version landings;
 2,744 bus messages, of which 2,739 are non-system, from 56 senders
 (1,109 directed + 1,107 broadcast + 521 announcement + 2 unclassified $=$ 2,739; directed share
 1,109/2,739 $=$ 40.5\%);
@@ -323,7 +340,16 @@ runtime event the bus log does not record, so we report the ceiling the mechanis
 the realized figure. Indeed the mechanism
 is unreliable: in this paper's own production, a directed job failed to auto-wake its peer (stale
 watermark) and the human relayed it --- an actual delivery below the ceiling. We report the
-counterexample. The correct human-touch
+counterexample. A second, larger counterexample is dated, though it falls outside the corpus
+stamp. During a post-corpus fleet exercise (2026-08-05) two independent silent-success defects
+were live at once: window-actuation tools that print their failure to stderr and exit \texttt{0},
+and an acknowledgment routine that terminated before writing its record (\S V-C addendum). Their
+combined effect was that the human resumed relaying --- driving the registered fleet through the
+shutdown by hand --- \textbf{while every actuator-level signal reported success}. This is a bound
+distinct from the GAP above: unrecorded delivery leaves the measurement \emph{thinned}, whereas an
+actuator asserting a success that did not occur leaves it \emph{false}, and that is invisible from
+inside the measurement. A reachability check whose failure is surfaced rather than inferred was
+added in response (pinned in the replication package). The correct human-touch
 instrument is \texttt{history.jsonl} (un-swept, back to January), \emph{not}
 transcripts (a 30-day cleanup horizon, \S VII) which also carry an 11.9$\times$
 \texttt{tool\_result} overcount trap.
@@ -404,6 +430,18 @@ discipline (``just replicate,'' ``just tag'') sails past most of them:
   net-emu). Replaying the green measurement \emph{n} times passes \emph{n} times; the only fix
   is asserting a different measurement --- execute the off-state / your own
   reproduction once.
+  A post-corpus specimen adds an axis: the untested direction can be \textbf{selected by the very
+  condition the mechanism exists to attest}. The acknowledgment routine of \S V-C's addendum
+  reached its fatal path only when a session had \emph{exactly zero} unpushed commits --- any
+  unpushed work gave its counter a line to match, so it exited zero and the ack succeeded. Failure
+  concentrated on sessions satisfying the cleanliness condition the ack exists to certify: this is
+  \textbf{informative missingness} (MNAR, \cite{rubin1976}) in a monitoring mechanism, so the
+  census is \emph{biased}, not merely thinned --- and because silence reads as \emph{not
+  finished}, the indicator's polarity flips for exactly the population that was. Here the class-2
+  remedy is necessary but insufficient: \textbf{zero unpushed is not the off-state --- it is the
+  attested value, on the nominal success path.} The off-state was a dirty tree, and it \emph{was}
+  exercised. Enumerating on and off misses a boundary \emph{inside} ``on'', so the remedy extends
+  to the boundary value of the predicate the mechanism selects on.
 \item Provenance-tier silently dropped during remediation --- re-anchoring a number to
   a \emph{recipe} downgrades MEASURED $\rightarrow$ reproducible-in-principle until someone runs
   it (band, emu-C). Remedy: run the recipe and \emph{say you did} (emu-C did --- the
@@ -454,6 +492,36 @@ A record-attested instance from the ablations: in \texttt{ablation\_perf-A} a bl
 zero-context arm caught a real overstatement in the author's own case (129 defective cells
 reachable via the engine API but \emph{not} the shipped UI) in nine tool calls. \textbf{Cases are illustration; the events (order claims,
 timestamps, tool-call logs) are the evidence.}
+
+\textbf{Post-corpus addendum} (2026-08-05, outside the as-of stamp; \emph{not} counted in the
+14/13 above). The catches above are peers refuting a peer's technical \emph{result}. One later
+catch differs in kind: the defective artifact was the \textbf{coordination substrate itself}, and
+the catching vantage was \emph{being subject to it}. It is offered as support for the \S V-D
+bound, not an increment to it. \emph{Disclosure, load-bearing here:} \texttt{substrate-dev} below
+is the session that authored the wind-down machinery \textbf{and drafted this paper}; the catch is
+reported against ourselves, and the entry would be worthless without the identity stated.
+All five events are timestamped in the append-only record --- \textbf{four on the bus, one in
+git} --- on one day. At \textbf{11:34:25} \texttt{mcu-emu}, winding itself down, published the
+root cause of an acknowledgment routine that wrote no record: a counter that prints \texttt{0} and
+\emph{exits non-zero}, terminating the routine under \texttt{set -e}. At \textbf{14:32:54}
+\texttt{substrate-dev} committed a fix (pinned in the replication package) for a \emph{different}
+defect in the same routine. At \textbf{17:17:25} it broadcast to the fleet that the bug was fixed.
+At \textbf{17:20:53} --- \textbf{3m28s later} --- \texttt{band} measured the shipped routine from
+a clean tree: no output, exit 1, no record written. At \textbf{18:09:05} \texttt{band} published
+an audit enumerating \textbf{7 acknowledged against 24 not} (31 registered tags). The routine was
+corrected the next day (pinned in the replication package).
+We record it in \textbf{both} directions, as with RQ1's counterexample. As a vantage instance it
+is strong: the refutation came from \emph{operating} the mechanism --- \texttt{band} was winding
+itself down and observed that it had not --- timestamped against \texttt{substrate-dev}'s own
+claim. As a \textbf{substrate failure} it is equally real: the refuting information had been on
+the bus \textbf{at least 5h43m} before the broadcast, so the delivery machinery this paper
+evaluates did not put a published refutation in front of the session that authored it before that
+session asserted the opposite to the fleet. \textbf{A vantage that is published but not
+\emph{consumed} is a bound on the substrate, not only a credit to the peer.} The episode is a
+class-3 instance of our own taxonomy (\S V-B), violating a remedy we had already published
+(\emph{run the recipe and say you did}). It is \textbf{empirical-vantage} --- a measured exit
+status, not a same-input reasoning disagreement --- so \S V-D's statement that no instance exists
+of a peer catching a same-input reasoning error is \textbf{unaffected}.
 
 \subsection{RQ4 --- Compounding competence: claim, confound, and the ablation test}
 We split the claim into RQ4a (the crisp-symptom floor: does context lower re-derivation cost
@@ -733,7 +801,8 @@ the fleet.
   rather than measure. (d) \emph{N is small} (1--8/arm) and outcomes are often categorical (no
   variance). Each is stated in the individual \texttt{ablation\_*.md}.
 \item $N{=}1$, one operator, one workstation, one model family.
-\item Self-authorship, including \emph{this reframe} --- written by an interested lead,
+\item Self-authorship, including \emph{this reframe} --- written by an interested lead who is
+  also the author of the substrate under evaluation (\S V-C addendum),
   corrected by peers; we prefer machine evidence throughout and mark recollection RECALLED.
 \item The bystander-catch corpus contracted under audit. While preparing this paper, two
   claimed cross-session catches did not survive record-checking --- a ``\texttt{api-svc} tag-flip
