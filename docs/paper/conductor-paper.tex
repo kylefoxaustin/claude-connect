@@ -260,14 +260,13 @@ the irreversible.
 The loop's \emph{shape} is deliberately unoriginal and we claim no novelty for it: operating a
 system to learn what it should have required is evolutionary prototyping
 \cite{floyd1984,davis1992}, the spiral model \cite{boehm1988}, and game-day/chaos-engineering
-practice \cite{basiri2016}, which runs at scales far beyond this deployment. One post-corpus
-exercise (2026-08-05, a dated addendum outside the stamp) cuts against the usual prototyping
-argument. The first live run of a newly-shipped fleet wind-down protocol, across 31 sessions,
-surfaced two silent-success root causes, both in taxonomy class~2 (\S V-B) and both violating the
-architecture's own through-line --- \emph{verify the outcome, not the intention} (\S III). The
-instructive part is not that the drill found them: \textbf{the requirement they violate was
-already published in our own record months earlier}, and was simply not enforced on a later
-actuator. The gap was \textbf{compliance, not knowledge} --- a weaker and more useful claim than
+practice \cite{basiri2016}. One post-corpus exercise (2026-08-05, outside the stamp) cuts against
+the usual prototyping argument: the first live run of a newly-shipped fleet wind-down protocol,
+across 31 sessions, surfaced two silent-success root causes, both in taxonomy class~2 (\S V-B) and
+both violating the architecture's own through-line, \emph{verify the outcome, not the intention}
+(\S III). The instructive part is not that the drill found them but that \textbf{the requirement
+they violate was already published in our own record months earlier} and simply not enforced on a
+later actuator. The gap was \textbf{compliance, not knowledge} --- weaker and more useful than
 requirements-unknowability: a through-line stated once does not propagate itself to each new
 actuator, and the drill is what detects the drift.
 
@@ -340,16 +339,15 @@ runtime event the bus log does not record, so we report the ceiling the mechanis
 the realized figure. Indeed the mechanism
 is unreliable: in this paper's own production, a directed job failed to auto-wake its peer (stale
 watermark) and the human relayed it --- an actual delivery below the ceiling. We report the
-counterexample. A second, larger counterexample is dated, though it falls outside the corpus
-stamp. During a post-corpus fleet exercise (2026-08-05) two independent silent-success defects
-were live at once: window-actuation tools that print their failure to stderr and exit \texttt{0},
-and an acknowledgment routine that terminated before writing its record (\S V-C addendum). Their
-combined effect was that the human resumed relaying --- driving the registered fleet through the
-shutdown by hand --- \textbf{while every actuator-level signal reported success}. This is a bound
-distinct from the GAP above: unrecorded delivery leaves the measurement \emph{thinned}, whereas an
-actuator asserting a success that did not occur leaves it \emph{false}, and that is invisible from
-inside the measurement. A reachability check whose failure is surfaced rather than inferred was
-added in response (pinned in the replication package). The correct human-touch
+counterexample. A second, larger one is dated, outside the stamp: during a post-corpus fleet
+exercise (2026-08-05) two independent silent-success defects were live at once --- window-actuation
+tools that print their failure to stderr and exit \texttt{0}, and an acknowledgment routine that
+terminated before writing its record (\S V-C addendum) --- and the human resumed relaying, driving
+the registered fleet through the shutdown by hand, \textbf{while every actuator-level signal
+reported success}. This bound is distinct from the GAP above: unrecorded delivery leaves the
+measurement \emph{thinned}, whereas an actuator asserting a success that did not occur leaves it
+\emph{false}, invisible from inside the measurement. A surfaced reachability check was added in
+response (pinned in the replication package). The correct human-touch
 instrument is \texttt{history.jsonl} (un-swept, back to January), \emph{not}
 transcripts (a 30-day cleanup horizon, \S VII) which also carry an 11.9$\times$
 \texttt{tool\_result} overcount trap.
@@ -432,16 +430,14 @@ discipline (``just replicate,'' ``just tag'') sails past most of them:
   reproduction once.
   A post-corpus specimen adds an axis: the untested direction can be \textbf{selected by the very
   condition the mechanism exists to attest}. The acknowledgment routine of \S V-C's addendum
-  reached its fatal path only when a session had \emph{exactly zero} unpushed commits --- any
-  unpushed work gave its counter a line to match, so it exited zero and the ack succeeded. Failure
-  concentrated on sessions satisfying the cleanliness condition the ack exists to certify: this is
-  \textbf{informative missingness} (MNAR, \cite{rubin1976}) in a monitoring mechanism, so the
-  census is \emph{biased}, not merely thinned --- and because silence reads as \emph{not
-  finished}, the indicator's polarity flips for exactly the population that was. Here the class-2
-  remedy is necessary but insufficient: \textbf{zero unpushed is not the off-state --- it is the
-  attested value, on the nominal success path.} The off-state was a dirty tree, and it \emph{was}
-  exercised. Enumerating on and off misses a boundary \emph{inside} ``on'', so the remedy extends
-  to the boundary value of the predicate the mechanism selects on.
+  reached its fatal path only when a session had \emph{exactly zero} unpushed commits, so failure
+  concentrated on sessions satisfying the cleanliness condition the ack exists to certify --- this
+  is \textbf{informative missingness} (MNAR, \cite{rubin1976}) in a monitoring mechanism: the
+  census is \emph{biased}, not merely thinned, and since silence reads as \emph{not finished} the
+  indicator's polarity flips for exactly the population that was. Here the class-2 remedy is
+  necessary but insufficient --- \textbf{zero unpushed is not the off-state; it is the attested
+  value, on the nominal success path} (the off-state, a dirty tree, \emph{was} exercised). So the
+  remedy extends to the boundary value of the predicate the mechanism selects on.
 \item Provenance-tier silently dropped during remediation --- re-anchoring a number to
   a \emph{recipe} downgrades MEASURED $\rightarrow$ reproducible-in-principle until someone runs
   it (band, emu-C). Remedy: run the recipe and \emph{say you did} (emu-C did --- the
@@ -494,34 +490,30 @@ reachable via the engine API but \emph{not} the shipped UI) in nine tool calls. 
 timestamps, tool-call logs) are the evidence.}
 
 \textbf{Post-corpus addendum} (2026-08-05, outside the as-of stamp; \emph{not} counted in the
-14/13 above). The catches above are peers refuting a peer's technical \emph{result}. One later
-catch differs in kind: the defective artifact was the \textbf{coordination substrate itself}, and
-the catching vantage was \emph{being subject to it}. It is offered as support for the \S V-D
-bound, not an increment to it. \emph{Disclosure, load-bearing here:} \texttt{substrate-dev} below
-is the session that authored the wind-down machinery \textbf{and drafted this paper}; the catch is
-reported against ourselves, and the entry would be worthless without the identity stated.
-All five events are timestamped in the append-only record --- \textbf{four on the bus, one in
-git} --- on one day. At \textbf{11:34:25} \texttt{mcu-emu}, winding itself down, published the
-root cause of an acknowledgment routine that wrote no record: a counter that prints \texttt{0} and
-\emph{exits non-zero}, terminating the routine under \texttt{set -e}. At \textbf{14:32:54}
-\texttt{substrate-dev} committed a fix (pinned in the replication package) for a \emph{different}
-defect in the same routine. At \textbf{17:17:25} it broadcast to the fleet that the bug was fixed.
-At \textbf{17:20:53} --- \textbf{3m28s later} --- \texttt{band} measured the shipped routine from
-a clean tree: no output, exit 1, no record written. At \textbf{18:09:05} \texttt{band} published
-an audit enumerating \textbf{7 acknowledged against 24 not} (31 registered tags). The routine was
-corrected the next day (pinned in the replication package).
-We record it in \textbf{both} directions, as with RQ1's counterexample. As a vantage instance it
-is strong: the refutation came from \emph{operating} the mechanism --- \texttt{band} was winding
-itself down and observed that it had not --- timestamped against \texttt{substrate-dev}'s own
-claim. As a \textbf{substrate failure} it is equally real: the refuting information had been on
-the bus \textbf{at least 5h43m} before the broadcast, so the delivery machinery this paper
-evaluates did not put a published refutation in front of the session that authored it before that
-session asserted the opposite to the fleet. \textbf{A vantage that is published but not
-\emph{consumed} is a bound on the substrate, not only a credit to the peer.} The episode is a
-class-3 instance of our own taxonomy (\S V-B), violating a remedy we had already published
-(\emph{run the recipe and say you did}). It is \textbf{empirical-vantage} --- a measured exit
-status, not a same-input reasoning disagreement --- so \S V-D's statement that no instance exists
-of a peer catching a same-input reasoning error is \textbf{unaffected}.
+14/13 above). The catches above are peers refuting a peer's technical \emph{result}; this one
+differs in kind --- the defective artifact was the \textbf{coordination substrate itself} and the
+catching vantage was \emph{being subject to it}, so it supports the \S V-D bound rather than
+incrementing it. \emph{Disclosure, load-bearing here:} \texttt{substrate-dev} below authored the
+wind-down machinery \textbf{and drafted this paper}; the catch is reported against ourselves.
+All five events are timestamped in the append-only record --- \textbf{four on the bus, one in git}
+--- on one day. \textbf{11:34:25}: \texttt{mcu-emu}, winding itself down, publishes the root cause
+of an acknowledgment routine that wrote no record --- a counter that prints \texttt{0} and
+\emph{exits non-zero}, terminating the routine under \texttt{set -e}. \textbf{14:32:54}:
+\texttt{substrate-dev} commits a fix for a \emph{different} defect in the same routine.
+\textbf{17:17:25}: it broadcasts to the fleet that the bug is fixed. \textbf{17:20:53}
+(\textbf{3m28s later}): \texttt{band} measures the shipped routine from a clean tree --- no
+output, exit 1, no record written. \textbf{18:09:05}: \texttt{band} publishes an audit enumerating
+\textbf{7 acknowledged against 24 not} (31 registered tags). Both commits are pinned in the
+replication package.
+We record it in \textbf{both} directions. As a vantage instance it is strong --- the refutation came
+from \emph{operating} the mechanism, timestamped against \texttt{substrate-dev}'s own claim. As a
+\textbf{substrate failure} it is equally real: the refutation sat on the bus \textbf{at least
+5h43m} before the broadcast, so the delivery machinery this paper evaluates never put it in front
+of the session that authored the claim. \textbf{A vantage published but not \emph{consumed} is a
+bound on the substrate, not only a credit to the peer.} The episode is a class-3 instance of our
+own taxonomy (\S V-B), violating a remedy we had published (\emph{run the recipe and say you
+did}); being \textbf{empirical-vantage} --- a measured exit status, not a same-input reasoning
+disagreement --- it leaves \S V-D's no-same-input-reasoning-catch statement \textbf{unaffected}.
 
 \subsection{RQ4 --- Compounding competence: claim, confound, and the ablation test}
 We split the claim into RQ4a (the crisp-symptom floor: does context lower re-derivation cost
@@ -906,27 +898,30 @@ logged as \S V-F specimens.
 % TODO (final re-stamp, Fable round-4): add ~\cite{claudecode} after "(Anthropic)" below -> becomes
 % ref [19]; the staged entry is in references.bib (set its access date).
 %
-% PAGE BUDGET — DECIDED 2026-08-06 (Kyle): CARRY 11pp UNTIL CAMERA-READY. Do not trim on sight.
-%   ⚠️ THE BUDGET ITSELF IS UNCONFIRMED, and the size of the problem depends entirely on which
-%   reading is right. This comment line says "10pp"; the v1.0 lineage was recorded as "9pp under
-%   a 10+2 budget" (10 body + 2 references). CONFIRM AGAINST THE CFP BEFORE TRIMMING ANYTHING.
+% PAGE BUDGET — status 2026-08-08. OVER BY 10 BODY LINES. One decision left, and it is Kyle's.
 %
-%   MEASURED 2026-08-06 (pdftotext, this build):
-%     * total 11pp; the pre-addendum draft built to EXACTLY 10pp total.
-%     * REFERENCES begin PART-WAY DOWN page 11 — body+acknowledgment overrun page 10 by
-%       ONLY 22 LINES; the rest of page 11 is the bibliography.
-%   So: under a strict 10pp-TOTAL limit we are over by ~a page. Under 10+2 we are over by
-%   22 BODY LINES, which is small and very likely closable from the addendum's own prose
-%   (a first light tightening already recovered 13 lines) WITHOUT touching §I.
+%   ✅ LIMIT CONFIRMED against the official ICSE 2027 SEIP CFP (2026-08-08), verbatim:
+%      "Submissions must not exceed 10 pages (for full papers) for the main text, inclusive of
+%       all figures, tables, and appendices. 2 pages are allowed for references."
+%      => 10 BODY + 2 REFS. Deadline Fri 23 Oct 2026. The earlier "is it 10 total?" worry is dead.
 %
-%   The §I Summary-of-findings trim remains the designated fallback and is deliberately NOT
-%   spent: under the 10+2 reading it is not needed at all, and spending it now would cost §I's
-%   framing to solve a problem that may not exist.
-%   AT CAMERA-READY, in order: (1) confirm the SEIP limit + whether refs count;
-%   (2) if over, recover the 22 body lines from the addendum prose first; (3) only then the
-%   §I trim; (4) last, cut addendum material — note Fable round 3 explicitly refused to cut the
-%   §IV para, since without it the first reviewer objection is "this is chaos engineering and
-%   they don't cite it".
+%   MEASURED (pdftotext, this build):
+%     * pre-addendum baseline (e94eec5): 9pp TOTAL, refs starting p9 => body had ~1.5pp of slack.
+%       (An earlier note claimed the baseline was "exactly 10pp"; that came from a BROKEN build
+%       with no .bst, so no bibliography rendered. Corrected here.)
+%     * now: refs start part-way down p11 => BODY OVERRUNS PAGE 10 BY 10 LINES.
+%     * the addendum's own prose has already been tightened twice, 22 lines -> 10. Further
+%       squeezing hits 2-column reflow thresholds and starts costing substance, not words.
+%
+%   THE REMAINING 10 LINES CANNOT COME FROM THE ADDENDUM WITHOUT LOSING CONTENT THREE REVIEW
+%   ROUNDS DEFENDED. Options, in the order they should be considered:
+%     (1) the §I Summary-of-findings trim — the pre-planned fallback, ~the right size;
+%     (2) drop the §V-A RQ1 extension (~9 lines) — but Fable round 3 ruled it a bound genuinely
+%         DISTINCT from the existing GAP (thinned vs. false), not a rename;
+%     (3) cut the §IV paragraph — round 3 explicitly REFUSED this: without it the first reviewer
+%         objection is "this is chaos engineering and they don't cite it".
+%   Recommendation: (1). It is what it was reserved for, and it is the only option that costs no
+%   evidence.
 This paper reports on, and was substantially produced by, a fleet of \emph{Claude Code}
 (Anthropic) sessions --- the same system the paper studies --- under the human author's direction.
 We disclose the division of labour precisely, because for this subject it is itself a finding. The
