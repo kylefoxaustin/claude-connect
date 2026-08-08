@@ -1,7 +1,13 @@
 # Human-touch series (supporting artifact for RQ1 / §V-A)
 
 Human prompts per **active project**, from `~/.claude/history.jsonl` (human prompts only, un-swept
-back to 2026-01-14). Normalized by projects active in the bucket. As-of 2026-07-27.
+back to 2026-01-14). Normalized by projects active in the bucket. **As-of 2026-07-27.**
+
+> ⚠️ **STAMP MISMATCH WITH THE PAPER, stated rather than silently reconciled.** The paper's corpus
+> stamp is **2026-07-31**, four days later, so its Table 1 July row reads **1,270 / 35 / 36.3**
+> against this file's **1,219 / 34 / 35.9**. Both are correct on their own stamp; the difference is
+> four days of July. Either re-run this artifact at 2026-07-31 before submission, or cite this
+> file's stamp explicitly in the caption. Do not quietly average them.
 
 ## Monthly (Table 2 in the paper)
 | month | human prompts | active projects | prompts / project |
@@ -34,8 +40,15 @@ paper reports the **shape** (near 70 across May–June, then a drop to 36 in Jul
 | 2026-W30 | 295 | 23 | 12.8 |
 | 2026-W31 | 21  | 10 | 2.1  | *(partial final week)* |
 
-**Shape:** noisy but a consistent downward drift — from the ~35–40 band in early May (W18–W24, with
-spikes) to the ~13–20 band in July (W28–W30), as active projects roughly double. This is why the
+**Shape:** noisy but a consistent downward drift — from the ~30–60 band in May–June (W19–W24) to
+the ~13–20 band in July (W28–W30), as active projects roughly double.
+
+> **W18 IS EXCLUDED, AND THE REASON MATTERS.** W18 is 51 prompts across 3 active projects = **17.0**,
+> which sits *inside* the late-July band and so appears to contradict the trend. It is excluded as a
+> ramp week, not a steady-state one: May began mid-week and only 3 projects were live, an order of
+> magnitude fewer than the 23 of W30. Earlier wording labelled the band "W18–W24" while quoting
+> "~35–40" — a range label its own first value contradicts. Stating the exclusion and its reason is
+> the honest form; a reader who rejects the reason can see exactly what to add back. This is why the
 paper reads July's monthly drop as a sustained decline rather than a single-month artifact. It remains
 observational, with the standard longitudinal confounds (task-mix change, operator learning,
 per-active-project as a proxy for per-delivered-project) — a trend, not a controlled measurement.

@@ -44,18 +44,22 @@ Email: \textit{[to fill at submission]}}}
 Conductor is a fleet of persistent, memory-divergent agent sessions
 --- one base model, durable per-session context, a shared append-only
 bus, and a human gating only irreversible actions. Over a
-months-long live deployment it grew to 35 concurrent projects while
-human touches per project fell by half; the human originated under
-1\% of coordination traffic while the sessions co-designed and
+months-long live deployment it grew to 35 concurrent projects for
+roughly constant total human prompting --- so attention per project
+fell by half, an observational trend, not a controlled measurement ---
+while the sessions co-designed and
 hardened their own coordination substrate in vivo under adversarial
 peer review --- closing $\sim$20 named failure modes --- and caught one
 another's defects from divergent empirical vantages. Our central
-finding: what \emph{carries capability} across tasks is the committed carrier ---
-the code, asserts, and checked-in docs any fresh session can read ---
-not the session's lived context. Context buys \emph{efficiency and
+finding, \emph{on the tasks we could construct}: what carries capability
+is the committed carrier --- the code, asserts, and checked-in docs any
+fresh session can read --- not the session's lived context. The scope
+qualifier is load-bearing, and \S V-D explains why: every task sterile
+enough to pre-register was one an unprimed agent could already solve, so
+the study has no specimen in which capability was the binding constraint. Context buys \emph{efficiency and
 recognition} --- 2.6$\times$ wall-clock and 36\% fewer steps on the
-pre-registered task --- and on some tasks \emph{costs} a measurable
-thoroughness regression (pattern-match-and-stop). We establish this by testing
+pre-registered task --- and on some tasks \emph{costs} a
+thoroughness regression (pattern-match-and-stop; one arm RECALLED, \S V-D). We establish this by testing
 the intuition such designs rest on --- that accumulated context makes
 a session more capable on task $N{+}1$ because of tasks $1{\dots}N$ ---
 under six A/B ablations and a pre-registered baseline: every fresh session
@@ -130,7 +134,9 @@ longitudinal confounds, not proof.
 omitted; April, the substrate's build-out month, is shown but excluded from the shape claim as
 bootstrap-heavy. Three buckets cannot
 establish a trend and June~$\approx$~May, so we report the shape, corroborated by a 14-week
-breakdown (replication package). Analyzed in \S V-A.}
+breakdown (replication package, as-of 2026-07-27 --- four days behind this table's
+2026-07-31 stamp, so its July row reads 1{,}219/34/35.9; the difference is four days of July).
+Analyzed in \S V-A.}
 \label{tab:touch}
 \begin{tabular}{lrrr}
 \toprule
@@ -538,7 +544,9 @@ re-derivation cost:
   against causal weight): all three re-derived the identical one-line fix (3--5 tool calls, 46--105
   s). Beyond negative, it showed a vivid \emph{thoroughness regression} --- the
   context-carrying run pattern-matched a pre-staged answer and stopped, missing a
-  second register class (DISMAP) the blind arm caught. Suggestive, but single-instance
+  second register class (DISMAP) the blind arm caught. \textbf{Its warm arm is RECALLED, not
+  MEASURED}: it was not re-instrumented, so the comparison rests on the author's account of the
+  original run. We tag it because a provenance ladder used only where it is free is decoration. Suggestive, but single-instance
   and unpowered; we present it as color on the powered result above, never as its base.
 \item emu-B (idle-vs-load clock constant; N=18, fictional subject to
   kill harness contamination): cost-contingent. When measuring is
@@ -735,8 +743,10 @@ The measured results reduce to four working rules; each carries the bounds of \S
 
 \textbf{1. Fund the carrier, not the session.} Effort that moves knowledge into the committed,
 executable carrier --- code, asserts, invariants, checked-in operating docs --- buys
-capability: a fresh clone holding it reached every fix we tested (\S V-D, \S V-E). Effort that
-preserves session memory buys speed, not correctness. When the two compete for budget, the
+capability: a fresh clone holding it reached every fix we tested (\S V-D, \S V-E) --- though
+note that \emph{every} arm succeeded, so this is measured where capability was never the binding
+constraint. Effort that preserves session memory buys speed, not correctness, \emph{on tasks of
+that kind}. When the two compete for budget, the
 carrier wins.
 
 \textbf{2. Use lived context where efficiency and routing pay --- and audit it.} Persistent
@@ -859,6 +869,15 @@ carrier, use sessions for speed and routing, audit for the regression, copy the 
 primitives.
 
 \section*{Appendix: Evidence vs.\ Illustration}
+\textbf{What the replication package can and cannot resolve.} We state this plainly because the
+paper sets the bar itself (\S V): \emph{a claim a reviewer cannot resolve is, at that moment, not
+yet evidence}. RESOLVABLE: the substrate repository (git history, the \texttt{ablation\_*.md}
+files, the pre-registered specs and their hashes, \texttt{history.jsonl}-derived series). \textbf{NOT
+RESOLVABLE: the commits backing the RQ3 cross-session catch table.} Those defects were fixed in
+separate hardware- and vendor-specific repositories that are not ours to release, so their hashes
+do not resolve against the released package. By our own rule the RQ3 corpus is therefore
+\emph{attested but not reviewer-checkable}, and we mark it so rather than let a pinned-looking
+hash imply otherwise.
 \textbf{Evidence (MEASURED):} the mechanical record (git, bus, \texttt{history.jsonl}, spend
 meter), the six A/B ablations (the \texttt{ablation\_*.md} files, replication package), and the
 pre-registered RQ5 baseline (\texttt{cases\_rq5-baseline.md} plus the frozen spec/test and
@@ -893,23 +912,26 @@ logged as \S V-F specimens.
 % TODO (final re-stamp, Fable round-4): add ~\cite{claudecode} after "(Anthropic)" below -> becomes
 % ref [19]; the staged entry is in references.bib (set its access date).
 %
-% PAGE BUDGET — ✅ RESOLVED 2026-08-08. COMPLIANT. Do not re-trim on sight.
-%   Limit CONFIRMED against the official ICSE 2027 SEIP CFP: "Submissions must not exceed 10 pages
-%   (for full papers) for the main text, inclusive of all figures, tables, and appendices. 2 pages
-%   are allowed for references." Deadline Fri 23 Oct 2026.
-%   MEASURED (pdftotext): body ends on p10 (Acknowledgment last); REFERENCES begin at the TOP of
-%   p11 and run to p11 only. So 10 body + 1 refs, against a 10+2 allowance — one page of headroom.
+% PAGE BUDGET — ⚠️ REOPENED 2026-08-08 BY THE HONESTY EDITS. ~25 body lines over. DO NOT trim
+% these back out; resolve it when the framing is settled (see below).
+%   Limit (CONFIRMED, ICSE 2027 SEIP CFP): 10 pages main text + 2 for references. Deadline
+%   Fri 23 Oct 2026. It WAS compliant at 10+1 before this round.
 %
-%   HOW IT WAS CLOSED, and this matters if anything is ever added back: the §I overrun was paid for
-%   ENTIRELY OUT OF REDUNDANCY, not content. Three cuts, no claim removed:
-%     * §I-A stopped re-narrating the touch-decline figures that sit in the ADJACENT table (they
-%       had appeared three times in ~15 lines: prose, caption, and the table itself);
-%     * the Table 1 caption stopped restating the same shape a third time;
-%     * contribution 1 stopped stating the "no head-to-head against up-front design" caveat that
-%       §I-A states in full two paragraphs later, and now just cross-references it.
-%   Every claim, hedge and falsifier survives — verified by grep after the trim.
-%   The §I Summary-of-findings paragraph itself was NEVER cut: it is the v2 reframe's
-%   extractable-in-under-a-minute headline, and it was not the source of the overrun.
+%   WHY IT REOPENED, and why that is correct: an adversarial PC-style review returned REJECT with
+%   one core objection — the study cannot detect the effect it reports the absence of (the
+%   load-bearing ablation manipulates a prompt paragraph, not session context; and no arm of any
+%   task ever failed, so the dependent variable has zero variance). The fixes that do not require
+%   re-running anything are CAVEATS, and caveats cost lines. Applied this round: scope qualifier on
+%   the central finding, the touch metric restated as the arithmetic it is, RECALLED finally
+%   APPLIED (it had appeared only in its own definition and a promise to use it, while MEASURED
+%   appeared 12x), §VI Rule 1 scoped, Table 1's stamp mismatch with its own artifact stated, and a
+%   replication-package scope statement admitting the RQ3 commit hashes do not resolve.
+%
+%   DO NOT PAY FOR THIS OUT OF THE CAVEATS. They are the point. Pay for it after the framing
+%   decision, because the leading candidate reframe — promoting §V-D's reproducibility/open-search
+%   tension from a subordinate clause to the thesis — rewrites enough of §I and §V-D that trimming
+%   now would be wasted work. If the framing stays as-is, the §I Summary-of-findings trim is still
+%   unspent and is the designated fallback.
 This paper reports on, and was substantially produced by, a fleet of \emph{Claude Code}
 (Anthropic) sessions --- the same system the paper studies --- under the human author's direction.
 We disclose the division of labour precisely, because for this subject it is itself a finding. The
