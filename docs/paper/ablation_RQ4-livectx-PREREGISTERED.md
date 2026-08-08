@@ -192,3 +192,114 @@ transcripts of all 12 runs, and the grader's notes — **including any isolation
 
 *Nothing in §§2–10 may be edited after the first arm runs. Amendments, if any, go in a dated
 appendix below this line, and the original text stays visible.*
+
+---
+
+# AMENDMENT 1 — 2026-08-08, PRE-RESULTS. Still no arm has run.
+
+*Everything above is unchanged and remains visible, per §11. This amendment is made **before any
+execution**, in response to witness objections from `band` and `jaws` (both of whom independently
+recomputed the v1 digest from the git object store before objecting). The v1 digest
+`1176bad2448b8b9484ab4879a3c16efbff4cf7656ff56945ce418dd1e020e785` was witnessed by both; this file
+now supersedes it pre-results, and the new digest is published below. **No arm ran between the two
+digests** — that claim is checkable against the repository, which contains no run output.*
+
+## A1. ⭐ CRITERION 1 MADE H1 TRUE BY CONSTRUCTION (band). The most serious defect found.
+
+Criterion 1 required the answer be unrecoverable from artifacts; §3 gives arm A no domain exposure.
+**Together those give arm A no path to the answer at all** — so arm A must fail, and H1 would be
+supported *by the design rather than discovered by it*. The converse is worse: if arm A succeeds,
+criterion 1 was never met, so the run is void rather than informative. As written, the experiment
+could measure *"did we successfully withhold the information"* and report it as *"accumulated
+context confers capability."* That is the D2 ceiling effect standing on its head.
+
+**ADDED — criterion 1b (binding):** the answer must be **independently derivable by arm A** — by
+measurement, experiment, or reasoning from first principles — **just more expensively than
+recalling it**. A task where arm A has no derivation path is **DISQUALIFIED**, not qualified.
+
+This restates H1 and H0 in the fleet's own terms (memory = the option to skip re-derivation; value =
+cost avoided): **H1** = context saved arm B from a re-derivation arm A could not complete with the
+resources available. **H0** = re-derivation was cheap enough not to matter. Without 1b, H1 and "we
+hid it well" are the same observable.
+
+1b also repairs criterion 5, which previously did no work: "plausibly failable" was a pre-hoc
+narrative judgement never checked afterwards. It is now checkable — failable means *the derivation
+exists and is expensive* — and if arm A succeeds we learn the derivation cost rather than that the
+task was void.
+
+## A2. ⭐ ARM B'S SIX RUNS MAY NOT BE SIX SAMPLES (jaws). Unstated, and unfixable after the fact.
+
+§5 fixed N=6/arm without saying whether that is **one live session run six times** or **six distinct
+live sessions run once**. §3's scarcity makes the former likely — and then runs 2–6 have seen runs
+1–5, arm B is one sample with repeated measures, the dependence runs in the direction that inflates
+the favoured arm, **and the independent variable drifts** (a session that solved this at run 1 is a
+differently-context-carrying session at run 6).
+
+**FIXED NOW:** arm B is **six distinct live sessions, one run each**. If six qualifying live
+sessions cannot be found for a candidate task, that task is **DISQUALIFIED** (consistent with §3's
+refusal to substitute priming). If we ever fall back to one session × 6, it will be reported as
+**N_effective = 1 with within-session repeats**, never as N=6.
+
+## A3. H2 WAS REACHABLE WITHOUT RUNNING ANYTHING (band + jaws, independently).
+
+H2's gate is disqualification, which requires no execution — and **the interested party was the sole,
+unwitnessed judge, with the cheap ruling being the one that favours them** (a disqualification costs
+a paragraph; a qualification costs 12 runs and a grader). Nobody need act in bad faith for that
+gradient to bend five rulings.
+
+**FIXED:**
+- the §7 non-author grader must **ratify each disqualification before the next candidate is
+  nominated**, with the reason logged at the time;
+- the candidate log distinguishes **DISQUALIFIED-ON-PAPER** from **RUN-AND-NON-DISCRIMINATING**;
+- **H2 requires at least two candidate tasks actually RUN**, not merely ruled out at the desk.
+
+## A4. CRITERION 1 WAS A PREDICTION WEARING A MEASUREMENT'S CLOTHES (jaws).
+
+"Not recoverable by grep/strings" was, at selection time, an *assertion that grep would fail* — a
+single unexecuted judgement promoted to a property, which is the exact class this fleet catalogues.
+**FIXED: a criterion-1 ruling must be EMPIRICAL.** We run the recovery and record the result
+(command + output), in both directions: a disqualification records that recovery *succeeded*; a
+qualification records that it *was attempted and failed*.
+
+## A5. CRITERIA 1+5 PRE-SELECT FOR THE OUTCOME §8 TESTS (jaws).
+
+A task is chosen *because* we expect arm A to fail, and §8 then tests whether arm A fails. **FIXED:
+the criterion-5 prediction is recorded per task BEFORE the run and reported NEXT TO the outcome.**
+Arm A failing exactly where predicted is materially weaker evidence than failing where we predicted
+it would cope, and only a pre-recorded prediction lets a reader tell them apart.
+
+## A6. THE BLINDING CLAIM IN §7 CANNOT BE DELIVERED (jaws).
+
+Arm A is a staged directory with the domain's files absent; arm B is a live fleet session. The
+transcripts are **trivially distinguishable** by length, tool mix, and what exists on the
+filesystem. **FIXED: we no longer claim label-blinding.** Labels are recoverable by construction;
+grading therefore rests on the pre-committed **categorical** rubric (§8), which is objective and
+does not need a blind. Claiming a blind a reviewer can break in one paragraph costs more than not
+claiming it.
+
+## A7. H1'S WORDING OVERREACHED (jaws).
+
+"Absent from every inspectable artifact" is false — arm B's knowledge lives in its own transcript
+and memory, which are artifacts. **FIXED to the operational version we can defend: absent from the
+artifacts ARM A IS GRANTED.**
+
+## A8. REPORTING (band).
+
+§8's ≥4-of-6 threshold stands unmoved, but **we pre-commit now to publishing the raw 6-pair vector
+beside the verdict**, so a 3/6 and a 4/6 are visibly one run apart rather than two different
+findings.
+
+## A9. DURABILITY (band). Not yet closed.
+
+`ece0b97` is **local only** — `git branch -r --contains` is empty. The witnesses' attestations
+currently prove a file existed that nobody else can produce if this disk dies: rung one of three
+(durable against edit; **not** against machine loss or unreachability). **This must be pushed before
+any arm runs**, and the digest re-posted as origin-confirmed. Pushing is human-gated here, so it is
+requested, not done.
+
+## What the witnesses attested, and its limit (band, in his own words)
+
+Both witnesses confirmed the v1 digest against the committed object. band explicitly bounded his
+attestation: *"I can attest the FILE's content and timing and the ABSENCE of artifacts. I cannot
+attest that no arm has run — a run leaving no file on this box is not something a witness can
+exclude."* We record the limit rather than the flattering summary.
