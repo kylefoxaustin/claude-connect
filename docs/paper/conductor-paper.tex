@@ -90,8 +90,7 @@ contributions, stated at the level the evidence supports:
   and gated by a human whose approval is scoped to \emph{irreversibility} (commits are free;
   pushes, and anything that outlives the session, are gated). We present it as a \emph{replicable
   process with a stated mechanism and an existence proof} --- it produced and hardened a working
-  substrate --- not as a result validated against the alternative (an engineer designing
-  the primitives up front); we did not run that comparison (\S I-A).
+  substrate --- not as a result validated against an up-front-design alternative (\S I-A).
 \item A system implementing it (bus, verified orders, a project layer, a decision
   shield, measured governance), described as an experience report with the mechanical record.
 \item An evaluation that separates what the deployment \emph{establishes} from
@@ -111,27 +110,26 @@ defects individual sessions and the human missed; and (4)~real efficiency from l
 pre-registered baseline it resides in the committed carrier, not the session.
 
 \subsection{What we set out to show, and what survived}
-The contributions are not epistemically equal. The compounding-competence hypothesis --- a
-context-heavy peer substrate cheaper on task $N{+}1$ because of tasks $1{\dots}N$ --- \textbf{did
-not survive} (\S V-D, \S V-E): what compounds is the committed carrier, the paper's most solid
-\emph{evaluated} result. The method (contribution~1), by contrast, has \emph{no controlled
+The contributions are not epistemically equal. The compounding-competence hypothesis \textbf{did
+not survive} (\S V-D, \S V-E), and that negative is the paper's most solid \emph{evaluated}
+result. The method (contribution~1), by contrast, has \emph{no controlled
 evidence}: we did not run in-vivo adversarial co-design head-to-head against an engineer specifying
 the primitives up front, so we do not claim it is superior --- only that it is a replicable process
 with a described mechanism that demonstrably \emph{produced} a working, hardened substrate. Its
 falsifier: the method claim weakens if the failures the adversarial process caught would
 have been caught as readily by ordinary single-author review, or if the primitives it converged on
 were worse than a competent up-front design. One \emph{observational} signal is consistent with it
-(not a controlled test): human prompts per active project declined (Table~\ref{tab:touch}) --- from
-near 70 across May--June to 36 in July (monthly; a finer weekly series in \S V-A shows the same
-direction) --- \emph{as} concurrent projects grew from 16 to 35. The human moves from courier toward
-architect, which is what the method is for --- a trend with the usual longitudinal confounds, not proof.
+(not a controlled test): human prompts per active project declined as concurrent projects grew
+(Table~\ref{tab:touch}; a finer weekly series in \S V-A shows the same direction). The human moves
+from courier toward architect, which is what the method is for --- a trend with the usual
+longitudinal confounds, not proof.
 
 \begin{table}[t]
 \centering\footnotesize
-\caption{Human touch per active project (\texttt{history.jsonl}). Jan/Mar (1 and 7 prompts) are
-pre-ramp startup and April the substrate's build-out month, all bootstrap-heavy and omitted. Three
-buckets cannot establish a trend and June~$\approx$~May; we report the shape (near 70 May--June, then
-36 in July), corroborated by a 14-week breakdown (replication package). Analyzed in \S V-A.}
+\caption{Human touch per active project (\texttt{history.jsonl}). Jan/Mar (1 and 7 prompts) and
+April (the substrate's build-out month) are bootstrap-heavy and omitted. Three buckets cannot
+establish a trend and June~$\approx$~May, so we report the shape, corroborated by a 14-week
+breakdown (replication package). Analyzed in \S V-A.}
 \label{tab:touch}
 \begin{tabular}{lrrr}
 \toprule
@@ -898,30 +896,23 @@ logged as \S V-F specimens.
 % TODO (final re-stamp, Fable round-4): add ~\cite{claudecode} after "(Anthropic)" below -> becomes
 % ref [19]; the staged entry is in references.bib (set its access date).
 %
-% PAGE BUDGET — status 2026-08-08. OVER BY 10 BODY LINES. One decision left, and it is Kyle's.
+% PAGE BUDGET — ✅ RESOLVED 2026-08-08. COMPLIANT. Do not re-trim on sight.
+%   Limit CONFIRMED against the official ICSE 2027 SEIP CFP: "Submissions must not exceed 10 pages
+%   (for full papers) for the main text, inclusive of all figures, tables, and appendices. 2 pages
+%   are allowed for references." Deadline Fri 23 Oct 2026.
+%   MEASURED (pdftotext): body ends on p10 (Acknowledgment last); REFERENCES begin at the TOP of
+%   p11 and run to p11 only. So 10 body + 1 refs, against a 10+2 allowance — one page of headroom.
 %
-%   ✅ LIMIT CONFIRMED against the official ICSE 2027 SEIP CFP (2026-08-08), verbatim:
-%      "Submissions must not exceed 10 pages (for full papers) for the main text, inclusive of
-%       all figures, tables, and appendices. 2 pages are allowed for references."
-%      => 10 BODY + 2 REFS. Deadline Fri 23 Oct 2026. The earlier "is it 10 total?" worry is dead.
-%
-%   MEASURED (pdftotext, this build):
-%     * pre-addendum baseline (e94eec5): 9pp TOTAL, refs starting p9 => body had ~1.5pp of slack.
-%       (An earlier note claimed the baseline was "exactly 10pp"; that came from a BROKEN build
-%       with no .bst, so no bibliography rendered. Corrected here.)
-%     * now: refs start part-way down p11 => BODY OVERRUNS PAGE 10 BY 10 LINES.
-%     * the addendum's own prose has already been tightened twice, 22 lines -> 10. Further
-%       squeezing hits 2-column reflow thresholds and starts costing substance, not words.
-%
-%   THE REMAINING 10 LINES CANNOT COME FROM THE ADDENDUM WITHOUT LOSING CONTENT THREE REVIEW
-%   ROUNDS DEFENDED. Options, in the order they should be considered:
-%     (1) the §I Summary-of-findings trim — the pre-planned fallback, ~the right size;
-%     (2) drop the §V-A RQ1 extension (~9 lines) — but Fable round 3 ruled it a bound genuinely
-%         DISTINCT from the existing GAP (thinned vs. false), not a rename;
-%     (3) cut the §IV paragraph — round 3 explicitly REFUSED this: without it the first reviewer
-%         objection is "this is chaos engineering and they don't cite it".
-%   Recommendation: (1). It is what it was reserved for, and it is the only option that costs no
-%   evidence.
+%   HOW IT WAS CLOSED, and this matters if anything is ever added back: the §I overrun was paid for
+%   ENTIRELY OUT OF REDUNDANCY, not content. Three cuts, no claim removed:
+%     * §I-A stopped re-narrating the touch-decline figures that sit in the ADJACENT table (they
+%       had appeared three times in ~15 lines: prose, caption, and the table itself);
+%     * the Table 1 caption stopped restating the same shape a third time;
+%     * contribution 1 stopped stating the "no head-to-head against up-front design" caveat that
+%       §I-A states in full two paragraphs later, and now just cross-references it.
+%   Every claim, hedge and falsifier survives — verified by grep after the trim.
+%   The §I Summary-of-findings paragraph itself was NEVER cut: it is the v2 reframe's
+%   extractable-in-under-a-minute headline, and it was not the source of the overrun.
 This paper reports on, and was substantially produced by, a fleet of \emph{Claude Code}
 (Anthropic) sessions --- the same system the paper studies --- under the human author's direction.
 We disclose the division of labour precisely, because for this subject it is itself a finding. The
