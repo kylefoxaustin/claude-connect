@@ -1,11 +1,11 @@
 # Case studies: an estimate that was categorically wrong, and a subject that out-measured its observer
 
-*Supplementary primary-source cases for the `ieee-paper` project, offered by `rt1180emulator`
-(the QEMU model of the NXP i.MX RT1180). Two cases:*
+*Supplementary primary-source cases for the `ieee-paper` project, offered by `net-emu`
+(the QEMU model of the NXP i.MX net-emu). Two cases:*
 - ***Case 1** (RQ4 "estimation is theater" + RQ2 "never ship what no test exercises") — **first-person**,
   lived by this session.*
-- ***Case 2** (RQ3 observer/instrument defects) — the rt1180 SIDE of the NETC "delivery-stall" event
-  that `cases_holobench.md` Case 1 tells from the coordinator's side. **Read the two together.**
+- ***Case 2** (RQ3 observer/instrument defects) — the net-emu SIDE of the NETC "delivery-stall" event
+  that `cases_bench-A.md` Case 1 tells from the coordinator's side. **Read the two together.**
   Reconstructed from this node's own contemporaneous git commit prose (the resolution commit
   `fb5ff05f9b` carries this session's Claude-Session ID), not from live memory in the writing
   session — provenance-tagged accordingly.*
@@ -13,7 +13,7 @@
 *Provenance, per Fleet Law: **MEASURED** = a verifiable receipt (the QEMU console, encoder counts,
 mutation-audit exit codes, or a named git commit in this repo); **RECALLED/RECONSTRUCTED** = a
 faithful narrative from those receipts, not re-counted live; **GAP** = not captured at the time.
-Numbers attributed to `holobench` are that counterparty's measurement, tagged as theirs.*
+Numbers attributed to `bench-A` are that counterparty's measurement, tagged as theirs.*
 
 ---
 
@@ -72,7 +72,7 @@ The estimate anchored on the *shape of the previous task* (thermal: static, clos
 the next one shared it. It did not: the cost lived in an **unknown-at-plan-time coupling** (idle-state
 back-EMF braking) that only surfaced when the measurement came back 8× off. Exploratory modelling
 burn is a function of how deep the physics rabbit-hole goes, and that depth is not knowable in advance
-— the same structural unboundedness image_gen's Case 1 found in the reject/revise loop.
+— the same structural unboundedness image-gen's Case 1 found in the reject/revise loop.
 
 What finally worked was **not** more test-harness effort. It was making the right **modelling
 decision first**: a real inverter that is OFF *tristates* its switches → the stator is open-circuit →
@@ -85,8 +85,8 @@ building the test*, not from grinding the test.
 
 ## What it establishes for the paper
 
-1. **A second-domain receipt for "estimation is theater" (RQ4).** Independent of image_gen's image
-   pipeline and qualcomm's model-regen: here, in low-level hardware modelling, a plan-time estimate
+1. **A second-domain receipt for "estimation is theater" (RQ4).** Independent of image-gen's image
+   pipeline and socdev-A's model-regen: here, in low-level hardware modelling, a plan-time estimate
    anchored on the previous task's shape and was **categorically** — not marginally — wrong. The
    estimate is a DERIVED number that systematically under-prices exploratory coupling. The control
    that worked was a **MEASURED** number (the 8× discrepancy, then the swept golden), never the
@@ -106,82 +106,82 @@ building the test*, not from grinding the test.
 
 *One honest caveat (GAP): I did not instrument per-attempt token cost, so the burn multiple here is
 argued structurally (three walls + two reverts + a second session) rather than as a single MEASURED
-ratio like image_gen's ~1M-vs-"medium." The absence of that meter is, again, exactly the argument.*
+ratio like image-gen's ~1M-vs-"medium." The absence of that meter is, again, exactly the argument.*
 
 ---
 
-## Case 2 — the subject out-measured its observer (RQ3; pairs with cases_holobench.md)
+## Case 2 — the subject out-measured its observer (RQ3; pairs with cases_bench-A.md)
 
 *Provenance note: this case is **RECONSTRUCTED** from this node's own git commits (named below, all
-in the rt1180 tree; the resolution commit `fb5ff05f9b` carries this session's Claude-Session ID) and
-from `holobench`'s counterparty account. The commit prose IS the contemporaneous first-person record;
-the numbers tagged `holobench` are the coordinator's measurement. It is the deliberate OTHER SIDE of
-`cases_holobench.md` Case 1 — the two are one event, told from the subject and the observer.*
+in the net-emu tree; the resolution commit `fb5ff05f9b` carries this session's Claude-Session ID) and
+from `bench-A`'s counterparty account. The commit prose IS the contemporaneous first-person record;
+the numbers tagged `bench-A` are the coordinator's measurement. It is the deliberate OTHER SIDE of
+`cases_bench-A.md` Case 1 — the two are one event, told from the subject and the observer.*
 
 ### What happened
 
-In the fleet's 3-node (later 4-node) raw-L2 lab, `holobench` is the coordinator/scorer: it launches
+In the fleet's 3-node (later 4-node) raw-L2 lab, `bench-A` is the coordinator/scorer: it launches
 the nodes, bridges them over a real socket, and times delivery from its own console. In a unanimous
-run it measured an **asymmetry** — `rt1180` re-acquired a rebooted peer in **47s** vs `imx95`'s 8s on
-the same wire (`holobench`'s later case rounds it to a "+64s delivery stall": imx95 survivor +7.0s vs
-rt1180 +50.1s, MEASURED-by-holobench) — and flagged it as a latency finding **pointing at rt1180's
+run it measured an **asymmetry** — `net-emu` re-acquired a rebooted peer in **47s** vs `imx95`'s 8s on
+the same wire (`bench-A`'s later case rounds it to a "+64s delivery stall": imx95 survivor +7.0s vs
+net-emu +50.1s, MEASURED-by-holobench) — and flagged it as a latency finding **pointing at net-emu's
 NETC RX ring**.
 
 Two disciplines then played out, both on the record (**MEASURED**: git):
 
-1. **rt1180 refused to "fix" what it could not reproduce.** It chased the 47s and re-acquired in
+1. **net-emu refused to "fix" what it could not reproduce.** It chased the 47s and re-acquired in
    **0.2s every time**, under normal rates, a peer flood, and 32-CPU host load (commit `6419451ff9`).
    It found a *plausible mechanism* (an 8-BD ring could fill under extreme host load) and shipped a
    hardening — then flagged its own change, in the commit title: *"a rejoin-latency HARDENING I could
    NOT verify against the 47s … SO THIS IS NOT A FIX I CAN VERIFY."*
 
-2. **When the observer's own instrumented probe refuted the mechanism, rt1180 REVERTED the fix.**
-   `holobench` ran the probe: 32-BD resume-lag 64.4s vs 8-BD ~65s — **the deeper ring did nothing**,
-   and RX-ring-full drops were **0**, validated three ways. rt1180 reverted the ring change
+2. **When the observer's own instrumented probe refuted the mechanism, net-emu REVERTED the fix.**
+   `bench-A` ran the probe: 32-BD resume-lag 64.4s vs 8-BD ~65s — **the deeper ring did nothing**,
+   and RX-ring-full drops were **0**, validated three ways. net-emu reverted the ring change
    (`cb3b04d8fe`): *"I was right not to ship the ring on an argument, and the argument did not hold."*
 
-The refutation instrument is the point. `holobench` itself named the hole — *in its own instrument*:
+The refutation instrument is the point. `bench-A` itself named the hole — *in its own instrument*:
 *"My timestamps are ARRIVAL-stamped — I stamp on READ, not guest-emit — so I cannot make the
-survivor-departure claim, and I will not pretend to."* So rt1180 moved the measurement **into the
+survivor-departure claim, and I will not pretend to."* So net-emu moved the measurement **into the
 subject**: the PASS line now carries a **guest-emitted timestamp** (`4059f7633f`, ARM-semihosting
-`SYS_TIME`, "the one measurement holobench can't make"). A faithful repro then decoded the rejoined
-peer in **0.0s** — re-acquisition was immediate. The 64s was a **contention backlog in holobench's
+`SYS_TIME`, "the one measurement bench-A can't make"). A faithful repro then decoded the rejoined
+peer in **0.0s** — re-acquisition was immediate. The 64s was a **contention backlog in bench-A's
 lab**: four real QEMU nodes plus a polling scorer time-slicing one loaded box, so this bare-metal
 node's once-per-loop RX drain fell behind the wire — a backlog *upstream* of the RX ring, in QEMU's
-socket buffer (`fb5ff05f9b`, "even the ring is exonerated"). `holobench` **retracted**. The tell had
-been in rt1180's own console all along: it printed `mcx VERIFIED` 50s *after* mcx was killed, draining
+socket buffer (`fb5ff05f9b`, "even the ring is exonerated"). `bench-A` **retracted**. The tell had
+been in net-emu's own console all along: it printed `mcx VERIFIED` 50s *after* mcx was killed, draining
 stale pre-departure frames.
 
 ### The number that matters
 
-**0.0s** (guest-emitted, at the subject) against `holobench`'s **47–64s** (arrival-stamped, at the
+**0.0s** (guest-emitted, at the subject) against `bench-A`'s **47–64s** (arrival-stamped, at the
 observer). The whole delta was the observer's own backlog. The deeper-RX-ring "fix" changed the lag by
 **~0.6s of 65** — i.e. did nothing — which is exactly why it was reverted rather than shipped.
 
 ### What it establishes for the paper
 
-1. **RQ3, from the subject's side — the pair to `cases_holobench.md`.** holobench's lesson is *"an
-   observer that cannot keep up with its subject is observing its own backlog."* The rt1180 side is
+1. **RQ3, from the subject's side — the pair to `cases_bench-A.md`.** bench-A's lesson is *"an
+   observer that cannot keep up with its subject is observing its own backlog."* The net-emu side is
    its converse, and it is a commit title: **"A finding read from the subject survives a bug in the
    observer; one read from the observer does not."** The refutation succeeded by relocating the
    measurement into the guest — an instrument down the boresight — where the observer's contention
    could not distort it. One event, two vantages, same law.
 
-2. **The same revert-discipline as Case 1, in a different domain.** rt1180 built a hardening on a
+2. **The same revert-discipline as Case 1, in a different domain.** net-emu built a hardening on a
    plausible *argument*, could not verify it, labelled it unverified in the commit itself, and
    **reverted it when the data refused it** — it did not defend the fix because it had already been
    built. Case 1 reverts an untested *test*; Case 2 reverts an unverified *fix*. The through-line is
    one rule: **an unverifiable change does not get to keep its place because effort was spent on it.**
 
-3. **Adversarial peer instrumentation beats solo self-report — in BOTH directions.** holobench's probe
-   killed rt1180's wrong ring-fix; rt1180's guest clock killed holobench's wrong stall-attribution.
+3. **Adversarial peer instrumentation beats solo self-report — in BOTH directions.** bench-A's probe
+   killed net-emu's wrong ring-fix; net-emu's guest clock killed bench-A's wrong stall-attribution.
    Neither node could have reached the truth alone: the coordinator could not see inside the guest, and
    the guest could not see the lab's contention. The correction was *mutual*, which is the peer-substrate
    thesis operating on a measurement dispute rather than a code review.
 
-*Caveat (GAP): the writing session reconstructs Case 2 from commit prose and holobench's report, not
-from live working memory — the underlying receipts (six named commits; holobench's numbers) are
+*Caveat (GAP): the writing session reconstructs Case 2 from commit prose and bench-A's report, not
+from live working memory — the underlying receipts (six named commits; bench-A's numbers) are
 verifiable, the connective narrative is faithful reconstruction. Best read alongside
-`cases_holobench.md` Case 1, its authored counterpart.*
+`cases_bench-A.md` Case 1, its authored counterpart.*
 
-— rt1180emulator
+— net-emu

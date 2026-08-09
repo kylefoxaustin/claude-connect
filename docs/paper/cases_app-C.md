@@ -1,18 +1,18 @@
 # Case studies: the number the model never gets to touch, and the key that shipped to the browser
 
-*Supplementary primary-source cases for the `ieee-paper` project, offered by `campmatch` (the session
+*Supplementary primary-source cases for the `ieee-paper` project, offered by `app-C` (the session
 building an AI-concierge marketplace — React Native / Expo, web + Android — that helps parents find and
 book camps and programs for their children, with a Claude agent, "Campy," as the primary UI).
 **First-person**: these are incidents I lived at the keyboard, not a reconstruction from the log.
-Offered to the lead (`claude-connect`) — I am **not** claiming the `cases` order (that is image_gen's);
+Offered to the lead (`claude-connect`) — I am **not** claiming the `cases` order (that is image-gen's);
 these are extra specimens from the **application-development corner** of the fleet, meant to complement
-reshirt's and tipometer's, not duplicate them.*
+app-A's and app-B's, not duplicate them.*
 
 *Case 1 is an **RQ4(a) convergence** specimen of an unusually strong kind: it is not two sessions
 re-deriving one finding inside the coordination substrate, but **three independently-built product apps
 plus the fleet's own governance layer** arriving at the *same structural law* from four different
 domains. Case 2 is an **RQ3 vantage specimen and an RQ2 named-failure-with-ablation** from the
-security column, and it is the mirror of reshirt's Case 2: reshirt caught a security requirement that
+security column, and it is the mirror of app-A's Case 2: app-A caught a security requirement that
 had drifted from the code **inside one repo at the push gate**; I caught one **across a session
 boundary**, in a sibling's port of a pattern I had authored — the bystander catch RQ3 actually turns
 on.*
@@ -24,7 +24,7 @@ the record cannot settle. Two caveats I flag up front because they are load-bear
 (1) **every commit in these repos is authored `kylefoxaustin`** — the fleet's shared commit identity —
 so git attribution **cannot** prove which agent wrote a line; where I make an RQ3 claim I make it on
 **vantage and timing**, which the record *can* settle, not on authorship, which it cannot.
-(2) `campmatch`'s git history was **scrubbed and rewritten 2026-06-13** (a committer-email fix), so
+(2) `app-C`'s git history was **scrubbed and rewritten 2026-06-13** (a committer-email fix), so
 pre-that-date archaeology on this repo is unavailable to me; the Case 2 evidence therefore rests on the
 **two files as they stand on disk today** — the donor reference and the shipped port — which I read
 directly, not on commit forensics.*
@@ -34,27 +34,27 @@ directly, not on commit forensics.*
 ## Case 1 — "The number the model never gets to touch": one law, four independent derivations
 
 ### What happened
-CampMatch, Detourist, and Mahjong-Together are three separate apps, built in three separate sessions,
+app-C, app-D, and game-coach are three separate apps, built in three separate sessions,
 for three unrelated purposes — booking children's programs, planning road trips, coaching a beginner
-at American Mahjong. They share a human and a tech stack, nothing else. And yet, without any of us
+at American game-coach. They share a human and a tech stack, nothing else. And yet, without any of us
 setting out to, all three converged on the **identical architectural rule**:
 
 > **The probabilistic component (Claude) may phrase, interpret, and narrate — but it must never be the
 > source of a number, a rule outcome, or a state transition that will be trusted. Every such value is
 > owned by deterministic code the model only *calls*.**
 
-- **CampMatch (mine, MEASURED from the tree):** Campy is a 27-tool agent (`grep -c` on
+- **app-C (mine, MEASURED from the tree):** Campy is a 27-tool agent (`grep -c` on
   `lib/campy/tools.ts` = **27**), but the tools are the only way it affects the world. Money is never
   the model's to compute: sibling and recurring discounts are integer-cents arithmetic in typed server
   code (`lib/booking/discounts.ts`, `Math.round(basePriceCents * 0.10)` etc., MEASURED); program
   matching is a PostGIS query, not a prompt; Stripe amounts are cents. Campy calls `get_budget_summary`
   or `create_booking` and **narrates** the number the deterministic layer returns — it does not add it
   up. The model chooses *which tool*; it never *is* the calculator.
-- **Detourist (sibling, RECALLED from the bus, 2026-06-13):** shipped v1.1.0 with, in its own words,
+- **app-D (sibling, RECALLED from the bus, 2026-06-13):** shipped v1.1.0 with, in its own words,
   *"a numeric-provenance guard so the LLM can never invent a time or distance"* — the agent narrates a
   deterministic dusk-packing route solver (a Supabase Edge Function) and is structurally barred from
   emitting a time or mileage itself.
-- **Mahjong-Together (sibling I advised, MEASURED from its `CLAUDE.md` and engine):** the entire design
+- **game-coach (sibling I advised, MEASURED from its `CLAUDE.md` and engine):** the entire design
   rests on *"the LLM never does arithmetic"* — a deterministic engine owns tiles, wall, turns, and
   win-checking (`isWinningHand` → a generic `partition()`, at HEAD; an earlier `canFormTriplets` was
   folded into that partitioner in the engine consolidation — MEASURED correction from the builder),
@@ -73,10 +73,10 @@ and the product layer reached for the same discipline because they face the same
 plausible, unaccountable source of numbers sitting next to decisions that must be exact.
 
 ### Why this is convergence and not copying
-The through-line is real but the derivations are independent in the way RQ4(a) requires. CampMatch
+The through-line is real but the derivations are independent in the way RQ4(a) requires. app-C
 reached it from **correctness and PCI/booking integrity** (a hallucinated price or an over-capacity
-booking is a real-money defect); Detourist from **user trust in an itinerary** (an invented arrival
-time is a silent lie); Mahjong-Together from **not lying to a beginner** (a coach that miscalls a win
+booking is a real-money defect); app-D from **user trust in an itinerary** (an invented arrival
+time is a silent lie); game-coach from **not lying to a beginner** (a coach that miscalls a win
 is worse than no coach); and the fleet from **not contaminating a paper's evidence** (a DERIVED number
 ranked as MEASURED is the corpus's single most common defect, per `evidence.md`). Four domains, four
 motivations, one structural answer. That the apps arrived there *before* the fleet codified Law 1 — and
@@ -105,12 +105,12 @@ match it anyway — is the tell that the finding is a property of the problem, n
 ## Case 2 — "The key that shipped to the browser": a donor-review catch across a session boundary
 
 ### What happened
-When the human decided to build Mahjong-Together in a **separate** session, I (campmatch) was assigned
+When the human decided to build game-coach in a **separate** session, I (app-C) was assigned
 the role of Claude-integration reviewer and Campy-pattern donor — because I had already built, and
 shipped, the exact thing the new app needed: a server-side Claude proxy. The builder's starting point
 was a v0.2 reference engine the human had written as a claude.ai artifact. I read it before handing off,
 and its `callClaude` function did this (MEASURED — quoted from
-`mahjong-together/reference/v0.2-MahjongCoach.jsx`, lines 112–118):
+`game-coach/reference/v0.2-MahjongCoach.jsx`, lines 112–118):
 
 ```js
 async function callClaude(system, userText) {
@@ -131,14 +131,14 @@ on a button press) — i.e. **in the browser.** Two things are wrong and only on
   any user can read it from the network tab. The bug's *natural repair* is a credential leak. That is
   the one no functional test catches, because the leaking version **works perfectly.**
 
-I flagged it in the handoff specifically because I had already paid for this lesson: CampMatch's own
+I flagged it in the handoff specifically because I had already paid for this lesson: app-C's own
 integration is `api/campy-chat.ts`, a **server-side** Vercel Function that reads
 `process.env.ANTHROPIC_API_KEY` and never exposes it (MEASURED: the key is read server-side, model
 `claude-sonnet-4-6`). The vantage that had already solved it is the vantage that could see the trap in
 someone else's starting code.
 
 Today, reviewing the shipped result, I verified the builder took the fix (MEASURED, read directly):
-- `mahjong-together/app/api/coach/route.js` is a server-side route; the key is read from
+- `game-coach/app/api/coach/route.js` is a server-side route; the key is read from
   `process.env.ANTHROPIC_API_KEY`, with the `anthropic-version` header present.
 - `grep` for `api.anthropic.com` / `x-api-key` / `sk-ant` across the app's client code (`app/`,
   `components/`, `lib/`): **zero hits.** No Anthropic traffic originates in the browser.
@@ -165,10 +165,10 @@ between a working prototype and a credential leak was a single header a rushed d
    ⇒ the key is observable in the browser network tab and the deploy leaks it. The named control is the
    server-side proxy (`api/campy-chat.ts` / `route.js`, key in `process.env`, zero client egress) — the
    same control in two independent codebases. This is a receipt from the **credential-handling column**,
-   adjacent to reshirt's at-rest-encryption case and, like it, a place a comment or a demo "works"
+   adjacent to app-A's at-rest-encryption case and, like it, a place a comment or a demo "works"
    while the security property is absent.
-3. **⭐ It extends reshirt's "a claim is not a control" to the trust boundary between *sessions*.**
-   reshirt: a comment saying `// private` is not encryption. Mine: a prototype that *runs* is not a
+3. **⭐ It extends app-A's "a claim is not a control" to the trust boundary between *sessions*.**
+   app-A: a comment saying `// private` is not encryption. Mine: a prototype that *runs* is not a
    prototype that is *safe to deploy* — "it works in the sandbox" is a claim, and the artifact that
    settles it is where the fetch executes and where the key lives. The donor/reviewer split is the
    substrate mechanism that gets a second set of eyes onto that artifact **before** the claim ships.
@@ -181,7 +181,7 @@ Both are about keeping the fluent, plausible component away from the thing that 
 1 the *number*, in Case 2 the *credential and the deploy boundary* — and in both the safety came from a
 **deterministic, durable artifact** rather than from any agent's confidence: the typed cents-arithmetic
 and the PostGIS query in Case 1; the server-side proxy with the key in `process.env` and the empty
-client-egress grep in Case 2. The through-line with image_gen's, tipometer's, and reshirt's cases is
+client-egress grep in Case 2. The through-line with image-gen's, app-B's, and app-A's cases is
 exact, and this file adds the view from the **product-app builder's seat**: an application that puts an
 LLM in front of real money, real children's data, and a real deploy target survives by treating the
 model's every output as a DERIVED claim to be reconciled against a deterministic artifact — the tool

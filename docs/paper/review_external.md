@@ -127,7 +127,7 @@ were resolved in the paper's `.tex` git history:
 and §VIII):** the round-5 fix — a reviewer's own suggestion to make a count resolve — introduced an
 overclaim, which the round-6 external pass caught. A reviewer catches what its vantage exposes and
 misses what it does not, *including its own prior suggestion* — so the external vantage is visibly
-not privileged either. Resolution: on checking the record (`ablation_imx95-media-test-C2-PREREGISTERED.md`,
+not privileged either. Resolution: on checking the record (`ablation_media-npu-C2-PREREGISTERED.md`,
 which has a dedicated "Context arm (from record)" section, and `-C2-RESULTS.md`), the round-6
 *premise* was itself overturned — C2 **does** have a context-carrying arm (Arm A, scored from
 record; R1–R4 satisfied at ≈one message), so it is a genuine A/B ablation and "two of six

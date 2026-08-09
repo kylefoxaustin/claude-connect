@@ -99,7 +99,7 @@ mechanistically, not assume.
 *Corpus, MEASURED from git + bus + `history.jsonl`: 259 commits; 47 version landings; 2,575 bus
 messages / 52 sessions (949 directed, 1,105 broadcast, 514 announcement); 6,263 human prompts across
 44 projects back to 2026-01-14. Division of labour is distributed across many peers (top senders
-95emulator 249, qualcomm 228, backend 208, …) — a fact of the bus, not testimony.*
+emu-A 249, socdev-A 228, backend 208, …) — a fact of the bus, not testimony.*
 
 ### A. RQ1 — Courier elimination (PROXY, with an honest counterexample)
 949 directed messages were auto-delivered — hand-offs a human would otherwise relay (a *ceiling on
@@ -121,8 +121,8 @@ Because all commits share one identity, git cannot attribute a *find* — but **
 timestamps are machine-generated.** MEASURED (jaws): a 38-Bash-call build had **17 measurement calls**
 (12 `/proc` probes, 4 runs) — a vantage a browser assistant could not occupy, proven from the event
 log. Bystander catches are on the bus, not in narration: the `backend` tag-flip caught by another
-session; holobench's "+64s stall" that was its own scorer's backlog, refuted by rt1180 with the
-bytes; orb_slam's cross-check catching *four* independent measurement errors, each by a different
+session; bench-A's "+64s stall" that was its own scorer's backlog, refuted by net-emu with the
+bytes; slam-A's cross-check catching *four* independent measurement errors, each by a different
 party. **Cases are illustration; the events are the evidence.**
 
 ### D. RQ4 — Compounding competence: the claim, its confound, and the test
@@ -146,8 +146,8 @@ piece. To be escalated to the human with a protocol.
 Asking sessions to substantiate claims *to an external audience* forced verification of things taken
 on trust internally. MEASURED, in git: `sizer` found a **46-day production defect** (129 cells
 rendering wrong fps, count never zero, never visible) while writing its case — caught by *writing*,
-after 46 days of use/test/review found nothing; `pai-sizer` surfaced a validation-across-an-unsafe-
-version-boundary provenance defect the same way. The mechanism (pai-sizer): external writing forces a
+after 46 days of use/test/review found nothing; `perf-B` surfaced a validation-across-an-unsafe-
+version-boundary provenance defect the same way. The mechanism (perf-B): external writing forces a
 claim's *conditions* to be enumerated, and enumeration is when unexamined assumptions surface —
 predicting a distribution of mostly-small corrections, occasionally a live defect, which is what was
 observed. **This is evidence *for* the deployment, in the commit record, not about it** — and it is
@@ -212,12 +212,12 @@ over the bus — is the very mechanism under study.
 ---
 
 ### Appendix — cases as illustration (dataset, not evidence)
-Twenty first-person `cases_*.md` specimens (image_gen, mcxn947, rt1180, holobench, tipometer,
-reshirt, ollama_95_neutron, imx95-isp, imx95-media-test, jaws, openwebui-ollama, docs, 91/93emulator,
-backend, campmatch, mahjong-together, pai-sizer, sizer) + the platform specimen `cases_cleanup-timer`.
+Twenty first-person `cases_*.md` specimens (image-gen, mcu-emu, net-emu, bench-A, app-B,
+app-A, npu-llm, media-isp, media-npu, jaws, llm-svc, docs, 91/emu-B,
+backend, app-C, game-coach, perf-B, sizer) + the platform specimen `cases_cleanup-timer`.
 Retained to illustrate design patterns; not cited as evidence for any headline claim.
 
-### TODO for the `review` job (qualcomm)
+### TODO for the `review` job (socdev-A)
 Verify related-work citations; confirm the RQ4 ablations landed + are harness-isolated; run RQ5;
-test pai-sizer's falsifiable prediction (sibling-caught defects cluster in naming/categorization) vs.
+test perf-B's falsifiable prediction (sibling-caught defects cluster in naming/categorization) vs.
 the corpus; curate cases to ~5 in-body illustrations.

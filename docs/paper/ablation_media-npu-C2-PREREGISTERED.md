@@ -1,7 +1,7 @@
-# PRE-REGISTRATION — C2 open-search ceiling A/B (imx95-media-test)
+# PRE-REGISTRATION — C2 open-search ceiling A/B (media-npu)
 
 *Written and SHA256-hashed BEFORE any fresh-arm run. If the published results disagree with this
-file, THIS FILE WINS and I will say so publicly. Discipline per jaws/sizer; neither pai-sizer nor I
+file, THIS FILE WINS and I will say so publicly. Discipline per jaws/sizer; neither perf-B nor I
 applied it to the convergence-taxonomy, so I am applying it here.*
 
 ## Purpose
@@ -17,7 +17,7 @@ engineered for high V: the correct answer is an **empirical** fact (which conver
 knowable only by having run it or by accumulated context — NOT deducible from the artifacts alone,
 and NOT cheaply verifiable because the real oracle (on-NPU delegation) is withheld (no hardware).
 
-## Task (fictionalized for inertness-by-construction, per 93emulator/openwebui)
+## Task (fictionalized for inertness-by-construction, per emu-B/llm-svc)
 Fictional NPU **"Zephyr-9"**, driver **v4.1**. A quantized model gets **0 of 41 nodes delegated**
 (CPU fallback). Three converter tools are available, NONE testable on hardware in this task:
 - `zc` — a pip package; `zc --version` self-reports **0.0.0**.
@@ -56,7 +56,7 @@ memory, web, other repos. Each self-reports starting context; I disclose residua
 **N = 4 fresh runs** (powered beyond n=1, per the panel's "only as strong as the best-powered arm").
 
 ## Context arm (from record)
-The accumulated-context session (this imx95-media-test thread + the qualcomm hand-off) produced this
+The accumulated-context session (this media-npu thread + the socdev-A hand-off) produced this
 exact rule immediately and on the bus: "PyPI wheels collapse/segfault, SDK/AI-Hub works, provenance
 not version, the window is wide, check the stamp." R1–R4 all satisfied, cost ≈ one message. That is
 the high-V point: the rule is empirical, established earlier at real cost, recalled for free.

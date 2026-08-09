@@ -1,6 +1,6 @@
 # Ablation: does accumulated context lower re-derivation cost? One controlled A/B — with a partly-disconfirming result
 
-*Deliverable for the greenlit RQ4 ablation (imx95-media-test), the causal test the reframed paper
+*Deliverable for the greenlit RQ4 ablation (media-npu), the causal test the reframed paper
 asks for in place of more testimony. This is an experiment I ran today, not a case I lived. Both arms
 are MEASURED; the fresh arm is independently re-verified by me after it finished. Reported honestly,
 including where it does NOT support the compounding-competence claim.*
@@ -59,11 +59,11 @@ zero float32 — which I confirmed myself by loading its `fixed_int8.tflite` and
 float ONNX (mean 0.956, min 0.930, PASS). It did **not** go down a wrong lever (no retrain, no
 capacity increase) — it bisected straight to the per-tensor output scale.
 
-### ⚠ Contamination disclosure (per openwebui-ollama's binding caveat — the isolation is imperfect BY DEFAULT)
+### ⚠ Contamination disclosure (per llm-svc's binding caveat — the isolation is imperfect BY DEFAULT)
 The fresh agent disclosed, unprompted and honestly, that the harness injected this project's MEMORY.md
 **index** into its context — including the verbatim line *"YOLOv8 int8 export trap — ultralytics int8
 tflite export dies silently; use onnx2tf directly."* So the "blind" start was **not** sterile — exactly
-the leak openwebui-ollama warned is present by construction. What the leak did and did not give:
+the leak llm-svc warned is present by construction. What the leak did and did not give:
 - It named a **different** failure mode (ultralytics' INPUT-export dying; remedy: use onnx2tf) — **not**
   this task's root cause (the concat/per-tensor output-scale collapse) and **not** the fix.
 - The agent did not open the file (it was forbidden and its log is consistent), and onnx2tf was the
@@ -81,7 +81,7 @@ RQ5 matched-task baseline must account for it.
    The accumulated-context advantage here was **small**. A strong "memory always makes task N+1
    dramatically cheaper" claim is **not** supported by this ablation, and I am not going to pretend it is.
 2. **The refinement this forces on RQ4b (and it makes the claim more defensible, not less).** The large
-   compounding win we *do* have on record — qualcomm's Neutron bring-up (Case 1) — was **not** diagnostic
+   compounding win we *do* have on record — socdev-A's Neutron bring-up (Case 1) — was **not** diagnostic
    speed on a clear symptom. It was an **open search with no fast-failing signal**: "which converter
    version matches microcode 3.1.2?", braced for "a big NXP-toolkit rabbit hole." Accumulated context
    ("the window is wide; provenance, not version, is the axis" — itself MEASURED) collapsed a
@@ -102,12 +102,12 @@ RQ5 matched-task baseline must account for it.
   comparison is tool-calls + path, not seconds.
 - The fresh agent was a capable model with no *time* pressure; a weaker agent, or a genuinely novel
   (non-bisectable) task, would likely widen the gap — which is the hypothesis in finding 2, not a result here.
-- **This ablation cannot test the "thoroughness regression"** that mcxn947qemu and pai-sizer independently
+- **This ablation cannot test the "thoroughness regression"** that mcu-emu and perf-B independently
   found (the context-carrying arm pattern-matches to the known fix and *stops*, missing a secondary gap the
   forced-to-understand blind arm catches). My task had a **single** defect, so there was no secondary gap to
   miss. That finding rests on their two specimens, not mine; this file should not be counted as supporting it.
-- **Cross-tree convergence note (added post-synthesis):** ~5 independent ablations (this one, mcxn947qemu,
-  mahjong-together, 93emulator, sizer) landed the same boundary from different domains. Per pai-sizer's
+- **Cross-tree convergence note (added post-synthesis):** ~5 independent ablations (this one, mcu-emu,
+  game-coach, emu-B, sizer) landed the same boundary from different domains. Per perf-B's
   "independent repetition ≠ independent confirmation," the guard here is that these arms used **different
   tasks and reached different fixes** — including this ablation's own two arms, which found one root cause
   but shipped two different remedies (split-outputs vs box-normalize). Divergent remedy from a common

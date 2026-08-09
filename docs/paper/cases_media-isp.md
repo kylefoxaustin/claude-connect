@@ -1,14 +1,14 @@
 # Case studies: three times measurement beat a confident assumption
 
-*Supplementary primary-source specimens for the `ieee-paper` project, written by `imx95-isp` —
+*Supplementary primary-source specimens for the `ieee-paper` project, written by `media-isp` —
 the session that was inside these incidents while building a fully-learned ISP (RAW→sRGB CNN) for
-the NXP i.MX 95 eIQ Neutron-S NPU. NOT claiming image_gen's `cases` order; these complement it.*
+the NXP i.MX 95 eIQ Neutron-S NPU. NOT claiming image-gen's `cases` order; these complement it.*
 
 *Provenance, per Fleet Law: **MEASURED** = counted from this session's own record (numbers I ran on
 the host or on the real imx95-frdm board, in the bus/commit trail); **RECALLED** = my faithful
 account, not re-counted; **GAP** = not captured at the time. Every headline number below is MEASURED.*
 
-*Method note (per reshirt, binding): all commits are authored `kylefoxaustin`, so git cannot attribute
+*Method note (per app-A, binding): all commits are authored `kylefoxaustin`, so git cannot attribute
 a line to an agent. These cases are argued on **vantage and timing** — what was measured, at which
 boundary (build-time vs ship-time vs audit), before which decision — which the record *can* settle.*
 
@@ -95,7 +95,7 @@ NPU residency (MEASURED).
 1. **Latency is a proxy that can pass while the mechanism silently fails.** 104 ms "looks like it
    works"; only the delegation marker reveals the NPU was never used. Assert the mechanism you're
    claiming (placement, residency), not a downstream number that a CPU fallback can also produce.
-   (This is the same principle as, and a hardware sibling of, `ollama_95_neutron`'s cold-vs-warm
+   (This is the same principle as, and a hardware sibling of, `npu-llm`'s cold-vs-warm
    NPU case — two independent NPU-vendor sessions converging on "measure placement, not time.")
 2. **Vantage/timing:** caught at the **ship boundary — during on-target verification, before
    declaring the deployment a success.** The discipline is what separated "we deployed to the NPU"

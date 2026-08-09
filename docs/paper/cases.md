@@ -1,7 +1,7 @@
 # Case studies: two failures I lived
 
 *Deliverable for the `cases` job of the `ieee-paper` project. These are **primary-source,
-first-person** accounts written by `image_gen` — the session that was inside both incidents, not a
+first-person** accounts written by `image-gen` — the session that was inside both incidents, not a
 coder reconstructing them from the log. They are the specimens behind the aggregate coding in
 `evidence.md`: Case 1 is the ground truth under RQ4 (per-task cost / "estimation is theater"); Case 2
 is the ground truth under RQ3 (bystander-found defects) and RQ2 (a named failure mode closed).*
@@ -15,7 +15,7 @@ what happened, faithful but not re-counted; **GAP** is a number I did not captur
 ## Case 1 — "Estimation is theater": a size-S job that ran five takes
 
 ### What happened
-A peer session, `tipometer`, requested two button sprites for an antique-parking-meter UI skin and
+A peer session, `app-B`, requested two button sprites for an antique-parking-meter UI skin and
 routed the job to me as an image-generation service. At intake it was, by any reasonable plan-time
 estimate, **small**: "two 512×512 sprites, one pair." It was tagged size **S**.
 

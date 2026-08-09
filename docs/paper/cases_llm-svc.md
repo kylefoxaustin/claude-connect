@@ -1,7 +1,7 @@
 # Case study: the fleet's only matched-task cost series — and what it says *against* the headline
 
-*Supplementary primary-source case for the `ieee-paper` project, offered by `other:openwebui-ollama`
-(the tree holding Kyle's longitudinal "build OpenWebUI + Ollama from scratch" benchmark).
+*Supplementary primary-source case for the `ieee-paper` project, offered by `other:llm-svc`
+(the tree holding Kyle's longitudinal "build llm-svc + Ollama from scratch" benchmark).
 **First-person for the analysis; the 2026-06-29 runs were executed by the prior session on this
 same tree and are read from its durable record.** Offered to the lead (`claude-connect`).*
 
@@ -10,7 +10,7 @@ names its own hardest gap precisely — RQ4(b) is **SUGGESTIVE + GAP** because "
 does not yet segment cleanly into comparable tasks" — and this tree holds the one thing the fleet
 has that **does** so segment: a **single fixed task, a single fixed done-criterion, re-run six
 times over 17 months**, with a **memory ablation run on the same day, on the same host, against
-the same model.** It supplies the counterfactual `cases_mcxn947.md` correctly flagged as a GAP.
+the same model.** It supplies the counterfactual `cases_mcu-emu.md` correctly flagged as a GAP.
 It also, read honestly, **undercuts the headline it was invited to support.***
 
 *Provenance, per Fleet Law. **MEASURED** = a wall-clock figure recorded by the session that ran it,
@@ -23,7 +23,7 @@ table, `tools/smoke_test.sh`). **DERIVED** = computed from those, labelled at ev
 ## The instrument, in one paragraph
 
 The benchmark hands an assistant one unchanging problem — *build a single Docker container
-combining OpenWebUI + Ollama, CPU and NVIDIA-GPU targets* — from a fresh start, and measures
+combining llm-svc + Ollama, CPU and NVIDIA-GPU targets* — from a fresh start, and measures
 **time to a tested working build**. "Working" is not self-assessed: the container must build, both
 services must run, a model must be pulled, and the assistant must **answer a question about an
 invented fact from an attached knowledge base, with a citation** (`tools/smoke_test.sh`, MEASURED).
@@ -43,12 +43,12 @@ On **2026-06-29**, the task was run **twice, hours apart, on the same host, with
 **The head-start was worth ~2.5×** (DERIVED: 44.8 / 17.5 = 2.56, both factors MEASURED under
 matched host, date, model, and done-criterion — the one condition-matched division in this file).
 
-This is the shape of number `cases_mcxn947.md` says it could not produce: *"how much cheaper, in
+This is the shape of number `cases_mcu-emu.md` says it could not produce: *"how much cheaper, in
 tokens, is a GAP."* Here the cost delta **is** metered, because the same task was run both ways.
 
 **What it does and does not license.** It measures **prior exposure to a solution**, not
 **accumulated cross-task competence**. Having read last year's Dockerfiles is a warm cache; it is
-not the eDMA-class-already-named mechanism mcxn947 documents. RQ4 should cite this as a *bound* —
+not the eDMA-class-already-named mechanism mcu-emu documents. RQ4 should cite this as a *bound* —
 memory-of-the-answer buys ~2.5× on a matched build task — and must not silently promote it to
 "compounding competence." It is also **N = 1 per arm, one operator, one task** (GAP).
 
@@ -121,9 +121,9 @@ point on the curve**, for four reasons, any one of which is disqualifying:
 4. **⭐ BLINDNESS WAS COMPROMISED BY OUR OWN HARNESS — and this one is the finding.**
 
 On (4), the agent disclosed it unprompted, which is the only reason we know: **the harness set its
-default shell cwd to `/home/kyle/Documents/GitHub/openwebui-ollama` and pre-printed that repo's
+default shell cwd to `/home/kyle/Documents/GitHub/llm-svc` and pre-printed that repo's
 `git status` and recent commits into its system prompt**, and injected a memory index naming an
-*"OWUI build experiment — longitudinal 'how fast can an AI build openwebui-ollama' benchmark;
+*"OWUI build experiment — longitudinal 'how fast can an AI build llm-svc' benchmark;
 geometric curve."* It states it did not open any of those files, and its command log is consistent
 with that. But it began the task knowing the repo's name, its top-level layout, and that a
 benchmark of this task existed. **That is not a blind start.**
@@ -137,7 +137,7 @@ project memory, and a positive assertion of what the agent could see — capture
 
 ### The result that *did* survive: the done-criterion is stochastic, and we sampled it once
 
-The blind agent reported that OpenWebUI's stock `RAG_TEMPLATE` — mostly instructions about emitting
+The blind agent reported that llm-svc's stock `RAG_TEMPLATE` — mostly instructions about emitting
 `[id]` citation markers — makes a 0.5B model answer with the citation marker instead of the
 retrieved value, *while retrieval works perfectly*. I ran the ablation myself (**MEASURED by me**,
 same image, same volumes, same KB, same model, same question, only the template env var changed):
@@ -164,7 +164,7 @@ degradation but not the agent's exact reported failure mode — it saw literal `
 wrong numbers like `4,096` and `2,941`. The magnitudes differ too, 1/5 vs 18/25. That instability
 across small samples of the same configuration **is** the point.)*
 
-This is mcxn947's "a green gate only covers what is in its golden," in an unrelated domain, with a
+This is mcu-emu's "a green gate only covers what is in its golden," in an unrelated domain, with a
 second edge: **a green gate that is also non-deterministic, sampled once, reports a pass rate as a
 pass.**
 
@@ -177,7 +177,7 @@ pass.**
 - **Units are not uniform.** The pre-2026 points are **calendar** time to completion; the 2026
   points are **continuous** wall clock (MEASURED, and flagged as such in the record). Directionally
   comparable, not identical units — the regression inherits that and the paper must say so.
-- **Architecture availability is not held constant** across 17 months. The prebuilt OpenWebUI image
+- **Architecture availability is not held constant** across 17 months. The prebuilt llm-svc image
   did not exist for the 2025 runs. Part of every speedup is the ecosystem, not the assistant.
 
 ## What it establishes for the paper
@@ -202,7 +202,7 @@ pass.**
    it. It surfaced only because one agent volunteered the leak unprompted. **Before the paper
    claims any stateless baseline, the baseline's isolation must be positively asserted and
    captured** — otherwise RQ5's matched-task arm measures a contaminated control.
-6. **A second, sharper form of the "green gate" failure mode (Case 4).** mcxn947's gate was green
+6. **A second, sharper form of the "green gate" failure mode (Case 4).** mcu-emu's gate was green
    because its golden was incomplete. This one is green because it is **stochastic and sampled
    once**: measured 96% vs 72% pass rate across a one-variable ablation, so a single check of the
    *broken* configuration passes 72% of the time. Any agent-evaluation gate with an LLM in the
@@ -218,4 +218,4 @@ ablation showing our done-criterion is a 72–96% Bernoulli gate that every prio
 than a warm cache; any per-arm token cost (not metered); today's 5 min 27 s as a point on the curve
 (four disqualifying condition mismatches, listed); or the p = 0.0488 ablation as a solid effect
 (n = 25/arm, and it clears 0.05 by a hair — the 72% single-sample false-pass is the number that
-does not need a test).* — `other:openwebui-ollama`
+does not need a test).* — `other:llm-svc`

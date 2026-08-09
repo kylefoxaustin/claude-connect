@@ -14,9 +14,9 @@ yet supply). Overclaiming is exactly what the `review` job is tasked to attack.*
 - **Bus coordination:** **2,575 messages** across **52 sessions**, over four months.
 - **Addressing:** 949 directed (≤4 recipients) · 1,105 broadcast · 514 announcement (>4) → **37%
   directed**.
-- **Division of labour (top contributors):** 95emulator 249, qualcomm 228, backend 208, 93emulator
-  192, docs 180, 91emulator 169, mcxn947qemu 159, orb_slam 156, holobench 150, sizer 145,
-  claude-connect 113, ollama_95_neutron 99. **Concentration, computed (`evidence-harvest.py`
+- **Division of labour (top contributors):** emu-A 249, socdev-A 228, backend 208, emu-B
+  192, docs 180, emu-C 169, mcu-emu 159, slam-A 156, bench-A 150, sizer 145,
+  claude-connect 113, npu-llm 99. **Concentration, computed (`evidence-harvest.py`
   `_concentration`, as-of 2026-07-27): Gini 0.695, top-1 9.4%, top-3 25.6%, 13 of 55 senders carry
   80%.** The honest reading (corrected from an earlier "distributed, not concentrated"): contribution
   is **spread across many heterogeneous peers with a real head — no single orchestrator dominates
@@ -33,7 +33,7 @@ yet supply). Overclaiming is exactly what the `review` job is tasked to attack.*
   only in the operator's own record and must be coded there. The 949 is a ceiling on relays avoided,
   not a measured count of relays performed.
 - **Live instance (this deployment):** the `ieee-paper` project itself dispatched a job to a peer
-  (`cases` → image_gen) with a directed wake and zero human relay — a worked example of the mechanism
+  (`cases` → image-gen) with a directed wake and zero human relay — a worked example of the mechanism
   on a real task.
 
 ## RQ2 — Robustness: failure modes closed, with ablations
@@ -59,7 +59,7 @@ sessions *not* authoring the code — because publishing in a shared place expos
 who weren't looking for that bug.
 
 - **PROXY + worked examples (needs full thread coding):** documented bystander-found defects include
-  the `backend` tag-flip caught by `image_gen` (a session not working on it); the `docs`
+  the `backend` tag-flip caught by `image-gen` (a session not working on it); the `docs`
   Class-VIII headline break caught by three reviewers; and, *live in this very session*, the
   operator-identity seam, the dispatch-didn't-wake gap, and the member-tag-mismatch — all surfaced by
   Kyle **using** the system, not by the author reasoning about it. These are the "found by living it"
@@ -73,8 +73,8 @@ who weren't looking for that bug.
 Two distinct signals, and the second is the paper's central claim — stated carefully.
 
 **(a) Convergence / rule-of-three (PROXY):** independent re-derivations of the same finding.
-Worked example: the `PROJECT_LAYER` design was reviewed by four sessions (95emulator / 93emulator /
-qualcomm / image_gen) grounded in *different* real work, and converged on the same structural
+Worked example: the `PROJECT_LAYER` design was reviewed by four sessions (emu-A / emu-B /
+socdev-A / image-gen) grounded in *different* real work, and converged on the same structural
 corrections (estimation-is-theater; admission-control-belongs-to-the-observer; the decision-shield
 split). Convergence from divergent vantage points is evidence the findings are real, not one model's
 artifact.
@@ -135,16 +135,16 @@ courier-*reduction* claim) still needs the per-task normalization — the same G
 `history.jsonl` cannot contain them, which is why it is preferred.
 
 **RQ3 upgrade — code author-vs-bystander from machine events, not recollection
-(reshirt → openwebui-ollama → jaws).** Because every commit is authored under one shared identity
+(app-A → llm-svc → jaws).** Because every commit is authored under one shared identity
 (`kylefoxaustin`), git cannot establish who found a line — but **transcript timestamps and tool-call
 sequences are machine-generated, not narrated.** Who probed which file, in what order, at which
 minute is recoverable and is not a memoir. jaws' worked example: in a 38-Bash-call build, **17 calls
 were MEASUREMENT** (12 `/proc` probes, 4 runs, 1 tracemalloc) — a vantage a browser assistant could
 not occupy, proven from the event log, not testimony. The draft codes RQ3 on this basis.
 
-**RQ4(b) counterfactual — cheap to run, and the token cost is minable, not a GAP (openwebui-ollama).**
+**RQ4(b) counterfactual — cheap to run, and the token cost is minable, not a GAP (llm-svc).**
 The compounding claim needs a counterfactual: does a *fresh, memoryless* session re-derive what a
-context-heavy one recognized? That is runnable — hand N=3–5 fresh sessions mcxn947's exact symptom
+context-heavy one recognized? That is runnable — hand N=3–5 fresh sessions mcu-emu's exact symptom
 ("the reset gate is green over 12 of 370 registers — why?") and measure re-derivation time. And
 per-task token cost is **not** missing: it sits in the transcript `usage` records; "not metered on my
 tree" is a mining task, not a measurement gap. The draft states this as the protocol that closes the

@@ -22,7 +22,7 @@ So the first question is not "what task?" but **"which domains can even field si
 
 | domain | live sessions with genuine history |
 |---|---|
-| every project domain (`qualcomm`, `band`, `jaws`, `campmatch`, `detourist`, `reshirt`, `mahjong-together`, `95emulator`, `imx95-media-test`, `lostchild`, `pai-sizer`, `sizer`, `claude-connect`) | **1 each** |
+| every project domain (`socdev-A`, `band`, `jaws`, `app-C`, `app-D`, `app-A`, `game-coach`, `emu-A`, `media-npu`, `app-F`, `perf-B`, `sizer`, `claude-connect`) | **1 each** |
 | the coordination substrate itself (bus, wind-down, provenance conventions) | up to **13** |
 
 **Every one of the 13 live sessions occupies a distinct project directory. No two share a project
@@ -105,7 +105,7 @@ substrate command in a specific state.
 **⚠️ RULING: DISQUALIFIED, and the reason is the important one — SELF-GRADING.** I authored the
 substrate, the defect, and its fix. Running the only six-session-capable domain means the author of
 the code under test also designs the task, selects the instance, and interprets the result — the
-exact circularity the PC review rejected in the original backbone arm. `mahjong-together` named this
+exact circularity the PC review rejected in the original backbone arm. `game-coach` named this
 from the author's seat before I did: *"measuring our OWN live session reintroduces the self-grading
 circularity we just got dinged for."*
 
@@ -128,3 +128,20 @@ The measurement that matters most is Finding 0: **this fleet's one-session-per-r
 the only domain that can field six live arm-B sessions is the one I wrote.** That is a property of
 the deployment, not of any candidate — and it is the kind of constraint that belongs in the paper
 whichever framing wins.
+
+---
+
+## APPENDIX — artifact rename map (2026-08-08)
+
+The replication package was pseudonymized after publication (the paper used pseudonyms while its
+artifacts kept real session names, so the map was recoverable in one grep from the same directory).
+Files were renamed to match the paper's scheme.
+
+**The witnessed pre-registration was NOT edited** — its digest
+`13107489f07e46785e74b16e9f420713a12bcce23f8e1414066832950253b1dc` is unchanged and still verifies.
+It therefore cites `ablation_mahjong-together.md` under the name that existed when it was written,
+which is correct for a frozen record. That file is now `ablation_game-coach.md`.
+
+Two references in the package (`cases_image_gen.md`, `cases_qualcomm.md`) dangle and **always did** —
+those artifacts were cited but never delivered. Pre-existing, recorded here rather than silently
+repaired.

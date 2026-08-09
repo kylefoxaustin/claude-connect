@@ -38,7 +38,7 @@ what we claim is new.
 ## The wedge (our two distinctions — this is the paper's core)
 
 **Distinction 1 — routing on LIVED experience, not DECLARED role.** We route to peers by their
-*accumulated, demonstrated history from real work* (image_gen wrote the tipometer case study because
+*accumulated, demonstrated history from real work* (image-gen wrote the app-B case study because
 it *lived* the cost blow-up), not by a persona prompt. The reason this is rare is **structural**:
 most frameworks deliberately spin up **stateless, fresh agents per task** (reproducibility, cost),
 which *precludes* lived-expertise routing by construction. This is the "context-heavy sessions vs.

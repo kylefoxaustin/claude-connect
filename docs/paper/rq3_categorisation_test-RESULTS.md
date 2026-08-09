@@ -13,7 +13,7 @@ pre-registration's own instruction ("I will record my prediction as refuted… a
 prominently").
 
 Scored over the **same 13 classifiable catches** the paper's factual/reasoning split uses (§V-D): the
-14th, an *incidental exposure* (row 14 below, qualcomm→95emulator), is excluded from both instruments
+14th, an *incidental exposure* (row 14 below, socdev-A→emu-A), is excluded from both instruments
 for consistency. Including it would make it L=8/N=6/n=14 — same verdict, but the 13-set is the paper's
 convention.
 
@@ -24,20 +24,20 @@ text a human reads** → **N**; genuinely unsettled → **A**. §5's mandated ca
 
 | # | catch | fix touches | label |
 |---|---|---|:--:|
-| 1 | image_gen→backend: contaminated power *denominator* | re-measure + correct the reported number (text) | **N** |
+| 1 | image-gen→backend: contaminated power *denominator* | re-measure + correct the reported number (text) | **N** |
 | 2 | backend→docs: false "sm80 fallback on SM120" mechanism | correct the doc's causal claim (text) | **N** |
-| 3 | rt1180→holobench: "+64 s stall" was a scorer artifact | relocate the measurement clock (code, `4059f7633f`) | **L** |
-| 4 | holobench→rt1180: deeper-RX-ring "fix" does nothing | revert the code change (`cb3b04d8fe`) | **L** |
+| 3 | net-emu→bench-A: "+64 s stall" was a scorer artifact | relocate the measurement clock (code, `4059f7633f`) | **L** |
+| 4 | bench-A→net-emu: deeper-RX-ring "fix" does nothing | revert the code change (`cb3b04d8fe`) | **L** |
 | 5 | 93→91: gated TPM counter resets, silicon holds it | change the model's off-state code | **L** |
 | 6 | 93→91: audio gate guards ENABLE bits not the clock | move the guard (rubric: "guard in the wrong place") | **L** |
 | 7 | sizer blind arm→sizer: Case 1 severity overstated (reachability) | §5-mandated: control-flow/reachability miss | **L** |
-| 8 | pai-sizer→keyhole: stale "Prototype" header post-go-live | change the UI string (text) | **N** |
-| 9 | imx95-media-test→qualcomm: INT8 without calibration (wrong scale) | add the missing scaling step (code) | **L** |
-| 10 | docs→orb_slam: "fixed-K Amdahl" bandwidth model impossible | correct the analytical derivation (text) | **N** |
-| 11 | campmatch→Mahjong: client-side `callClaude` leaks the key | move the call server-side (code) | **L** |
-| 12 | holobench→peer: wrong magic constant (`"LB3!"` vs `0xB5B6B7C0`) | change the constant/identifier (label; borderline L) | **N** |
-| 13 | orb_slam→ratchet: A55 clock 2.0 GHz shipped, live 1.7 GHz | correct the spec number (text, like a version string) | **N** |
-| — | qualcomm→95emulator (incidental): missing mailbox RESET | add the missing operation (code) | *excluded (would be L)* |
+| 8 | perf-B→api-svc: stale "Prototype" header post-go-live | change the UI string (text) | **N** |
+| 9 | media-npu→socdev-A: INT8 without calibration (wrong scale) | add the missing scaling step (code) | **L** |
+| 10 | docs→slam-A: "fixed-K Amdahl" bandwidth model impossible | correct the analytical derivation (text) | **N** |
+| 11 | app-C→game-coach: client-side `callClaude` leaks the key | move the call server-side (code) | **L** |
+| 12 | bench-A→peer: wrong magic constant (`"LB3!"` vs `0xB5B6B7C0`) | change the constant/identifier (label; borderline L) | **N** |
+| 13 | slam-A→ratchet: A55 clock 2.0 GHz shipped, live 1.7 GHz | correct the spec number (text, like a version string) | **N** |
+| — | socdev-A→emu-A (incidental): missing mailbox RESET | add the missing operation (code) | *excluded (would be L)* |
 
 **Tally over the 13 classifiable: N = 6 (rows 1, 2, 8, 10, 12, 13), L = 7 (rows 3–7, 9, 11), A = 0.**
 

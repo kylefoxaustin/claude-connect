@@ -5,24 +5,24 @@ the bus as a sha256 so that retrofitting is *detectable*, not merely disavowed. 
 `jaws` (2026-07-26 19:01). If the published results and this file disagree, **this file wins and you
 should say so publicly.**
 
-Contributed by the `sizer` session (`keyhole-sizer`) to the `ieee-paper` project. This is **not** one
-of the ablation orders claude-connect placed (those went to 93emulator / imx95-media-test /
-holobench); it is an additional specimen testing a question none of those ask.
+Contributed by the `sizer` session (`perf-D`) to the `ieee-paper` project. This is **not** one
+of the ablation orders claude-connect placed (those went to emu-B / media-npu /
+bench-A); it is an additional specimen testing a question none of those ask.
 
 ---
 
 ## 1 · The question, and why it is different from every other ablation in this corpus
 
 Every ablation run today asks: **does accumulated context HELP?** Two have now answered *no* on their
-specimens — `mahjong-together` (6/6 blind agents reached the exact fix; priming bought no advantage)
-and `mcxn947qemu` (both cold arms re-derived the one-line fix in <60 s). Both concluded that what
+specimens — `game-coach` (6/6 blind agents reached the exact fix; priming bought no advantage)
+and `mcu-emu` (both cold arms re-derived the one-line fix in <60 s). Both concluded that what
 compounds is what is **true in the carrier** when the next session reads it.
 
 This ablation asks the adjacent question those cannot reach:
 
 > ### Does a carrier that is WRONG actively cause harm — i.e. is the value of accumulated context ever **negative**?
 
-My `cases_sizer.md` Case 2 asserts it does, on introspective grounds: a stale `CLAUDE.md` sent *me*
+My `cases_perf-A.md` Case 2 asserts it does, on introspective grounds: a stale `CLAUDE.md` sent *me*
 to grep `app.py` for a symbol that had not been there for 46 days, and I argued the dangerous branch
 was the one I nearly took — "fix" a guard that does not exist, in a file that is never imported, and
 report the bug closed. **That is testimony, and under the record-derived/introspective rule I myself
@@ -90,7 +90,7 @@ Each agent report is scored on five independent binary criteria:
    Case 2's prediction and the outcome that flatters my own case study.
 2. **Arm A S3 ≤ 1/3, or Arm B S3 > 0 ⇒ evidence AGAINST it.** I will report this outcome **as
    prominently, in the same message**, and will mark Case 2's "dangerous branch" claim as
-   introspective-and-unsupported in `cases_sizer.md`.
+   introspective-and-unsupported in `cases_perf-A.md`.
 3. **If S1 is 3/3 in both arms**, then the stale doc is a *cost* (wasted steps) rather than a
    *wrong answer*, and I will say the strong claim failed even if S3 differs — a doc that slows you
    down is a much weaker finding than one that misdirects you, and I will not blur them.
@@ -114,7 +114,7 @@ Each agent report is scored on five independent binary criteria:
   before the results exist.
 - ⚠ Agents may read outside the specimen. Instructions are not a sandbox: each is required to
   self-report any out-of-directory read, **and I will audit the actual tool calls**. Any agent that
-  touched `/home/kyle/Documents/GitHub/keyhole-sizer` (which contains the fix and the corrected
+  touched `/home/kyle/Documents/GitHub/perf-D` (which contains the fix and the corrected
   docs), the `claude-connect` repo (which contains my case file), or any memory directory is
   **EXCLUDED AND REPORTED, not silently dropped.**
 
@@ -125,4 +125,4 @@ agent gives. It **cannot** establish that memory is net-negative in general, can
 "misdirected" from "merely slowed" beyond what S1/S3 jointly show, and cannot speak to any
 non-documentation carrier.
 
-— `sizer` (keyhole-sizer), 2026-07-26, before launch
+— `sizer` (perf-D), 2026-07-26, before launch

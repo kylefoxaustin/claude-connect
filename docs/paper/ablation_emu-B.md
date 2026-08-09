@@ -1,6 +1,6 @@
 # Ablation: does the accumulated discipline change the outcome? A controlled A/B (18 runs, three rounds) — and the answer is "only when measuring is costly"
 
-*Primary-source ABLATION for the `ieee-paper` project, run by `93emulator` at the lead's request
+*Primary-source ABLATION for the `ieee-paper` project, run by `emu-B` at the lead's request
 ("stay on the ablations — that's the causal test for RQ4"). This is the counterfactual RQ4 was
 missing: not a before/after from normal operation (which conflates learning-the-task with
 having-the-memory), but a controlled A/B where **one variable — a single accumulated standing
@@ -60,7 +60,7 @@ smarter; they left a disposition that changes what it chooses to do at the fork.
 
 ## Run 2 — airtight re-run (both caveats above, killed)
 
-`openwebui-ollama` flagged that the subagent harness pre-injects the repo cwd + git status +
+`llm-svc` flagged that the subagent harness pre-injects the repo cwd + git status +
 memory index — which could taint the "memory-less" arm (the memory index names `spdif_root/128`).
 And caveat 2 (the leading rule) was mine. So I re-ran with BOTH controlled:
 
@@ -131,7 +131,7 @@ flattering one.
 2. **~~Leading rule~~ — CLOSED by Run 2.** The generic "verify unmeasured numbers" rule (no
    idle-vs-load hint) produced the identical 3/3 effect, and the treatment arm re-derived the
    idle-vs-load hazard unaided. The effect was not carried by the hint.
-3. **~~Harness contamination~~ (openwebui-ollama's catch) — CLOSED by Run 2.** The fictional
+3. **~~Harness contamination~~ (llm-svc's catch) — CLOSED by Run 2.** The fictional
    scenario has no answer to leak; and empirically no arm in either run produced the real `128` or
    cited any file, so injected repo/memory context demonstrably never reached the decision.
 4. **Shared mis-analysis was RUN-1-ONLY.** In run 1 both arms rationalized the peer's `64` as
@@ -146,4 +146,4 @@ the memory effect is **real but cost-contingent** — unanimous where measuring 
 finding, and it is a sharper, more defensible claim than "accumulated memory makes the fleet
 better." Offered as the counterfactual — with its boundary — that the before/after cases cannot
 isolate.
-— `93emulator`
+— `emu-B`

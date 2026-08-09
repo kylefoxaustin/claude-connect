@@ -1,12 +1,12 @@
 # Case studies: "documented" is not "bounded," and rigour on the wrong axis is camouflage
 
-*Contribution to the `cases` job of the `ieee-paper` project, written by `ollama_95_neutron` — the
+*Contribution to the `cases` job of the `ieee-paper` project, written by `npu-llm` — the
 session that adds a `ggml-neutron` backend so Ollama/llama.cpp offload LLM prefill to the NXP i.MX 95's
 eIQ Neutron NPU, and (this session) compiles GGUF models to the Kinara ARA240's `.dvm` format. Both
 cases below are **primary-source, first-person**: I was the operator in each, and in the second I was
 the one who was wrong and nearly shipped it. Case 1 sits under **RQ4** ("estimation is theater" — a
-third independent receipt, in the edge-NPU-toolchain domain, complementing `image_gen`'s image
-pipeline and `qualcomm`'s model-regen). Case 2 sits under **RQ2/RQ3** (a named failure mode caught
+third independent receipt, in the edge-NPU-toolchain domain, complementing `image-gen`'s image
+pipeline and `socdev-A`'s model-regen). Case 2 sits under **RQ2/RQ3** (a named failure mode caught
 before it shipped: a careful measurement of the wrong thing).*
 
 *Provenance, per Fleet Law: **MEASURED** = counted from this session's own record (on-silicon `t/s`
@@ -15,7 +15,7 @@ account not re-counted; **GAP** = a number I did not capture. No DERIVED number 
 MEASURED one.*
 
 *Framing note: Case 1 is deliberately a **third, independent** instance of the same RQ4 shape that
-`cases_qualcomm.md` and `cases_image_gen.md` tell from other domains — a closed vendor toolchain, a
+`cases_socdev-A.md` and `cases_image-gen.md` tell from other domains — a closed vendor toolchain, a
 model-regen batch, an image pipeline. Three unrelated tasks, one cost structure; the point is that the
 shape is domain-independent.*
 
@@ -63,8 +63,8 @@ License`. Refixed at `--num_of_cores 2`.
 **"Vendor-documented" and "we have the license" do not bound a task; they bound the *happy path*.** A
 frozen toolchain's real cost is dominated by how far its dependency world has drifted since it was
 frozen — a quantity that is (a) invisible in the documentation, (b) monotonic (drift only adds walls),
-and (c) knowable only by running it. This is the same shape as `qualcomm`'s model-regen blowup and
-`image_gen`'s tipometer, in a third unrelated domain. The disciplined response was not a better
+and (c) knowable only by running it. This is the same shape as `socdev-A`'s model-regen blowup and
+`image-gen`'s app-B, in a third unrelated domain. The disciplined response was not a better
 estimate — it was to **gate on the live meter** (each wall fixed, re-run, observe the next) and to bank
 the whole path as a **reproducible patched image + `--num_of_cores 2`**, so the ~5 rounds are paid
 once, by whoever owns the toolchain, not re-derived by every future user.
@@ -98,7 +98,7 @@ I varied pool state **exhaustively** — quiesce, compact, reboot — and never 
 that actually determined the result: **cold vs warm**. The effort I spent being rigorous on the
 fragmentation axis was precisely what made me trust a number that was a careful measurement of the
 *wrong thing*. This is the budget/measurement analogue of the "measure placement, not latency" line in
-`cases_imx95-isp.md` and the project's own discipline: **before trusting a number, grade its setup —
+`cases_media-isp.md` and the project's own discipline: **before trusting a number, grade its setup —
 warm? cached? which axis is the independent variable?** A number can be reproducible, carefully
 obtained, and still be an answer to a question you did not mean to ask. The catch was a *second*
 measurement designed to isolate the suspected axis (warm, novel-prompt) refuting the first — the same
@@ -108,4 +108,4 @@ adversarial-cross-check primitive the fleet leans on, here run against my own co
 
 *Both cases are drawn from this session's on-silicon record (i.MX 95 FRDM-PRO + Kinara ARA240) and are
 banked in the session's durable memory (`ara240-dvm-compile-process`, `cold-vs-warm-prefill-trap`).
-Cite, reshape, or discard as the draft needs. — `ollama_95_neutron`*
+Cite, reshape, or discard as the draft needs. — `npu-llm`*

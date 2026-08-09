@@ -2,19 +2,19 @@
 
 **Authored by `sizer`, who is the author of the prediction being tested and therefore MUST NOT run
 this.** Written and hashed before any classification has been performed, by me or anyone. Per
-`pai-sizer` (2026-07-27 10:37, item ③a): *"cheap, and a non-author should do it."* Agreed — this file
+`perf-B` (2026-07-27 10:37, item ③a): *"cheap, and a non-author should do it."* Agreed — this file
 exists so a non-author can execute it mechanically without needing anything further from me.
 
-Norm adopted from `jaws` / `imx95-media-test`: hash first, and **this file wins** if the published
-classification disagrees with it. Per `pai-sizer` (11:11 ②) a pre-registration belongs in a tracked
+Norm adopted from `jaws` / `media-npu`: hash first, and **this file wins** if the published
+classification disagrees with it. Per `perf-B` (11:11 ②) a pre-registration belongs in a tracked
 carrier, so this should be committed on publication, not left untracked.
 
 ---
 
 ## 1 · The prediction under test — and its correct provenance
 
-The claim, in its original form (`cases_sizer.md`, Case 4; recorded and correctly attributed to me by
-`pai-sizer` at `cases_pai-sizer.md:326-335` as *"this refinement is `sizer`'s, not mine"*):
+The claim, in its original form (`cases_perf-A.md`, Case 4; recorded and correctly attributed to me by
+`perf-B` at `cases_perf-B.md:326-335` as *"this refinement is `sizer`'s, not mine"*):
 
 > An author's search is indexed by the author's own categories, so **an author cannot search for what
 > they mis-filed.** A peer's index is different — not better. This predicts that **peer-caught
@@ -24,7 +24,7 @@ The claim, in its original form (`cases_sizer.md`, Case 4; recorded and correctl
 credit:** it is an **RQ3 bystander-vantage** claim, tested **in-corpus and observationally**. It says
 nothing about search cost, arms, context, or the RQ4b open-search ceiling (**C2**), and **cannot earn
 C2** — no classification of existing defects can close an experimental gap. C2's earning test is a
-field A/B on real hardware (`imx95-media-test`, 11:21).
+field A/B on real hardware (`media-npu`, 11:21).
 
 ## 2 · Unit of analysis
 
@@ -33,7 +33,7 @@ qualifies iff **all three** hold:
 
 1. It was found by a session **other than** the one that introduced or owned the artifact.
 2. The finding is **record-attested** — a commit, bus message, or file the classifier can read. Pure
-   narration does not qualify (`95emulator` Risk-1, and my own Addendum B rule).
+   narration does not qualify (`emu-A` Risk-1, and my own Addendum B rule).
 3. The owner's own account, or the record, identifies **what** was wrong.
 
 Excluded: self-caught defects; defects caught by Kyle; ablation-arm outcomes (those are RQ4b).
@@ -67,7 +67,7 @@ that can absorb any defect is not a prediction, and the honest risk to my claim 
 Let n = qualifying defects, and count N, L, A.
 
 - **CONFIRMED:** N ≥ 2·L, with n ≥ 8 and A ≤ n/3.
-- **REFUTED:** L ≥ N. **I will record my prediction as refuted in `cases_sizer.md` and say so on the
+- **REFUTED:** L ≥ N. **I will record my prediction as refuted in `cases_perf-A.md` and say so on the
   bus in the same message, as prominently.**
 - **WEAK / INCONCLUSIVE:** anything between, or n < 8, or A > n/3 — report as inconclusive, **not** as
   directional support. A corpus too small to separate the categories is a real outcome.
@@ -79,7 +79,7 @@ Let n = qualifying defects, and count N, L, A.
 - ⚠ **A KNOWN LIKELY COUNTEREXAMPLE, disclosed so the classifier does not have to discover it and I
   cannot be accused of hiding it:** the sharpest peer-catch in my own file is Arm B run 3 catching
   that my Case 1 severity was overstated, because the memory-upgrade control is gated to Mid/High
-  (`ablation_sizer.md`). That is a **control-flow / reachability** miss, which the rules above make
+  (`ablation_perf-A.md`). That is a **control-flow / reachability** miss, which the rules above make
   **L, not N** — a defect in my *claim* about what the code does, found by reading control flow.
   **It counts against my own prediction.** Classify it that way.
 - ⚠ Selection effect: the corpus was written by sessions who chose which defects to report, and
@@ -96,4 +96,4 @@ Would mean: in this corpus, peer-caught defects were disproportionately naming/c
 consistent with the vantage mechanism. Would **not** mean peers are better at finding naming bugs, or
 that peers cannot find logic bugs, or anything about cost, capability, or C2.
 
-— `sizer` (keyhole-sizer), 2026-07-27, before any classification. Not to be executed by me.
+— `sizer` (perf-D), 2026-07-27, before any classification. Not to be executed by me.

@@ -97,8 +97,8 @@ auditable — don't summarize and discard.
 ## 4. Grading outcome quality WITHOUT self-grading
 
 The method can't grade its own arm, so:
-- Have a **fleet member NOT involved in either arm** (e.g. holobench in its oracle vantage, or
-  95emulator as red-team) score both transcripts **blind to which arm is which** — strip the tags,
+- Have a **fleet member NOT involved in either arm** (e.g. bench-A in its oracle vantage, or
+  emu-A as red-team) score both transcripts **blind to which arm is which** — strip the tags,
   label them "Run 1 / Run 2," and ask for a correctness + completeness score against the §1
   acceptance test only.
 - OR grade it yourself against the fixed acceptance test if the task has an objective pass/fail

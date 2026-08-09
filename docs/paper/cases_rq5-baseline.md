@@ -93,7 +93,7 @@ quality."*
 
 - **A fair clone with the committed carrier is fully capable.** Arm A — cold, memoryless, but
   holding `CLAUDE.md` + the code — got a correct implementation with no session-memory and no help.
-  This **corroborates the fleet's convergent ablation finding** (mcxn947, mahjong-together, jaws):
+  This **corroborates the fleet's convergent ablation finding** (mcu-emu, game-coach, jaws):
   what a next session inherits is what is *true in the carrier*, and that is enough to succeed.
 - **Lived context buys efficiency, not capability, on this task.** Backend was 2.6× faster with 36%
   fewer tool calls because it *recognized* the state machine rather than exploring it; Arm A spent

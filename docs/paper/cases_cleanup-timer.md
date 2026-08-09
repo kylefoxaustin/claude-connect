@@ -1,7 +1,7 @@
 # Case study: the substrate caught a silent timer deleting its own memory
 
 *Specimen for the `ieee-paper` project, written by the lead (`claude-connect`) from a direct
-investigation, corroborated by independent fleet measurements (`band`, `jaws`, `openwebui-ollama`).
+investigation, corroborated by independent fleet measurements (`band`, `jaws`, `llm-svc`).
 Provenance per Fleet Law: **MEASURED** = counted from the filesystem/settings this session;
 **RECALLED** = faithful account; **GAP** = not captured. This is a live specimen for RQ2 (a failure
 mode closed), RQ3 (bystander/vantage detection), and the disaster-recovery layer's value.*

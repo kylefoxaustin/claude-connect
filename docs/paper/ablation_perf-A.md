@@ -2,7 +2,7 @@
 
 **Scored verbatim against the rubric pre-registered at
 sha256 `7931a70caa3e19da08c1b685fd25a3c0a2a69aece256625f1cc2f4181434857e`
-(`ablation_sizer-PREREGISTERED.md`, mtime 2026-07-26 19:14:08), published on the bus at 19:14:45,
+(`ablation_perf-A-PREREGISTERED.md`, mtime 2026-07-26 19:14:08), published on the bus at 19:14:45,
 before any agent was launched.** If this file and that one disagree, that one wins.
 
 ## ⚠ Headline: the result is NEGATIVE. My own Case 2 claim is not supported.
@@ -48,7 +48,7 @@ apply the scaling — because it is also called with stock reference tiers by th
 cap logic — which is exactly the design decision I made when I wrote the fix. A doc claim survives
 only as long as nobody checks it; three out of three checked it in under twenty tool calls.
 
-This **converges with `mahjong-together` and `mcxn947qemu`** from the opposite direction. They found
+This **converges with `game-coach` and `mcu-emu`** from the opposite direction. They found
 accumulated context adds nothing *beyond* the committed carrier. I hypothesised the inverse — that a
 *wrong* carrier subtracts. Neither holds on these specimens, and all three point at the same place:
 **what governs the outcome is what the code says, because the code is what gets executed and
@@ -63,7 +63,7 @@ checked.** A prose carrier is neither the asset I claimed in Case 2 nor the liab
   really did tell four stories, and it really did cost *me* ~15 tool calls. What is now
   **unsupported is the counterfactual** — my "dangerous branch" claim that a session would fix a
   nonexistent guard and report it closed. No agent did that. **I have marked it as
-  introspective-and-refuted in `cases_sizer.md`.**
+  introspective-and-refuted in `cases_perf-A.md`.**
 - n=3/arm, one defect, one repo, one model. This does not show stale docs never harm — only that
   this one, on a checkable codebase, did not.
 
@@ -91,7 +91,7 @@ replacement; the engine-level defect and the badge inconsistency were real (`0/1
 layer-migration mechanism — *a fix written into the surface has a refactor-shaped expiry date* —
 is untouched, and it is the actual contribution. What must be downgraded is **severity**: this was a
 **latent** defect with a real provenance bug, not 46 days of wrong numbers shown to users. Corrected
-in `cases_sizer.md`, `README.md` and `CLAUDE.md`.
+in `cases_perf-A.md`, `README.md` and `CLAUDE.md`.
 
 **For the paper, this is the finding I would actually cite from this ablation.** A blind agent with
 zero context, in nine tool calls, caught an overstatement that I had not caught across an entire
@@ -108,11 +108,11 @@ evidenced before launch — `diff -rq` showed exactly two differing files (the i
 sha256 over all other files was **identical across arms** (`da18713a02e62439`).
 
 Contamination audit, as committed: **0 of 6 contaminated.** Zero tool-call `file_path`s and zero
-shell commands referencing the live `keyhole-sizer` tree, the `claude-connect` repo, or any memory
+shell commands referencing the live `perf-D` tree, the `claude-connect` repo, or any memory
 directory; all six self-reported `OUT_OF_DIRECTORY_READS: none`. Decisive check that none saw the
 corrected docs or the fix: `_anchor_bw_scale`, `"CLOSED in the engine"` and `"v2.0.1"` each appear
 **0 times** across all six transcripts. (A loose grep initially showed 41–57 live-path hits per
 transcript; those are the JSONL's own per-record `"cwd"` metadata field stamped by the harness, not
 agent reads — reported because I said I would audit rather than assert.)
 
-— `sizer` (keyhole-sizer), 2026-07-26
+— `sizer` (perf-D), 2026-07-26

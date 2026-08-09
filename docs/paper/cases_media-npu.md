@@ -1,18 +1,18 @@
 # Case studies: a playbook that compounded, and two defects caught by the wrong number passing
 
-*Supplementary primary-source specimens for the `ieee-paper` project, written by `imx95-media-test` —
+*Supplementary primary-source specimens for the `ieee-paper` project, written by `media-npu` —
 the session that built the single-binary i.MX95 GPU/VPU/NPU interference harness, mapped the eIQ
 Neutron converter↔firmware behaviour, and later staged the accuracy-valid YOLOv8 INT8 family that
-another session ran on real silicon. NOT claiming image_gen's `cases` order; these complement it.*
+another session ran on real silicon. NOT claiming image-gen's `cases` order; these complement it.*
 
 *Provenance, per Fleet Law: **MEASURED (mine)** = I ran it this session (accuracy correlations,
 quant-param reproduction, the conversion pipeline); **MEASURED (project record)** = run earlier in
 this project on the real b307 board, from the project's own trail; **MEASURED (peer)** = a number a
-peer ran on-board and published to the bus / `qualcomm/results/NEUTRON_SWEEP_RESULTS.md`, cited as
+peer ran on-board and published to the bus / `socdev-A/results/NEUTRON_SWEEP_RESULTS.md`, cited as
 theirs; **RECALLED** = faithful account, not re-counted; **GAP** = not captured. Every headline is a
 MEASURED number.*
 
-*Method note (per reshirt, binding): all commits are authored `kylefoxaustin`, so git cannot attribute
+*Method note (per app-A, binding): all commits are authored `kylefoxaustin`, so git cannot attribute
 a line to an agent. These cases are argued on **vantage and timing** — which session held which
 context, who published what at which boundary, settled by bus timestamps — NOT on "a different agent
 found it."*
@@ -23,15 +23,15 @@ found it."*
 
 ### What happened
 Months after this session did the original i.MX95 Neutron NPU bring-up, a *different* session,
-`qualcomm`, arrived on the bus (MEASURED-peer, bus 2026-07-08) chasing the eIQ Neutron NPU on a real
-FRDM-IMX95: a stock INT8 tflite was getting **0 nodes delegated** (CPU fallback). Qualcomm's stated
+`socdev-A`, arrived on the bus (MEASURED-peer, bus 2026-07-08) chasing the eIQ Neutron NPU on a real
+FRDM-IMX95: a stock INT8 tflite was getting **0 nodes delegated** (CPU fallback). socdev-A's stated
 plan was to hunt "which eIQ Toolkit version has the neutron-converter matching **microcode 3.1.2**"
 and braced for it explicitly: *"your version-matching playbook would save me a big NXP-toolkit rabbit
-hole"* (RECALLED, direct bus quote). Kyle routed qualcomm to **this** session — not to a fresh
+hole"* (RECALLED, direct bus quote). Kyle routed socdev-A to **this** session — not to a fresh
 agent — precisely *because* this session had already lived the class and carried the map.
 
 The map it carried was itself MEASURED, earlier, in this project. The universal belief — including
-qualcomm's opening premise — was "the converter must match the firmware microcode exactly or it
+socdev-A's opening premise — was "the converter must match the firmware microcode exactly or it
 segfaults." This session had **measured that** on the b307 board: the same MobileNet converted with
 neutron-converter **2.2.1 → 347.9**, **2.2.3 → 353.5**, **3.0.0 → 356.4 inf/s**, all delegating
 cleanly on **one** firmware — a full major version apart, no crash (MEASURED, project record). The
@@ -39,33 +39,33 @@ cleanly on **one** firmware — a full major version apart, no crash (MEASURED, 
 wide, and the real failure axis was converter *provenance* (public-PyPI builds crashed; eIQ-sourced
 builds ran), not version.
 
-Handing that named class over collapsed qualcomm's rabbit hole. His first correct move became a
+Handing that named class over collapsed socdev-A's rabbit hole. His first correct move became a
 one-liner (`ls /usr/lib/libNeutronConverter.so`) instead of a multi-day toolkit hunt; he closed his
 Neutron cell — **yolov8n INT8 = 22.3 IPS, 5/82 nodes delegated** (MEASURED-peer) — and, as a side
-effect, his converted model exposed a real bug in a *third* session's emulator (`95emulator`'s Neutron
+effect, his converted model exposed a real bug in a *third* session's emulator (`emu-A`'s Neutron
 never honoured the mailbox RESET; fixing it moved average inference **165 ms → 41 ms**, MEASURED-peer).
 
 The arc then closed on real silicon. This session staged an accuracy-valid YOLOv8 **n/s/m/l/x** INT8
-family; qualcomm ran it on the board and published the whole column (MEASURED-peer,
+family; socdev-A ran it on the board and published the whole column (MEASURED-peer,
 `NEUTRON_SWEEP_RESULTS.md`): **31.1 / 19.0 / 9.8 / 5.5 / 3.26 IPS**, every model fusing to **one
 NeutronGraph partition**, accuracy loss-free to **corr 0.9998** vs the INT8-CPU reference — an entire
 NPU column for the fleet's silicon comparison.
 
 ### The number that matters
 Task N (this session, once): **measure the converter window** → 347.9 / 353.5 / 356.4 inf/s, window
-is wide. Task N+1 (qualcomm, later): braced-for-a-"big-rabbit-hole" → Neutron cell closed and a full
+is wide. Task N+1 (socdev-A, later): braced-for-a-"big-rabbit-hole" → Neutron cell closed and a full
 five-model on-silicon column produced, with the version-hunt skipped entirely. The expensive part was
 paid **once**, by the session that kept the context; every later consumer paid a lookup.
 
 ### What it establishes for the paper
 1. **This is compounding competence with a real before/after, in the NPU-toolchain domain** — the
-   RQ4b signal the lead marked hardest to evidence, and the sibling of mcxn947's cross-tree case. The
+   RQ4b signal the lead marked hardest to evidence, and the sibling of mcu-emu's cross-tree case. The
    knowledge that made N+1 cheap (the measured converter window, the provenance axis, the
    content-based "is-this-converted" check, the export traps) lived in a **persistent, addressable
    peer**, and was itself MEASURED (the converter-window inf/s figures) — not asserted.
 2. **⚠ Honest boundary — the claim rests on the record, NOT on a clone counterfactual.** It is
    tempting to say "a stateless clone would have re-run the whole version-hunt from zero," and I
-   originally did. Per openwebui-ollama's 2026-07-26 harness-isolation finding (a "blind" subagent on
+   originally did. Per llm-svc's 2026-07-26 harness-isolation finding (a "blind" subagent on
    this workstation is handed the repo cwd, `git status`, and the memory index by the harness — so it
    is *not* a clean blind start), that counterfactual is **UNMEASURED and contaminated, and I am not
    resting the case on it.** What the record *does* settle, and what this case stands on: (a) the
@@ -86,13 +86,13 @@ paid **once**, by the session that kept the context; every later consumer paid a
 ## Case 2 — "Delegation proves it ran, not that it computed the right thing": a bystander catch (RQ3)
 
 ### What happened
-Qualcomm declared his Neutron result **"VERIFIED genuine"** (MEASURED-peer, bus) and had every right
+socdev-A declared his Neutron result **"VERIFIED genuine"** (MEASURED-peer, bus) and had every right
 to: input `[1,640,640,3]` INT8, output full INT8, **5/82 nodes delegated / 5 partitions**, and — the
 clincher — CPU-only execution *failed outright* on the unresolved `NeutronGraph` custom op, which is a
 hard proof the NPU really ran it. Every verification signal an author would reach for had fired
 correctly.
 
-From a **different vantage** — this session had built the calibration pipeline, qualcomm had authored
+From a **different vantage** — this session had built the calibration pipeline, socdev-A had authored
 the benchmark — one published number looked wrong. He quoted his input quantization as **scale
 0.01866, zp −14**. That decodes to an input range of **[−2.13, 2.63]** — ImageNet-normalized — not
 YOLOv8's **[0, 1]** (which is scale 0.00392, zp −128). I reproduced his exact params by dropping the
@@ -120,7 +120,7 @@ valid (quant params don't change op cost); the *accuracy* was silently dead.
    the right thing.* Those are separate claims and only the first is cheap to check — so the cheap
    check gets mistaken for the whole verification.
 3. **Vantage/timing:** caught at the **audit boundary — after his "verified genuine," before the
-   number could reach an accuracy/mAP column.** Qualcomm confirmed and scoped it (latency-only,
+   number could reach an accuracy/mAP column.** socdev-A confirmed and scoped it (latency-only,
    caveat added to his detail sheet); the bus timestamps settle who flagged it when.
 
 ---
@@ -128,7 +128,7 @@ valid (quant params don't change op cost); the *accuracy* was silently dead.
 ## Case 3 — A near-miss I almost shipped, caught by asserting the mechanism, not the success flag (RQ2)
 
 ### What happened
-Building the accuracy-valid n/s/m/l/x family **for** qualcomm, my *first* conversion batch converted
+Building the accuracy-valid n/s/m/l/x family **for** socdev-A, my *first* conversion batch converted
 without error, produced valid-looking INT8 tflites, and would have shipped. Stock ultralytics 8.4.37
 exports the YOLOv8 detect head with box coordinates in **pixel units (0–640)** while class scores are
 **0–1**. Full-INT8 PTQ then sizes the single shared output-tensor scale for the ~640 magnitude and
@@ -147,14 +147,14 @@ MEASURED-mine, 10 COCO images).
 ### The number that matters
 `cls_corr = nan → 0.90–0.98`. The difference between a family of models that benchmark beautifully and
 detect nothing, and a family that is accuracy-valid — invisible to every signal except the one that
-measures the mechanism. It **held on real silicon**: qualcomm's on-board run reported "the pixel-box
+measures the mechanism. It **held on real silicon**: socdev-A's on-board run reported "the pixel-box
 PTQ trap is handled — normalized coords survived," accuracy loss-free to **corr 0.9998**
 (MEASURED-peer).
 
 ### What it establishes for the paper
 1. **Latency/"it ran"/"it converted" are proxies that pass while the mechanism silently fails** — the
-   same shape as imx95-isp's *placement-not-latency* (0/23 nodes at a plausible 104 ms) and
-   ollama_95_neutron's *cold-vs-warm*. Three independent NPU sessions, three domains, one converged
+   same shape as media-isp's *placement-not-latency* (0/23 nodes at a plausible 104 ms) and
+   npu-llm's *cold-vs-warm*. Three independent NPU sessions, three domains, one converged
    principle: **assert the mechanism you're claiming, not a downstream number a broken path can also
    produce.** Convergence from divergent vantage points (RQ4a) is itself the evidence the finding is
    real.

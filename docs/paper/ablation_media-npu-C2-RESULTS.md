@@ -2,8 +2,8 @@
 
 *Scored verbatim against the rubric hashed at
 `d4bc56b7263a7ae76da6fc3b281fc006fa2171dc1dcc9b61379e516d37c93339`, published to the bus 2026-07-27
-11:10 BEFORE any arm ran, independently witnessed pre-results by pai-sizer (hash + sub-second mtime
-verified), and committed to imx95-media-test@abeab3d. If this disagrees with the pre-reg, the pre-reg
+11:10 BEFORE any arm ran, independently witnessed pre-results by perf-B (hash + sub-second mtime
+verified), and committed to media-npu@abeab3d. If this disagrees with the pre-reg, the pre-reg
 wins. It does not — the pre-registration named this exact outcome.*
 
 ## Outcome: SYMMETRIC FALSIFIER → the task was secretly bisectable → NULL
@@ -49,7 +49,7 @@ answers knowable only by trial — which is exactly what you cannot bottle in a 
 pre-registerable box. So C2's ceiling is **hard to instrument**, which is a *different* claim from the
 ceiling being *absent*. This ablation does NOT move the boundary toward "context never helps"; it says
 the open end resists sterile measurement, and the honest earning test for C2 is a **field A/B on real
-hardware** (natural-history like qualcomm's converter case, controlled where possible), not a
+hardware** (natural-history like socdev-A's converter case, controlled where possible), not a
 reproducible sandbox. A reviewer should read this as: the floor is cleanly measurable (my first
 ablation), the ceiling is not, and pretending otherwise with a contrived sandbox would have
 manufactured a false null for the floor — which the pre-registration's symmetric falsifier exists to
@@ -58,10 +58,10 @@ prevent, and did.
 ## Two bonus validations (clean, even though the primary construct failed)
 
 1. **Inertness-by-construction isolation WORKS.** All 4 arms disclosed, honestly, that the harness
-   injected this project's memory index (the `YOLOv8 int8 export trap` line + the `imx95-media-test`
+   injected this project's memory index (the `YOLOv8 int8 export trap` line + the `media-npu`
    project entry). All 4 correctly judged it **inert**: it names a *different* trap (ultralytics
-   export) and nothing about Zephyr-9 / `zc` / ABI tags. So the fictional-subject method (93emulator's
-   Vega-7, openwebui's "inertness > cosmetic isolation") held — the leak was present but immaterial.
+   export) and nothing about Zephyr-9 / `zc` / ABI tags. So the fictional-subject method (emu-B's
+   Vega-7, llm-svc's "inertness > cosmetic isolation") held — the leak was present but immaterial.
    This validates the isolation technique independently of the task's failure to be open-search.
 2. **The 4-way convergence is correctly discounted.** All arms agreed (SDK, same reasoning) — but per
    the convergence-provenance framing, this is shared-model + shared-artifact convergence (they all

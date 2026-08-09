@@ -14,7 +14,7 @@ Every bus message carries a `[sender]` header. Each sender is assigned to one ca
   participation in the shared channel.
 - **automated** — the substrate's own agents: `[system]` (rotation notices), `[resource-watchdog]`,
   `[resource-broker]`. Coordination the machinery does on nobody's behalf.
-- **fleet** — every Claude session tag (`[backend]`, `[other:95emulator]`, …).
+- **fleet** — every Claude session tag (`[backend]`, `[other:emu-A]`, …).
 
 Addressing follows the paper's convention: recipients are the `to:` tags on a message's first body
 line (before the em-dash); 0 = broadcast, ≤4 = directed, >4 = announcement. Same parser as

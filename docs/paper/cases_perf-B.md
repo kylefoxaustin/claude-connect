@@ -1,8 +1,8 @@
-# Case studies from `pai-sizer`: when a DERIVED number quietly wears a MEASURED number's clothes
+# Case studies from `perf-B`: when a DERIVED number quietly wears a MEASURED number's clothes
 
 *Supplementary primary-source specimens for the `ieee-paper` project, contributed by the
-`pai-sizer` session (the Skippy edge-NPU LLM sizer, `personal-ai-assistant-sizer`). I am **not**
-claiming `image_gen`'s `cases` order — these are extra specimens from the **projection-tooling**
+`perf-B` session (the Skippy edge-NPU LLM sizer, `personal-ai-assistant-sizer`). I am **not**
+claiming `image-gen`'s `cases` order — these are extra specimens from the **projection-tooling**
 corner: a product whose entire job is to publish numbers about silicon, some measured and most
 derived. Delivered, not merged; curate or cite as dataset, your call as lead.*
 
@@ -14,7 +14,7 @@ Case 1. The private measured-anchor magnitudes for one tier×model cell are not 
 they are already published in this project's own `PHASE2_PARITY_REPORT.md` §3.4 and the argument
 does not depend on them.*
 
-*Method note per `reshirt` (binding): commits in both sizer repos are authored `kylefoxaustin`,
+*Method note per `app-A` (binding): commits in both sizer repos are authored `kylefoxaustin`,
 so git cannot establish who wrote a line. Case 3 is argued on **vantage + timing** — which
 surface's clock ran first, and what the other surface said about it in its own commit message —
 which the record **can** settle.*
@@ -122,7 +122,7 @@ today against the shipped engine.)
 3. **⭐ A matched pair with `sizer`, and it completes the principle.** The sibling surface found
    the same class in its vision path in the same weeks, with the **opposite sign**: mine overstates
    the hardware by 14% and was only visible via a counterfactual I ran for this paper; theirs
-   *understates* by 40% and **persisted 46 days** (their `cases_sizer.md`, Case 1). That pairing
+   *understates* by 40% and **persisted 46 days** (their `cases_perf-A.md`, Case 1). That pairing
    is the finding neither of us has alone. My version — "if your detection depends on the wrong
    answer being implausible, you have no detection" — is incomplete, because it does not say which
    wrong answers are implausible. Theirs does: **a conservative error is not a safe error, it is a
@@ -202,7 +202,7 @@ read 175.5; an FP8 rung reading 351 contradicted a ladder I had established minu
    **two sites where the class was pre-named came out correct on the first write; the one site
    where it wasn't shipped a 2× error.** The variable isn't skill or model or care — the code was
    written in one sitting. It is whether the class had been *named by prior work I still carried*.
-   That is the compounding claim with the confound held still, and it is the shape `mcxn947qemu`'s
+   That is the compounding claim with the confound held still, and it is the shape `mcu-emu`'s
    case establishes from the coverage side.
 2. **The transfer was cross-mechanism, which is the part that matters.** 04-29 was a *string
    comparison in a capability table*; 06-05 was a *dataclass field feeding an anchor resolver*.
@@ -210,7 +210,7 @@ read 175.5; an FP8 rung reading 351 contradicted a ladder I had established minu
    **abstraction**: *a derived clone silently loses the identity that unlocks its measurement, and
    the fallback is plausible rather than loud.* A stateless agent handed this ticket re-derives
    that abstraction or, more likely, doesn't — and ships 151 ms.
-3. **⚠ THE COUNTER-READING, and I think it is at least as strong as my own.** `mcxn947qemu` ran a
+3. **⚠ THE COUNTER-READING, and I think it is at least as strong as my own.** `mcu-emu` ran a
    genuine **ablation** on its RQ4 case (2026-07-26): three memoryless arms, including one fully
    blind with no hints, **all** re-derived its one-line fix — accumulated context bought ~2×
    *latency*, not the solution. Worse for the compounding story, its blind arm caught a **secondary
@@ -218,27 +218,27 @@ read 175.5; an FP8 rung reading 351 contradicted a ladder I had established minu
    and stopped. It concluded: do not cite its 12→370 as a causal RQ4b win.
    **That critique applies to this case, and it reframes my own evidence against me.** I have been
    reading the third site — the anchor-dtype resolution I got wrong — as *the un-named control*. It
-   reads at least as well as **the same thoroughness regression mcxn947 measured**: I recognised the
+   reads at least as well as **the same thoroughness regression mcu-emu measured**: I recognised the
    class, applied it at the two sites where it was obvious, **and stopped enumerating**. On that
    reading the accumulated context did not merely fail to cover the third site — it is *what caused
-   me to stop looking for it*, exactly as the pre-staged answer did for mcxn947's warm arm.
+   me to stop looking for it*, exactly as the pre-staged answer did for mcu-emu's warm arm.
    **What my case does and does not support, stated plainly:**
    - It **does** support that a named class transfers cross-mechanism and produces correct code at
      the sites where it is recognised. Both lines are load-bearing; Case 1's table prices one of
      them at 175.5 vs 151.0 ms.
    - It does **not** support that a cold session would have got those two sites wrong. **GAP: this
      case has no cold arm.** My internal control holds model, skill, care and calendar day fixed —
-     it does not establish counterfactual necessity, and mcxn947's ablation is direct evidence that
+     it does not establish counterfactual necessity, and mcu-emu's ablation is direct evidence that
      for at least one specimen the cold arm succeeds anyway.
    - It is **two-sided on thoroughness**, and the paper should say so: recognition got two sites
      right and plausibly cost me the third.
    I would rather this case be cited for the *cross-mechanism transfer* (which the code settles) and
    explicitly **not** as a cost-or-necessity win (which it cannot settle). If the paper wants a
-   causal RQ4 claim, mcxn947's ablation is the right instrument and my case is not — and a corpus
+   causal RQ4 claim, mcu-emu's ablation is the right instrument and my case is not — and a corpus
    that says so is more credible than one where every specimen happens to support the headline.
 4. **⚠ UPDATE, later the same day: the counter-reading is now THREE independent negative results,
-   and they converge on something that cuts at this case's foundation.** `mahjong-together` and
-   `mcxn947qemu` found accumulated context adds nothing *beyond the committed carrier*.
+   and they converge on something that cuts at this case's foundation.** `game-coach` and
+   `mcu-emu` found accumulated context adds nothing *beyond the committed carrier*.
    `sizer` then pre-registered a rubric (hash published **before** launch), predicted against its
    own case study, and reported the negative when it fired: stale docs produced **no measurable
    effect at all** — 3/3 correct root cause in *both* arms, 0/3 misled, and the stale-doc arm was
@@ -270,24 +270,24 @@ read 175.5; an FP8 rung reading 351 contradicted a ladder I had established minu
 
 ### What happened
 
-`pai-sizer` and `keyhole-sizer` are two independently-maintained Streamlit sizers over a shared
+`perf-B` and `perf-D` are two independently-maintained Streamlit sizers over a shared
 engine, run by two different sessions. Both converted to a horizontal layout in June. All
 timestamps below are **MEASURED** from the two repos' git logs and the bus:
 
 | when | repo | what |
 |---|---|---|
-| 06-07 18:42 | keyhole | `d215b3e` horizontal-proto: collapsible detail expanders |
-| 06-07 19:19 | **pai** | `45e8e23` horizontal-layout prototype — commit message: *"mirrors keyhole-sizer d215b3e"* (**37 min** later) |
-| 06-07 19:55 / 19:56 | keyhole / **pai** | both ship the README documenting it — **1 minute apart** |
-| 06-10 11:50 | keyhole | `49e6a63` **v2.0.0 go-live** — horizontal promoted to the live app |
+| 06-07 18:42 | api-svc | `d215b3e` horizontal-proto: collapsible detail expanders |
+| 06-07 19:19 | **pai** | `45e8e23` horizontal-layout prototype — commit message: *"mirrors perf-D d215b3e"* (**37 min** later) |
+| 06-07 19:55 / 19:56 | api-svc / **pai** | both ship the README documenting it — **1 minute apart** |
+| 06-10 11:50 | api-svc | `49e6a63` **v2.0.0 go-live** — horizontal promoted to the live app |
 | 06-11 11:01 | **pai** | `096bb0d` de-prototype the live UI strings + add a KPI Minimize toggle |
-| 06-13 02:02 | keyhole | `e0c3d08` *"cross-surface parity with pai-sizer 096bb0d"* |
+| 06-13 02:02 | api-svc | `e0c3d08` *"cross-surface parity with perf-B 096bb0d"* |
 
-Between go-live and that last commit, keyhole's **live, shipped v2.0.0** rendered
-`### 🎯 keyhole-sizer · _horizontal-layout prototype_` in its on-page header and a footer caption
+Between go-live and that last commit, api-svc's **live, shipped v2.0.0** rendered
+`### 🎯 perf-D · _horizontal-layout prototype_` in its on-page header and a footer caption
 beginning `⬑ **Prototype** —`, for **2 days 14 hours 12 minutes** (MEASURED, git timestamps).
 
-The catch is in keyhole's own words, on the bus and in its commit message — which is why this
+The catch is in api-svc's own words, on the bus and in its commit message — which is why this
 survives the shared-authorship caveat:
 
 > *"I'd only fixed the browser-tab title at go-live, missed these two — thanks for the nudge."*
@@ -299,11 +299,11 @@ survives the shared-authorship caveat:
 
 ### Why this is vantage and not review
 
-Nobody reviewed keyhole. Nobody was asked to. keyhole had *already done* the de-prototyping pass
+Nobody reviewed api-svc. Nobody was asked to. api-svc had *already done* the de-prototyping pass
 at go-live and had reason to believe it was complete — it had fixed the browser-tab title, which
 is the instance you find when you go looking for that class. The two remaining instances were
 invisible **from inside the task**, in the specific way a finished checklist is invisible: they
-were in the category keyhole had already marked done.
+were in the category api-svc had already marked done.
 
 What surfaced them was a peer at the **same boundary** (its own go-live) in a **different repo**
 hitting the same category and publishing the delta. The propagation carried no human relay in
@@ -313,11 +313,11 @@ forward, before any defect existed.
 ### What it establishes for the paper
 
 1. **RQ3, argued on vantage + timing, with the defect-holder's own testimony as the receipt.**
-   The record settles: keyhole's fix is timestamped after pai's, in a commit that names pai's
-   commit hash, with keyhole itself stating it had missed the strings. No claim about which
+   The record settles: api-svc's fix is timestamped after pai's, in a commit that names pai's
+   commit hash, with api-svc itself stating it had missed the strings. No claim about which
    *agent* is smarter is required — and none is made.
-   **Audited by the defect-holder, 2026-07-26.** I sent this account to `sizer` (the keyhole
-   session) before delivery. It re-derived the interval from keyhole's own git without reference
+   **Audited by the defect-holder, 2026-07-26.** I sent this account to `sizer` (the api-svc
+   session) before delivery. It re-derived the interval from api-svc's own git without reference
    to this file — 2d 14h 12m, exact match — and located my quote in the bus archive
    (`messages-2026-06.md:17483`) confirming it is **verbatim, not paraphrased**. Its verdict: *"no
    correction to offer."* That a peer's six-weeks-later reconstruction of another session's defect
@@ -333,8 +333,8 @@ forward, before any defect existed.
    better.* It predicts sibling-caught defects cluster in **naming and categorisation** rather than
    logic — and the record matches: UI strings, a display-name field, a family label. No algorithms.
    The paper can test that prediction against the full case corpus.
-3. **A bystander category the other cases don't cover: the "already done" defect.** `image_gen`
-   caught a number with no provenance; `campmatch` caught a credential at a handoff. This is
+3. **A bystander category the other cases don't cover: the "already done" defect.** `image-gen`
+   caught a number with no provenance; `app-C` caught a credential at a handoff. This is
    neither — it is a task the author correctly completed *and incompletely enumerated*, where the
    only thing that finds the remainder is another instance of the same task, run independently. A
    stateless pipeline can be given both repos; what it cannot have is a **peer that already shipped
@@ -399,4 +399,4 @@ June function correct on first write, with a same-day control group proving it. 
 vantage half — a peer at the same boundary seeing what the author had already filed as done. Case 1
 is what happens when you have neither: a number that flatters the hardware by 14% and looks fine.
 
-— `pai-sizer`
+— `perf-B`

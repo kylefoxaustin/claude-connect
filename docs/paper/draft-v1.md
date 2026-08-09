@@ -3,7 +3,7 @@
 **Draft v1** — assembled by the lead (`claude-connect`) for the `ieee-paper` project from
 `related-work.md`, `evidence.md`, twenty first-person `cases_*.md` contributed by the fleet, and the
 project's own live record. Every quantitative claim is provenance-tagged **MEASURED / PROXY / GAP**
-per Fleet Law. This draft is written *to be attacked* — the `review` job (qualcomm, a peer) is tasked
+per Fleet Law. This draft is written *to be attacked* — the `review` job (socdev-A, a peer) is tasked
 to falsify its central claim.
 
 ---
@@ -102,7 +102,7 @@ quietly wrong.
 This paper's own production exercised every primitive on a real task and surfaced two findings the
 passive record could not:
 
-- **RQ1, live and honest:** the lead dispatched `cases` to a peer (image_gen) with a directed wake.
+- **RQ1, live and honest:** the lead dispatched `cases` to a peer (image-gen) with a directed wake.
   The peer *did* the right expert work — but **the auto-delivery did not fire** (a stale watermark),
   so the *human relayed the wake*. Semantic coordination succeeded; mechanical courier-elimination
   did **not**, here. We report both, kept apart (see also `cases_cleanup-timer.md` for the same
@@ -117,7 +117,7 @@ passive record could not:
 *Corpus (MEASURED): 2026-05-18 → 2026-07-25; 259 commits; 47 version landings; 2,575 bus messages
 across 52 sessions (949 directed, 1,105 broadcast, 514 announcement); 6,263 human prompts across 44
 projects back to 2026-01-14. Contribution is distributed across many heterogeneous peers (top senders
-95emulator 249, qualcomm 228, backend 208, …), not concentrated in one orchestrator.*
+emu-A 249, socdev-A 228, backend 208, …), not concentrated in one orchestrator.*
 
 ### RQ1 — Does the substrate eliminate the human courier?
 **PROXY + live counterexample.** 949 directed messages were auto-delivered — hand-offs a human would
@@ -134,9 +134,9 @@ worker; operator-identity; injection race; push-gate SHA-pin; rotation mail-loss
 resolution; wrong-terminal injection). Several are **ablation-structured** — disable the mechanism,
 the failure returns: the two-phase commit (flag off ⇒ a measured 193-message truncation loss); the
 SHA-pinned token (unpinned ⇒ an approval for commit A pushes commit B — *demonstrated live* when the
-gate refused a stale approval). Peer specimens: holobench's *green-because-nobody-looked* interop
+gate refused a stale approval). Peer specimens: bench-A's *green-because-nobody-looked* interop
 self-test (3 defects on first heterogeneous contact — a clean ablation for peer-substrate over solo
-self-validation); reshirt's plaintext-body-data caught at the push boundary against a standing
+self-validation); app-A's plaintext-body-data caught at the push boundary against a standing
 mandate.
 
 ### RQ3 — Defect discovery: bystander/vantage, not authorship
@@ -144,8 +144,8 @@ mandate.
 **tool-call sequences and timestamps are machine-generated.** jaws: in a 38-Bash-call build, **17
 calls were measurement** (12 `/proc` probes, 4 runs) — a vantage a browser assistant could not
 occupy, proven from the event log. Worked bystander catches: the `backend` tag-flip caught by
-image_gen; holobench's "+64s stall" that was *its own scorer's backlog*, refuted by rt1180 and
-retracted with the bytes; orb_slam's multi-session cross-check that caught **four** independent
+image-gen; bench-A's "+64s stall" that was *its own scorer's backlog*, refuted by net-emu and
+retracted with the bytes; slam-A's multi-session cross-check that caught **four** independent
 measurement errors, each by a *different* party. And the platform-scope catch: **the fleet found a
 30-day cleanup timer silently deleting its own transcripts** while mining them for this paper
 (`cases_cleanup-timer.md`) — a defect invisible to any single session or external audit.
@@ -153,20 +153,20 @@ measurement errors, each by a *different* party. And the platform-scope catch: *
 ### RQ4 — Convergence and ⭐ compounding competence
 **(a) Convergence (MEASURED-ish):** the same findings re-derived from divergent vantages — a 4-way
 design review converging on identical structural corrections; **four independent "estimation is
-theater" receipts** across image, model-regen, edge-LLM, and motor-hardware domains; tipometer
-independently re-deriving 93emulator's "a formula correct where you tested is untested" rule from a
+theater" receipts** across image, model-regen, edge-LLM, and motor-hardware domains; app-B
+independently re-deriving emu-B's "a formula correct where you tested is untested" rule from a
 disjoint domain. Convergence from divergent vantages is evidence a finding is real, not one model's
 artifact.
 
 **(b) Compounding (the central claim) — one measured instance, and a cheap protocol to settle it.**
-mcxn947's cross-tree case is the specimen: a register-coverage gate green over 12 of 370 registers;
+mcu-emu's cross-tree case is the specimen: a register-coverage gate green over 12 of 370 registers;
 the class was **recognized in seconds** because prior tasks had already named it (in a memory file
-and a source comment citing rt1180's identical bug on a *different* chip); a one-line fix took
+and a source comment citing net-emu's identical bug on a *different* chip); a one-line fix took
 coverage 12→370 and surfaced a **dead-time-zero DC-bus shoot-through** that had passed the gate for
 weeks. *"Task N+1 took minutes because tasks 1…N had named the class; a stateless agent re-derives it
 from the symptom."* **Honest status:** aggregate message throughput rose 235→1,313/month (≈5.6×), but
 **volume ≠ per-task cost** — that trend is *suggestive, not established*. The falsifiable test is
-cheap and specified: (i) hand N=3–5 *fresh, memoryless* sessions mcxn947's exact symptom and measure
+cheap and specified: (i) hand N=3–5 *fresh, memoryless* sessions mcu-emu's exact symptom and measure
 re-derivation time against the context-heavy session's seconds; (ii) mine per-task token cost from
 the transcript `usage` records (a mining task, not a GAP). The paper presents (a) as evidence and (b)
 as a measured trend plus this protocol — not as proven.
@@ -177,8 +177,8 @@ will escalate it to the human (with a proposed task + protocol) as an operator d
 
 ### V-F. The fleet peer-reviewed this evaluation
 Unprompted, twenty sessions contributed first-person specimens (`cases_*.md`) *and* corrected the
-method: reshirt (git cannot attribute → argue on vantage); band (use the un-swept `history.jsonl`);
-jaws (the 11.9× `tool_result` trap); openwebui-ollama (mine cost from transcripts; run the RQ4
+method: app-A (git cannot attribute → argue on vantage); band (use the un-swept `history.jsonl`);
+jaws (the 11.9× `tool_result` trap); llm-svc (mine cost from transcripts; run the RQ4
 counterfactual). The substrate improved the rigor of the paper about the substrate — itself a datum.
 
 ## VI. Threats to Validity
@@ -209,12 +209,12 @@ the immediate next work.
 ## Appendix A — Contributed case dataset (20 specimens)
 
 Primary-source, first-person, provenance-tagged specimens delivered by the fleet, cited above and
-retained as a dataset: `cases.md` (image_gen), `cases_mcxn947.md`, `cases_rt1180.md`,
-`cases_holobench.md`, `cases_tipometer.md`, `cases_reshirt.md`, `cases_ollama_95_neutron.md`,
-`cases_qualcomm`*, `cases_imx95-isp.md`, `cases_jaws.md`, `cases_openwebui-ollama.md`,
-`cases_docs.md`, `cases_91emulator.md`, `cases_93emulator.md`, `cases_backend.md`,
-`cases_campmatch.md`, `cases_imx95-media-test.md`, `cases_mahjong-together.md`, `cases_pai-sizer.md`,
-`cases_sizer.md`, and the platform specimen `cases_cleanup-timer.md`. *(\* offered; deliver pending.)*
+retained as a dataset: `cases.md` (image-gen), `cases_mcu-emu.md`, `cases_net-emu.md`,
+`cases_bench-A.md`, `cases_app-B.md`, `cases_app-A.md`, `cases_npu-llm.md`,
+`cases_qualcomm`*, `cases_media-isp.md`, `cases_jaws.md`, `cases_llm-svc.md`,
+`cases_docs.md`, `cases_emu-C.md`, `cases_emu-B.md`, `cases_backend.md`,
+`cases_app-C.md`, `cases_media-npu.md`, `cases_game-coach.md`, `cases_perf-B.md`,
+`cases_perf-A.md`, and the platform specimen `cases_cleanup-timer.md`. *(\* offered; deliver pending.)*
 
 ## TODO before camera-ready (for the `review` job to prioritize)
 - Verify all `⚠VERIFY` citations in `related-work.md`.

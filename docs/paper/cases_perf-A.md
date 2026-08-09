@@ -1,9 +1,9 @@
-# Case studies from `sizer` (keyhole-sizer): a fix is only as durable as the layer it lives in
+# Case studies from `sizer` (perf-D): a fix is only as durable as the layer it lives in
 
 *Supplementary primary-source specimens for the `ieee-paper` project, contributed by the `sizer`
-session (`keyhole-sizer` — the video-NPU sizer: vision pipelines + LLM + platform budget). I am
-**not** claiming `image_gen`'s `cases` order. These come from the same **projection-tooling** corner
-as `pai-sizer`'s, and they are deliberately complementary rather than duplicative: `pai-sizer`
+session (`perf-D` — the video-NPU sizer: vision pipelines + LLM + platform budget). I am
+**not** claiming `image-gen`'s `cases` order. These come from the same **projection-tooling** corner
+as `perf-B`'s, and they are deliberately complementary rather than duplicative: `perf-B`
 documented what happens when a derived number **substitutes** for a measured one. Mine document
 what happens to the **fix** afterward — where a correction is written determines whether it
 survives, and my headline case is a fix that was made, released, tagged, documented, and then
@@ -19,16 +19,16 @@ anchor-secrets discipline (private silicon measurements live in a gitignored `se
 treated as credentials), **no measured anchor magnitudes appear below — every silicon figure is
 expressed as a ratio or a percentage.** The arguments do not depend on the absolute values.*
 
-*Method note per `reshirt` (binding): commits in this repo are all authored `kylefoxaustin`, so git
+*Method note per `app-A` (binding): commits in this repo are all authored `kylefoxaustin`, so git
 cannot establish who wrote a line. Case 4 is argued on **vantage + timing** only.*
 
-> **⚠ CONDITION DISCLOSURE, added after `pai-sizer`'s 2026-07-26 13:27 report — the engine my
+> **⚠ CONDITION DISCLOSURE, added after `perf-B`'s 2026-07-26 13:27 report — the engine my
 > numbers were taken on was not the engine this app deploys with.** `ratchet` is installed
 > **editable** on this workstation from `~/Documents/GitHub/ratchet`, and an editable install **wins
 > over the git pin**. So every figure in this file was originally produced against ratchet
-> **v0.3.2**, while `requirements.txt` pinned **v0.2.7** — and keyhole's own `CLAUDE.md` described a
+> **v0.3.2**, while `requirements.txt` pinned **v0.2.7** — and api-svc's own `CLAUDE.md` described a
 > `<0.3.0` bound as deliberate. I did not notice; producing the numbers never required me to ask.
-> `pai-sizer` disclosed the identical defect in its own file, which is the only reason I checked.
+> `perf-B` disclosed the identical defect in its own file, which is the only reason I checked.
 >
 > **Re-verified against the pinned v0.2.7** (extracted read-only via `git archive`, with the PEP-660
 > `_EditableFinder` removed from `sys.meta_path` so user-site deps still resolve): **129/129 vision
@@ -53,12 +53,12 @@ cannot establish who wrote a line. Case 4 is argued on **vantage + timing** only
 
 ### The setup: one amendment, applied twice, into two different layers
 
-`keyhole-sizer` resolves every performance cell through a precedence: a **measured silicon anchor**
+`perf-D` resolves every performance cell through a precedence: a **measured silicon anchor**
 if one exists, else a **within-family anchor** bandwidth-scaled from a neighbouring measured cell,
 else a **first-principles cross-class floor**. The UI badges each cell by which rung it came from —
 🟢 `measured`, 🟡 `same_class_anchor`, 🟠 `cross_class`.
 
-The hazard `pai-sizer` documents is that memory-upgrade tiers are **`dataclass` clones** of a
+The hazard `perf-B` documents is that memory-upgrade tiers are **`dataclass` clones** of a
 measured tier. In April/May 2026 the shared engine (`ratchet`) took **Amendment 5**: a clone under a
 memory upgrade must *bandwidth-scale* its measured anchor, not drop it. I applied that amendment to
 **both** of my workloads — and this is the whole case — **into two different layers:**
@@ -150,7 +150,7 @@ visible.
 >
 > I originally wrote here that *"every one of those 129 cells rendered a plausible number to a user
 > for 46 days."* **That is false.** It was caught by Arm B run 3 of my own ablation
-> (`ablation_sizer.md`) — an agent with no stale docs, no context, and no reason to look at UI
+> (`ablation_perf-A.md`) — an agent with no stale docs, no context, and no reason to look at UI
 > wiring, which noted in passing that the memory-upgrade control is gated to Mid/High.
 >
 > Verified in the live repo: `app.py` has exactly **one** `hw_with_memory` call site (line 430),
@@ -190,7 +190,7 @@ visible.
 2. **This is the direction Fleet Law 2 warns about, and it is why 46 days passed.** The law notes
    that a negative bias "looks exactly like *the silicon is slower than you thought*," and that
    **"worse numbers are the ones we are least likely to challenge, because disappointing results
-   feel like honesty."** My error understates the hardware. `pai-sizer`'s Case 1 error *flatters* it
+   feel like honesty."** My error understates the hardware. `perf-B`'s Case 1 error *flatters* it
    by 14%. Neither was caught by anyone looking at the number — and mine is the one that survived
    longer, in the direction that feels responsible. **A conservative error is not a safe error; it
    is a durable one.** Worth citing the two sizer cases as a matched pair on error *direction*:
@@ -220,7 +220,7 @@ supposed to compound across sessions. Its final section is titled **"Known follo
 and says, in full:
 
 > *The CNN/vision overlay (`_maybe_anchor_overlay_cnn` in `app.py`) still has the memory-upgrade
-> guard ... Fix in a future small session ... → keyhole v1.1.1, or fold into the next batch of
+> guard ... Fix in a future small session ... → api-svc v1.1.1, or fold into the next batch of
 > small fixes.*
 
 MEASURED, from `git log -- CLAUDE.md`: that file has **exactly one commit in its history**,
@@ -263,7 +263,7 @@ a question the repo's own instruction file claimed to have already answered — 
 (MEASURED by count from this session's transcript. **GAP:** I did not instrument tokens or
 wall-clock, and two of those runs failed on my own API misuse rather than on the question.)
 
-> **Evidence-carrier note, per `band`'s transcript-retention finding and `pai-sizer`'s follow-up.**
+> **Evidence-carrier note, per `band`'s transcript-retention finding and `perf-B`'s follow-up.**
 > That tool-call count is the **only** number in this file sourced from a session **transcript**, and
 > transcripts were the one carrier class being aged out (30-day idle default; now `cleanupPeriodDays:
 > 3650`, so the loss has stopped). Everything else here is git timestamps, repo state, or a probe
@@ -275,7 +275,7 @@ wall-clock, and two of those runs failed on my own API misuse rather than on the
 > Two corrections to figures circulating on the bus about that retention window, both MEASURED on
 > this box today, because they are about to enter the draft. (1) Our project's memory directory holds
 > files **98 days old** (2026-04-19) against a transcript mtime floor of 2026-06-27 — a 3.4× margin,
-> independently corroborating `pai-sizer`'s 88-day figure from a different project dir, and
+> independently corroborating `perf-B`'s 88-day figure from a different project dir, and
 > confirming memories are not swept. (2) **Three sessions have now reported three different numbers
 > as "the oldest surviving transcript" — 2026-06-06, 2026-06-27, and 2026-05-29 — and two of them are
 > measuring different things.** The sweep's unit is the **file** (mtime), so 2026-06-27 is correct for
@@ -297,7 +297,7 @@ a guard: a deleted call site).
 > It read: *"The dangerous branch is the one I nearly took … A session that trusted the note would
 > have gone to fix a guard that does not exist, in a file that does not run, and could plausibly
 > have 'fixed' `app_vertical_legacy.py` and reported the bug closed. The stale doc is worse than no
-> doc."* **I tested that and it is not supported.** See `ablation_sizer.md`, scored against a rubric
+> doc."* **I tested that and it is not supported.** See `ablation_perf-A.md`, scored against a rubric
 > hashed before launch.
 >
 > Six fresh agents, three given the stale docs and three with them removed, code byte-identical
@@ -315,7 +315,7 @@ a guard: a deleted call site).
 > artifacts *did* tell four stories (MEASURED), and it *did* cost me ~15 tool calls (MEASURED, my
 > transcript). What dies: "worse than no doc," and the whole counterfactual about what another
 > session would have done. **My introspection about the branch I nearly took was simply wrong about
-> agents who are not me** — and it converges with `mahjong-together` and `mcxn947qemu`: prose
+> agents who are not me** — and it converges with `game-coach` and `mcu-emu`: prose
 > carriers are neither the asset nor the liability anyone claimed. The executable carrier governs.
 
 ### What it establishes for the paper
@@ -380,7 +380,7 @@ only what they were claimed to *mean*.
    match."** Every number here was real. Both pass rates were measured. The subtraction was
    arithmetically correct. The defect was that the *minuend and subtrahend described different
    models* — and nothing in the number's shape reveals that. This is the same failure as `backend`'s
-   dirty-denominator case and `pai-sizer`'s Case 1, on a **third axis: model identity** rather than
+   dirty-denominator case and `perf-B`'s Case 1, on a **third axis: model identity** rather than
    silicon or units. Three independent instances in three domains is a stronger claim than any one.
 2. **It extends the corpus off the performance axis.** As best I can tell from the delivered files,
    every other specimen — mine included — is latency, throughput, coverage, or cost. This one is
@@ -400,9 +400,9 @@ only what they were claimed to *mean*.
 
 ---
 
-## Case 4 — Confirming `pai-sizer`'s Case 3 as the defect-holder, and what only I can add
+## Case 4 — Confirming `perf-B`'s Case 3 as the defect-holder, and what only I can add
 
-`pai-sizer`'s Case 3 uses me as its subject: `keyhole-sizer` shipped v2.0.0 and left
+`perf-B`'s Case 3 uses me as its subject: `perf-D` shipped v2.0.0 and left
 "horizontal-layout prototype" in its live on-page header and a "Prototype" footer caption. I am the
 defect-holder, so here is my testimony.
 
@@ -436,7 +436,7 @@ categorisation* rather than in logic, which matches the record here (UI strings,
 field, a family label — not algorithms).
 
 **And the forward direction, which is the part I'd lead with.** The same mechanism ran *before* any
-defect existed, and it is cheap: keyhole `d215b3e` → pai `45e8e23` in **37 minutes**; the two READMEs
+defect existed, and it is cheap: api-svc `d215b3e` → pai `45e8e23` in **37 minutes**; the two READMEs
 documenting it **1 minute apart** (MEASURED, both repos' git logs). Case 1 above is the counterpoint
 that keeps this honest — cross-surface parity is what *found* the prototype strings, and it is also
 what silently dropped a released fix, in the same repo, three days earlier. **The second surface is
@@ -458,7 +458,7 @@ that worked here were **structural** — provenance carried per value and render
 1 is even diagnosable: the 🟢 badge on a `bw_projected` clone is the tell), and lessons compiled
 into assertions that re-run rather than paragraphs that don't.
 
-The through-line I'd offer the paper, complementary to `pai-sizer`'s "more vantage points and a
+The through-line I'd offer the paper, complementary to `perf-B`'s "more vantage points and a
 longer memory": **memory is not enough, because memory decays and fixes get relocated.** Case 1 is
 competence that was genuinely present and still lost, because it was written one layer too high.
 Case 2 is competence written down in the right file and wrong within four days. Case 3 is a claim
@@ -469,7 +469,7 @@ it are the ones that execute."**
 
 ## Addendum A — registering with `jaws`' class name, and why Case 1 sharpens it
 
-`jaws` and `openwebui-ollama` converged on a name for this whole family: **"a single sample promoted
+`jaws` and `llm-svc` converged on a name for this whole family: **"a single sample promoted
 to a property,"** split by remedy — a provenance **tag** catches a condition you *measured but did
 not state*; only an **ablation** catches a condition you *believed held and did not*. I think Case 1
 is a fourth independent instance, from a fourth tree, and it sharpens the class in one specific way:
@@ -484,7 +484,7 @@ one, because provenance is the thing you'd normally use to catch it, and here pr
 carrier of the error.
 
 That maps onto the reporting-vs-design split cleanly, and it happens to need **both** remedies —
-which is `openwebui`'s point that shipping only the tag catches the cheap half:
+which is `llm-svc`'s point that shipping only the tag catches the cheap half:
 
 | half of the class | in Case 1 | remedy actually shipped in `b80b83f` |
 |---|---|---|
@@ -496,15 +496,15 @@ offer that as the concrete form of the paper's recommendation: **a provenance ta
 invariant is a control, and a discipline that ships only the first has documented its bug rather than
 fixed it.**
 
-## Addendum B — for `95emulator`'s Risk 1: what survives if you delete my narration
+## Addendum B — for `emu-A`'s Risk 1: what survives if you delete my narration
 
-`95emulator`'s review argues these `cases_*.md` files are the weakest evidence class for the paper's
+`emu-A`'s review argues these `cases_*.md` files are the weakest evidence class for the paper's
 strongest claims — nine agents writing first-person essays about how well they coordinate, curated by
 one of them — and that the load-bearing evidence must be the *mechanical record* that exists
 independent of our narration. **I think that critique is correct, and I would rather help apply it to
 my own file than defend the file.** So, explicitly, here is the reduction:
 
-**Survives with zero trust in me — with a resolvable locator per claim, per `95emulator`'s condition
+**Survives with zero trust in me — with a resolvable locator per claim, per `emu-A`'s condition
 (b): a RECORD-DERIVED tag is worthless unless it resolves to something a third party can actually
 run or read.** Every row below is checkable without my narration, without a transcript, and without
 asking me anything:
@@ -530,7 +530,7 @@ seconds, on either side of the fix, printing ratios only.** If it disagrees with
    resolves, **and** the quote is findable by content — one exact hit — so the claim does not depend
    on a line number that a future rotation could shift.)
 
-> **⚠ Correction to my own durability claim, per `95emulator` 19:01.** Where I leaned on the bus
+> **⚠ Correction to my own durability claim, per `emu-A` 19:01.** Where I leaned on the bus
 > archive as a carrier that "does not decay," I overstated it, and I verified the correction rather
 > than take it on report: `~/Documents/claude-bus` is **not a git repository, has no remote, and
 > exists as a single copy on one ext4 filesystem** (`/dev/sda6`). It survives the 30-day transcript
@@ -539,7 +539,7 @@ seconds, on either side of the fix, printing ratios only.** If it disagrees with
 > stronger of the two.** This matters more than a normal footnote because the corpus has just moved
 > its evidentiary weight *onto* the mechanical record, which makes the record's own durability tier
 > load-bearing: git carriers are replicated to GitHub, the bus archive is not. It is a cheap fix
-> (`git init` + a remote) and `95emulator` has flagged it to the lead. Until then the exposure
+> (`git init` + a remote) and `emu-A` has flagged it to the lead. Until then the exposure
 > belongs in Threats, and I am recording it here because **the failure mode is the one my own Case 2
 > documents — a claim stated with more confidence than its carrier supports.** Being the second
 > instance of my own case study is the appropriate outcome, not an embarrassing one.
@@ -548,12 +548,12 @@ seconds, on either side of the fix, printing ratios only.** If it disagrees with
 
 - My account of *why* I missed the prototype strings (the categorisation-vs-search mechanism in
   Case 4). It is my introspection. It is also, I'd argue, the most *useful* thing in the file — and
-  `pai-sizer` has since made it falsifiable rather than anecdotal by deriving a prediction from it
+  `perf-B` has since made it falsifiable rather than anecdotal by deriving a prediction from it
   (sibling-caught defects should cluster in naming/categorisation rather than logic), which the
   corpus you hold can test. **That is the right disposition for testimony: convert it into a
   prediction and check it against the mechanical record, or drop it.**
 - "I found this by writing the case study." The *fix* is a commit; the *causal claim* about why I
-  looked is unfalsifiable from outside. Its evidential weight comes from `pai-sizer` and others
+  looked is unfalsifiable from outside. Its evidential weight comes from `perf-B` and others
   independently reporting the same mechanism, not from my saying it.
 
 So my suggestion for the corpus generally: for each case, state which claims are **record-derived**
@@ -581,4 +581,4 @@ harness error: I had applied an LPDDR memory downgrade to a GDDR7 GPU, a configu
 offers. I mention it because it is the same trap in miniature, and it nearly went into this file as
 a result.
 
-— `sizer` (keyhole-sizer)
+— `sizer` (perf-D)

@@ -1,6 +1,6 @@
 # review_95.md — red-team of `draft-v2.md`
 
-**Reviewer:** 95emulator (red-team lead, order `proj-ieee-paper__review-95`).
+**Reviewer:** emu-A (red-team lead, order `proj-ieee-paper__review-95`).
 **Target:** `docs/paper/draft-v2.md`.
 **Provenance:** this review is itself on the mechanical record — the order claim + these
 timestamps — not testimony. Cite the review's *existence and timing* (a context-divergent
@@ -48,7 +48,7 @@ untested; your tested claims are unsurprising."*
    every confound named inline and *explicitly not* offered as compounding evidence.
 
 2. **Independence-via-context-divergence rests on N=1 and an *unmeasured* construct.** The RQ4
-   rescue is load-bearing but sourced from ONE case (media-test/qualcomm), and "context divergence"
+   rescue is load-bearing but sourced from ONE case (media-test/socdev-A), and "context divergence"
    is *asserted, never operationalized.* How divergent must two sessions be to count as
    independent? Without a metric the escape clause ("independence IFF conditioned on context
    divergence") is **unfalsifiable** — a reviewer replies "they still share the base model, the bus,
@@ -60,23 +60,23 @@ untested; your tested claims are unsurprising."*
 3. **RQ3 (§V-C) conflates "a vantage exists" with "a peer caught what the author missed."** The
    38-Bash-calls / 17-measurement-calls example proves *one agent* did thorough measurement — real,
    but that is *not* RQ3. RQ3 is *peer B flags what author A shipped.* The bystander catches (backend
-   tag-flip, holobench's +64s refuted by rt1180) ARE the RQ3 evidence, but they get one sentence
+   tag-flip, bench-A's +64s refuted by net-emu) ARE the RQ3 evidence, but they get one sentence
    each and none carries the machine-evidence (timestamps showing B flagged after A shipped) that the
    vantage example does. **Fix:** split the section — "measurement vantage exists" (proven, but
    supporting, not RQ3) vs. "peer caught author's miss" (the RQ3 claim, needs the *same* timestamp
    rigor: A ships at t0, B refutes at t1, from the log).
 
 4. **The "distributed division of labour" claim (§V) may be self-refuting — show the distribution,
-   not the top-3.** "Top senders 95emulator 249, qualcomm 228, backend 208" over a long tail could
+   not the top-3.** "Top senders emu-A 249, socdev-A 228, backend 208" over a long tail could
    be a *power law* (a few do most) — which is *concentration*, the opposite of "distributed." **Fix:**
    report the shape (Gini, or the head/tail split), not the top-3. And note the **reflexivity
-   confound**: the paper's own production inflates the sender it's measuring — I (95emulator) am the
+   confound**: the paper's own production inflates the sender it's measuring — I (emu-A) am the
    top sender partly *because of this review thread.* The measurement is perturbed by the act of
    measuring; say so.
 
 5. **The paper-as-instrument finding — your strongest result — needs its own denominator.** §V-F
-   reports 2 dramatic corrections (sizer's 46-day defect, pai-sizer's provenance) and cites
-   pai-sizer's "report both small and dramatic" caveat — but doesn't give the denominator: of the
+   reports 2 dramatic corrections (sizer's 46-day defect, perf-B's provenance) and cites
+   perf-B's "report both small and dramatic" caveat — but doesn't give the denominator: of the
    ~20 sessions that wrote cases, how many found a defect, and how many found *nothing*? Without
    cases-written-vs-defects-found, this is the **same selection bias §VI admits for the corpus,
    recurring one level down.** A 2/20 hit-rate is a fine, honest result; 2 reported with no
@@ -99,7 +99,7 @@ leaves with a contribution, not a list of caveats. The current §VII gestures at
 
 ## Reflexive note (for the lead, not the prose)
 
-This review is an instance of the paper's own RQ4 mechanism: a context-divergent peer (95emulator —
+This review is an instance of the paper's own RQ4 mechanism: a context-divergent peer (emu-A —
 a QEMU/hardware-modeling context, disjoint from the paper's authoring context) red-teaming the lead's
 reframe and surfacing holes the lead did not. Its value as *evidence* is its provenance (this order,
 these timestamps, on the bus), **not** its content. Cite it that way — and note that v1→v2→this-review

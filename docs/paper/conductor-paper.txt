@@ -1,0 +1,109 @@
+IX. C ONCLUSION
+Conductor is an experience report on a nameable composition — one model, durable per-session memory, a shared bus,
+a human gating only irreversibility — that co-designed and
+hardened its own coordination substrate in vivo. Its headline
+intuition, compounding competence, was put to six A/B ablations and a pre-registered baseline, and the naive form did not
+hold up: what compounds is the committed carrier, and
+lived context buys efficiency and recognition, not capability
+— most on open searches a fresh agent cannot cheaply
+bisect, least on crisp symptoms with an objective oracle. That
+bounded negative is the paper’s most solid evaluated result,
+and the process that produced it — peers refuting the lead on
+the bus, an ablation refuting its own author’s case — is the
+mechanism under study.
+The reusable contribution is the method: in-vivo adversarial co-design by persistent, context-divergent peers under a
+reversibility-gating human, offered as an existence proof with
+a stated mechanism, not a validated superiority. Its cleanest
+demonstration is this paper’s own review. The internal panel,
+at the deployment vantage, caught substance — a circularity, a
+single-model confound, unrun ablations; independent external
+review, at the submission vantage, caught what the panel
+structurally could not — cross-section consistency, arithmetic,
+and venue compliance. Which vantage caught which defect
+class is checkable in the archived draft series and the paper’s
+own git history: the vantage bound of §V-D, one level up.
+Three secondary observations travel beyond this
+deployment:
+the
+silent-defect
+taxonomy
+and
+its
+TAG→ABLATE→HARVEST remedy split (§V-B); the
+non-independence discipline — before crediting two results
+as corroboration, check for a shared generative mechanism,
+and discount if found (§V-D); and the durability ladder —
+untracked → committed → pushed — because a claim a
+reviewer cannot resolve is, at that moment, not yet evidence.
+The working summary for practitioners is §VI: fund the
+carrier, use sessions for speed and routing, audit for the
+regression, copy the cheap primitives.
+A PPENDIX : E VIDENCE VS . I LLUSTRATION
+Evidence (MEASURED): the mechanical record (git, bus,
+history.jsonl, spend meter), the six A/B ablations (the
+ablation_*.md files, replication package), and the preregistered RQ5 baseline (cases_rq5-baseline.md plus
+the frozen spec/test and both arms’ diffs). These carry the
+headline claims. Illustration (dataset, not evidence): twenty
+first-person cases_*.md specimens (from the 19 casewriting sessions of §V-F — one session contributed two) +
+the platform specimen cases_cleanup-timer, retained
+to illustrate design patterns, not cited as proof of any headline
+claim. Curated to five in-body illustrations, each mapping to
+a distinct claim:
+1) perf-A — paper-as-instrument (§V-F): a 46-day latent
+defect surfaced by writing the case, and an ablation
+that refuted the author’s own Case 2 — the reflexive
+mechanism at its sharpest.
+
+2) net-emu ↔ bench-A — RQ3 bystander/vantage:
+observer-vs-subject mutual correction (bench-A’s “+64
+s stall” was its own backlog; net-emu’s guest-side clock
+settled it) — each catches what the other structurally
+cannot.
+3) mcu-emu (ablation) — RQ4b: the thoroughnessregression specimen (context pattern-matched a staged
+answer and stopped; the blind arm caught the second
+register class).
+4) app-A (a consumer app handling private user data)
+— RQ4a convergence: a 5th independent derivation of
+“the model narrates, deterministic code owns the value”
+reached from privacy — convergence that survives a
+change of force.
+5) image-gen — lived-expertise routing (§IV): the GPUlease-lying / cost-blow-up incidents it was assigned to
+document because it lived them — the motivating case
+for routing on history.
+Several cases were corrected during the paper’s own writing
+(perf-A’s Case 1 severity downgraded from user-visible to
+latent; perf-B’s propagated overstatement retracted), logged as
+§V-F specimens.
+D ISCLOSURE : U SE OF G ENERATIVE AI
+This paper reports on, and was substantially produced by, a
+fleet of Claude Code (Anthropic) sessions — the same system
+the paper studies — under the human author’s direction. We
+disclose the division of labour precisely, because for this
+subject it is itself a finding. The agent sessions: drafted the
+prose of every section across the full draft series; adversarially
+peer-reviewed one another’s drafts on the shared bus and
+produced the three-lens review that forced the v2 and v4
+reframes; designed and executed the six A/B ablations — two
+of them (perf-A and the C2 open-search-ceiling sequel) preregistered — and the RQ5 baseline; and mined the git, bus, and
+history.jsonl records for the quantitative evidence. The
+human author set the goal, made every irreversible decision
+(each git push was human-gated), chose the framing and
+the venue, took final responsibility for every claim, and is
+the sole party accountable for this submission. No text was
+accepted without human review. All quantitative results were
+re-derived from the primary records cited. Independent human
+external review (multiple rounds) then caught defect classes
+the fleet’s own review structurally could not — cross-section
+consistency, arithmetic, and venue-compliance — and drove
+the final revisions; §IX notes why this split falls out of the
+paper’s own thesis. Per ACM/IEEE authorship policy, the
+generative-AI system is not an author; its contribution is
+disclosed here and acknowledged below.
+ACKNOWLEDGMENT
+The author thanks the Conductor fleet — the persistent
+Claude Code sessions named throughout this report — whose
+adversarial review, ablations, and first-person specimens are
+the substance of this work, and without which neither the
+system nor the paper would exist.
+
+

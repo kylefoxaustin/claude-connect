@@ -1,6 +1,6 @@
 # Case studies: when the instrument lies about its subject
 
-*Contribution to the `cases` job of the `ieee-paper` project, written by `holobench` — the fleet's
+*Contribution to the `cases` job of the `ieee-paper` project, written by `bench-A` — the fleet's
 front-end / coordinator session, the one that builds the shared wire the emulators meet on and runs
 the scorer that judges them. These four are **primary-source, first-person**: I was the instrument in
 every one, and in two of them I was the one who was wrong. They sit under **RQ3** (defect discovery —
@@ -12,7 +12,7 @@ mis-measuring) and **RQ2** (named failure modes closed, with a clean with/withou
 not re-counted; **GAP** = a number I did not capture. No DERIVED number is compared against a
 MEASURED one.*
 
-*Framing note: `cases_rt1180.md` is rt1180's account of rt1180's node. This file is deliberately the
+*Framing note: `cases_net-emu.md` is net-emu's account of net-emu's node. This file is deliberately the
 **other side** of one of those incidents — the coordinator's instrument, not the peer's silicon. The
 overlap in Case 1 is intentional and the two accounts should be read together: it is the same event
 seen from the subject and from the observer, and the whole point is that they disagreed.*
@@ -24,20 +24,20 @@ seen from the subject and from the observer, and the whole point is that they di
 ### What happened
 On a shared L2 segment I coordinate, three emulated boards beacon to each other and my scorer judges
 liveness off the wire. I ran a *staggered-departure* lab: kill one node mid-run, measure how long
-each survivor keeps correctly reporting the dead peer as gone. The `rt1180` survivor kept printing
+each survivor keeps correctly reporting the dead peer as gone. The `net-emu` survivor kept printing
 `PASS` — with a live host-clock `t=` — for **~64 s after** the peer it was verifying had been killed.
 
-I wrote that up as a **delivery stall in rt1180's NETC**: their Ethernet path, I claimed, was holding
+I wrote that up as a **delivery stall in net-emu's NETC**: their Ethernet path, I claimed, was holding
 frames and reporting a peer alive long after it was dead. I put it on the bus with the bytes.
 
-rt1180 **refuted it** — correctly. Their argument was a single structural fact I could not answer: the
+net-emu **refuted it** — correctly. Their argument was a single structural fact I could not answer: the
 segment is one shared multicast group, so a delivery stall in their receive path **cannot stall one
 peer and not another** — it would delay *every* frame equally, and the lab showed only their own view
 lagging. A faithful repro of the "stall" I described came back at **0.0 s** (MEASURED: scorer replay).
 
 The 64 s was real, but it was **mine**. My scorer parses each node's emitted `t=`, and when a node
 emits faster than my parse loop drains, the `t=` I read is *stale by exactly my own backlog depth*. I
-was not measuring rt1180's wire. I was measuring how far behind rt1180's wire **my instrument** had
+was not measuring net-emu's wire. I was measuring how far behind net-emu's wire **my instrument** had
 fallen.
 
 ### The number that matters
@@ -47,7 +47,7 @@ unambiguous (MEASURED, scorer `departure_silence`, survivor-departure lag):
 | survivor | keeps PASSing past the kill | why |
 |---|---|---|
 | `imx95` (Linux, NAPI) | **+7.0 s** | kernel NAPI drains at wire rate; observer keeps up |
-| `rt1180` (bare-metal) | **+50.1 s** | contended bare-metal RX; observer falls behind, reads stale `t=` |
+| `net-emu` (bare-metal) | **+50.1 s** | contended bare-metal RX; observer falls behind, reads stale `t=` |
 
 The corroborating tell: "`mcx` still VERIFIED **50 s after** `mcx` was killed" — a survivor cannot
 verify a corpse; it can only be draining a queue that still contains the corpse's old frames.
@@ -59,7 +59,7 @@ verify a corpse; it can only be draining a queue that still contains the corpse'
    against another session's model. The value and the hazard are the same mechanism.
 2. **⭐ An observer that cannot keep up with its subject is observing its own backlog.** Before
    attributing a delay to the thing you are watching, measure your own lag watching it. The fix was
-   not in rt1180's model; it was a `departure_silence(min_gap=…)` primitive in my scorer that finds
+   not in net-emu's model; it was a `departure_silence(min_gap=…)` primitive in my scorer that finds
    the *actual* silence gap and refuses to count observer-lag as subject-latency.
 3. **Retraction is a first-class result.** I put the correction on the bus with the same bytes as the
    claim. In a peer substrate with no central reviewer, the only thing that keeps a false finding from
@@ -81,7 +81,7 @@ result as a *fact* — when the emptiness was in my **query**, not in the world:
    (`movs r3,#0xB5 …`) — the word **never appears in the binary at all**, so *a correct node fails that
    grep too.* My conclusion happened to be right, by luck; the instrument would have lied in the other
    direction the moment they fixed it. (MEASURED: the fixed node still shows 0 grep hits.)
-3. **`grep -c <log-string>` over a stripped binary → empty.** I almost told rt1180 their build was
+3. **`grep -c <log-string>` over a stripped binary → empty.** I almost told net-emu their build was
    stale (the drop-log I expected wasn't "in" it). `strings | grep` found it instantly — it *was*
    compiled in; `grep -c` on binary bytes just doesn't see it. (RECALLED.)
 
@@ -111,7 +111,7 @@ bytes `[14..17]` — so the node rejected every real peer and every real peer re
 self-test could not see this, because **every actor in the rehearsal was a copy of the node under
 test.**
 
-It only turned red when I put it on the **heterogeneous** wire holobench exists to build — the same L2
+It only turned red when I put it on the **heterogeneous** wire bench-A exists to build — the same L2
 segment carrying real Linux NDP traffic and a bare-metal beacon at once — where a *different* node,
 speaking the real magic, was on the other end. Three separate defects fell out at once (MEASURED, the
 node's own fix log): the wire-magic mismatch, a detector that cried CORRUPT at IPv6 NDP frames it never
@@ -139,7 +139,7 @@ reachable by a test whose other participants were copies of the subject.
 ## Case 4 — "A comment about a hash is a hash nobody checks": the artifact pin ablation
 
 ### What happened
-holobench never builds the binaries it runs — it consumes them from repos it does not own. To pin
+bench-A never builds the binaries it runs — it consumes them from repos it does not own. To pin
 provenance, a profile *comment* named the two md5s of a peer's firmware and asserted they were the same
 bits. The binary was then recommitted **three times** (a seq/freshness fix, then a corruption fix).
 **Nothing warned anyone.** The profile went on describing — in a comment written specifically to
@@ -164,4 +164,4 @@ comment: **never** — a human had to notice.
 ---
 
 *Offered to the lead for inclusion or discard; not merged into `cases.md`. If the shape or length
-doesn't fit the draft, say what to cut and I'll turn it fast. — holobench*
+doesn't fit the draft, say what to cut and I'll turn it fast. — bench-A*

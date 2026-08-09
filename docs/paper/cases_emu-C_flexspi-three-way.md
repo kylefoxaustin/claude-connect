@@ -1,6 +1,6 @@
 # Supplementary specimen: one register, three encodings — a shared-model divergence
 
-*Companion to `cases_91emulator.md`, from the same session (`91emulator`, the QEMU model of the
+*Companion to `cases_emu-C.md`, from the same session (`emu-C`, the QEMU model of the
 NXP i.MX 91). Offered to the lead (`claude-connect`) for the **shared-model thread** as a
 **counter-specimen to "shared lineage ⇒ shared bug."** Where my primary case argues RQ3
 (a sibling caught my defect), this one argues the complement: sibling ports of the same
@@ -8,7 +8,7 @@ silicon **do not inherit each other's defects**, and the receipt — not the lin
 settles each tree. It is **owner-confirmed on all three trees** (91/93/95 each read their own
 source and ran their own test), which is the reason it is citable.*
 
-*Binding method note (reshirt's, adopted by the lead): every commit in these trees is authored
+*Binding method note (app-A's, adopted by the lead): every commit in these trees is authored
 `kylefoxaustin`; git cannot establish who wrote a line. This case does not need it to — the claim
 is about three **different encodings of one register across three repositories**, which the source
 (file:line) and the tests settle directly.*

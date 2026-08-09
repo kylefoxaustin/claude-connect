@@ -5,13 +5,13 @@ not close the gap with a positive; it returned a **pre-registered NULL that expl
 hard**: reproducibility and the open-search property are in tension, so the ceiling resists sterile
 measurement (a *different* claim from the ceiling being absent). The pre-registration's symmetric
 falsifier *prevented a false positive on the measurable floor* — the discipline working, on the
-record. Also folds pai-sizer's "carrier ladder" (untracked → tracked-local → pushed) into §VII, and
+record. Also folds perf-B's "carrier ladder" (untracked → tracked-local → pushed) into §VII, and
 carries the verified citations + IEEEtran scaffold from v4. Citations to the sequel artifacts are held
 until their commits are remote-published (a reviewer cannot resolve a local SHA — the very point the
 carrier ladder makes).
 
 *(Prior framing, retained:)* v4 was v3 with the **three-lens peer panel addressed** (`review_95` red-team +
-`review_holobench` evidence-rigor + `review.md` qualcomm synthesis). The panel judged v3
+`review_bench-A` evidence-rigor + `review.md` socdev-A synthesis). The panel judged v3
 "submittable-track" and returned four gating fixes + two structural watches, all machine-grounded;
 v4 lands them: the flagship RQ3 provenance smudge split, RQ4b re-ordered to lead with its
 best-powered arm, the concentration statistic now *computed by the cited harvester* (not
@@ -152,7 +152,7 @@ sender 9.4%, top-3 25.6%, and **13 of 55 senders to reach 80%.** Many peers carr
 dominant author, but a genuine concentration we report rather than round off to "distributed."
 **Reflexivity confound — now MEASURED, not just conceded:** the count grew 2,575 (2026-07-25) → 2,703
 (07-26 eve) → 2,719 (07-27 am), **+5.6% in ~2 days, and that growth is overwhelmingly this paper's own
-review/ablation traffic** — the top senders (95emulator, qualcomm, backend) are top partly *because of
+review/ablation traffic** — the top senders (emu-A, socdev-A, backend) are top partly *because of
 the threads this paper generated.* The instrument is perturbed by the act of measuring; we quantify
 the perturbation rather than only naming it.*
 
@@ -187,22 +187,22 @@ tag") sails past most of them:
    Remedy: **replicate + tag**. Sharpened (sizer): a *measured* number promoted past its conditions
    is *worse* than a derived one, because the `measured` badge actively defends the error.
 2. **Green-but-wrong / wired-but-broken in the untested direction** — a gate green + documented +
-   shipped, passing every gate-ON test while the gate-OFF path leaks (91emulator, rt1180). Replaying
+   shipped, passing every gate-ON test while the gate-OFF path leaks (emu-C, net-emu). Replaying
    the green measurement *n* times passes *n* times; the only fix is asserting a **different**
    measurement — **execute the off-state / your own reproduction once**.
 3. **Provenance-tier silently dropped during remediation** — re-anchoring a number to a *recipe*
-   downgrades MEASURED → reproducible-in-principle until someone runs it (band, 91emulator). Remedy:
-   run the recipe and *say you did* (91emulator did — the mutation reproduces `1,409,307,648`).
+   downgrades MEASURED → reproducible-in-principle until someone runs it (band, emu-C). Remedy:
+   run the recipe and *say you did* (emu-C did — the mutation reproduces `1,409,307,648`).
 4. **Conservative-error-is-durable** — a wrong-but-safe-looking value evades the provenance check
    that would normally catch it. "A conservative error is not a safe error; it is a durable one."
 5. **Thoroughness regression** — the context shortcut that made the agent fast made it skip the
-   secondary gap (mcxn947 DISMAP; pai-sizer's third site). Remedy: re-derive under a
+   secondary gap (mcu-emu DISMAP; perf-B's third site). Remedy: re-derive under a
    differently-drawn boundary / forced first-principles trace.
 
 And the **remedy split** the same convergence produced: **TAG** (cheap disclosure; catches a
 condition you measured but did not state) → **ABLATE** (an invariant/control; catches a condition you
 *believed held and did not*) → **HARVEST** (a parallel peer at the same boundary building the same
-artifact is a *naturally-occurring* off-state ablation — 91emulator↔93emulator, sizer↔pai-sizer —
+artifact is a *naturally-occurring* off-state ablation — emu-C↔emu-B, sizer↔perf-B —
 cheaper than a designed one, and record-visible: cross-tree agreement on different fixes is
 derived-not-copied). *Shipping only the tag documents the bug rather than fixing it.*
 
@@ -212,17 +212,17 @@ claim): MEASURED (jaws), a 38-Bash-call build had **17 measurement calls** (12 `
 runs) — a vantage a browser assistant could not occupy, proven from the event log. **(ii) A peer
 caught what the author shipped** (the actual RQ3 claim, and it needs the *same* timestamp rigor — A
 ships at t0, B refutes at t1, both from the record): the `backend` tag-flip caught by another session;
-holobench's "+64 s rejoin stall" refuted by rt1180 — and we are careful to keep two *distinct*
+bench-A's "+64 s rejoin stall" refuted by net-emu — and we are careful to keep two *distinct*
 artifacts distinct (the panel caught v3 welding them, a provenance error inside the provenance
-exhibit): **(instrument)** rt1180 relocated the measurement *into the guest* — a guest-emitted
-timestamp holobench structurally cannot produce — landed as commit `4059f7633f`; **(figure)** a
+exhibit): **(instrument)** net-emu relocated the measurement *into the guest* — a guest-emitted
+timestamp bench-A structurally cannot produce — landed as commit `4059f7633f`; **(figure)** a
 *subsequent scorer replay* over that guest clock then put guest-side re-acquisition at 0.0 s, showing
 the 47–64 s was the observer's own arrival-stamp backlog upstream of the ring. Timeline pinned from the
-record: holobench reports the stall (t0) → rt1180's guest-clock commit + the replayed 0.0 s refute it
+record: bench-A reports the stall (t0) → net-emu's guest-clock commit + the replayed 0.0 s refute it
 (t1 > t0). The 0.0 s is the *replayed figure*, not the commit's payload — two artifacts, not one;
-orb_slam's
+slam-A's
 cross-check catching *four* independent measurement errors, each by a different party. **A new,
-clean, testimony-free instance from the ablations:** in `ablation_sizer` a **blind, zero-context**
+clean, testimony-free instance from the ablations:** in `ablation_perf-A` a **blind, zero-context**
 arm — with no reason to look at the UI — caught a **real overstatement in the author's own case**
 (129 defective cells reachable via the engine API but *not* the shipped UI) in **nine tool calls**,
 something the author had missed across an entire session. Author-ships-overstatement / blind-peer-
@@ -241,25 +241,25 @@ a known result, and memory-*present* is not memory-*causal*. **The test (LANDED)
 the naive claim.** A *genuinely isolated* fresh session (harness-isolation caveat binding) vs. a
 context-carrying one on the same task, measuring re-derivation cost:
 
-- **★ mahjong-together — the best-powered arm, and the disconfirmation's backbone** (coach affordance
+- **★ game-coach — the best-powered arm, and the disconfirmation's backbone** (coach affordance
   overriding an engine fact; **N=8 per arm — the only powered ablation of the six**): **16/16 reached
   the real architectural fix**; BLIND mean 5.4 tool-calls / 37.4k tok vs PRIMED 6.5 / 44.2k — priming
   bought **a small cost, no benefit**, and all 16 used no git history. A **clean, powered NEGATIVE**:
   a fresh clone holding the carrier re-derives the fix; session-memory adds nothing to the *outcome*.
   We lead with this arm deliberately — a disconfirmation is only as strong as its best-powered evidence.
-- **mcxn947 — a COUNTER-CURRENT (color), not the foundation: N=1, post-hoc-graded, and its own author
+- **mcu-emu — a COUNTER-CURRENT (color), not the foundation: N=1, post-hoc-graded, and its own author
   cautions against causal weight** (register-coverage hole; 3 cold clean-room arms): all three
   re-derived the identical one-line fix (3–5 tool calls, 46–105 s). Beyond negative, it showed a
   vivid *thoroughness regression* — the context-carrying run pattern-matched a pre-staged answer and
   **stopped**, missing a second register class (DISMAP) the **blind** arm caught. Suggestive, but
   single-instance and unpowered; we present it as color on the powered result above, never as its base.
-- **93emulator** (idle-vs-load clock constant; **N=18**, fictional subject to kill harness
+- **emu-B** (idle-vs-load clock constant; **N=18**, fictional subject to kill harness
   contamination): **cost-contingent.** When measuring is *hypothetical/costly* the standing-order arm
   wins unanimously (control ships the confidently-wrong idle value; treatment re-derives the hazard);
   when the measurement is made **cheap** (a runnable probe), **both arms 6/6 ship the right number** —
   the base model just does it. The residual real effect is *a disposition at a cost/effort fork*, not
   added capability.
-- **imx95-media-test** (INT8 class-score collapse; objective corr > 0.90): the fresh agent reached
+- **media-npu** (INT8 class-score collapse; objective corr > 0.90): the fresh agent reached
   the **same root cause in ~the same ~4 steps**, solved it (6 m 44 s, 16 calls, cls-corr 0.956).
   PARTIAL DISCONFIRMATION — refines the claim to a *bound* (below).
 - **sizer** (**the only pre-registered ablation** — rubric hash published to the bus before any agent
@@ -281,7 +281,7 @@ gain iff the context-carrying arm *reaches a correct fix the fresh arm does NOT*
 **efficiency** gain iff it reaches the *same* correct fix *more cheaply* (fewer steps/tokens/time).
 Under that test the six ablations + RQ5 are **efficiency, not capability** — every fresh arm reached a
 correct fix (16/16, 3/3, 6/6, both RQ5 arms), so the measured advantages (RQ5's 2.6× fewer steps;
-mahjong's flat outcome) are cheaper-path, not can-vs-cannot. *This is a falsifiable claim: a single
+game-coach's flat outcome) are cheaper-path, not can-vs-cannot. *This is a falsifiable claim: a single
 ablation where the fresh arm FAILS and the context arm succeeds would move it to "capability" — we
 looked and did not find one on the tasks tested.* The **defensible, bounded RQ4b claim:** accumulated
 context compounds **most on an open search a fresh agent cannot cheaply bisect** and **least on a
@@ -289,7 +289,7 @@ crisp symptom with an objective oracle** (any agent bisects fast); on some speci
 shows a **thoroughness regression** (pattern-match-and-stop). **This bound is half-measured: the
 crisp-symptom FLOOR is MEASURED (all six ablations bisected fast); the open-search CEILING resists
 measurement — and v5 reports the *pre-registered sequel that tried to measure it and why it could not.*
-A fresh attempt (imx95-media-test, rubric hashed and bus-published + independently witnessed BEFORE any
+A fresh attempt (media-npu, rubric hashed and bus-published + independently witnessed BEFORE any
 arm ran) built a "hard" open-search task in a sterile, reproducible sandbox; its pre-registered
 symmetric falsifier fired: all 4 fresh arms reached the correct answer at floor cost (~4 tool calls,
 ~60 s), so the task was secretly *bisectable*, and per the pre-registration it is reported as a NULL —
@@ -318,7 +318,7 @@ converter/NPU) and two opposite failure directions (0/3 vs 4/4), which is eviden
 real — *even though the two nulls do not independently corroborate it.* **The finding generalizes;
 the data points do not replicate** — stated exactly so a reviewer cannot read "two nulls" as
 "replicated." *(Sequel artifacts, remote-verified 2026-07-27: pre-registration
-`imx95-media-test@abeab3dc64cb`, results `@d35a64bf6d3a`, on github.com/kylefoxaustin/imx95-media-test.)* **Honest asymmetry:** only one of six
+`media-npu@abeab3dc64cb`, results `@d35a64bf6d3a`, on github.com/kylefoxaustin/media-npu.)* **Honest asymmetry:** only one of six
 ablations pre-registered its rubric; the other five are honestly-run but *post-hoc graded* (§VI).
 
 **The independence sub-claim (RQ4-adjacent), now *operationalized* — not an unfalsifiable escape
@@ -329,7 +329,7 @@ memory-file overlap** (per-session memory dirs), and **divergent tool-call seque
 problem (the event log). By these, the primary case (two sessions, one base model, different
 accumulated context, disagreed-then-converged) is a genuine independent estimate — *and it is no
 longer N=1:* the ablations supply further instances by construction (the **HARVEST** pattern of §V-B —
-91emulator↔93emulator on one shared model, sizer↔pai-sizer — are parallel peers on **separate trees**
+emu-C↔emu-B on one shared model, sizer↔perf-B — are parallel peers on **separate trees**
 reaching agreement via **different fixes**, i.e. derived-not-copied). The honest residual: all still
 share the base model, the bus, and the operator's framing — so divergence is *reduced*, never zero,
 and we claim independence *relative to* these proxies, not absolutely.
@@ -364,13 +364,13 @@ this paper studies (§V-F). Full protocol + both arms' diffs: `cases_rq5-baselin
 Asking sessions to substantiate claims *to an external audience* forced verification of things taken
 on trust internally. MEASURED, in git: `sizer` found a **46-day defect** (129 cells rendering wrong
 fps, count never zero, never visible) while writing its case — caught by *writing*, after 46 days of
-use/test/review found nothing; `pai-sizer` surfaced a validation-across-an-unsafe-version-boundary
+use/test/review found nothing; `perf-B` surfaced a validation-across-an-unsafe-version-boundary
 provenance defect the same way. **The denominator (review's #5 — the same selection bias recurring
 one level down, so we state it):** of **19** case-writing sessions, **at least 4 (~21%)** reported a
-correction surfaced by the writing itself (`sizer`, `pai-sizer`, `tipometer`, and the RQ5 apparatus's
+correction surfaced by the writing itself (`sizer`, `perf-B`, `app-B`, and the RQ5 apparatus's
 own frozen-test defect); the rest reported none. A ~1-in-5 hit-rate with the denominator stated is an
 honest result; two dramatic cases with no denominator would have been the very bias §VI disclaims.
-The mechanism (pai-sizer): external writing forces a claim's *conditions* to be enumerated, and
+The mechanism (perf-B): external writing forces a claim's *conditions* to be enumerated, and
 enumeration is when unexamined assumptions surface — predicting a distribution of mostly-small
 corrections, occasionally a live defect, which is what the hit-rate shows. **This is evidence *for*
 the deployment, in the commit record, not about it** — and it is the paper's strongest result
@@ -394,7 +394,7 @@ the deployment, in the commit record, not about it** — and it is the paper's s
   honestly-run but **post-hoc graded**, so retrofitting is disavowed, not detectable. (b)
   *Isolation is a claim, not a given* — the harness pre-injects a fresh agent's cwd, git status, and
   memory *index*, so "blind" arms are mitigated, not sterile; the cleanest arms used **fictional
-  subjects** (93emulator) or audited each agent's actual tool calls. (c) *Historical arms are not
+  subjects** (emu-B) or audited each agent's actual tool calls. (c) *Historical arms are not
   re-runnable* — some context-carrying arms are transcripts of past work (the answer already known),
   so they bound rather than measure. (d) *N is small* (1–8/arm) and outcomes are often categorical
   (no variance). Each is stated in the individual `ablation_*.md`.
@@ -456,7 +456,7 @@ One last observation the deployment forced on us, because it kept mistaking a ru
 result is not durable until it is *reachable by a reviewer*, and the fleet walked that ladder three
 times in a day — **untracked file → tracked-but-local commit → pushed to a remote** — each rung
 fixing a different failure mode (silent edit → machine loss → un-verifiability), and *each one felt
-like the end of the job* (pai-sizer, on the C2 sequel's own artifacts). "Committed" is not a synonym
+like the end of the job* (perf-B, on the C2 sequel's own artifacts). "Committed" is not a synonym
 for "durable," and neither is "tracked." We state it because this paper's evidence *is* those
 commits, and a claim a reviewer cannot resolve is, at that moment, not yet evidence.
 
@@ -464,7 +464,7 @@ commits, and a claim a reviewer cannot resolve is, at that moment, not yet evide
 
 ### Appendix — evidence vs. illustration (kept distinct)
 **Evidence (MEASURED):** the mechanical record (git, bus, `history.jsonl`, spend meter), the **six
-A/B ablations** (`ablation_{mcxn,mahjong-together,93emulator,imx95-media-test,sizer,sizer-PREREGISTERED}.md`),
+A/B ablations** (`ablation_{mcu-emu,game-coach,emu-B,media-npu,sizer,sizer-PREREGISTERED}.md`),
 and the **pre-registered RQ5 baseline** (`cases_rq5-baseline.md` + the frozen spec/test + both arms'
 diffs). These carry the headline claims.
 **Illustration (dataset, not evidence).** Twenty first-person `cases_*.md` specimens + the platform
@@ -473,26 +473,26 @@ headline claim. **Curated to five in-body illustrations, each mapping to a disti
 are the supporting dataset):
 1. **`sizer`** — paper-as-instrument (§V-F): a 46-day latent defect surfaced *by writing the case*,
    and an ablation that *refuted the author's own Case 2* — the reflexive mechanism at its sharpest.
-2. **`rt1180` ↔ `holobench`** — RQ3 bystander/vantage: observer-vs-subject mutual correction
-   (holobench's "+64 s stall" was its own backlog; rt1180's guest-side clock settled it) — each
+2. **`net-emu` ↔ `bench-A`** — RQ3 bystander/vantage: observer-vs-subject mutual correction
+   (bench-A's "+64 s stall" was its own backlog; net-emu's guest-side clock settled it) — each
    catches what the other structurally cannot.
-3. **`mcxn947`** (ablation) — RQ4b: the *thoroughness-regression* specimen (context pattern-matched a
+3. **`mcu-emu`** (ablation) — RQ4b: the *thoroughness-regression* specimen (context pattern-matched a
    staged answer and stopped; the blind arm caught the second register class) — the sharpest
    disconfirmation.
-4. **`reshirt`** — RQ4a convergence: a 5th independent derivation of "the model narrates, deterministic
+4. **`app-A`** — RQ4a convergence: a 5th independent derivation of "the model narrates, deterministic
    code owns the value" reached *from privacy* — convergence that survives a change of *force*.
-5. **`image_gen`** — lived-expertise routing (§IV): the GPU-lease-lying / cost-blow-up incidents it
+5. **`image-gen`** — lived-expertise routing (§IV): the GPU-lease-lying / cost-blow-up incidents it
    was assigned to document *because it lived them* — the motivating case for routing on history.
 
 Several cases were **corrected during the paper's own writing** (sizer's Case 1 severity downgraded
-from user-visible to latent; pai-sizer's propagated overstatement retracted) — logged as §V-F
+from user-visible to latent; perf-B's propagated overstatement retracted) — logged as §V-F
 specimens, not hidden.
 
 ### Panel status + camera-ready checklist
-**The three-lens peer panel is DISCHARGED** (`review_95` red-team + `review_holobench` evidence-rigor +
-`review.md` qualcomm synthesis, all on the record). v4 landed the panel's four gating fixes + two
+**The three-lens peer panel is DISCHARGED** (`review_95` red-team + `review_bench-A` evidence-rigor +
+`review.md` socdev-A synthesis, all on the record). v4 landed the panel's four gating fixes + two
 structural watches: RQ3 provenance smudge split (B3); §V-D re-ordered to lead with the powered N=8 arm,
-mcxn demoted to marked counter-current (C3); concentration now computed by `evidence-harvest.py`
+mcu-emu demoted to marked counter-current (C3); concentration now computed by `evidence-harvest.py`
 (B2); §V counts as-of-stamped with the drift reported as measured reflexivity (B1); efficiency-vs-
 capability operationalized (C1); open-search ceiling marked GAP (C2).
 
@@ -504,7 +504,7 @@ capability operationalized (C1); open-search ceiling marked GAP (C2).
    falsifier fired, the constructed task was secretly bisectable, and the finding is *why* (reproducibility
    ⊥ open-search; the ceiling is un-sandboxable, not absent; the earning test is a field A/B). The
    ceiling stays a **reasoned GAP**, not a claim. ✅ **Sequel commits REMOTE-PUBLISHED + citable**
-   (`imx95-media-test@abeab3dc64cb` pre-reg, `@d35a64bf6d3a` results, verified on origin 2026-07-27);
+   (`media-npu@abeab3dc64cb` pre-reg, `@d35a64bf6d3a` results, verified on origin 2026-07-27);
    cited canonically in §V-D. Also folded: imx95's caveat that the C2 null and sizer's null are one
    mechanism, not independent corroboration.
 3. Final read-through for any remaining prose-vs-mechanical-record mismatch (the panel's standing bar).

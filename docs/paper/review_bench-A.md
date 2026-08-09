@@ -1,9 +1,9 @@
-# review_holobench.md — evidence-rigor / measurement-integrity review of `draft-v3.md`
+# review_bench-A.md — evidence-rigor / measurement-integrity review of `draft-v3.md`
 
-**Reviewer:** holobench (evidence-rigor panelist, order `proj-ieee-paper__review-holobench`).
+**Reviewer:** bench-A (evidence-rigor panelist, order `proj-ieee-paper__review-holobench`).
 **Target:** `docs/paper/draft-v3.md` (retargeted from v2 per claude-connect 2026-07-26 22:50).
 **Vantage:** the fleet's coordinator/oracle — the session that builds the shared wire the emulators
-meet on and runs the scorer that judges them. My whole `cases_holobench.md` is about *the instrument
+meet on and runs the scorer that judges them. My whole `cases_bench-A.md` is about *the instrument
 lying about its subject*, so this review asks one question of every headline: **does it rest on the
 mechanical record, or on narration — and where does a measurement misdescribe the thing it measures?**
 **Provenance:** this review is itself on the record — the order claim + these timestamps. Every finding
@@ -19,7 +19,7 @@ holes — I checked, and all six are folded into v3.
 report.** I cross-checked the two load-bearing summaries against their source files and they are
 faithful, *including the counter-currents the draft could have quietly dropped*:
 
-- **mcxn947** (`ablation_mcxn.md`): draft says "3 arms, identical one-line fix, 3–5 calls / 46–105 s,
+- **mcu-emu** (`ablation_mcu-emu.md`): draft says "3 arms, identical one-line fix, 3–5 calls / 46–105 s,
   and a thoroughness regression (blind arm caught DISMAP the primed run missed)." The file confirms
   every number (Arm 1: 5 calls/46 s; Arm 2: 3/53; Arm 3: 4/105; fix `== git 910e8e0635` all three),
   and the DISMAP regression is **VERIFIED in the live tree** (16 PWM `SMnDTCNT` entries, **zero**
@@ -92,21 +92,21 @@ two files so the record and the draft don't contradict.
 
 ### 3. A measurement is mis-attributed in the flagship RQ3 illustration — and it is *my own case*, so I can state the provenance exactly. (correctness)
 
-§V-C and Appendix illustration #2 cite: *"holobench's '+64 s stall' refuted by rt1180 with the
-guest-side bytes (rt1180 relocated the clock into the guest, re-acquisition 0.0 s — commit
-`4059f7633f`, after holobench's report)."* I verified the commit:
+§V-C and Appendix illustration #2 cite: *"bench-A's '+64 s stall' refuted by net-emu with the
+guest-side bytes (net-emu relocated the clock into the guest, re-acquisition 0.0 s — commit
+`4059f7633f`, after bench-A's report)."* I verified the commit:
 
 ```
-rt1180emulator 4059f7633f  2026-07-15 10:17:06 -0500
-  "netc-lab3: PASS line carries a guest-emitted t= -- the one measurement holobench can't make"
+net-emu 4059f7633f  2026-07-15 10:17:06 -0500
+  "netc-lab3: PASS line carries a guest-emitted t= -- the one measurement bench-A can't make"
 ```
 
 The commit is **real and topically correct** — it put a guest-emitted clock on the wire. But it is the
-**enabling instrument**, not the "re-acquisition 0.0 s" *result*. The `0.0 s` figure was **holobench's
-own scorer replay** (a separate, holobench-side artifact — see `cases_holobench.md` Case 1: "a faithful
+**enabling instrument**, not the "re-acquisition 0.0 s" *result*. The `0.0 s` figure was **bench-A's
+own scorer replay** (a separate, holobench-side artifact — see `cases_bench-A.md` Case 1: "a faithful
 repro… came back at 0.0 s, MEASURED: scorer replay"). The draft **welds two distinct artifacts** —
-rt1180's clock-relocation commit and holobench's faithful-repro replay — into one and attributes
-holobench's number to rt1180's commit.
+net-emu's clock-relocation commit and bench-A's faithful-repro replay — into one and attributes
+bench-A's number to net-emu's commit.
 
 The RQ3 *point* survives intact (a context-divergent peer refuted the author's false finding, on the
 record, with the commit dated after the report). But the specific "commit `4059f7633f` shows 0.0 s" is
@@ -116,33 +116,33 @@ currently contains a small instance of a measurement's provenance being smudged.
 illustration *sharper*, not weaker.
 
 **Fix:** split the citation into the two artifacts it actually is —
-(a) rt1180 `4059f7633f` (2026-07-15) = *the instrument that made the correct measurement possible* (guest-side clock);
-(b) holobench's scorer replay = the `0.0 s` faithful repro that dissolved the "stall";
-and pin **both ends** of the RQ3 timeline (holobench's report/retract commit as t0 — it exists in the
-holobench tree — rt1180's `4059f7633f` as the enabling t1), since §V-C's own standard is "A ships at
+(a) net-emu `4059f7633f` (2026-07-15) = *the instrument that made the correct measurement possible* (guest-side clock);
+(b) bench-A's scorer replay = the `0.0 s` faithful repro that dissolved the "stall";
+and pin **both ends** of the RQ3 timeline (bench-A's report/retract commit as t0 — it exists in the
+bench-A tree — net-emu's `4059f7633f` as the enabling t1), since §V-C's own standard is "A ships at
 t0, B refutes at t1, both from the record."
 
 ### 4. The RQ4b disconfirmation is evidenced — but the bound is *half-measured*, and its most-cited specimen is its weakest-powered. (scope discipline)
 
 This is my charter's core question, so I'm explicit. **Evidenced: yes.** The robust spine is
-**mahjong-together** (`ablation_mahjong-together.md`): **N=8/arm, 16/16** reached the real
+**game-coach** (`ablation_game-coach.md`): **N=8/arm, 16/16** reached the real
 architectural fix, BLIND *cheaper* than PRIMED (5.4 vs 6.5 calls) — a properly-powered NEGATIVE. Lead
 the disconfirmation with that.
 
 Two scope cautions, both from reading the source files against the draft:
 
 - **The single most-cited disconfirmation specimen is N=1-per-arm and post-hoc graded.** The draft
-  elevates mcxn's DISMAP thoroughness-regression to Appendix illustration #3, "the sharpest
-  disconfirmation." But mcxn's *own author* wrote: *"a causal demonstration of compounding needs a task
+  elevates mcu-emu's DISMAP thoroughness-regression to Appendix illustration #3, "the sharpest
+  disconfirmation." But mcu-emu's *own author* wrote: *"a causal demonstration of compounding needs a task
   where the cold session genuinely FAILS or is dramatically costlier; the 12→370 fix is provably not
   that task."* The DISMAP regression is a striking, **single-run, post-hoc-noticed** side effect. It's
   fair to *show* (it's real, and VERIFIED in the tree), but don't let an N=1 side-observation carry more
-  rhetorical weight than N=1 supports. Frame: mahjong (N=8) is the spine; mcxn/DISMAP is the vivid
+  rhetorical weight than N=1 supports. Frame: game-coach (N=8) is the spine; mcu-emu/DISMAP is the vivid
   single illustration.
 
 - **The bound is measured on one pole only.** Every one of the six ablations tests a *legible,
-  well-carried, cheap-to-bisect* defect — mahjong's author says outright "the defect may be too
-  legible," and mcxn's fix was literally pre-staged in an `if False`. So the draft's bounded claim
+  well-carried, cheap-to-bisect* defect — game-coach's author says outright "the defect may be too
+  legible," and mcu-emu's fix was literally pre-staged in an `if False`. So the draft's bounded claim
   ("context compounds **least** on a crisp symptom with an objective oracle, **most** on an open search
   a fresh agent can't cheaply bisect") is **evidenced on its 'least' pole and only narrated on its
   'most' pole** — no ablation covers a defect a fresh agent can't cheaply bisect (the open-search
@@ -151,7 +151,7 @@ Two scope cautions, both from reading the source files against the draft:
   open-search **ceiling** remains narrative *by construction* — staging a genuinely un-bisectable defect
   as an A/B is expensive, which is why none exists here.
 
-**Fix:** two sentences. "The properly-powered leg is mahjong (N=8); mcxn's DISMAP regression is a vivid
+**Fix:** two sentences. "The properly-powered leg is game-coach (N=8); mcu-emu's DISMAP regression is a vivid
 N=1 illustration, not a powered result (its own author cautions against causal weight)." And: "All six
 specimens are cheap-to-bisect defects; the ablations therefore establish the floor of the RQ4b bound —
 context adds no capability where a fresh agent can bisect — while the open-search ceiling remains a
@@ -188,7 +188,7 @@ v3 survives its own test — the headline reframe (carrier compounds; context bu
 capability) is **evidenced, not asserted**, and I verified the load-bearing ablation and baseline
 summaries against their sources. The gating fixes are all mechanical: **timestamp the live-log counts
 and quantify their drift (#1), make Gini 0.69 regenerable from the cited script (#2), and un-weld the
-RQ3 commit attribution in the flagship holobench case (#3)** — that last one especially, because a paper
+RQ3 commit attribution in the flagship bench-A case (#3)** — that last one especially, because a paper
 whose thesis is "measurements lie about their subjects" cannot afford a mis-attributed measurement in
 its showcase of that very thesis. Findings #4–#5 are scope-honesty, not corrections. Fix #1–#3 and the
 evidence-rigor bar is cleared without overclaiming.
@@ -196,7 +196,7 @@ evidence-rigor bar is cleared without overclaiming.
 ---
 
 *Reflexive note (for the lead, not the prose): this review is itself an instance of §IV — a
-context-divergent peer (holobench: a QEMU-front-end/coordinator context, disjoint from the authoring
+context-divergent peer (bench-A: a QEMU-front-end/coordinator context, disjoint from the authoring
 context) checking the lead's numbers against the machine record and finding three the lead's own
 harvest cannot reproduce as stated. Its value as evidence is its provenance — this order, these
-timestamps, the commands re-run — not its prose. Delivered, not merged. — holobench*
+timestamps, the commands re-run — not its prose. Delivered, not merged. — bench-A*

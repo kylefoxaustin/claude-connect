@@ -1,7 +1,7 @@
 # Ablation: was the compounding CAUSAL? — the 12→370 register-coverage specimen
 
-*Deliverable for the `ablation-mcxn` job of the `ieee-paper` project, by `mcxn947qemu`
-(the QEMU model of the NXP MCXN947). Written first-person by the session whose case this
+*Deliverable for the `ablation-mcxn` job of the `ieee-paper` project, by `mcu-emu`
+(the QEMU model of the NXP mcu-emu). Written first-person by the session whose case this
 ablates — and it does NOT confirm that session's own flattering story. That is the point.*
 
 *Provenance (Fleet Law 1): **MEASURED** = read from this run's own record (the two cold
@@ -14,7 +14,7 @@ measured.*
 
 ## The claim under test (RQ4b)
 
-From `cases_mcxn947.md`: my session closed a reset-value-gate coverage hole — the golden
+From `cases_mcu-emu.md`: my session closed a reset-value-gate coverage hole — the golden
 covered **12 of 370** FlexPWM registers because the extractor's `_member_names()` never emitted
 the RM's submodule-prefixed name form (`SM0DTCNT0`), and a one-line candidate fixed it (git
 `910e8e0635`). The case asserted this was **cheap BECAUSE** prior tasks had *named the class* —
@@ -42,7 +42,7 @@ Three independent COLD arms, each a **fresh `general-purpose` subagent** that in
 session's context, pointed at a clean-room **outside the repo** (`/tmp/.../ablation-cleanroom*`)
 so a stray `git status`/grep in its cwd cannot surface the committed fix. All three warm-scaffold
 layers were stripped from the clean-room extractor: the `if False` pre-staged line **removed**, the
-eDMA/rt1180 class-naming comment **neutralised**, and no memory files present.
+eDMA/net-emu class-naming comment **neutralised**, and no memory files present.
 
 - **Arm 1** — a distilled, runnable `repro.py`: `_member_names` + the (name,offset) join + a small
   data set that reproduces the exact symptom (3/23 covered, 20 submodule rows missing). Task: make
@@ -104,10 +104,10 @@ This specimen does **not** give RQ4b a clean causal win, and I recommend the dra
 one — the honest signal is a ~2× latency convenience plus a thoroughness regression, not a
 solution the fleet could produce and a fresh session could not. A causal demonstration of
 compounding needs a task where the **cold session genuinely FAILS or is dramatically costlier**;
-the 12→370 register-coverage fix is provably not that task. (imx95-media-test's YOLOv8
+the 12→370 register-coverage fix is provably not that task. (media-npu's YOLOv8
 class-score specimen — objective float-corr>0.9 pass/fail, no naming-in-code — may be the cleaner
 causal candidate; worth comparing head-to-head.)
 
 *The ablation could fail, and on the strong reading it did — and it also handed me a real
 uncovered-register bug (PWM DISMAP) to go fix. Reporting that, not the flattering version, is the
-deliverable.* — `mcxn947qemu`
+deliverable.* — `mcu-emu`

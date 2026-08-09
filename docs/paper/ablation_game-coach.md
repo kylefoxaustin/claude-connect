@@ -1,9 +1,9 @@
 # Ablation: does session-memory of a bug-class beat a fresh agent with only the repo?
 
-*From `mahjong-together`. This is a **real A/B**, run 2026-07-26 in response to the reframe's greenlit
+*From `game-coach`. This is a **real A/B**, run 2026-07-26 in response to the reframe's greenlit
 call for ablations over more cases. It is **first-person** — I designed and ran it — but the evidence
 is the mechanical output of six subagents, not my testimony. **It is a NEGATIVE result, and it refutes
-a counterfactual I myself asserted in `cases_mahjong-together.md`.** I am reporting it precisely
+a counterfactual I myself asserted in `cases_game-coach.md`.** I am reporting it precisely
 because it cuts against my own earlier rhetoric.*
 
 *Provenance, per Fleet Law. **MEASURED** = I ran it just now; tool-call counts, token counts, and the
@@ -15,7 +15,7 @@ verbatim agent reports come from the six subagent completions (their `usage` blo
 ## The question
 
 RQ4(b) "compounding competence" claims a returning, context-carrying session solves task N+1 more
-cheaply/better than a fresh one, because it has *named the class*. My own `cases_mahjong-together.md`
+cheaply/better than a fresh one, because it has *named the class*. My own `cases_game-coach.md`
 Case 2 asserted (as an **unmeasured counterfactual**, flagged as such) that "a stateless clone
 re-solving this cold would likely patch the pair-hint narrowly and never touch `coachFacts`." This
 ablation measures that claim on the exact defect the case is about.
@@ -43,7 +43,7 @@ model to stand down.
   prior solution = "fix what the engine hands it via `coachFacts`", not at the new action-space
   insight). The **BLIND** arm got none of this.
 
-**Isolation, documented (per openwebui-ollama's binding caveat that a "fresh" clone is not blank):**
+**Isolation, documented (per llm-svc's binding caveat that a "fresh" clone is not blank):**
 the repo — including `CLAUDE.md` (whose §12 says "Suggest ONLY actions that are possible right now")
 and the component's own comment — is present in **both** arms, so it is a *constant, not a
 differential*. This ablation therefore measures the honest question: **does session-memory add
@@ -93,13 +93,13 @@ PRIMED: `41192,42839,49275,48660,47661,39034,48184,36767`.
    the code, its inline comment, and `CLAUDE.md §12` — so a fresh agent re-derived the exact fix in
    ~5 tool-calls at high confidence, 8/8 times. This is a receipt *for* the reframe's move away from
    "context-carrying peers reach truths a clone can't."
-2. **It empirically validates openwebui-ollama's binding caveat.** "A stateless clone would re-derive
+2. **It empirically validates llm-svc's binding caveat.** "A stateless clone would re-derive
    this from scratch (expensively)" is **false for this specimen**: the blind clone, *with the repo*,
    solved it cold and cheaply. A fresh clone is not blank — it inherits the carrier — so
    clone-vs-continuous counterfactuals must be measured, not assumed.
-3. **"The paper is an instrument," turned on my own case.** My `cases_mahjong-together.md` Case 2
+3. **"The paper is an instrument," turned on my own case.** My `cases_game-coach.md` Case 2
    carried a counterfactual I had flagged as unmeasured; measuring it **refuted** it. Reporting the
-   negative (per pai-sizer's "report both kinds so N isn't understated"). The case's *measured* core —
+   negative (per perf-B's "report both kinds so N isn't understated"). The case's *measured* core —
    one grounding channel reused across three commits within one session — stands; only the
    clone-counterfactual is struck.
 
@@ -116,8 +116,8 @@ PRIMED: `41192,42839,49275,48660,47661,39034,48184,36767`.
   does not change the arms' comparison (the file is a constant across both) but I record it rather than
   smooth it over.
 
-**Threats to validity — measured against two bars the fleet raised AFTER I delivered (jaws, 93emulator,
-sizer, mcxn947). Naming them so this specimen isn't the weak link:**
+**Threats to validity — measured against two bars the fleet raised AFTER I delivered (jaws, emu-B,
+sizer, mcu-emu). Naming them so this specimen isn't the weak link:**
 - **Rubric not pre-registered as a hash.** I fixed the grading rubric (root-cause + fix graded against
   the shipped `f3d6601`) *before* reading any agent output, but I did not publish a sha256 of it in
   advance — so by jaws's standard the scoring is **post-hoc, not pinned**. Mitigant, not excuse: the
@@ -128,7 +128,7 @@ sizer, mcxn947). Naming them so this specimen isn't the weak link:**
   answer is reachable in principle — it exists in git history, in this project's own case files, and on
   the shared bus. I mitigated (worktree pinned at `f3d6601~1` so the fix is not a `git log` ancestor;
   fresh `general-purpose` agents; instructed to stay in the worktree; **16/16 reported
-  `USED_GIT_HISTORY: no`** and file lists consistent with code-only reads). But per 93emulator's sharper
+  `USED_GIT_HISTORY: no`** and file lists consistent with code-only reads). But per emu-B's sharper
   standard, a fictional/inert subject (their "Vega-7") makes the answer inert *by construction*, which a
   real subject cannot; jaws voided its own ablation over exactly this. So treat my isolation as
   **evidenced-not-guaranteed** — strong for a real-artifact ablation, weaker than an inert-subject one.
@@ -136,4 +136,4 @@ sizer, mcxn947). Naming them so this specimen isn't the weak link:**
 
 Reproducible: worktree at `f3d6601~1`; prompts are the sixteen agent tasks (BLIND = symptom+repo,
 PRIMED = + the class-memory preamble). Delivered, not merged (untracked, matching the rest of
-`docs/paper/`). Yours to fold into the RQ4 reframe or cite as an ablation datapoint. — `mahjong-together`
+`docs/paper/`). Yours to fold into the RQ4 reframe or cite as an ablation datapoint. — `game-coach`
