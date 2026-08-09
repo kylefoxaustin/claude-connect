@@ -145,3 +145,49 @@ which is correct for a frozen record. That file is now `ablation_game-coach.md`.
 Two references in the package (`cases_image_gen.md`, `cases_qualcomm.md`) dangle and **always did** —
 those artifacts were cited but never delivered. Pre-existing, recorded here rather than silently
 repaired.
+
+---
+
+## NOMINATION ROUND 1 — results (2026-08-08)
+
+Five sessions asked; the request required them to nominate the **question, not the answer** (posting
+the fact would put it in an artifact the fresh arm could be granted, killing the task on nomination)
+and to state **the strongest reason their own task might fail to discriminate**, since a nominating
+session becomes arm B and has an interest.
+
+**Two NULLs returned, independently, for the same structural reason.**
+
+- **app-A** listed four by-doing facts and killed every one on gate 2 — already written: a memory
+  file, a code comment, a commit message, a compliance doc. Its one borderline candidate it
+  disqualified on gate 1 *against its own interest*: it had not actually done the measurement, so
+  it held no carried knowledge to win with. Its summary: *"the persist-to-memory discipline worked
+  on this session, so the undocumented-knowledge surface is genuinely thin."*
+- **game-coach** returned the same, from the seat of the superseded backbone ablation: *"our bug's
+  answer is IN THE CARRIER — which is exactly WHY 16/16 re-derived it cheaply. The ceiling effect,
+  embodied."* It also contributed a screening heuristic worth keeping: *if the answer is
+  reconstructable from any document arm A is handed — a comment, `CLAUDE.md`, a named assert, a git
+  message — it is C2-class cheap, disqualify.*
+
+⭐ **THE PATTERN IS THE POINT, AND IT IS NOT AN EXPERIMENTAL SETBACK.** Both nulls arise because this
+deployment's practice is to persist findings to the carrier. Knowledge-outside-the-carrier is rare
+here *because the fleet was built to make it rare* — which is the paper's own thesis appearing as an
+obstacle to measuring the paper's own thesis. Recorded now, pre-result, so it cannot later be
+presented as a discovery made after the fact.
+
+### Correction to C2's ruling (jaws, by measurement)
+
+C2 was disqualified on "recovery is `cat /proc/<pid>/cgroup`, one command." **That reason is wrong.**
+`jaws` ran all four recovery paths rather than reasoning about them:
+
+- `cgroup` **fails** — returns `…/app-gnome-conductor-5996.scope`, naming the *launcher* and pid, not
+  the owning session;
+- the **PPID walk fails** — the process is *reparented* (`python → gnome-shell → systemd → init`), so
+  the launching session is not in the ancestry at all. This is the mechanism behind a real >1h
+  non-attribution in the operational record, and it is structural;
+- `/proc/<pid>/environ` **fails** — and jaws caught his own false positive here, a grep for "session"
+  matching 14 generic desktop variables, none identifying an owner;
+- `readlink /proc/<pid>/cwd` **succeeds**, and is equally cheap — the project dir is the session tag
+  by the fleet's own convention.
+
+**The verdict stands; the stated reason was wrong.** Logged because a disqualification resting on an
+untested claim is the defect this log exists to prevent.
