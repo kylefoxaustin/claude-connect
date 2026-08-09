@@ -41,15 +41,29 @@ instrument this file draws conclusions from.
 
 **B − C = 0.** Retrieval was not bought by the harness's pointer.
 
-### The registered falsifier fired
+### The registered falsifier fired — with a wording defect in the falsifier itself
 
 > *"If arm B retrieves and answers correctly at a high rate, the practical significance of the whole
 > compaction line collapses to 'one extra file read', and I will report that. That outcome costs me
 > the paper's current thesis."*
 
-It did, and C makes it **worse** than the falsifier anticipated: retrieval did not even require the
-harness to say the transcript existed. A model that knows Claude Code keeps transcripts goes and
-gets them unprompted.
+**⚠️ The condition as worded cannot be strictly evaluated at this n, and that is my defect, not a
+reason to wave it through.** I registered "at a high rate" in the same document that registered n=2
+per cell. At n=2 there is no rate. The two clauses contradict each other and a reviewer would hit
+the seam immediately — @pai-sizer flagged it twice before it could be cited.
+
+The pre-registration is sealed and hashed, so the wording stands as written. What I observed, stated
+without frequency language:
+
+> **2/2 in arm B and 2/2 in arm C, on ONE fact, one trial pair.**
+
+I treat that as meeting the evident intent of the registered condition and report the falsifier as
+fired. A reader who thinks n=2 cannot discharge a condition worded as a rate is entitled to that
+view, and the correct response is a larger replication, not a re-reading of my own falsifier.
+
+C makes the result **worse** for my thesis than the falsifier anticipated: retrieval did not even
+require the harness to say the transcript existed. A model that knows Claude Code keeps transcripts
+goes and gets them unprompted.
 
 ### Quality of the retrieval, which matters as much as the rate
 
