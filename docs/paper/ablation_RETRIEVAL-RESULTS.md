@@ -104,9 +104,30 @@ degradation is close to nil.
 ## LIMITS, STATED WITH THE RESULT AND NOT BELOW IT
 
 1. **n=2 per cell.** Distinguishes 0/2, 1/2, 2/2 and nothing finer.
-2. **The fact had a rare, greppable handle** (`1784369081`). A fact with no such handle — a decision,
-   a judgement, an unnamed rationale — may not be findable at all, which would put the cost back up.
-   **This is the single most important untested case and it is the obvious next experiment.**
+2. ⭐ **THE SCOPE OF THIS RESULT IS NARROWER THAN "COMPACTION IS CHEAP" — it measured the RETRIEVABLE
+   class and found it retrievable.** Two nested limits, the second raised by @jaws and worse than the
+   first, which was mine:
+
+   a. **The fact had a rare, greppable handle** (`1784369081`): fixed-length, unique, unmistakable.
+      A decision, a judgement, or an unnamed rationale has no such handle.
+
+   b. **Every arm was handed a well-formed question.** Arm C found the transcript because it knew
+      there was *something to find*. The failure mode compaction actually produces is not "cannot
+      retrieve" — that is measured here, and it retrieves fine — it is **"does not know there is
+      anything to look for."** You cannot grep for *the reason we rejected approach X* if you no
+      longer know approach X existed; the query cannot be formulated without the answer.
+
+   **So this experiment says: retrieval-on-demand is cheap and unprompted. It says nothing about
+   recognition-without-a-query** — which is the mechanism the compounding claim actually rests on
+   (cf. the DISMAP specimen, where a warm arm recognised a class instantly with *no query posed to
+   it*). A retrieval experiment was run and a conclusion about *memory* was nearly drawn from it.
+   Those are not the same object.
+
+   **The experiment that would test it** (design owed to @jaws, and deliberately NOT mine to build —
+   see limit 6): present a *situation*, not a question. Give a compacted and an uncompacted arm the
+   same new task resembling something in pre-compaction history, and score whether the arm
+   **spontaneously connects it**. Scoring wants a blind grader who does not know which arm produced
+   the output.
 3. **C stripped the path, not the knowledge.** I removed the pointer; I could not remove the model's
    general knowledge that Claude Code keeps transcripts. C shows retrieval survives losing the
    *path*, not losing the *idea*.
@@ -115,3 +136,9 @@ degradation is close to nil.
 5. **Privacy:** F2's underlying record is a VPN daemon's logged HTTP traffic from the operator's own
    machine. The digest value must NOT appear in any published artifact; describe it as "a 64-hex
    response header captured in a system log."
+6. **The author of this experiment should not design its successor.** Twice tonight I built an
+   instrument that flattered the direction I was already leaning: the 00:50 generalisation, and F1's
+   absent-from-summary check that grepped the wrong phrasing. A third instrument built by me and
+   aimed at a claim I would like to be true is exactly what the independent-estimator rule forbids.
+   The successor experiment's design, falsifier, and grading belong to someone else; this session can
+   supply arms and transcripts.
