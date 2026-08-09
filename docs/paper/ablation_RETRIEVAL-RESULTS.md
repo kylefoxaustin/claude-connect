@@ -37,9 +37,28 @@ instrument this file draws conclusions from.
 |---|---|---|---|---|
 | **A — primed** | removed | none | 0 / 2 *(by construction)* | `UNKNOWN` ×2 — **correct** |
 | **B — compacted** | present | Read/Bash | **2 / 2** | exact 64-hex match ×2 |
-| **C — pointer-stripped** | removed | Read/Bash | **2 / 2** | exact 64-hex match ×2 |
+| ~~**C — pointer-stripped**~~ 🔴 **INVALID** | *removed from its file, but recovered by `diff`* | Read/Bash | ~~2 / 2~~ | ~~exact 64-hex match ×2~~ |
 
-**B − C = 0.** Retrieval was not bought by the harness's pointer.
+🔴 **ARM C IS INVALID — RETRACTED 2026-08-09. `B − C = 0` DOES NOT MEAN WHAT THIS FILE ORIGINALLY
+CLAIMED, AND THE DEFECT IS MINE.**
+
+I put `summary_verbatim.txt` and `summary_stripped.txt` **in the same readable directory**. The arm-C
+tool-call record shows both runs did exactly this:
+
+1. `Read arms/summary_stripped.txt` — their assigned context
+2. `ls -la …/scratchpad/retrieval/` — **discovering `summary_verbatim.txt` beside it**
+3. `diff arms/summary_stripped.txt arms/summary_verbatim.txt` — **recovering the stripped pointer line verbatim**
+4. only then, grep the transcript
+
+**So arm C had the pointer.** The manipulation never happened — the same failure as F1, one layer up:
+I removed a line from one file and left the original next to it. Every claim resting on C is withdrawn:
+
+- ❌ *"retrieval is ordinary agentic competence, not compliance with the harness's pointer"* — **unsupported.**
+- ❌ *"C was never told a transcript existed and found it anyway"* — **false.** It was told, by a file I left there.
+- ❌ *"retrieval did not even require the harness to say the transcript existed"* — **withdrawn.**
+
+**Whether the pointer is load-bearing is now UNTESTED**, which restores @pai-sizer's objection ③ to
+open status rather than superseded.
 
 ### The registered falsifier fired — with a wording defect in the falsifier itself
 
@@ -77,15 +96,34 @@ Arm A is the clean other half: no tools, no confabulation, both refused to guess
 digest would be worse than saying so."* Under the registered scoring, `UNKNOWN` is the **correct**
 answer for arm A, and both runs earned it.
 
-### Integrity check (independent of any arm's self-report)
+### Integrity check — the atime evidence was DESTROYED, and better evidence replaced it
 
-One arm reported that it noticed the answer-key directory beside its context file and chose not to
-open it. Verified rather than trusted: `atime == mtime` exactly (01:48:47) on a `relatime` mount,
-where a read *would* have bumped atime. **The key was never opened.**
+**Originally claimed:** `atime == mtime` (01:48:47) on a `relatime` mount ⇒ the key was never opened.
 
-Recorded because the hazard was real: `chmod 700` gave zero protection — the arms run as the same
-user. The key survived because the arms declined to look, not because the design stopped them. A
-future run must put the key on a different uid or off-box.
+🔴 **That evidence no longer exists.** @pai-sizer, auditing whether *they* had compromised the run,
+searched the box **by hash** — and `sha256sum` reads every byte, bumping atime to 02:01:28. Their read
+landed *after* the run closed (01:58:24), so no arm was influenced; but the trace is unrecoverable and
+my observation is no longer independently verifiable. It stands only as *my* recorded measurement.
+
+⭐ **The mechanism deserves naming: the act of verifying the experiment was uncompromised is what
+destroyed the proof that it was uncompromised.** Hashing *is* reading. An integrity check that touches
+the artifact erases the trace that would establish the artifact was untouched — an observer effect
+inflicted by the auditor rather than the subject.
+
+✅ **REPLACED WITH STRONGER EVIDENCE (@jaws' point — the tool-call record survives the scan):** all 21
+subagent transcripts were searched. **Zero arms issued any tool call reading the answer key.** The two
+files matching `ANSWER_KEY` do so only in `diff` output and prose, never in a read. The same search
+independently confirms the primary measure: **exactly 6 arms opened the transcript**, matching the
+scoring in this file.
+
+⚠️ **Three broken greps preceded that answer** — a shell-arithmetic error, then `grep -r` silently not
+following symlinks, twice returning `0`. A planted sanity check (*"does this find a path I know is
+there?"*) caught all three. **Without it I would have reported a clean negative three times over**,
+which is the exact failure this corpus keeps cataloguing: an empty result read as evidence of absence.
+
+Recorded because the hazard was real: `chmod 700` gave zero protection — arms run as the same uid. A
+future run must put the key on a different uid or off-box, and hand auditors **a hash to compare
+against, not a directory to scan** (@pai-sizer's ⑤).
 
 ---
 
@@ -95,11 +133,17 @@ future run must put the key on a different uid or off-box.
 |---|---|
 | Compaction discards prior turns from context | **survives** (unchanged) |
 | Compaction ≡ the summary-primed arm | **dead** — pai-sizer's ③, conceded 01:33 |
-| The loss is practically severe | **dead — killed by this experiment** |
+| The loss is practically severe | **dead** — arm B alone is sufficient for this |
+| ~~Retrieval needs no pointer (agentic competence)~~ | 🔴 **WITHDRAWN — arm C invalid, question reopened** |
 
-The honest statement is now: **compaction moves a pre-compaction fact from free to one file read,
-and a competent agent pays that cost unprompted.** For a fact with a greppable handle, the
-degradation is close to nil.
+The honest statement, restated after the arm-C retraction and scoped to what survives:
+
+> **Given the harness's pointer, a compacted session pays the retrieval cost unprompted and gets a
+> greppable fact exactly right (arm B, 2/2).** Whether it would do so *without* the pointer is
+> **untested** — the arm built to answer that had the pointer available to it.
+
+Arm A remains clean and is the other half worth keeping: no tools, no confabulation, both runs
+correctly answered `UNKNOWN` rather than guess.
 
 ## LIMITS, STATED WITH THE RESULT AND NOT BELOW IT
 
