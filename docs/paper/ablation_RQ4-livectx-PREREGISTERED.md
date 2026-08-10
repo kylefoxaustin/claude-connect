@@ -379,3 +379,53 @@ ruling.
 §§2–10 stand: N=6 per arm, no optional stopping, interleaving, evidenced isolation, the categorical
 rubric, the ≥4-of-6 threshold, the symmetric falsifier, and A1's criterion 1b. **H2 still requires
 ≥2 candidates actually RUN** (A3) — desk rulings cannot reach it, and nothing has run.
+
+---
+
+# AMENDMENT 3 — 2026-08-09, PRE-RESULTS. Still no arm has run.
+
+*Appended per §11; §§2–10 and Amendments 1–2 are byte-unchanged and remain visible.*
+
+## C1. ⭐ THE DEPLOYMENT-CAPACITY GUARD (band, asked THREE TIMES before it landed).
+
+**BINDING:** *A criterion-3 disqualification — inability to field arm B — is a **MEASUREMENT-CAPABILITY
+limit of this deployment**, not a property of the task or of the hypothesis. It may **NEVER** be
+counted as evidence for H2, and it does **not** consume one of §4's five attempts.*
+
+**Why it is not stale after Amendment 2.** A2 relaxes criterion 3 so a task can qualify at
+N_effective=1, but a criterion-3 disqualification can still fire: C1 was disqualified in part because
+*"the owning session is not currently live."* **That is a fact about the fleet's staffing at a moment,
+not about the task.** Without this guard, such a ruling could be counted toward H2 — reopening the
+cheap-H2 route that A3 was written to close, through a different door.
+
+**Consequence, applied now:** C1's criterion-3 ground is void. C1 stands HELD on its remaining
+grounds only, and its earlier criterion-4 ground was already rejected by the grader.
+
+⚠️ **THE GENERAL LESSON, RECORDED BECAUSE I AM THE INSTANCE.** This guard was requested by `band` at
+20:26, by `jaws` at 22:46 (*"on the bus it is a promise, in the hashed file it is a CONSTRAINT"*), and
+by `pai-sizer`. **I acknowledged all three on the bus and landed none of them in the artifact.** Three
+sessions asked, everyone agreed, and it took a fourth request — from the only session that went and
+*checked the file* rather than trusting the acknowledgement — to get it written.
+
+> **A promise acknowledged on the bus and a constraint hashed into the artifact are different
+> objects, and only one of them binds. Agreement is not landing.**
+
+That belongs in the paper's own findings, not merely in this appendix: in a coordination substrate
+built on broadcast messages, *consensus is cheap and verification of consensus is not, and the gap
+between them is where commitments die.*
+
+## C2. HELD NEEDS AN EXPIRY (jaws' Attack 3; band identifies it as their own defect).
+
+The grader's disposition "HELD, not disqualified" was created without a termination condition, so a
+candidate can sit HELD indefinitely — blocking the attempt count in one direction while remaining
+available to be revived in the other.
+
+**BINDING:** a HELD candidate must be **resolved to QUALIFIED or DISQUALIFIED before any arm runs on
+any other candidate**, and **H2 may not be declared while any candidate is HELD.** A HELD candidate
+consumes no attempt while held; on resolution it consumes one only if disqualified on grounds other
+than criterion-3 capacity (per C1).
+
+## C3. WHAT THIS DOES NOT CHANGE.
+
+§§2–10, criterion 1b, A2's N_effective reporting rule, and A3's "H2 requires ≥2 candidates actually
+RUN" all stand. No arm has run.
