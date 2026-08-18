@@ -56,6 +56,40 @@ def _label(name: str) -> str:
     return "GPU" if name == "gpu" else name
 
 
+def slim_resource_cards(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return the resources payload with each asset card reduced to a stub.
+
+    Asset cards are 99% of this payload (MEASURED 2026-08-16: 53.5 KB of 54.0 KB)
+    and they are STATIC — yet they rode the 3 s broadcast because the 0.5 KB of
+    lease/telemetry beside them ticks with GPU utilization. That is the scan-loop
+    defect one layer up: *a payload mixing volatile and static data forces the
+    static part to travel at the volatile rate.*
+
+    A tile needs only ``has_access`` (to choose its label) and ``kind``. The body is
+    read solely when the card modal opens, so it is fetched then, from
+    ``/api/resources/<name>/card``. Pure function of its input so the wire format
+    can be pinned by a test without standing up an AppState.
+
+    The caller keeps the FULL payload server-side — only the wire gets the stub.
+    """
+    out = dict(payload)
+    slim: list[dict[str, Any]] = []
+    for r in out.get("resources", []):
+        card = r.get("card")
+        if not isinstance(card, dict):
+            slim.append(r)
+            continue
+        r = dict(r)
+        r["card"] = {
+            "kind": card.get("kind"),
+            "has_access": card.get("has_access", False),
+            "deferred": True,          # body at /api/resources/<name>/card
+        }
+        slim.append(r)
+    out["resources"] = slim
+    return out
+
+
 def resources_state(res_root: Path) -> dict[str, Any]:
     """One entry per shared resource: ``{name, label, smi|None, lease|None}``.
 

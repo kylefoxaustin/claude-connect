@@ -106,3 +106,53 @@ def test_active_not_target_accepts_when_no_window_title(monkeypatch):
     monkeypatch.setattr(w, "_active_window_name", lambda: "kyle@skippy: ~/GitHub/qualcomm/results")
     assert w._active_is_not_target("[other:qualcomm]", None) is False    # window_title None -> accept
     assert w._active_is_not_target("[other:qualcomm]", "") is False
+
+
+# --- send_key_to_session: dismissing a modal the injected command itself opened -------------
+#
+# Kyle, 2026-08-17: every relaunched session came up parked on the Remote Control menu that
+# `/rc` ITSELF opens ("Disconnect this session / Show QR code / Continue"), blocking until a
+# human answered. Dismissal must press a bare ESCAPE — never Return, which SELECTS whatever the
+# cursor is on, and one of those options disconnects the session.
+
+def _capture_x(monkeypatch):
+    calls: list[list[str]] = []
+    monkeypatch.setattr(w, "xdotool_available", lambda: True)
+    monkeypatch.setattr(w, "_focus_session_input", lambda **kw: True)
+    monkeypatch.setattr(w, "_active_is_not_target", lambda *a, **k: False)
+    monkeypatch.setattr(w, "_run_x", lambda argv, **kw: calls.append(argv) or type(
+        "R", (), {"returncode": 0, "stdout": "", "stderr": ""})())
+    return calls
+
+
+def test_send_key_presses_only_that_key(monkeypatch):
+    _fast(monkeypatch)
+    calls = _capture_x(monkeypatch)
+    assert w.send_key_to_session(key="Escape", terminal_pid=1) is True
+    assert calls == [["xdotool", "key", "--clearmodifiers", "Escape"]]
+
+
+def test_send_key_never_types_text_or_presses_return(monkeypatch):
+    """The whole point: this path must not be able to answer a picker."""
+    _fast(monkeypatch)
+    calls = _capture_x(monkeypatch)
+    w.send_key_to_session(key="Escape", terminal_pid=1)
+    flat = [tok for c in calls for tok in c]
+    assert "type" not in flat, "must never type text"
+    assert "Return" not in flat, "Return would SELECT an option — including 'Disconnect'"
+    assert "ctrl+u" not in flat, "must not clear the line either"
+
+
+def test_send_key_refuses_when_focus_moved(monkeypatch):
+    """Same mis-delivery guard as typing: never press keys at the wrong session."""
+    _fast(monkeypatch)
+    calls = _capture_x(monkeypatch)
+    monkeypatch.setattr(w, "_active_is_not_target", lambda *a, **k: True)
+    assert w.send_key_to_session(key="Escape", terminal_pid=1) is False
+    assert calls == [], "nothing may be pressed once focus is known to be wrong"
+
+
+def test_send_key_false_without_xdotool(monkeypatch):
+    _fast(monkeypatch)
+    monkeypatch.setattr(w, "xdotool_available", lambda: False)
+    assert w.send_key_to_session(key="Escape", terminal_pid=1) is False

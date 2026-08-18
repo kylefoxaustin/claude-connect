@@ -719,6 +719,41 @@ def send_keys_to_session(
     return _type_into_focused_window(text, title=title, window_title=window_title)
 
 
+def send_key_to_session(
+    *,
+    key: str,
+    pid: int | None = None,
+    terminal_pid: int | None,
+    title: str | None = None,
+    window_title: str | None = None,
+) -> bool:
+    """Press ONE named key (an xdotool keysym) in a session's window — no text, no Return.
+
+    Exists because a command we inject can open a MODAL that then blocks the session:
+    ``/rc`` opens the Remote Control menu ("Disconnect this session / Show QR code /
+    Continue — Enter to select, Esc to continue") and the session waits there for a
+    human. ``send_keys_to_session`` cannot dismiss it: it always types text and presses
+    Return, and **Return SELECTS whatever the cursor is on** — one option being
+    "Disconnect this session". So dismissal needs a bare Escape, which is what this is for.
+    """
+    if not xdotool_available():
+        return False
+    if not _focus_session_input(
+        pid=pid, terminal_pid=terminal_pid, title=title, window_title=window_title,
+    ):
+        return False
+    try:
+        time.sleep(_FOCUS_SETTLE_S)
+        if _active_is_not_target(title, window_title):
+            log.warning("focus moved before pressing %s — aborting", key)
+            return False
+        _run_x(["xdotool", "key", "--clearmodifiers", key], check=True, timeout=3.0)
+        return True
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
+        log.debug("send_key_to_session(%s) failed: %s", key, e)
+        return False
+
+
 def _type_into_focused_window(
     text: str, *, title: str | None = None, window_title: str | None = None,
 ) -> bool:

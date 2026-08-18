@@ -87,7 +87,7 @@ from .project_spend import ProjectSpendMeter
 from .bridge import read_bridge
 from .models import BusEvent, BusTopology, ParkedSession, SessionRecord, Status
 from .registry import attach_cards
-from .resources import resources_state, touch_lease_activity
+from .resources import resources_state, slim_resource_cards, touch_lease_activity
 from .services import read_services
 from .tokens import TokenAccountant
 from .scanner import (
@@ -111,6 +111,7 @@ from .settings import DEFAULT_SETTINGS_PATH, Settings, dump_settings, load_setti
 from .windows import (
     focus_session,
     send_key_sequence,
+    send_key_to_session,
     send_keys_to_session,
     wmctrl_available,
     x11_health,
@@ -166,6 +167,97 @@ _WAKEABLE_STATUSES = frozenset({Status.IDLE, Status.DORMANT})
 # per job. A queued job is a hard block on the requester, so this fires regardless of the wake
 # floor — but never at a BUSY service (it's already working; the busy-guard leaves it alone).
 _SVC_STALE_SECONDS = 180
+
+# Force a Bus-tile resend at least this often even when the gate says "unchanged".
+# Insurance against a stale UI, which this codebase has shipped more than once.
+# A relaunch injection is triggered BY a human clicking a button, and windows.py refuses to
+# type while a human has been active within _HUMAN_ACTIVE_MS (4 s) — so the first attempt lands
+# inside that refusal window almost by construction. The guard's contract is explicitly "the
+# caller retries once they go idle"; these are that retry. Kyle, 2026-08-17: three of four
+# relaunches logged "failed to inject '/rc'" for exactly this reason.
+_INJECT_RETRY_SECONDS = 90.0
+_INJECT_RETRY_STEP_S = 3.0
+
+_BUS_REFRESH_SECONDS = 60.0
+_PROJECTS_REFRESH_SECONDS = 60.0
+_SESSIONS_FULL_REFRESH_SECONDS = 60.0
+
+# Sub-keys of the sessions payload that are STATIC in practice. MEASURED 2026-08-16
+# across 8 consecutive broadcasts: `parked` (13.4 KB) and `members` (5.8 KB) changed
+# ZERO times, while only `sessions` (3.0 KB) and `silent` (0.9 KB) moved — 19.2 KB of
+# a 23.2 KB payload (83%) retransmitted every 3 s purely because it shares a message
+# with something that ticks. Same defect as the asset cards, one level further in.
+#
+# These are OMITTED from a broadcast when unchanged. Absence means "unchanged, keep
+# what you have" and the frontend merges on presence. The REST endpoint and the WS
+# connect snapshot always send the FULL payload, so a new or resyncing client never
+# reconstructs anything from deltas — and a forced full resend every
+# _SESSIONS_FULL_REFRESH_SECONDS bounds how long any divergence could survive.
+_SESSIONS_STATIC_KEYS = (
+    "parked", "members", "collisions", "lost_rc", "webpush", "x11",
+    "winddown", "fadeout_seconds", "wmctrl_available",
+)
+
+# Fields stamped onto a project's jobs from LIVE session state each scan. They are
+# excluded from the change-gate because they flip constantly (a working assignee
+# oscillates active/warm), which defeated the gate entirely; they still ride the
+# payload, and the authoritative copy is the per-tick `sessions` broadcast.
+_PROJECT_VOLATILE_JOB_FIELDS = ("assignee_status", "assignee_busy")
+
+
+def thin_unchanged_keys(
+    full: dict[str, Any],
+    digests: dict[str, str],
+    keys: tuple[str, ...],
+    *,
+    force_full: bool = False,
+) -> dict[str, Any]:
+    """Drop ``keys`` from ``full`` whose value is unchanged since the last call.
+
+    Delta-by-omission: **absence means "unchanged, keep yours", never "empty"**.
+    That contract is the whole risk of this optimisation, so it is stated on both
+    sides — see the merge-on-presence comment in ``app.js``'s ``sessions`` handler.
+
+    ``digests`` is mutated in place (per-key state across calls). ``force_full``
+    reseeds every digest and returns everything, which is what bounds how long any
+    client/server divergence could survive.
+
+    Pure apart from that one mutation, so the contract can be pinned by a test.
+    """
+    if force_full:
+        for k in keys:
+            if k in full:
+                digests[k] = json.dumps(full[k], sort_keys=True, default=str)
+        return full
+    out = dict(full)
+    for k in keys:
+        if k not in full:
+            continue
+        digest = json.dumps(full[k], sort_keys=True, default=str)
+        if digests.get(k) == digest:
+            out.pop(k, None)
+        else:
+            digests[k] = digest
+    return out
+
+
+def _projects_gate_key(projs: list[dict[str, Any]]) -> str:
+    """A stable digest of project state, ignoring live per-tick annotations.
+
+    Pure function so the gate can be pinned by a test rather than trusted.
+    """
+    stripped: list[Any] = []
+    for p in projs:
+        p2 = dict(p)
+        jobs = p2.get("jobs")
+        if isinstance(jobs, list):
+            p2["jobs"] = [
+                {k: v for k, v in j.items() if k not in _PROJECT_VOLATILE_JOB_FIELDS}
+                if isinstance(j, dict) else j
+                for j in jobs
+            ]
+        stripped.append(p2)
+    return json.dumps(stripped, sort_keys=True, default=str)
 
 # A /msg-check the recipient hasn't run yet makes a second one pointless — one
 # check drains the whole backlog. Re-arm after this long anyway, so a session
@@ -351,6 +443,12 @@ class AppState:
         self.res_root = settings.bus.state_dir_resolved / "resources"   # shared-resource leases
         self._registry_root = settings.bus.state_dir_resolved / "registry"  # asset cards (access/setup/…)
         self.resources: dict[str, Any] = {"resources": []}
+        self._last_bus_payload: dict[str, Any] | None = None  # change-gate for the Bus broadcast
+        self._last_bus_sent: float = 0.0                      # monotonic; forces a periodic resend
+        self._sessions_static_digest: dict[str, str] = {}     # per-key digests for delta-by-omission
+        self._sessions_full_sent: float = 0.0                 # monotonic; forces a periodic FULL send
+        self._projects_gate: str | None = None                # digest ignoring live annotations
+        self._projects_sent: float = 0.0                      # monotonic; forces a periodic resend
         self._pinged_offers: set[str] = set()                 # offers we've already woken
         self._owner_missing_since: dict[str, float] = {}      # lease -> when its owner went offline
         self._nudge_woken: set[str] = set()                   # idle episodes we already woke
@@ -585,10 +683,27 @@ class AppState:
                 watch_dirs.append(d)
         self.activity.sync_watched_dirs(watch_dirs)
 
-        await self.hub.broadcast("sessions", self._sessions_payload())
+        await self.hub.broadcast("sessions", self._sessions_broadcast_payload())
         # Refresh the Bus tile too (topology + per-tag pending) so it stays live
         # between bus events, not just on WS reconnect.
-        await self.hub.broadcast("bus", self._bus_payload())
+        #
+        # Change-gated: MEASURED 2026-08-16 this payload was byte-identical across
+        # 9/9 consecutive ticks, i.e. ~197 MB/day per client of pure repetition.
+        # (`sessions` is deliberately NOT gated — measured 9/9 ticks CHANGED, since
+        # live previews and token tallies genuinely move; a gate there would never
+        # fire and would only add a way to go stale.)
+        #
+        # The forced periodic resend is deliberate insurance, not redundancy: this
+        # codebase has been bitten repeatedly by a UI that renders fine while being
+        # silently stale, so a gate bug can cost at most _BUS_REFRESH_SECONDS rather
+        # than persisting until the next reconnect.
+        bus_payload = self._bus_payload()
+        now_mono = time.monotonic()
+        if (bus_payload != self._last_bus_payload
+                or now_mono - self._last_bus_sent >= _BUS_REFRESH_SECONDS):
+            self._last_bus_payload = bus_payload
+            self._last_bus_sent = now_mono
+            await self.hub.broadcast("bus", bus_payload)
         # Resource tiles: named-resource leases (+ nvidia-smi telemetry for the GPU).
         self.resources = await asyncio.to_thread(resources_state, self.res_root)
         # Attach each resource's asset card (access / setup / gotchas …) so the tile can show
@@ -596,7 +711,7 @@ class AppState:
         await asyncio.to_thread(attach_cards, self.resources.get("resources", []), self._registry_root)
         await asyncio.to_thread(self._refresh_active_leases)
         self._annotate_orphans()
-        await self.hub.broadcast("resources", self.resources)
+        await self.hub.broadcast("resources", self._resources_payload())
         self._retractions = await asyncio.to_thread(read_retractions, self.coord_root)
         push_reqs = await asyncio.to_thread(read_push_requests, self.coord_root)
         grants = await asyncio.to_thread(read_push_grants, self.coord_root)
@@ -642,9 +757,30 @@ class AppState:
             projs = await asyncio.to_thread(read_projects, self.coord_root)
             self._spend_meter.update(projs, self._member_output_tokens)
             self._annotate_lead_offline(projs)
-        if projs != self.projects:
+        # Gate on DURABLE content, not on the live annotations stamped above.
+        #
+        # `_annotate_assignee_status` writes each job's assignee session status
+        # (active/warm/idle/offline), which flips as sessions work — so a plain
+        # `projs != self.projects` was true on ~9 of every 10 ticks and this gate
+        # never actually gated. MEASURED 2026-08-16: 14.4 KB x ~9 per 30 s =
+        # ~414 MB/day per connected client, for a payload that had not meaningfully
+        # changed. This is precisely the trap the push-grant gate documents 60 lines
+        # up ("compare on identity, not the live countdown") — written down, then
+        # not applied one function later.
+        #
+        # The dropped fields are not lost: assignee liveness is derived from the
+        # `sessions` broadcast, which ships every tick anyway. The periodic resend
+        # bounds how stale the copy inside `projects` can get.
+        now_mono = time.monotonic()
+        gate = _projects_gate_key(projs)
+        if (gate != self._projects_gate
+                or now_mono - self._projects_sent >= _PROJECTS_REFRESH_SECONDS):
+            self._projects_gate = gate
+            self._projects_sent = now_mono
             self.projects = projs
             await self.hub.broadcast("projects", {"projects": projs})
+        else:
+            self.projects = projs
         # Who is blocked on whom. Every input is already in hand — this is a VIEW over
         # state we collect anyway (directed mail, service queues, resource queues), which
         # is why it's cheap enough to rebuild every scan.
@@ -845,6 +981,7 @@ class AppState:
             # not need a sibling: ONE check drains the entire backlog. So: once woken,
             # stay quiet until the recipient's last-seen watermark actually advances.
             seen_now = _read_last_seen(state_dir, r.tag) or ""
+            retry_reason = ""          # set only on the lost-keystroke retry path; logged at inject
             prev = self._wake_outstanding.get(r.tag)
             if prev is not None:
                 prev_seen, woke_at, prev_activity, prev_latest = _unpack_wake(prev)
@@ -874,9 +1011,21 @@ class AppState:
                     new_mail = (info.get("latest_ts") or "") > prev_latest
                     if not (moved and (now - woke_at) >= _WAKE_RETRY_SECONDS and new_mail):
                         continue
-                    log.info("re-waking [%s]: active %.0fm since we typed, watermark still stuck, "
-                             "and newer directed mail has since arrived — the keystroke was "
-                             "probably lost", r.tag, (now - woke_at) / 60)
+                    # DO NOT LOG HERE. This decision is re-evaluated every 3 s tick, and when the
+                    # wakeability gate below refuses — which is the COMMON case here, because a
+                    # session described as "active Nm since we typed" is by definition BUSY — we
+                    # fall through without recording anything, so the identical decision recurs
+                    # forever. Logging at this point emitted one line every 3 SECONDS indefinitely:
+                    # a log storm inside the fix for the /msg-check storm (v2.26.1, b199e74), and
+                    # log spam is exactly what masked real scan errors in v2.37.
+                    #
+                    # Nothing is hidden by staying quiet: a blocked retry types nothing, and this
+                    # path is an accelerator rather than the only door — the recipient still sees
+                    # the mail on its next prompt-hook. So we log if and only if we actually type.
+                    retry_reason = (
+                        "active %.0fm since we typed, watermark still stuck, and newer directed "
+                        "mail has since arrived — the keystroke was probably lost"
+                        % ((now - woke_at) / 60))
             # WAITING = parked at its prompt. Normally we never inject there (Kyle
             # might be typing at it) — and since WAITING is the resting state of every
             # quiet session, that guard is what forces him to hand-click "check msgs"
@@ -903,6 +1052,8 @@ class AppState:
                                              info.get("latest_ts") or "")
             self._woke_at[r.tag] = now
             changed = True
+            if retry_reason:
+                log.info("re-waking [%s]: %s", r.tag, retry_reason)
             await self._inject_msg_check(r, f"{info['count']} unread addressed to it")
         if changed:
             await asyncio.to_thread(write_wake_state, self.coord_root, self._wake_outstanding)
@@ -1754,6 +1905,31 @@ class AppState:
             asyncio.create_task(self._bootstrap_relaunched(cwd, name, rc, rename))
         return True, "launched"
 
+    async def _retry_while_deferred(self, attempt, *, what: str, cwd: str):
+        """Call ``attempt()`` until it succeeds or the deadline passes.
+
+        ``windows._focus_session_input`` returns False both for "couldn't find the window" and
+        for "a human is at the keyboard, deferring" — and it CANNOT distinguish them for us,
+        so we simply retry a bounded number of times. That is safe for both callers here: a
+        deferred attempt typed nothing at all, and the text path clears the line (ctrl+u)
+        before typing, so a partial landing cannot compound.
+        """
+        deadline = time.time() + _INJECT_RETRY_SECONDS
+        tries = 0
+        while True:
+            tries += 1
+            if await attempt():
+                if tries > 1:
+                    log.info("relaunch: %s landed in %s after %d tries (a human held the "
+                             "keyboard)", what, cwd, tries)
+                return True
+            if time.time() >= deadline:
+                log.warning("relaunch: %s never landed in %s after %d tries over %.0fs — a "
+                            "human was active the whole time, or the window is gone",
+                            what, cwd, tries, _INJECT_RETRY_SECONDS)
+                return False
+            await asyncio.sleep(_INJECT_RETRY_STEP_S)
+
     async def _bootstrap_relaunched(self, cwd: str, name: str, rc: bool, rename: bool) -> None:
         """Wait for the relaunched Claude to come up, then inject the enabled
         keystrokes — ``/rc`` (remote-control) when ``rc`` is on and/or
@@ -1795,14 +1971,52 @@ class AppState:
         for i, text in enumerate(cmds):
             if i:
                 await asyncio.sleep(cfg.between_seconds)
-            rec = _find() or rec      # refresh pid/window in case the scan replaced it
-            ok = await asyncio.to_thread(
-                send_keys_to_session,
-                text=text, pid=rec.pid, terminal_pid=rec.terminal_pid,
-                title=rec.title, window_title=rec.window_title,
-            )
+            async def _type(_text=text):
+                nonlocal rec
+                rec = _find() or rec   # refresh pid/window in case the scan replaced it
+                return await asyncio.to_thread(
+                    send_keys_to_session,
+                    text=_text, pid=rec.pid, terminal_pid=rec.terminal_pid,
+                    title=rec.title, window_title=rec.window_title,
+                )
+
+            ok = await self._retry_while_deferred(_type, what=repr(text), cwd=cwd)
             if not ok:
-                log.warning("relaunch: failed to inject %r into %s", text, cwd)
+                pass  # already logged with the reason by _retry_while_deferred
+            elif text == "/rc":
+                # `/rc` does not merely enable remote control — it opens the Remote Control
+                # MENU ("Disconnect this session / Show QR code / Continue · Enter to select,
+                # Esc to continue") and the session then sits BLOCKED on that modal until a
+                # human answers it.
+                #
+                # Kyle, 2026-08-17, observed live: EVERY relaunched session came up parked on
+                # this dialog. So the relaunch feature was reliably walking each session it
+                # revived straight into a prompt only he could clear — the opposite of the
+                # unattended recovery it exists to provide.
+                #
+                # Remote control is already ON by the time the menu renders (the pane says so),
+                # so the menu is pure status and is safe to dismiss. Dismiss with ESC, NEVER
+                # Return: Return SELECTS whatever the cursor happens to be sitting on, and one
+                # of the three options is "Disconnect this session" — the v2.24 lesson that an
+                # open picker turns stray input into an answer nobody gave.
+                await asyncio.sleep(cfg.between_seconds)
+
+                async def _esc():
+                    nonlocal rec
+                    rec = _find() or rec
+                    return await asyncio.to_thread(
+                        send_key_to_session, key="Escape", pid=rec.pid,
+                        terminal_pid=rec.terminal_pid, title=rec.title,
+                        window_title=rec.window_title,
+                    )
+
+                # Retried for the same reason the /rc itself is: the person who clicked
+                # Relaunch is still at the keyboard. Getting this wrong leaves the session
+                # parked on a modal, which is the whole bug being fixed.
+                if not await self._retry_while_deferred(_esc, what="the /rc menu dismissal",
+                                                        cwd=cwd):
+                    log.warning("relaunch: %s is left sitting on the /rc Remote Control menu "
+                                "— it is blocked until someone presses Esc", cwd)
 
     async def relaunch_batch(self, items: list[tuple[str, str]], rc: bool, rename: bool) -> None:
         """Relaunch several parked sessions — one at a time, on purpose.
@@ -1847,6 +2061,35 @@ class AppState:
             if r["target_plain"] == plain and r["created"] > last_seen:
                 return r
         return None
+
+    # Asset cards are 99% of the resources payload (MEASURED 2026-08-16: 53.5 KB of
+    # 54.0 KB) and they are STATIC — yet they rode the 3s broadcast because the
+    # 0.5 KB of lease/telemetry beside them ticks (GPU utilization). That is the
+    # scan-loop defect one layer up: *a payload that mixes volatile and static data
+    # forces the static part to travel at the volatile rate.*
+    #
+    # The tile needs only `has_access` (to choose its label) and `kind`; the body is
+    # read ONLY when the card modal opens, so it is fetched on demand from
+    # /api/resources/{name}/card. `self.resources` keeps the full card server-side —
+    # the wire gets the stub. Saves ~53.5 KB every 3 s to every connected client
+    # (~1.5 GB/day each), which matters most on the phone over Tailscale.
+    def _resources_payload(self) -> dict[str, Any]:
+        return slim_resource_cards(self.resources)
+
+    def _sessions_broadcast_payload(self) -> dict[str, Any]:
+        """The per-tick payload with unchanged STATIC sub-keys omitted.
+
+        See ``_SESSIONS_STATIC_KEYS``. Only the periodic broadcast is thinned — the
+        REST endpoint and the WS connect snapshot always serve the full object.
+        """
+        now_mono = time.monotonic()
+        force_full = now_mono - self._sessions_full_sent >= _SESSIONS_FULL_REFRESH_SECONDS
+        if force_full:
+            self._sessions_full_sent = now_mono
+        return thin_unchanged_keys(
+            self._sessions_payload(), self._sessions_static_digest,
+            _SESSIONS_STATIC_KEYS, force_full=force_full,
+        )
 
     def _sessions_payload(self) -> dict[str, Any]:
         sessions = []
@@ -2435,7 +2678,25 @@ async def get_resources(request: Request) -> dict[str, Any]:
     live-session list, which only the scan loop has).
     """
     state: AppState = request.app.state.cond
-    return state.resources
+    return state._resources_payload()
+
+
+@app.get("/api/resources/{name}/card")
+async def get_resource_card(name: str, request: Request) -> dict[str, Any]:
+    """The full asset card for one resource — access / setup / gotchas / docs.
+
+    Split out of the periodic payload because the card body is 99% of it and is
+    read only when the card modal actually opens (see ``_resources_payload``).
+    Served from the scan-cached resources, so it costs no extra disk read.
+    """
+    state: AppState = request.app.state.cond
+    entry = next((r for r in state.resources.get("resources", []) if r.get("name") == name), None)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"no such resource: {name}")
+    card = entry.get("card")
+    if not isinstance(card, dict):
+        raise HTTPException(status_code=404, detail=f"{name} has no asset card")
+    return card
 
 
 @app.post("/api/resources/{name}/reclaim")
@@ -3304,7 +3565,10 @@ async def get_ops(request: Request) -> dict[str, Any]:
         # wake, the answer, the wind-down close. Say so here rather than letting taps no-op.
         "x11": state._x11,                # can Conductor reach a display? (2026-08-05)
         "services": state.services.get("services", []),
-        "resources": state.resources.get("resources", []),
+        # Slim (card bodies deferred to /api/resources/<name>/card). This is the
+        # phone's aggregate call over Tailscale, so it is the payload that benefits
+        # most from not shipping 53.5 KB of static card text on every poll.
+        "resources": state._resources_payload().get("resources", []),
         # Project Layer: only the operator-actionable subset (a plan awaiting approval, an empty
         # lead seat) — the phone is a needs-you console, not the full DAG view (slice 4).
         "projects": projects_needing_operator(state.projects),
@@ -3835,7 +4099,7 @@ async def websocket(ws: WebSocket) -> None:
         import json
         await ws.send_text(json.dumps({"kind": "sessions", "payload": state._sessions_payload()}))
         await ws.send_text(json.dumps({"kind": "bus", "payload": state._bus_payload()}))
-        await ws.send_text(json.dumps({"kind": "resources", "payload": state.resources}))
+        await ws.send_text(json.dumps({"kind": "resources", "payload": state._resources_payload()}))
         await ws.send_text(json.dumps({"kind": "push", "payload": {
             "requests": state._push_requests, "grants": state._push_grants,
             "proposals": state._push_proposals}}))

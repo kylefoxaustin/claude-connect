@@ -299,6 +299,15 @@ body.link-mode .tile-actions { display: none; }
   opacity: 0.5;
 }
 
+/* Dormant-tag backlog on the Bus tile: real, but nobody is running to read it,
+   so it must never compete with the live figure beside it. Muted on purpose —
+   this number used to BE the headline and read as ~20x the traffic that exists. */
+.bus-dormant {
+  color: var(--text-dim);
+  opacity: 0.65;
+  font-variant-numeric: tabular-nums;
+}
+
 .tile-footer {
   display: flex;
   justify-content: space-between;

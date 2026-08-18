@@ -218,3 +218,59 @@ def test_dead_owner_gets_no_heartbeat(state, tmp_path):
     state.resources = {"resources": [_board(tmp_path, "orin-agx", "other:ghost", 9000)]}
     state._refresh_active_leases()
     assert int(time.time()) - _last_active(tmp_path, "orin-agx") > 8000
+
+
+# --------------------------------------------------------------------------
+# slim_resource_cards — the wire format (docs/V3_REVIEW.md F6)
+#
+# Asset cards were 99% of the resources payload (53.5 KB of 54.0 KB) and rode the
+# 3s broadcast because the 0.5 KB of telemetry beside them ticks. These pin the
+# stub contract the frontends now depend on: they render from `has_access`/`kind`
+# and fetch the body from /api/resources/<name>/card only when the modal opens.
+# --------------------------------------------------------------------------
+
+from conductor.resources import slim_resource_cards
+
+
+def _payload_with_card():
+    return {
+        "resources": [
+            {"name": "gpu", "mode": "free", "util": 3,
+             "card": {"kind": "gpu", "has_access": True, "summary": "the 5090",
+                      "sections": [{"key": "access", "title": "Access", "body": "ssh …"},
+                                   {"key": "gotchas", "title": "Gotchas", "body": "x" * 4000}]}},
+            {"name": "iq9-evk", "mode": "hard", "card": None},
+            {"name": "o6"},
+        ]
+    }
+
+
+def test_slim_keeps_what_the_tile_renders_and_drops_the_body():
+    slim = slim_resource_cards(_payload_with_card())
+    gpu = slim["resources"][0]
+    assert gpu["card"] == {"kind": "gpu", "has_access": True, "deferred": True}
+    assert "sections" not in gpu["card"], "the body must not ride the broadcast"
+    assert "summary" not in gpu["card"]
+    # Non-card fields are untouched — this is a card diet, not a payload rewrite.
+    assert gpu["name"] == "gpu" and gpu["mode"] == "free" and gpu["util"] == 3
+
+
+def test_slim_leaves_cardless_resources_alone():
+    slim = slim_resource_cards(_payload_with_card())
+    assert slim["resources"][1]["card"] is None
+    assert "card" not in slim["resources"][2]
+
+
+def test_slim_does_not_mutate_the_server_side_copy():
+    """The server keeps the full card so /api/resources/<name>/card can serve it —
+    if slimming mutated in place, the body would be destroyed after one broadcast."""
+    full = _payload_with_card()
+    slim_resource_cards(full)
+    assert full["resources"][0]["card"]["sections"], "source payload must keep its body"
+    assert "deferred" not in full["resources"][0]["card"]
+
+
+def test_slim_is_substantially_smaller():
+    import json
+    full = _payload_with_card()
+    assert len(json.dumps(slim_resource_cards(full))) < len(json.dumps(full)) / 4

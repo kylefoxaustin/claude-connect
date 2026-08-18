@@ -269,17 +269,24 @@ function setConnState(up) {
 function handleMessage({ kind, payload }) {
   switch (kind) {
     case "sessions":
+      // MERGE ON PRESENCE, never blank on absence. The periodic broadcast omits
+      // STATIC sub-keys that haven't changed — measured 83% of this payload
+      // (`parked` 13.4 KB + `members` 5.8 KB never moved across 8 ticks) — so an
+      // absent key means "unchanged, keep yours", NOT "empty". Treating absent as
+      // empty here would silently blank the dormant dock and the fleet-health rows.
+      // `sessions` and `silent` genuinely change every tick and are always present;
+      // the REST endpoint, the connect snapshot and a rescan all send everything.
       state.sessions = payload.sessions || [];
-      state.parked = payload.parked || [];
-      state.fadeoutSeconds = payload.fadeout_seconds ?? 30;
-      state.wmctrlAvailable = !!payload.wmctrl_available;
-      if (payload.members) state.members = payload.members;
       state.silent = payload.silent || [];
-      state.collisions = payload.collisions || [];
-      state.lost_rc = payload.lost_rc || [];
-      state.webpush = payload.webpush || null;
-      state.x11 = payload.x11 || null;
-      state.winddown = payload.winddown || { active: false };
+      if (payload.parked !== undefined) state.parked = payload.parked || [];
+      if (payload.fadeout_seconds !== undefined) state.fadeoutSeconds = payload.fadeout_seconds ?? 30;
+      if (payload.wmctrl_available !== undefined) state.wmctrlAvailable = !!payload.wmctrl_available;
+      if (payload.members !== undefined) state.members = payload.members;
+      if (payload.collisions !== undefined) state.collisions = payload.collisions || [];
+      if (payload.lost_rc !== undefined) state.lost_rc = payload.lost_rc || [];
+      if (payload.webpush !== undefined) state.webpush = payload.webpush || null;
+      if (payload.x11 !== undefined) state.x11 = payload.x11 || null;
+      if (payload.winddown !== undefined) state.winddown = payload.winddown || { active: false };
       if (typeof renderWinddown === "function" && winddownModal && !winddownModal.classList.contains("hidden")) renderWinddown();
       sessionCountEl.textContent = `${state.sessions.length} session${state.sessions.length === 1 ? "" : "s"}`;
       renderGrid(state);
@@ -1834,14 +1841,42 @@ window.showToast = showToast;
 // Resource asset card — how to access + set up a shared resource (an EVK, the GPU, …).
 // Sections render as <pre> via textContent: the bodies are raw notes (ssh commands, key paths)
 // — preformatted preserves them exactly, and textContent means no HTML injection from a card.
-window.showResourceCard = function showResourceCard(res) {
+window.showResourceCard = async function showResourceCard(res) {
   const modal = document.getElementById("card-modal");
   const titleEl = document.getElementById("card-modal-title");
   const body = document.getElementById("card-modal-body");
-  const card = res && res.card;
-  if (!modal || !card) return;
-  titleEl.textContent = (res.label || res.name) + (card.kind ? ` · ${card.kind}` : "");
+  const stub = res && res.card;
+  if (!modal || !stub) return;
+  titleEl.textContent = (res.label || res.name) + (stub.kind ? ` · ${stub.kind}` : "");
   body.replaceChildren();
+  modal.classList.remove("hidden");
+
+  // The card BODY is fetched on demand: it is ~99% of the resources payload and is
+  // read only right here, so it no longer rides the 3s broadcast.
+  let card = stub;
+  if (stub.deferred) {
+    const loading = document.createElement("div");
+    loading.className = "card-empty"; loading.textContent = "Loading card…";
+    body.appendChild(loading);
+    try {
+      const r = await fetch(`/api/resources/${encodeURIComponent(res.name)}/card`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      card = await r.json();
+    } catch (err) {
+      body.replaceChildren();
+      const e = document.createElement("div");
+      e.className = "card-empty";
+      // Say what actually happened. Falling through to "no sections filled in yet"
+      // would be a confident lie about the CARD when the truth is that the FETCH
+      // failed — the exact silent-wrong-answer this codebase keeps stamping out.
+      e.textContent = `Couldn't load this card (${err && err.message ? err.message : err}). `
+        + `The card exists — the fetch failed. Try again, or check Conductor's log.`;
+      body.appendChild(e);
+      return;
+    }
+    body.replaceChildren();
+  }
+
   if (card.summary) {
     const s = document.createElement("div");
     s.className = "card-summary"; s.textContent = card.summary;

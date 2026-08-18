@@ -969,12 +969,40 @@ $("recon-go")?.addEventListener("click", async () => {
 
 // Resource asset card overlay (how to access + set up a resource, from the phone). Bodies
 // render via textContent (raw ssh commands / key paths preserved, no HTML injection).
-function showResourceCardM(r) {
-  const card = r && r.card;
-  if (!card) return;
-  $("card-ov-title").textContent = (r.label || r.name) + (card.kind ? " · " + card.kind : "");
+async function showResourceCardM(r) {
+  const stub = r && r.card;
+  if (!stub) return;
+  $("card-ov-title").textContent = (r.label || r.name) + (stub.kind ? " · " + stub.kind : "");
   const body = $("card-ov-body");
   body.replaceChildren();
+  $("card-overlay").hidden = false;
+
+  // The card body is fetched on demand — it is ~99% of the resources payload and
+  // is read only here, which matters most on the phone over Tailscale.
+  let card = stub;
+  if (stub.deferred) {
+    const loading = document.createElement("div");
+    loading.className = "card-ov-summary"; loading.textContent = "Loading card…";
+    body.appendChild(loading);
+    try {
+      // api() — NOT bare fetch: the phone injects X-Conductor-Token explicitly
+      // rather than wrapping window.fetch the way the desktop does, so a raw
+      // fetch here would 401 behind the tailnet auth.
+      card = await api(`/api/resources/${encodeURIComponent(r.name)}/card`);
+    } catch (err) {
+      body.replaceChildren();
+      const e = document.createElement("div");
+      e.className = "card-ov-summary";
+      // Report the FETCH failure, never an empty card — an empty card here would
+      // be a confident lie about the resource you are about to go and touch.
+      e.textContent = "Couldn't load this card (" + (err && err.message ? err.message : err)
+        + "). The card exists — the fetch failed.";
+      body.appendChild(e);
+      return;
+    }
+    body.replaceChildren();
+  }
+
   if (card.summary) {
     const s = document.createElement("div");
     s.className = "card-ov-summary"; s.textContent = card.summary;

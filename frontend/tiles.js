@@ -227,6 +227,54 @@ function savePositions(p) {
 
 let positions = loadPositions();
 
+// --- Retirement policy for the positions map --------------------------------
+// v1.5 deliberately keeps a tile's position after its session goes away, so a
+// layout survives a reboot. Correct — but it was written with no upper bound, so
+// the map grows with every project dir ever opened (69 on this box) and that
+// unbounded growth is what pushed a new tile ~1672 px off the bottom of the board.
+//
+// The fix is a policy, not amnesia: a position is kept while you still touch that
+// project, and retired only after RETIRE_DAYS of never appearing on the board.
+// Entries predating this policy carry no stamp — they are STAMPED, never deleted,
+// so upgrading can't silently eat a layout you spent time on.
+const RETIRE_DAYS = 45;
+const POS_HARD_CAP = 250;          // backstop; evicts least-recently-seen first
+
+function retireStalePositions(liveKeys) {
+  const now = Date.now();
+  const cutoff = now - RETIRE_DAYS * 86400000;
+  let changed = false;
+  for (const [k, p] of Object.entries(positions)) {
+    if (!p || typeof p !== "object") { delete positions[k]; changed = true; continue; }
+    if (liveKeys.has(k)) continue;                 // on the board right now
+    if (typeof p.seen !== "number") { p.seen = now; changed = true; continue; }  // grace
+    if (p.seen < cutoff) { delete positions[k]; changed = true; }
+  }
+  const entries = Object.entries(positions);
+  if (entries.length > POS_HARD_CAP) {
+    entries.sort((a, b) => (a[1].seen || 0) - (b[1].seen || 0));
+    for (const [k] of entries.slice(0, entries.length - POS_HARD_CAP)) {
+      if (!liveKeys.has(k)) { delete positions[k]; changed = true; }
+    }
+  }
+  if (changed) savePositions(positions);
+}
+
+function stampSeen(liveKeys) {
+  const now = Date.now();
+  let changed = false;
+  for (const k of liveKeys) {
+    const p = positions[k];
+    // Only re-stamp once a day: this runs on every render and localStorage writes
+    // are synchronous, so stamping per-render would put a JSON serialise of the
+    // whole map on the render path ~every 3 s.
+    if (p && (typeof p.seen !== "number" || now - p.seen > 86400000)) {
+      p.seen = now; changed = true;
+    }
+  }
+  if (changed) savePositions(positions);
+}
+
 // Reconciliation registry. renderGrid reuses the SAME outer .tile node per key
 // across renders instead of `innerHTML = ""` teardown + rebuild. Preserving node
 // identity means a running CSS transition (the end-fade), the attached drag
@@ -310,13 +358,57 @@ function clampX(x) {
   return Math.min(Math.max(0, x), maxX);
 }
 
-// Find next free slot in row-major order that doesn't overlap any stored position.
+function viewportRows() {
+  return Math.max(1, Math.floor((window.innerHeight - 2 * OFFSET_Y + GAP) / (TILE_H + GAP)));
+}
+
+// Keys with a tile actually on the board right now. Maintained by renderGrid so
+// nextCascadeSlot() can collide against what's VISIBLE rather than what's merely
+// remembered. Empty until the first render, which is fine — an empty occupied set
+// just means the first tile goes to the origin.
+let liveTileKeys = new Set();
+let rescuedOffBoard = false;
+
+// A position is provably AUTO-placed when it sits exactly on the cascade grid;
+// anything dragged by hand lands on an arbitrary pixel. That lets us tell "the
+// cascade put this here" from "Kyle put this here" and only ever touch the former.
+function isCascadeGridPoint(p) {
+  if (!p || typeof p.x !== "number" || typeof p.y !== "number") return false;
+  const dx = p.x - OFFSET_X, dy = p.y - OFFSET_Y;
+  return dx >= 0 && dy >= 0 && dx % (TILE_W + GAP) === 0 && dy % (TILE_H + GAP) === 0;
+}
+
+// One-time rescue for tiles the old runaway cascade parked off the bottom of the
+// board. Those tiles were reachable only by scrolling ~2 screens down, which reads
+// exactly like "my new session never showed up". We drop only positions that are
+// BOTH off-screen AND on the cascade grid, so a layout that was actually arranged
+// by hand — including tiles deliberately parked low on a tall board — is untouched.
+function rescueOffBoardAutoPositions() {
+  const maxY = OFFSET_Y + Math.max(0, viewportRows() - 1) * (TILE_H + GAP);
+  let changed = false;
+  for (const [k, p] of Object.entries(positions)) {
+    if (p && p.y > maxY && isCascadeGridPoint(p)) { delete positions[k]; changed = true; }
+  }
+  if (changed) savePositions(positions);
+}
+
+// Find the next free slot in row-major order.
+//
+// This used to collide against `Object.values(positions)` — every position ever
+// stored. But positions are deliberately never GC'd (see renderGrid) so a layout
+// survives a session going away and coming back, which means the map grows with
+// every project dir ever opened — 69 on this box. A new tile then had to clear ALL
+// of them and got cascaded past the bottom of the board: present, positioned, and
+// invisible. Colliding against only the tiles actually ON the board fixes that at
+// the source, and the row bound guarantees it even if the map is stale.
 function nextCascadeSlot() {
   const cols = viewportCols();
-  const occupied = Object.values(positions);
+  const rows = viewportRows();
+  const occupied = [];
+  for (const [k, p] of Object.entries(positions)) if (liveTileKeys.has(k)) occupied.push(p);
   const minDx = (TILE_W + GAP) / 2;
   const minDy = (TILE_H + GAP) / 2;
-  for (let row = 0; row < 200; row++) {
+  for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const x = OFFSET_X + col * (TILE_W + GAP);
       const y = OFFSET_Y + row * (TILE_H + GAP);
@@ -324,7 +416,11 @@ function nextCascadeSlot() {
       if (!overlap) return { x, y };
     }
   }
-  return { x: OFFSET_X, y: OFFSET_Y };
+  // Board genuinely full: stack a small diagonal near the origin rather than
+  // marching off-screen. Overlapping-and-visible beats tidy-and-unreachable — the
+  // user can drag it, which they cannot do to a tile they can't find.
+  const n = occupied.length;
+  return { x: OFFSET_X + (n % 8) * 28, y: OFFSET_Y + (n % 8) * 28 };
 }
 
 function ensurePosition(key) {
@@ -421,6 +517,16 @@ export function renderGrid(state) {
   // Reconcile: keep nodes whose key still wants a grid tile, drop the rest,
   // create the new ones. No full teardown — reused nodes keep their identity.
   const wantKeys = new Set(items.map((it) => it.key));
+  // Publish the on-board key set BEFORE any applyPosition() below, so a new tile
+  // placed this pass collides against the live board rather than every remembered
+  // project. Deferred to first render so the viewport is laid out when we measure.
+  liveTileKeys = wantKeys;
+  if (!rescuedOffBoard) {
+    rescuedOffBoard = true;
+    rescueOffBoardAutoPositions();
+    retireStalePositions(wantKeys);   // once per load: bound the map (see RETIRE_DAYS)
+  }
+  stampSeen(wantKeys);                // keeps a project's slot alive while you use it
   for (const [k, node] of tileNodes) {
     if (!wantKeys.has(k)) {
       tileResizeObserver.unobserve(node);
@@ -812,15 +918,36 @@ function fillBusTile(tile, state) {
   const activeTags = new Set(
     (state.sessions || []).filter((s) => s.status !== "ended" && s.tag).map((s) => s.tag),
   );
+  // The footer used to read "<allPending> unread" — the sum of every tag's backlog.
+  // MEASURED 2026-08-16 that was 9,208 over a bus holding 463 messages: ~20x the
+  // traffic that exists, dominated ENTIRELY by dormant tags (441 apiece for docs,
+  // frontend, imagegen, orb_slam, isa-lab — whose directory no longer exists).
+  //
+  // The number was arithmetically correct and communicated something false. A sum
+  // of per-tag backlogs also answers no question anyone actually has: what you want
+  // to know is whether a session that is RUNNING is behind. So the headline is now
+  // live sessions only, and dormant backlog is reported separately and named as
+  // backlog — nobody is running to read it.
   let activePending = 0;
   let allPending = 0;
+  let liveBehind = 0;
+  let dormantTags = 0;
   for (const [tag, n] of Object.entries(pendingByTag)) {
     const c = n || 0;
     allPending += c;
-    if (activeTags.has(tag)) activePending += c;
+    if (activeTags.has(tag)) {
+      activePending += c;
+      if (c > 0) liveBehind += 1;
+    } else if (c > 0) {
+      dormantTags += 1;
+    }
   }
-  const pendingTitle = `${activePending} unread for active sessions`
-    + (allPending > activePending ? ` · ${allPending} total incl. dormant tags` : "");
+  const dormantPending = allPending - activePending;
+  const pendingTitle = `${activePending} unread across ${liveBehind} live session(s)`
+    + (dormantPending > 0
+        ? `\n${dormantPending} more sit in ${dormantTags} dormant tag(s) — no session is running `
+          + `to read those, so it is backlog, not a queue.`
+        : "");
   const recentItems = (state.busRecent || []).slice(-5).reverse().map((ev) => {
     const t = new Date(ev.timestamp * 1000).toLocaleTimeString();
     const body = ev.payload_summary || "";
@@ -844,8 +971,14 @@ function fillBusTile(tile, state) {
     el("div", { class: "tile-projectdir" }, `claude-bus · ${adapter}`),
     el("div", { class: "tile-preview" }, previewText),
     el("div", { class: "tile-footer" },
-      el("span", { title: "all unread across every tag, including dormant ones" },
-        `${allPending} unread`),
+      el("span", { title: pendingTitle },
+        activePending > 0
+          ? `${activePending} unread · ${liveBehind} behind`
+          : "live sessions current"),
+      dormantPending > 0
+        ? el("span", { class: "bus-dormant", title: pendingTitle },
+            `+${dormantPending} dormant`)
+        : null,
       el("span", {}, `tags: ${Object.keys(state.busTopology?.subscribers || {}).length}`),
     ),
   );

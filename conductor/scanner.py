@@ -241,14 +241,100 @@ def build_cwd_index(projects_root: Path) -> dict[str, Path]:
     return index
 
 
+# Incremental line-count + memoized meta, keyed by transcript path.
+#
+# `parse_session_meta` used to read the ENTIRE transcript to count its lines, on
+# every scan tick, for every parked project AND (via scan()) every live session.
+# MEASURED on a 69-project box: 732.9 MB read per tick = 223.9 MB/s = 18.5 TB/day,
+# because the old "jsonl files are typically <1MB" assumption is false at this
+# scale — the largest newest-transcript here is 99.7 MB. It was served entirely
+# from page cache, so it cost no disk IO but pinned ~733 MB of cache permanently
+# hot and generated continuous reclaim pressure on the box it exists to observe.
+#
+# Transcripts are append-only, so we keep a byte offset per path and count only
+# what is NEW — the same idiom TokenAccountant already uses. An unchanged file
+# costs a single stat() and reads nothing at all.
+_META_STATE: dict[str, dict[str, Any]] = {}
+_META_STATE_MAX = 1024          # retirement policy (docs/V3_REVIEW.md D3)
+_META_TICK = 0                  # monotonic stamp for LRU eviction
+
+
+def _evict_meta_state() -> None:
+    """Bound the cache. Keyed by path, so it grows with project dirs, not time —
+    but an unbounded map keyed by 'every X ever seen' is exactly the leak this
+    review set out to remove, so it gets a policy rather than an assumption."""
+    if len(_META_STATE) <= _META_STATE_MAX:
+        return
+    victims = sorted(_META_STATE, key=lambda k: _META_STATE[k]["seen"])
+    for k in victims[: len(_META_STATE) - _META_STATE_MAX // 2]:
+        _META_STATE.pop(k, None)
+
+
+def _count_lines_incremental(jsonl_path: Path, st: dict[str, Any], size: int) -> int:
+    """Total non-empty lines, counting only bytes not already consumed.
+
+    Advances the stored offset over COMPLETE lines only; a trailing partial line
+    is counted in the returned total but not consumed, so it is neither lost nor
+    double-counted when the rest of it arrives. (Claude's transcripts routinely
+    have no trailing newline, so the final record is normally that partial line —
+    which is why the old full-file `sum(1 for _ in f)` counted it.)
+    """
+    if size < st["offset"]:          # shrank or rotated under the same path
+        st["offset"] = 0
+        st["lines"] = 0
+    partial = 0
+    if size > st["offset"]:
+        try:
+            with jsonl_path.open("rb") as fh:
+                fh.seek(st["offset"])
+                chunk = fh.read()
+        except OSError:
+            chunk = b""
+        nl = chunk.rfind(b"\n")
+        if nl != -1:
+            complete = chunk[: nl + 1]
+            st["offset"] += nl + 1
+            st["lines"] += sum(1 for ln in complete.split(b"\n") if ln.strip())
+            chunk = chunk[nl + 1:]
+        if chunk.strip():
+            partial = 1
+    elif st.get("tail_partial"):
+        partial = 1
+    st["tail_partial"] = bool(partial)
+    return st["lines"] + partial
+
+
 def parse_session_meta(jsonl_path: Path) -> tuple[str, str | None, int]:
     """Return (session_id, title_or_None, message_count_estimate).
 
-    session_id = filename stem; title from newest `summary` record; count = total lines.
+    session_id = filename stem; title from newest `summary` record; count = total
+    lines. Memoized on (mtime, size): an unchanged transcript reads nothing.
     """
+    global _META_TICK
     session_id = jsonl_path.stem
+    key = str(jsonl_path)
+    try:
+        stat = jsonl_path.stat()
+        mtime, size = stat.st_mtime, stat.st_size
+    except OSError:
+        return session_id, None, 0
+
+    _META_TICK += 1
+    st = _META_STATE.get(key)
+    if st is None:
+        st = {"offset": 0, "lines": 0, "tail_partial": False,
+              "mtime": None, "size": -1, "title": None, "seen": _META_TICK}
+        _META_STATE[key] = st
+        _evict_meta_state()
+    st["seen"] = _META_TICK
+
+    # Unchanged since last look -> nothing to read.
+    if st["mtime"] == mtime and st["size"] == size:
+        return session_id, st["title"], st["lines"] + (1 if st["tail_partial"] else 0)
+
+    # Title: bounded tail scan for the newest `summary` record. Only re-run when
+    # the file actually changed, which is what makes this cheap.
     title: str | None = None
-    # Title: scan the tail for type=='summary'; full file scan would be wasteful.
     for line in reversed(_tail_lines(jsonl_path, max_bytes=131072)):
         try:
             rec = json.loads(line)
@@ -257,13 +343,9 @@ def parse_session_meta(jsonl_path: Path) -> tuple[str, str | None, int]:
         if rec.get("type") == "summary" and isinstance(rec.get("summary"), str):
             title = rec["summary"]
             break
-    # Message count: cheap estimate via line count of the file. For multi-MB files
-    # a sampled estimate would be better, but jsonl files are typically <1MB.
-    try:
-        with jsonl_path.open("rb") as f:
-            count = sum(1 for _ in f)
-    except OSError:
-        count = 0
+
+    count = _count_lines_incremental(jsonl_path, st, size)
+    st["mtime"], st["size"], st["title"] = mtime, size, title
     return session_id, title, count
 
 
@@ -750,6 +832,9 @@ class SessionScanner:
         self._cpu_samples: dict[int, float] = {}
         # Live claude processes grouped by derived tag; a group of >=2 is an identity collision.
         self.proc_groups: dict[str, list[dict[str, Any]]] = {}
+        # pids we've already reported as unplaceable, so the report is once-per-pid and
+        # not once-per-3s-tick (bounded; see the skip site in scan()).
+        self._unplaceable_logged: set[int] = set()
 
     def scan(self) -> dict[str, SessionRecord]:
         projects_root = self.settings.claude_home_path / "projects"
@@ -783,7 +868,28 @@ class SessionScanner:
                     cwd_index = build_cwd_index(projects_root)
                 jsonl = cwd_index.get(os.path.realpath(cwd))
             if jsonl is None:
+                # A LIVE claude process we cannot place: no transcript resolves for its cwd,
+                # either because it has only just started (a relaunch spends ~60-90s spawning
+                # the terminal and resuming before its transcript is reachable) or because its
+                # cwd genuinely has no history.
+                #
+                # It lands in `proc_groups` above, so fleet-health can truthfully say "its
+                # process is alive" — but with no SessionRecord it gets NO TILE, and until now
+                # that skip was completely silent. From the outside that is indistinguishable
+                # from "Conductor is broken": you launch a session, the board stays empty, and
+                # nothing anywhere says why. (Kyle, 2026-08-17, on exactly this.)
+                #
+                # Logged ONCE PER PID, never per tick — the scan runs every 3s and a per-tick
+                # line here would be the same log storm just fixed in main.py's retry path.
+                if pid not in self._unplaceable_logged:
+                    self._unplaceable_logged.add(pid)
+                    if len(self._unplaceable_logged) > 512:      # bounded, like every other map
+                        self._unplaceable_logged = {pid}
+                    log.info("live claude pid=%s in %s has no resolvable transcript yet — no tile "
+                             "until one appears (normal for ~60-90s after a relaunch)", pid, cwd)
                 continue
+
+            self._unplaceable_logged.discard(pid)   # it resolved; allow a future report
 
             session_id, title_from_summary, msg_count = parse_session_meta(jsonl)
             preview = extract_preview(jsonl)

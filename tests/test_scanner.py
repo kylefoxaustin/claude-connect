@@ -527,3 +527,109 @@ def test_discover_parked_respects_limit(tmp_path: Path):
 
 def test_discover_parked_empty_when_no_projects_root(tmp_path: Path):
     assert discover_parked_projects(tmp_path / "nope", tag_map={}, live_cwds=set()) == []
+
+
+# --------------------------------------------------------------------------
+# parse_session_meta: incremental line counting (docs/V3_REVIEW.md F1)
+#
+# It used to read the ENTIRE transcript on every scan tick, for every parked
+# project and every live session -- measured at 733 MB/tick, 18.5 TB/day on a
+# 69-project box. These pin the append-only incremental behaviour that replaced
+# it, including the case the old full read got right by accident: Claude's
+# transcripts usually have NO trailing newline, so the final record is a partial
+# line that must still be counted.
+# --------------------------------------------------------------------------
+
+def _meta_rec(i: int) -> str:
+    return json.dumps({"type": "user", "message": {"role": "user", "content": f"m{i}"}})
+
+
+def _fresh_meta_state():
+    from conductor import scanner
+    scanner._META_STATE.clear()
+
+
+def test_meta_count_incremental_matches_full_read_as_file_grows(tmp_path: Path):
+    """The count must track an append-only file exactly, read incrementally."""
+    _fresh_meta_state()
+    p = tmp_path / "grow.jsonl"
+
+    # No trailing newline -- the real Claude shape; final record is a partial line.
+    p.write_text("\n".join(_meta_rec(i) for i in range(3)))
+    assert parse_session_meta(p)[2] == 3
+
+    # Append two more, still no trailing newline.
+    p.write_text("\n".join(_meta_rec(i) for i in range(5)))
+    assert parse_session_meta(p)[2] == 5
+
+    # And with a trailing newline the partial line disappears -- still 5.
+    p.write_text("\n".join(_meta_rec(i) for i in range(5)) + "\n")
+    assert parse_session_meta(p)[2] == 5
+
+    # One more complete record.
+    with p.open("a") as fh:
+        fh.write(_meta_rec(5) + "\n")
+    assert parse_session_meta(p)[2] == 6
+
+
+def test_meta_unchanged_file_reads_nothing(tmp_path: Path, monkeypatch):
+    """The whole point of F1: an unchanged transcript must cost a stat and no reads."""
+    _fresh_meta_state()
+    p = tmp_path / "static.jsonl"
+    p.write_text("\n".join(_meta_rec(i) for i in range(4)))
+
+    first = parse_session_meta(p)
+    assert first[2] == 4
+
+    opens: list[str] = []
+    real_open = Path.open
+
+    def counting_open(self, *a, **kw):
+        opens.append(str(self))
+        return real_open(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "open", counting_open)
+    again = parse_session_meta(p)
+
+    assert again == first, "memoized result must be identical"
+    assert opens == [], f"unchanged file must read nothing, but opened {opens}"
+
+
+def test_meta_recounts_when_file_is_truncated_or_rotated(tmp_path: Path):
+    """A shrink means the path was replaced -- the offset must reset, not go stale."""
+    _fresh_meta_state()
+    p = tmp_path / "rot.jsonl"
+    p.write_text("\n".join(_meta_rec(i) for i in range(6)) + "\n")
+    assert parse_session_meta(p)[2] == 6
+
+    p.write_text(_meta_rec(0) + "\n")          # rotated: same path, smaller file
+    assert parse_session_meta(p)[2] == 1
+
+
+def test_meta_title_still_found_and_refreshed_on_change(tmp_path: Path):
+    _fresh_meta_state()
+    p = tmp_path / "titled.jsonl"
+    p.write_text("\n".join([_meta_rec(0), json.dumps({"type": "summary", "summary": "first"})]) + "\n")
+    assert parse_session_meta(p)[1] == "first"
+
+    with p.open("a") as fh:
+        fh.write(json.dumps({"type": "summary", "summary": "second"}) + "\n")
+    assert parse_session_meta(p)[1] == "second", "a changed file must re-scan its title"
+
+
+def test_meta_state_is_bounded(tmp_path: Path):
+    """Any map keyed by 'every path ever seen' needs a retirement policy (D3)."""
+    from conductor import scanner
+    _fresh_meta_state()
+    monkey_max = scanner._META_STATE_MAX
+    for i in range(monkey_max + 50):
+        f = tmp_path / f"s{i}.jsonl"
+        f.write_text(_meta_rec(i))
+        parse_session_meta(f)
+    assert len(scanner._META_STATE) <= monkey_max, "cache must not grow without bound"
+
+
+def test_meta_missing_file_is_zero_not_a_crash(tmp_path: Path):
+    _fresh_meta_state()
+    sid, title, count = parse_session_meta(tmp_path / "nope.jsonl")
+    assert (sid, title, count) == ("nope", None, 0)
