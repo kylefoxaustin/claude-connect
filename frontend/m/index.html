@@ -173,7 +173,11 @@
           Sends to <b>every</b> session as <b>[operator]</b> — a real to-all broadcast with your
           authority (not a peer relaying you). Add <code>p:wake</code> to force everyone to read it now.
         </div>
-        <textarea id="bcast-text" class="bcast-text" rows="5"
+        <!-- spellcheck/autocorrect OFF — same reason as the desktop compose box: Chrome's
+             "enhanced spell check" ships textarea CONTENTS to Google as you type. This one carries
+             [operator] broadcasts to the whole fleet, so it gets the same treatment; fixing the
+             desktop and forgetting the phone is the v2.37 reclaim mistake. -->
+        <textarea id="bcast-text" class="bcast-text" rows="5" spellcheck="false" autocorrect="off"
           placeholder="Message to the whole fleet… (e.g. instructions during a wind-down)"></textarea>
         <div class="recon-foot">
           <span id="bcast-status" class="row-sub"></span>

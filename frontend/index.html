@@ -188,7 +188,14 @@
           <button id="compose-modal-close">×</button>
         </header>
         <div class="compose-body">
-          <textarea id="compose-text" rows="4" placeholder="Message to send on the bus…"></textarea>
+          <!-- spellcheck/autocorrect OFF: Chrome's "enhanced spell check" transmits textarea
+               CONTENTS to Google as you type, before any submit and invisibly from inside the app.
+               Bus messages are fleet-internal, so this field is scoped out of that path. Targeted,
+               NOT global — ordinary prose fields keep spellcheck, which is a real accessibility aid.
+               Reported fleet-wide by [other:lostchild] 2026-08-08; tagged SOURCED (documented Chrome
+               behaviour), not MEASURED — nobody has packet-captured it on this box. -->
+          <textarea id="compose-text" rows="4" spellcheck="false" autocorrect="off"
+                    placeholder="Message to send on the bus…"></textarea>
           <div class="compose-recipients">
             <div class="compose-recipients-head">
               <span>Recipients</span>
