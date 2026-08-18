@@ -23,6 +23,74 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.39.0: 🏗 **BOUND THE UNBOUNDED — a basement-up review at N=69, and the relaunch modal trap.**
+  Prompted by Kyle: *"I launched kitchen_margin and it isn't showing up… I think we need a
+  'frame the basement up to the roof' relook."* ⭐ **THE THESIS: almost nothing here is rotten.
+  Conductor was built for A FLEET YOU CAN HOLD IN YOUR HEAD, and every core structure is
+  UNBOUNDED — recompute everything every tick, remember every project forever, count unread for
+  every tag that ever existed. Each was correct at N=5. At 69 project dirs / 717 transcripts /
+  1.5 GB / 463 messages / 36 tags each is a defect, and they are all the same defect wearing
+  different clothes.** Docs: `docs/V3_REVIEW.md` (7 findings, one root, a v3 design) +
+  `docs/OOMD_ATTRIBUTION.md`. MEASURED before→after, live on skippy: **reads 223.9 → 3.14 MB/s
+  (18.5 → 0.26 TB/day, −98.5%)**; **WS per client 2.59 → 0.169 GB/day (−93.5%)**;
+  `/api/resources` 52.6 → 0.7 KB; `/api/ops` (the phone) 61.3 → 9.2 KB; `discover_parked_projects`
+  202.7 → 13.4 ms; hot path 8.4% → **1.0%** of each tick. 🔥 **THE 18.5 TB/DAY WAS TO COUNT LINES.**
+  `parse_session_meta` read the ENTIRE transcript on every 3 s tick for every parked project AND
+  every live session, because its own comment's *"jsonl files are typically <1MB"* is false at this
+  scale (largest: 99.7 MB) — 733 MB/tick. Now memoized on `(mtime,size)` + counted INCREMENTALLY
+  over an append-only file, advancing only over COMPLETE lines so the trailing partial record
+  (Claude transcripts usually lack a final newline) is counted once, not twice. ⚠️ **And the honest
+  version of the harm is worse than the alarming one:** it was **100% page-cache served**, so it
+  cost zero disk IO — the damage was pinning ~733 MB of cache hot and generating continuous reclaim
+  pressure **on the box whose reclaim storm wiped the fleet**, off a rotational 28 TB disk. *An
+  observability tool must never be load-bearing in the failure it reports.* 📡 **A PAYLOAD THAT
+  MIXES VOLATILE AND STATIC DATA FORCES THE STATIC PART TO TRAVEL AT THE VOLATILE RATE** — asset
+  cards were **99%** of the resources payload (53.5 of 54.0 KB) and STATIC, riding the 3 s broadcast
+  because 0.5 KB of GPU telemetry beside them ticks. Cards are stubbed on the wire and fetched from
+  the new **`GET /api/resources/{name}/card`** when the modal opens; the sessions payload gets the
+  same treatment (`parked` 13.4 KB + `members` 5.8 KB changed **0 of 8** ticks) via delta-by-omission
+  where **ABSENT MEANS "unchanged, keep yours", NEVER "empty"** — stated on both sides, with a forced
+  full frame every 60 s bounding divergence. ⚠️ **A GATE KEYED ON A VALUE THAT TICKS IS NOT A GATE:**
+  the `projects` change-gate existed and NEVER HELD, because `_annotate_assignee_status` stamps live
+  session status that flips active⇄warm — true ~9 of 10 ticks, 414 MB/day — *exactly the trap the
+  push-grant gate documents 60 lines earlier ("compare on identity, not the live countdown"), written
+  down and then not applied one function later.* 🧩 **KYLE'S ACTUAL BUG:** `nextCascadeSlot()`
+  collided against EVERY position ever stored (never GC'd, by v1.5 design), so a new tile landed
+  ~1672 px down with **no upper Y clamp** — present, positioned, invisible. Now collides only against
+  tiles ON the board, viewport-bounded, falling back to a visible diagonal (*overlapping-and-visible
+  beats tidy-and-unreachable*); positions retire (45 d unseen, cap 250) with pre-policy entries
+  **STAMPED, never deleted**; and a one-time rescue drops only positions that are BOTH off-screen AND
+  exactly on the cascade grid — **the discriminator between "the cascade put this here" and "Kyle put
+  this here."** 📬 The Bus tile summed unread across all 36 tags = **9,208 over a bus holding 463
+  messages**, dominated entirely by dormant tags (`isa-lab`'s directory no longer exists):
+  arithmetically correct, communicating something false. ⭐⭐ **THE RELAUNCH MODAL TRAP (Kyle found
+  it): `/rc` DOES NOT JUST ENABLE REMOTE CONTROL — IT OPENS A MENU, AND THE SESSION BLOCKS THERE.**
+  Conductor injects `/rc` on every relaunch, so the recovery feature was reliably walking each
+  session it revived into a prompt only Kyle could clear. Dismissed with a bare **Esc** via the new
+  `send_key_to_session()` — **NEVER Return**, because `send_keys_to_session` always appends it and
+  Return **SELECTS** whatever the cursor is on, one option being *"Disconnect this session."*
+  ⚠️ **AND THE INJECTION NEVER RETRIED**, which is why 3 of 4 relaunches logged *"failed to inject
+  '/rc'"*: `windows.py` refuses to type while a human has been active within 4 s (tilix panes share
+  one X11 window; a racing focus splits keystrokes across tiles), its docstring says *"the caller
+  retries once they go idle"* — and `_bootstrap_relaunched` never did, firing ~3-4 s after **the
+  click that triggered it**, inside that window by construction. **Proven on the real harness: try 1
+  deferred at 1228 ms idle, try 2 LANDED at 4236 ms — a unit test could not have found this.**
+  🌩 **A LIVE LOG STORM INSIDE THE FIX FOR THE ORIGINAL STORM** (blamed to b199e74, v2.26.1): the
+  lost-keystroke retry logged its decision BEFORE the wakeability gate, then `continue`d without
+  recording anything, so for a busy session the identical decision re-fired **every 3 s forever**.
+  🔇 And a live `claude` process with no resolvable transcript was dropped **silently** — it lands in
+  `proc_groups`, so fleet-health truthfully says *"its process is alive"* while the board shows
+  nothing and no line anywhere says why; now reported once per pid (never per tick — that would be
+  the storm just fixed). ❌ **ONE FINDING RETRACTED IN PLACE:** I claimed `bus.sh catchup` reported
+  success and did nothing. **It does not** — two-phase commit defers the cursor advance to the turn's
+  own `Stop` hook, and I measured the watermark INSIDE the same turn as the command. ***A
+  verification that cannot observe success is not evidence of failure; it is a broken test.***
+  Standing rule now in memory: never test an end-of-turn-committing bus command from inside the turn
+  that runs it. 🔒 Also: `spellcheck="false"` on the two textareas carrying bus content (desktop
+  Compose + the phone's `[operator]` broadcast) — Chrome's enhanced spell check ships textarea
+  contents to Google; tagged SOURCED, not MEASURED. **547 tests** (21 new). Known: `test_x11_health`
+  fails on a clean tree and `test_windows_focus` is order-flaky — both consult the REAL X server
+  instead of being hermetic.
 - ✅ v2.38.0: 🧯 **DR CAPSTONE — the fleet is now rebuildable on a new machine in one flow, incl.
   FROM THE PHONE.** Completes the v2.37 disaster-recovery arc with the pieces that turn "the data is
   backed up" into "one screen rebuilds the fleet." ⭐ **THE RECONSTITUTE SCREEN** (`conductor/
