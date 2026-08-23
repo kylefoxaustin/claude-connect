@@ -2068,6 +2068,10 @@ body.link-mode .tile-actions { visibility: hidden; }
 .proj-row-attn { margin-left: auto; }
 .proj-row-goal { color: var(--text-dim); font-size: 11.5px; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; }
+/* A stalled project must not look healthy. ieee-paper reported 3 jobs "in flight" for 24 days —
+   two orders nobody ever claimed and one delivery nobody accepted — and rendered as fine. */
+.proj-row-stall { color: var(--warn, #d9a441); font-weight: 600; }
+
 .proj-row-meta { color: var(--text-dim); font-size: 11px; }
 
 .proj-detail { flex: 1; overflow-y: auto; padding: 16px 20px; min-width: 0; }

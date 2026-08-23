@@ -162,3 +162,102 @@ def test_escalation_counts_annotated(tmp_path: Path):
     p = read_projects(tmp_path)[0]
     assert p["open_kyle_escalations"] == 1
     assert p["open_lead_escalations"] == 2
+
+
+# --------------------------------------------------------------------------
+# Stall detection (docs/PROJECT_LAYER.md — the gap found 2026-08-19)
+#
+# The DAG only advances a job when its order reaches CLOSED — the requester accepting, which is
+# correct, since a producer must never grade its own delivery. But that meant a DELIVERED order was
+# parked on a decision that NOTHING surfaced: the live ieee-paper project had one delivery waiting
+# 24 days and two orders never claimed, while reporting `needs: None`.
+# --------------------------------------------------------------------------
+
+import json as _json
+import time as _time
+from conductor.projects import annotate_jobs, read_projects, _stall_for, _STALL_HOURS
+
+
+def _sorder(tmp_path, oid, state, age_hours, now):
+    d = tmp_path / "orders"; d.mkdir(exist_ok=True)
+    stamp = now - age_hours * 3600
+    (d / f"{oid}.json").write_text(_json.dumps({
+        "order_id": oid, "state": state, "created": stamp, "updated": stamp,
+        "requester": "lead", "service": "worker",
+    }))
+
+
+def _sproj(jobs):
+    return {"id": "p1", "state": "active", "lead": "lead", "jobs": jobs}
+
+
+def test_delivered_order_is_awaiting_acceptance_immediately():
+    """A delivery is blocked on a decision from the moment it lands — no grace period."""
+    assert _stall_for({"state": "DELIVERED"}, 0.0) == "awaiting-acceptance"
+    assert _stall_for({"state": "REJECTED"}, 0.0) == "rejected-awaiting-revise"
+
+
+def test_placed_order_gets_a_grace_period_then_stalls():
+    assert _stall_for({"state": "PLACED"}, _STALL_HOURS - 1) is None
+    assert _stall_for({"state": "PLACED"}, _STALL_HOURS + 1) == "never-claimed"
+
+
+def test_claimed_order_gets_more_rope_than_an_unclaimed_one():
+    """Somebody picked it up — that deserves longer before we call it stalled."""
+    assert _stall_for({"state": "CLAIMED"}, _STALL_HOURS + 1) is None
+    assert _stall_for({"state": "COOKING"}, _STALL_HOURS * 3 + 1) == "claimed-but-quiet"
+
+
+def test_moving_orders_are_never_flagged():
+    for st in ("CONFIRMED", "CLOSED", ""):
+        assert _stall_for({"state": st}, 9999) is None
+
+
+def test_annotate_joins_the_order_and_lists_stalls(tmp_path):
+    now = _time.time()
+    _sorder(tmp_path, "o-del", "DELIVERED", 600, now)     # 25 days
+    _sorder(tmp_path, "o-new", "PLACED", 1, now)          # 1 hour — fine
+    _sorder(tmp_path, "o-old", "PLACED", 100, now)        # 4 days — stalled
+    p = _sproj([
+        {"id": "a", "state": "dispatched", "to": "w1", "order_id": "o-del", "deps": []},
+        {"id": "b", "state": "dispatched", "to": "w2", "order_id": "o-new", "deps": []},
+        {"id": "c", "state": "dispatched", "to": "w3", "order_id": "o-old", "deps": []},
+        {"id": "d", "state": "done", "deps": []},
+    ])
+    annotate_jobs(p, tmp_path, now=now)
+    stalls = {s["id"]: s["stall"] for s in p["stalls"]}
+    assert stalls == {"a": "awaiting-acceptance", "c": "never-claimed"}, stalls
+    assert p["stalls"][0]["id"] == "a", "worst (oldest) first"
+    assert p["stalls"][0]["order_age_hours"] > 500
+    assert "stall" not in p["jobs"][1], "a fresh order must not be flagged"
+
+
+def test_annotate_without_coord_root_is_unchanged(tmp_path):
+    """Callers that don't pass coord_root keep the old behaviour — no orders read, no stalls."""
+    p = _sproj([{"id": "a", "state": "dispatched", "order_id": "o-x", "deps": []}])
+    annotate_jobs(p)
+    assert p["stalls"] == []
+    assert p["in_flight"] == 1
+
+
+def test_a_missing_order_file_does_not_crash_or_invent_a_stall(tmp_path):
+    p = _sproj([{"id": "a", "state": "dispatched", "order_id": "nope", "deps": []}])
+    annotate_jobs(p, tmp_path)
+    assert p["stalls"] == []
+    assert "order_state" not in p["jobs"][0]
+
+
+def test_needs_operator_reports_stalled_but_never_over_the_plan_gate(tmp_path):
+    now = _time.time()
+    pdir = tmp_path / "projects"; pdir.mkdir()
+    _sorder(tmp_path, "o-old", "PLACED", 100, now)
+    base = {"id": "p1", "lead": "lead",
+            "jobs": [{"id": "c", "state": "dispatched", "to": "w", "order_id": "o-old", "deps": []}]}
+
+    (pdir / "p1.json").write_text(_json.dumps({**base, "state": "active"}))
+    assert read_projects(tmp_path)[0]["needs"] == "stalled"
+
+    # The plan gate HARD-blocks on Kyle, so it must still win over an advisory stall.
+    (pdir / "p1.json").write_text(_json.dumps(
+        {**base, "state": "plan_review", "plan_status": "submitted"}))
+    assert read_projects(tmp_path)[0]["needs"] == "approve-plan"

@@ -76,7 +76,7 @@ function ensureSelection() {
   if (selectedId && ids.includes(selectedId)) return;
   // Prefer a project that needs attention (plan awaiting, open Kyle escalation), else the newest.
   const needy = (data.projects || []).find(
-    (p) => p.needs === "approve-plan" || p.open_kyle_escalations > 0);
+    (p) => p.needs === "approve-plan" || p.open_kyle_escalations > 0 || p.needs === "stalled");
   selectedId = (needy || data.projects?.[0] || {}).id || null;
 }
 
@@ -254,12 +254,19 @@ function renderSidebar() {
     const el = document.createElement("button");
     el.className = "proj-row" + (p.id === selectedId ? " sel" : "");
     const jc = p.job_counts || { done: 0, total: 0 };
-    const attn = p.needs === "approve-plan" ? "📋" : (p.open_kyle_escalations > 0 ? "🚩" : "");
+    // 📋 plan gate (hard-blocks on Kyle) > 🚩 escalation > ⏳ stalled in-flight work. The last one
+    // is new: a delivered-but-unaccepted order, or one nobody ever claimed, used to render as a
+    // perfectly healthy project — ieee-paper showed 3/10 jobs "in flight" for 24 days.
+    const nStall = (p.stalls || []).length;
+    const attn = p.needs === "approve-plan" ? "📋"
+               : (p.open_kyle_escalations > 0 ? "🚩" : (nStall ? "⏳" : ""));
     el.innerHTML =
       `<span class="proj-row-top"><span class="proj-dot" style="background:${STATE_BADGE[p.state] || "#6e7681"}"></span>`
       + `<span class="proj-row-id">${esc(p.id)}</span>${attn ? `<span class="proj-row-attn">${attn}</span>` : ""}</span>`
       + `<span class="proj-row-goal">${esc((p.goal || "").slice(0, 60))}</span>`
-      + `<span class="proj-row-meta">${esc(p.state)} · ${jc.done}/${jc.total} jobs</span>`;
+      + `<span class="proj-row-meta">${esc(p.state)} · ${jc.done}/${jc.total} jobs`
+      + (nStall ? ` · <span class="proj-row-stall">${nStall} stalled</span>` : "")
+      + `</span>`;
     el.addEventListener("click", () => { selectedId = p.id; rerender(); });
     return el;
   }));
