@@ -94,7 +94,7 @@ must not be able to take the fleet down.
 
 ### Answer — keystroke injection into the session's window
 
-Conductor already resolves session → tilix tile → window (`conductor/windows.py`), and
+Conductor already resolves session → tilix tile → window (`conductor/x11.py`), and
 already types `/msg-check` into live sessions. The same channel drives the picker.
 
 **Measured protocol** (every step verified by screenshot + transcript on a live session):

@@ -1,11 +1,11 @@
-"""Tests for the pure helpers in conductor.windows.
+"""Tests for the pure helpers in conductor.x11.
 
 The tilix focus path (gdbus / wmctrl / xdotool) is integration-only and isn't
 exercised here; we cover the parsing/validation that decides whether that path
 even runs.
 """
 
-from conductor.windows import _parse_tilix_id, _TILIX_UUID_RE
+from conductor.x11 import _parse_tilix_id, _TILIX_UUID_RE
 
 _UUID = "51ba9199-a37d-4d96-91ec-11cee132dab6"
 

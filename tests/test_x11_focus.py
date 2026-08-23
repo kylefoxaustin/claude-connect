@@ -1,4 +1,4 @@
-"""Focus/typing mis-delivery guards (conductor/windows.py).
+"""Focus/typing mis-delivery guards (conductor/x11.py).
 
 Regression for 2026-07-23: a push notice for 95emulator was typed into qualcomm's ACTIVE
 terminal, because the tilix focus path returned success even when the async activate never
@@ -8,7 +8,7 @@ can't run in CI, so we mock the xdotool/tilix primitives and test the DECISION l
 
 from __future__ import annotations
 
-import conductor.windows as w
+import conductor.x11 as w
 
 
 def _fast(monkeypatch):

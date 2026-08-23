@@ -23,7 +23,7 @@ import types
 
 import pytest
 
-import conductor.windows as W
+import conductor.x11 as W
 
 
 @pytest.fixture

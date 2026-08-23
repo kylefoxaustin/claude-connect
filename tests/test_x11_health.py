@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from conductor import windows as w
+from conductor import x11 as w
 
 
 @pytest.fixture(autouse=True)

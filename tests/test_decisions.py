@@ -341,5 +341,5 @@ def test_normal_picks_are_byte_for_byte_unchanged():
 def test_sender_and_planner_agree_on_the_type_prefix():
     """A mismatch would make the sender PRESS a key literally named '\\x00type:hello'."""
     from conductor.decisions import TYPE_PREFIX
-    from conductor.windows import TYPE_ACTION
+    from conductor.x11 import TYPE_ACTION
     assert TYPE_ACTION == TYPE_PREFIX

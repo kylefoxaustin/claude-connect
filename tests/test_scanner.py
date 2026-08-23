@@ -25,7 +25,7 @@ from conductor.scanner import (
     parse_session_meta,
 )
 from conductor.models import Status
-from conductor.windows import _best_title_match, _token_match
+from conductor.x11 import _best_title_match, _token_match
 
 
 def test_encode_cwd_replaces_slashes():

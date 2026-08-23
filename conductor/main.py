@@ -108,7 +108,7 @@ from .scanner import (
 from .reconstitute import build_plan
 from .roster import build_roster
 from .settings import DEFAULT_SETTINGS_PATH, Settings, dump_settings, load_settings
-from .windows import (
+from .x11 import (
     focus_session,
     send_key_sequence,
     send_key_to_session,
@@ -170,7 +170,7 @@ _SVC_STALE_SECONDS = 180
 
 # Force a Bus-tile resend at least this often even when the gate says "unchanged".
 # Insurance against a stale UI, which this codebase has shipped more than once.
-# A relaunch injection is triggered BY a human clicking a button, and windows.py refuses to
+# A relaunch injection is triggered BY a human clicking a button, and x11.py refuses to
 # type while a human has been active within _HUMAN_ACTIVE_MS (4 s) — so the first attempt lands
 # inside that refusal window almost by construction. The guard's contract is explicitly "the
 # caller retries once they go idle"; these are that retry. Kyle, 2026-08-17: three of four
@@ -1938,7 +1938,7 @@ class AppState:
         This is the flaky part of the feature: keystrokes only land once the TUI
         is drawn and at a prompt. We poll the scanner for the new live session in
         that cwd (with a terminal window), then give it a settle delay before the
-        first keystroke. Injection steals focus by design (see windows.py)."""
+        first keystroke. Injection steals focus by design (see x11.py)."""
         cmds = (["/rc"] if rc else []) + ([f"/rename {name}"] if rename else [])
         if not cmds:
             return
