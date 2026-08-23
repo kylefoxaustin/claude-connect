@@ -14,3 +14,6 @@ settings.toml
 
 # Kyle's drafts — talks, articles. Not part of the project.
 private/
+
+# msgbox identity is per-clone, never shared
+msgbox/.whoami
