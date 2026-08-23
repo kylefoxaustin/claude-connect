@@ -8,6 +8,21 @@ previous release.
 
 A stale version is the cheapest possible lie and one of the more expensive ones to
 debug later, because every bug report that quotes it points at the wrong tree.
+
+⚠️ AND THE SECOND WAY IT LIES, WHICH COST A RESTART TO FIND. Fixing the constant did
+not fix the endpoint: `/api/health` kept serving 2.39.0 from a correct source file,
+across a genuine service restart. CPython's default .pyc invalidation compares
+(source mtime SECONDS, source SIZE) — and `"2.39.0"` and `"2.40.0"` are the same
+number of bytes. A test run had imported the module while the file briefly held the
+old string, and the restore landed in the SAME SECOND at the SAME SIZE, so the stale
+bytecode matched on both fields and python trusted it forever. `conductor.__file__`
+pointed at the right file the whole time. Cleared with `rm -rf conductor/__pycache__`.
+
+⭐ THIS IS WHY THE TEST BELOW IMPORTS THE PACKAGE INSTEAD OF GREPPING ITS SOURCE.
+Grepping the file would have been green while the running app served the old number —
+i.e. it would have agreed with the bug. The import is what the app actually loads, so
+the import is what must be compared. A check that reads something other than what
+ships is not a weaker check; it is a check of the wrong thing.
 """
 
 from __future__ import annotations
