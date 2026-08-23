@@ -4,7 +4,7 @@
 
 **A local dashboard for watching all your Claude Code sessions at once — in your browser or as a standalone desktop app — plus an optional _message bus_ (a shared log your sessions post to) that lets them talk to each other.**
 
-[![version: 2.39](https://img.shields.io/badge/version-2.39-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
+[![version: 2.40](https://img.shields.io/badge/version-2.40-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
 [![platform: linux](https://img.shields.io/badge/platform-linux-orange)](#requirements)
 [![safety: read--only](https://img.shields.io/badge/safety-read--only-green)](#how-it-works)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -83,7 +83,7 @@ New in **2.3–2.5**: a **🕸 History** button replays your entire cross-sessio
 New in **2.22–2.27**: reach the fleet from anywhere over *your own* Tailscale tailnet — the server still binds `127.0.0.1`, it's just proxied onto the tailnet by `tailscale serve` (never the LAN). This isn't the desktop board shrunk down; the phone gets its **own** UI built for the 30-second "something needs me" glance:
 
 - **📱 Ops console (`/m`)** — a scannable list of sessions (not a wall of tiles), sorted by what needs you, with an approvals inbox and a decision queue.
-- **❓ Answer a Claude from your phone.** When a session asks an `AskUserQuestion` (pick 1-of-N, or multi-select), it lands in the **decision queue** — tap the answer and Conductor injects it into the live session, unblocking work you'd otherwise have to walk to the PC for. (Captured by a `PreToolUse` hook the instant the question is asked — so the queue shows the questions that *still need answering*, not the ones already gone.)
+- **❓ Answer a Claude from your phone _or the board_.** When a session asks an `AskUserQuestion` (pick 1-of-N, or multi-select), it lands in the **decision queue** — tap the answer and Conductor injects it into the live session, unblocking work you'd otherwise have to walk to the PC for. (Captured by a `PreToolUse` hook the instant the question is asked — so the queue shows the questions that *still need answering*, not the ones already gone.) Since **2.40** you are not limited to the options it offered: **answer in your own words** (typed into the picker's own free-text *Other* field) or **decline** — and declining is a real answer, not a dismissal, because `Escape` tells the session *"User declined to answer questions"* so it can proceed or re-ask instead of waiting forever. The queue now renders on the **desktop board** too, above the approvals inbox.
 - **🔔 Web Push notifications — the app that finds you.** It *pages* your phone on exactly two things: a Claude **blocked on a question**, and a **gated `git push`** waiting for your approval. Deliberately not idle chatter (unread mail, queue depth, mutual stalls never page) — *an alarm that fires on a healthy fleet is one you learn to swipe away.*
 - **🔐 Approve a `git push` from the couch.** The push-gate inbox (see Features) is on the phone too — one tap arms the approval; the session pushes when it's ready.
 - **⟳ Fleet recovery** — after a reboot, relaunch your whole fleet from one picker (staggered, so 20 sessions don't stampede the box) instead of hand-restarting each terminal.

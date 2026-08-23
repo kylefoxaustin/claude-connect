@@ -23,6 +23,41 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.40.0: ❓ **THE DECISION QUEUE GROWS THE TWO ESCAPES A HUMAN ACTUALLY NEEDS — decline, and
+  answer in your own words — and reaches the desktop board.** Kyle: *"when a session asks a question on
+  my phone or on conductor on skippy I want the ability to decline to answer or enter my own response."*
+  ⭐ **BOTH WERE ALREADY MEASURED AND WRITTEN DOWN** in `docs/DECISION_QUEUE.md`, in the same table as the
+  digit protocol — and I offered to spend a live picker re-discovering them before checking the doc. They
+  were never new behaviour, only **unreached**: *free text* = the picker renders a free-text **Other** as
+  the LAST numbered option; *decline* = `Escape` → *"User declined to answer questions"*.
+  🛑 **DECLINE IS A REAL ANSWER, NOT A UI DISMISSAL** — `Escape` tells the session it was declined, so it
+  can proceed, re-ask or take a default. Hiding the card locally would have left a Claude blocked forever
+  on a question **nobody ever told it had been passed on**: a silent no-op, and the exact lie-of-omission
+  shape v2.37 exists to kill. Sends ONE bare `Escape` via `send_key_to_session`, **never**
+  `send_keys_to_session` — that one appends a Return, and Return on a picker **SELECTS whatever the cursor
+  is on**. ✍️ **FREE TEXT** = Other's digit → the text → Return. **"Other" is NOT in the captured
+  `tool_input`** (verified against a real record), so its index is `len(options)+1`. `plan_keystrokes`
+  keeps its refuse-rather-than-guess posture and now also refuses **empty** text, **multi-line** text (a
+  newline commits the picker mid-sentence and submits a truncated answer), free text **mixed with a picked
+  option**, and any question with **>8 options** — where Other would be #10 and the picker only numbers
+  1-9. ⚠️ **ONE STEP IS STILL UNVERIFIED ON SILICON, and says so at the site:** the docs record *that*
+  Other takes text, not *how it commits*. Exactly one `Return` is emitted — **too few submits an empty
+  Other, too many confirms something extra, and both fail silently** — with a test pinning the count so a
+  change is a deliberate act with a failing test rather than a quiet edit. Live-proven so far: **decline**
+  (`declined [95emulator] — Escape sent`, queue cleared) and the unchanged digit path. 🖥 **DESKTOP GETS
+  THE QUEUE FOR THE FIRST TIME.** v2.24.0 left the board out on purpose — *a phone is episodic, a board is
+  spatial* — but **a question is episodic wherever you are**, and walking to the phone while sitting at the
+  board is absurd. Same endpoints, so the two surfaces cannot drift. 🐛 **THREE BUGS SHIPPED FIRST, ALL
+  INVISIBLE TO `node --check` AND TO 562 TESTS, ALL FOUND BY KYLE USING IT:** (1) a **frontend/backend
+  version skew** — the phone sent `free_text` to a service that predated the field, which dropped it, so
+  `plan_keystrokes` saw an empty selection and refused with *"no option chosen"*; (2) CSS written with the
+  **DESKTOP's variable names on the PHONE** (`--edge/--panel2/--muted` vs `--line/--row/--dim`) — **an
+  undefined CSS var is not an error, it yields no border and no background**, so the input rendered as bare
+  floating text and Kyle's typed *"Let"* hung in mid-air; (3) **the same undefined-var bug in the desktop
+  rules written in the same sitting.** ⭐ **The tell was in the file the whole time: every other rule in
+  both sheets carries a fallback (`var(--border, #333)`) — which is precisely why the pre-existing
+  undefined vars never broke anything. Mine had none.** Both new blocks now do. *A feature built for a talk
+  about silent failures, shipped with two silent failures.* **562 tests** (7 new).
 - ✅ v2.39.0: 🏗 **BOUND THE UNBOUNDED — a basement-up review at N=69, and the relaunch modal trap.**
   Prompted by Kyle: *"I launched kitchen_margin and it isn't showing up… I think we need a
   'frame the basement up to the roof' relook."* ⭐ **THE THESIS: almost nothing here is rotten.
