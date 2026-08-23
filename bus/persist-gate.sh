@@ -44,6 +44,43 @@ TOKENS="$COORD/persist-tokens"
 REQUESTS="$COORD/persist-requests"
 CLAUDE_HOME="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 
+# ---- WHICH PYTHON, AND HOW WE DARE TO ANSWER THAT --------------------------------
+# ⚠️ BOTH GATES USED A BARE `python3` AND SWALLOWED ITS FAILURE. When python3 could not
+# run, the substitution produced nothing, the "no match" branch fired, and the gate
+# exited 0 — SILENTLY ALLOWING the act it exists to stop. An armed gate that is not
+# there. Found by win_conductor (the Windows-port session) on 2026-08-23, reproduced
+# here with a control the same day; the push gate had the identical defect, so BOTH of
+# Kyle's hard controls disarmed together on one missing binary.
+#
+# ⭐ AND THE PART THAT MAKES THIS TEN LINES INSTEAD OF TWO: RESOLUTION IS NOT USABILITY.
+# The obvious fix — try python3, then python, then py -3, taking the first that EXISTS —
+# would not have closed it. On Windows, `WindowsApps\python3.exe` is a ZERO-BYTE App
+# Execution Alias: it satisfies `command -v`, `where`, and `test -x`, and it exits 49
+# with "Python was not found". An existence check picks the stub on its FIRST try,
+# declares victory, and leaves the gate open with a fix in front of it and a comment
+# claiming it is handled — strictly worse than today's undisguised failure, because it
+# is now disguised. MEASURED by win_conductor inside a real hook on Windows 11.
+#
+# So a candidate is chosen by RUNNING it. The probe imports exactly what the gate
+# bodies need, so a python too old or too stripped to execute them fails HERE, where we
+# can say so, instead of mid-parse where the failure looks like "nothing matched".
+#
+# Called LAZILY — only after a fast path has already decided we must run python — so
+# the common case (every tool call that is not a candidate) still costs one grep.
+#
+# DUPLICATED VERBATIM IN push-gate.sh, ON PURPOSE. A gate that must `source` a helper
+# acquires a new silent-failure mode — file missing, function undefined, gate wide open
+# — which is the exact bug being fixed. Twelve duplicated lines beat a load-bearing dot.
+_gate_py() {
+  [ -n "${_GATE_PY:-}" ] && { printf '%s' "$_GATE_PY"; return 0; }
+  # unquoted on purpose: "py -3" must split into a command plus its argument.
+  for _c in ${CLAUDE_BUS_PYTHON:-} python3 python "py -3"; do
+    $_c -c 'import json,os,re,sys' >/dev/null 2>&1 || continue
+    _GATE_PY="$_c"; printf '%s' "$_c"; return 0
+  done
+  return 1
+}
+
 INPUT="$(cat 2>/dev/null || true)"
 [ -n "$INPUT" ] || exit 0
 
@@ -59,7 +96,7 @@ if [ -s "$_MEMBERS" ]; then
   [ -r "$_here/member-registry.sh" ] && . "$_here/member-registry.sh"
   [ -r "$_here/role-gate.sh" ]       && . "$_here/role-gate.sh"
   if command -v role_verdict >/dev/null 2>&1; then
-    _rp="$(printf '%s' "$INPUT" | python3 -c 'import json,sys
+    _rp="$(printf '%s' "$INPUT" | $(_gate_py) -c 'import json,sys
 d=json.load(sys.stdin); print(d.get("session_id","")+"\t"+d.get("tool_name",""))' 2>/dev/null || true)"
     _SID="${_rp%%$(printf '\t')*}"; _TOOL="${_rp#*$(printf '\t')}"
     if _reason="$(role_verdict "$(role_of "$_SID")" "$_TOOL" 0)"; then
@@ -88,6 +125,25 @@ fi
 # the literal string "claude"). A path in a prefilter is the bug; the noun is the fix.
 printf '%s' "$INPUT" | grep -qiE 'claude|settings|systemctl|crontab|bashrc|bash_profile|profile|zshrc|autostart|systemd|commands|hooks' || exit 0
 
+# ---- the interpreter must exist BEFORE we trust anything it would have told us -----
+# This is the fail-closed half. Past this point the gate's verdict comes from python; if
+# python cannot run, the gate has NO VERDICT — and "no verdict" must never be spelled the
+# same way as "allowed". Loud beats silent for a control whose entire job is to stop things.
+if ! _PYBIN="$(_gate_py)"; then
+  cat >&2 <<'EOF'
+🔒 PERSISTENCE GATE — DENIED, because the gate is blind.
+No usable Python interpreter was found, so this gate cannot evaluate the command — and a
+gate that cannot evaluate must not allow. Tried: $CLAUDE_BUS_PYTHON, python3, python, py -3
+(each was RUN, not merely resolved — a Windows App Execution Alias resolves and is not an
+interpreter).
+
+Fix the interpreter, or point the gate at a known-good one:
+    export CLAUDE_BUS_PYTHON=/absolute/path/to/python
+This gate is armed; a persistent write cannot proceed while it cannot see.
+EOF
+  exit 2
+fi
+
 read -r -d '' _PY <<'PY' || true
 import json, os, re, sys
 
@@ -100,10 +156,23 @@ CH = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(HOME, ".claude")
 #   commands/      -> slash-commands: instructions injected into other Claudes
 # NOT gated: projects/ (transcripts), bus-state/ (leases, cards, coordination — written
 # constantly by everyone; gating it would break the fleet and protect nothing).
+# ⚠️ ONE SPELLING FOR EVERY PLATFORM, DECIDED HERE.
+# Every pattern below was written with `/`. On Windows os.sep is `\\`, so realpath() hands
+# back `C:\\Users\\kylef\\.claude\\settings.json` and a hardcoded `/` in these patterns
+# matches NOTHING — meaning settings.json, i.e. the fleet-wide RCE, sails through an armed
+# gate. Found by win_conductor porting to Windows, 2026-08-23. Normalise once, right here,
+# rather than sprinkling os.sep through five patterns where the next one added will forget.
+# ⚠️ STILL OPEN, and NOT claimed to be handled: Windows paths are case-insensitive, so
+# `C:\\users\\...` would evade these comparisons. That is the port's call, not this fix's.
+def _norm(p: str) -> str:
+    return p.replace("\\", "/")
+
+
+CH = _norm(CH)
 GATED_PREFIXES = [
-    os.path.join(CH, "bin"),
-    os.path.join(CH, "commands"),
-    os.path.join(CH, "hooks"),
+    _norm(os.path.join(CH, "bin")),
+    _norm(os.path.join(CH, "commands")),
+    _norm(os.path.join(CH, "hooks")),
 ]
 GATED_FILES_RE = re.compile(re.escape(CH) + r"/settings[^/]*\.json$")
 
@@ -118,10 +187,10 @@ OTHER_GATED_RE = re.compile(
 def gated_path(p: str) -> bool:
     if not p:
         return False
-    p = os.path.realpath(os.path.expanduser(p))
+    p = _norm(os.path.realpath(os.path.expanduser(p)))
     if GATED_FILES_RE.search(p) or OTHER_GATED_RE.search(p):
         return True
-    return any(p == g or p.startswith(g + os.sep) for g in GATED_PREFIXES)
+    return any(p == g or p.startswith(g + "/") for g in GATED_PREFIXES)
 
 
 try:
@@ -228,7 +297,7 @@ for tok in targets:
         sys.exit(0)
 PY
 
-_hit="$(printf '%s' "$INPUT" | python3 -c "$_PY" 2>/dev/null || true)"
+_hit="$(printf '%s' "$INPUT" | $_PYBIN -c "$_PY" 2>/dev/null || true)"
 [ -n "$_hit" ] || exit 0
 
 # EVERY FIELD MUST BE ONE LINE. A multi-line command wrote newlines into the request file and
@@ -260,7 +329,7 @@ fi
 # ---- no token -> file a request and DENY ------------------------------------------------
 mkdir -p "$REQUESTS" 2>/dev/null || true
 { echo "kind=$KIND"; echo "target=$TARGET"; echo "target_name=$(basename "$TARGET")"
-  echo "detail=$DETAIL"; echo "cwd=$(printf '%s' "$INPUT" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("cwd",""))' 2>/dev/null)"
+  echo "detail=$DETAIL"; echo "cwd=$(printf '%s' "$INPUT" | $_PYBIN -c 'import json,sys;print(json.load(sys.stdin).get("cwd",""))' 2>/dev/null)"
   echo "epoch=$now"; echo "created=$(date '+%Y-%m-%d %H:%M')"; } > "$REQUESTS/$KEY" 2>/dev/null || true
 
 case "$KIND" in

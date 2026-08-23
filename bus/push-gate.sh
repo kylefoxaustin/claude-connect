@@ -18,10 +18,66 @@ TOKENS="$COORD/push-tokens"
 REQUESTS="$COORD/push-requests"
 CLAIMS="$COORD/push-claims"   # short-lived hand-off to the pre-push enforcer (see below)
 
+# ---- WHICH PYTHON, AND HOW WE DARE TO ANSWER THAT --------------------------------
+# ⚠️ BOTH GATES USED A BARE `python3` AND SWALLOWED ITS FAILURE. When python3 could not
+# run, the substitution produced nothing, the "no match" branch fired, and the gate
+# exited 0 — SILENTLY ALLOWING the act it exists to stop. An armed gate that is not
+# there. Found by win_conductor (the Windows-port session) on 2026-08-23, reproduced
+# here with a control the same day; the push gate had the identical defect, so BOTH of
+# Kyle's hard controls disarmed together on one missing binary.
+#
+# ⭐ AND THE PART THAT MAKES THIS TEN LINES INSTEAD OF TWO: RESOLUTION IS NOT USABILITY.
+# The obvious fix — try python3, then python, then py -3, taking the first that EXISTS —
+# would not have closed it. On Windows, `WindowsApps\python3.exe` is a ZERO-BYTE App
+# Execution Alias: it satisfies `command -v`, `where`, and `test -x`, and it exits 49
+# with "Python was not found". An existence check picks the stub on its FIRST try,
+# declares victory, and leaves the gate open with a fix in front of it and a comment
+# claiming it is handled — strictly worse than today's undisguised failure, because it
+# is now disguised. MEASURED by win_conductor inside a real hook on Windows 11.
+#
+# So a candidate is chosen by RUNNING it. The probe imports exactly what the gate
+# bodies need, so a python too old or too stripped to execute them fails HERE, where we
+# can say so, instead of mid-parse where the failure looks like "nothing matched".
+#
+# Called LAZILY — only after a fast path has already decided we must run python — so
+# the common case (every tool call that is not a candidate) still costs one grep.
+#
+# DUPLICATED VERBATIM IN push-gate.sh, ON PURPOSE. A gate that must `source` a helper
+# acquires a new silent-failure mode — file missing, function undefined, gate wide open
+# — which is the exact bug being fixed. Twelve duplicated lines beat a load-bearing dot.
+_gate_py() {
+  [ -n "${_GATE_PY:-}" ] && { printf '%s' "$_GATE_PY"; return 0; }
+  # unquoted on purpose: "py -3" must split into a command plus its argument.
+  for _c in ${CLAUDE_BUS_PYTHON:-} python3 python "py -3"; do
+    $_c -c 'import json,os,re,sys' >/dev/null 2>&1 || continue
+    _GATE_PY="$_c"; printf '%s' "$_c"; return 0
+  done
+  return 1
+}
+
 INPUT="$(cat 2>/dev/null || true)"
 
 # ---- fast path: not even a mention of "push" -> allow instantly (no python) -----
 printf '%s' "$INPUT" | grep -q 'push' || exit 0
+
+# ---- the interpreter must exist BEFORE we trust anything it would have told us -----
+# This is the fail-closed half. Past this point the gate's verdict comes from python; if
+# python cannot run, the gate has NO VERDICT — and "no verdict" must never be spelled the
+# same way as "allowed". Loud beats silent for a control whose entire job is to stop things.
+if ! _PYBIN="$(_gate_py)"; then
+  cat >&2 <<'EOF'
+🛑 PUSH GATE — DENIED, because the gate is blind.
+No usable Python interpreter was found, so this gate cannot evaluate the command — and a
+gate that cannot evaluate must not allow. Tried: $CLAUDE_BUS_PYTHON, python3, python, py -3
+(each was RUN, not merely resolved — a Windows App Execution Alias resolves and is not an
+interpreter).
+
+Fix the interpreter, or point the gate at a known-good one:
+    export CLAUDE_BUS_PYTHON=/absolute/path/to/python
+This gate is armed; a push cannot proceed while it cannot see what it is gating.
+EOF
+  exit 2
+fi
 
 # ---- parse the tool call (only for commands that mention push) -------------------
 # Emits 3 lines: the SESSION's cwd, the directory the push actually runs in, then
@@ -62,7 +118,7 @@ sys.stdout.write((cwd or "") + "\n")
 sys.stdout.write(os.path.normpath(eff) + "\n")
 sys.stdout.write(cmd)
 PY
-_parsed="$(printf '%s' "$INPUT" | python3 -c "$_PY" 2>/dev/null || printf '\n\n')"
+_parsed="$(printf '%s' "$INPUT" | $_PYBIN -c "$_PY" 2>/dev/null || printf '\n\n')"
 CWD="$(printf '%s' "$_parsed" | sed -n 1p)"       # the session's cwd
 PUSHDIR="$(printf '%s' "$_parsed" | sed -n 2p)"   # where the push actually runs
 CMD="$(printf '%s' "$_parsed" | tail -n +3)"
