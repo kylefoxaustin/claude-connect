@@ -421,3 +421,14 @@ body {
 #winddown-cards { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .wd-card { overflow-wrap: anywhere; word-break: break-word; }
 .wd-card .row-sub { overflow-wrap: anywhere; }
+
+/* Free-text answer — the picker's own "Other" field, reachable from the phone. */
+.ft-wrap{margin:6px 0 0}
+/* Fallbacks on every var, like the rest of this sheet: an UNDEFINED var silently
+   yields no border and no background, so the field renders as bare floating text —
+   which is exactly how this shipped the first time. */
+.ft{width:100%;box-sizing:border-box;padding:.62rem .7rem;border-radius:8px;
+    border:1px solid var(--line, #333);background:var(--row, #16181d);
+    color:var(--text, #e6e6e6);font-size:.95rem;font-family:inherit}
+.ft::placeholder{color:var(--dim, #8a8a8a)}
+.ft:focus{outline:2px solid var(--accent, #7c5cff);outline-offset:1px}

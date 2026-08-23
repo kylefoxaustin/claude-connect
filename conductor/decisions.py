@@ -75,6 +75,13 @@ def reap_decision(coord_root: Path, session_id: str) -> None:
         pass
 
 
+# Sentinel prefixes on a chosen "label". Kept as strings so the whole plan stays a
+# plain list the caller can log, diff and assert on — the property that made the digit
+# protocol reviewable in the first place.
+OTHER_TEXT = "\x00other:"   # "answer with this free text via the picker's Other field"
+TYPE_PREFIX = "\x00type:"   # a plan entry the sender must TYPE rather than press
+
+
 def plan_keystrokes(
     questions: list[dict[str, Any]],
     answers: list[list[str]],
@@ -106,6 +113,11 @@ def plan_keystrokes(
             f"expected {len(questions)} answer(s), got {len(answers)}")
 
     keys: list[str] = []
+    # OTHER_TEXT marks "none of the above — type this instead". The picker renders a
+    # free-text **Other** entry as the LAST numbered option (docs/DECISION_QUEUE.md,
+    # measured); it is NOT in the captured tool_input, so its digit is len(options)+1.
+    # A caller passes it as the single chosen "label" for that question:
+    #     answers=[[OTHER_TEXT + "my own words"]]
     for q, chosen in zip(questions, answers):
         opts = [o.get("label", "") for o in (q.get("options") or [])]
         multi = bool(q.get("multiSelect"))
@@ -114,6 +126,34 @@ def plan_keystrokes(
         if not multi and len(chosen) > 1:
             raise ValueError(
                 f"{q.get('question', '?')!r} is single-select but {len(chosen)} options were chosen")
+        # free text: one Other answer, never mixed with numbered picks
+        free = [c for c in chosen if c.startswith(OTHER_TEXT)]
+        if free:
+            if len(chosen) > 1:
+                raise ValueError(
+                    "free text cannot be combined with other options — the picker's "
+                    "Other field replaces the selection")
+            text = free[0][len(OTHER_TEXT):]
+            if not text.strip():
+                raise ValueError("free-text answer is empty")
+            if "\n" in text or "\r" in text:
+                # A newline would commit the picker mid-sentence and submit a truncated
+                # answer. Refuse rather than send half of what he typed.
+                raise ValueError("free-text answer must be a single line")
+            other_idx = len(opts) + 1          # Other is rendered AFTER the real options
+            if other_idx > 9:
+                raise ValueError(
+                    "cannot reach the Other field on a question with more than 8 options")
+            keys.append(str(other_idx))
+            keys.append(TYPE_PREFIX + text)    # the sender turns this into a type action
+            # ⚠️ UNVERIFIED-ON-SILICON: exactly ONE Return is emitted, by the shared
+            # trailing append below. Whether the Other field ALSO needs its own Return
+            # before the review tab has NOT been measured on a live picker — the docs
+            # record that Other exists and takes text, not how it commits. Too few
+            # Returns submits an EMPTY Other; too many confirms something extra. Both
+            # fail silently, which is why this is written down instead of guessed at.
+            # First live use must be watched. See docs/DECISION_QUEUE.md.
+            continue                           # no Right: Other replaces the selection
         for label in chosen:
             if label not in opts:
                 raise ValueError(f"{label!r} is not an option of {q.get('question', '?')!r}")

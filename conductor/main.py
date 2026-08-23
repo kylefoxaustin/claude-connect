@@ -31,7 +31,7 @@ from . import __version__
 from .activity import ActivityWatcher
 from .auth import path_requires_auth, resolved_token, token_ok
 from .autonomy import close_window, open_window, peers_in_window, read_windows
-from .decisions import plan_keystrokes, read_decisions, reap_decision
+from .decisions import OTHER_TEXT, plan_keystrokes, read_decisions, reap_decision
 from .members import ROLES as _MEMBER_ROLES
 from .members import detect_collisions, ensure_bound, members_summary, read_members, set_role
 from .provenance import attest, prune as prune_ledger
@@ -3068,6 +3068,10 @@ class DecisionAnswer(BaseModel):
     # order we captured, and if that has changed underneath us we want a mismatch we can
     # DETECT, not a digit that happens to be in range.
     answers: list[list[str]]
+    # "None of the above" — typed into the picker's own free-text Other field. One entry
+    # per question; None means "use answers[i]". Carried as text, never as a label,
+    # because a label must match a captured option and this deliberately does not.
+    free_text: list[str | None] | None = None
 
 
 @app.post("/api/decisions/{session_id}")
@@ -3113,8 +3117,18 @@ async def answer_decision(session_id: str, payload: DecisionAnswer,
             "project": proj,
         })
 
+    answers = [list(a) for a in payload.answers]
+    if payload.free_text:
+        if len(payload.free_text) != len(answers):
+            raise HTTPException(status_code=400,
+                                detail="free_text must have one entry per question")
+        for i, txt in enumerate(payload.free_text):
+            if txt is not None and txt.strip():
+                # Replaces the selection for that question — the picker's Other field is
+                # a choice, not an addition to one.
+                answers[i] = [OTHER_TEXT + txt]
     try:
-        keys = plan_keystrokes(rec_dec["questions"], payload.answers)
+        keys = plan_keystrokes(rec_dec["questions"], answers)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
@@ -3132,7 +3146,7 @@ async def answer_decision(session_id: str, payload: DecisionAnswer,
     await asyncio.to_thread(
         attest, state.settings.bus.state_dir_resolved,
         target_pid=session.pid, target_tag=session.tag,
-        text=f"[picker] {payload.answers}", why=f"answered via {client}",
+        text=f"[picker] {answers}", why=f"answered via {client}",
         source="conductor:answer_decision", actor=f"human:{client}",
     )
     ok = await asyncio.to_thread(
@@ -3149,8 +3163,60 @@ async def answer_decision(session_id: str, payload: DecisionAnswer,
     await asyncio.to_thread(reap_decision, state.coord_root, session_id)
     state.decisions = [d for d in state.decisions if d["session_id"] != session_id]
     await state.hub.broadcast("decisions", {"decisions": state.decisions})
-    log.info("answered [%s]: %s -> keys %s", session.tag, payload.answers, keys)
+    log.info("answered [%s]: %s -> keys %s", session.tag, answers, keys)
     return {"ok": True, "keys": keys}
+
+
+@app.post("/api/decisions/{session_id}/decline")
+async def decline_decision(session_id: str, request: Request) -> dict[str, Any]:
+    """Decline to answer — a REAL answer, not a UI dismissal.
+
+    ``Escape`` on the picker is measured (docs/DECISION_QUEUE.md) to produce
+    *"User declined to answer questions"* in the session's transcript. So the Claude
+    LEARNS it was declined and can proceed, re-ask, or take a default — which is the
+    whole difference between this and quietly hiding the card. Hiding it would leave a
+    session blocked forever on a question nobody ever told it had been passed on: a
+    silent no-op, and a lie of omission.
+
+    Sends ONE bare Escape via ``send_key_to_session`` and never
+    ``send_keys_to_session``, which appends a Return — and Return on a picker SELECTS
+    whatever the cursor happens to be sitting on, one option being "Disconnect".
+    """
+    state: AppState = request.app.state.cond
+    rec_dec = next((d for d in state.decisions if d["session_id"] == session_id), None)
+    if rec_dec is None:
+        raise HTTPException(status_code=409, detail={
+            "code": "already_answered",
+            "message": "that question is no longer pending — it was already answered",
+        })
+    session = state._session_for_decision(rec_dec)
+    if session is None:
+        raise HTTPException(status_code=409, detail={
+            "code": "session_not_running",
+            "message": "the session that asked isn't running — nothing to decline",
+        })
+
+    client = request.client.host if request.client else "?"
+    await asyncio.to_thread(
+        attest, state.settings.bus.state_dir_resolved,
+        target_pid=session.pid, target_tag=session.tag,
+        text="[picker] DECLINED (Escape)", why=f"declined via {client}",
+        source="conductor:decline_decision", actor=f"human:{client}",
+    )
+    ok = await asyncio.to_thread(
+        send_key_to_session, key="Escape", pid=session.pid,
+        terminal_pid=session.terminal_pid, title=session.title,
+        window_title=session.window_title,
+    )
+    if not ok:
+        raise HTTPException(
+            status_code=502,
+            detail="couldn't reach that session's window — decline it at the keyboard")
+    await asyncio.to_thread(reap_decision, state.coord_root, session_id)
+    state.decisions = [d for d in state.decisions if d["session_id"] != session_id]
+    await state.hub.broadcast("decisions", {"decisions": state.decisions})
+    log.info("declined [%s] — Escape sent", session.tag)
+    return {"ok": True, "declined": True}
 
 
 @app.get("/api/webpush/key")

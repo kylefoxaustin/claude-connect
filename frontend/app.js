@@ -339,6 +339,11 @@ function handleMessage({ kind, payload }) {
       requestAnimationFrame(() => redrawLines(state));
       break;
     }
+    case "decisions": {
+      state.decisions = (msg.payload && msg.payload.decisions) || [];
+      renderAskInbox(state);
+      break;
+    }
     case "push": {
       state.push = payload || { requests: [] };
       renderPushInbox(state);
@@ -487,6 +492,12 @@ async function resyncOnWake() {
       fetch("/api/sessions").then((r) => (r.ok ? r.json() : null)).catch(() => null),
     ]);
     if (p) { state.push = p; renderPushInbox(state); }
+    try {
+      const r = await fetch("/api/decisions");
+      const d = r.ok ? await r.json() : null;
+      state.decisions = (d && d.decisions) || [];
+      renderAskInbox(state);
+    } catch (_) { /* the board must render even if this one call fails */ }
     if (ss) handleMessage({ kind: "sessions", payload: ss });
   } catch {}
 }
@@ -1594,6 +1605,173 @@ function sessionLooksBusy(status) {
 
 // Push-approval inbox: a banner listing gated `git push`es awaiting Kyle. One
 // click writes the token the PreToolUse gate consumes on the session's next push.
+// ── Ask inbox: answer a Claude's question from the desktop board ─────────────
+// The phone got this in v2.24.0 and the desktop deliberately did not — a phone is
+// episodic and a board is spatial. But a question is episodic wherever you are, and
+// walking to the phone while sitting in front of the board is absurd. Same endpoints,
+// same three ways out: pick, type your own, or decline.
+//
+// ⚠️ ALL transient state (selection, typed text, in-flight) lives in these Maps, never
+// on the DOM. renderAskInbox rebuilds the rows on every scan tick, and v2.24.3's bug
+// was exactly this: optimistic state painted onto an element and wiped by the next
+// repaint, so a click looked like it did nothing.
+const askSel = new Map();      // session_id -> [Set(label), …] one per question
+const askText = new Map();     // session_id -> Map(qIndex -> string)
+const askBusy = new Map();     // session_id -> "answer" | "decline"
+const askErr = new Map();      // session_id -> message
+
+function askTextGet(sid, qi) { return (askText.get(sid) || new Map()).get(qi) || ""; }
+function askTextSet(sid, qi, v) {
+  if (!askText.has(sid)) askText.set(sid, new Map());
+  askText.get(sid).set(qi, v);
+}
+function askSelFor(d) {
+  let sel = askSel.get(d.session_id);
+  if (!sel || sel.length !== d.questions.length) {
+    sel = d.questions.map(() => new Set());
+    askSel.set(d.session_id, sel);
+  }
+  return sel;
+}
+// A question is answered by a pick OR by free text — alternatives, because the picker's
+// Other field REPLACES the selection rather than adding to it.
+function askReady(d) {
+  const sel = askSelFor(d);
+  return d.questions.every((q, qi) =>
+    sel[qi].size > 0 || askTextGet(d.session_id, qi).trim().length > 0);
+}
+
+async function askPost(d, path, body, kind, state) {
+  if (askBusy.has(d.session_id)) return;
+  askBusy.set(d.session_id, kind);
+  askErr.delete(d.session_id);
+  renderAskInbox(state);
+  try {
+    // window.fetch is globally wrapped (app.js:46) to inject X-Conductor-Token on /api/*,
+    // so a plain fetch is the authenticated one here — same as decidePush.
+    const r = await fetch(`/api/decisions/${encodeURIComponent(d.session_id)}${path}`, {
+      method: "POST",
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      const err = new Error("request failed"); err.detail = j.detail; throw err;
+    }
+    askSel.delete(d.session_id); askText.delete(d.session_id);
+    askBusy.delete(d.session_id);
+    state.decisions = (state.decisions || []).filter((x) => x.session_id !== d.session_id);
+  } catch (e) {
+    askBusy.delete(d.session_id);
+    const code = e && e.detail && e.detail.code;
+    askErr.set(d.session_id,
+      code === "session_not_running" ? "that session isn't running any more"
+      : code === "already_answered"  ? "already answered at the keyboard"
+      : "couldn't reach that session's window — answer it at the keyboard");
+  }
+  renderAskInbox(state);
+}
+
+function renderAskInbox(state) {
+  const box = document.getElementById("ask-inbox");
+  if (!box) return;
+  const ds = state.decisions || [];
+  if (!ds.length) { box.hidden = true; box.replaceChildren(); return; }
+  box.hidden = false;
+
+  const title = document.createElement("div");
+  title.className = "push-inbox-title";
+  title.textContent = `❓ ${ds.length} session${ds.length > 1 ? "s are" : " is"} waiting on you`;
+
+  const rows = ds.map((d) => {
+    const sel = askSelFor(d);
+    const busy = askBusy.get(d.session_id);
+    const row = document.createElement("div");
+    row.className = "ask-req";
+
+    const head = document.createElement("div");
+    head.className = "ask-head";
+    head.innerHTML = `<strong>${escapeHtml(bareTag(d.tag || ""))}</strong>`;
+    row.appendChild(head);
+
+    d.questions.forEach((q, qi) => {
+      const qEl = document.createElement("div");
+      qEl.className = "ask-q";
+      qEl.textContent = q.question || "";
+      row.appendChild(qEl);
+
+      (q.options || []).forEach((o) => {
+        const b = document.createElement("button");
+        b.className = "ask-opt" + (sel[qi].has(o.label) ? " on" : "");
+        b.innerHTML = `<span class="ask-mark">${sel[qi].has(o.label) ? "✓" : ""}</span>`
+          + `<span><span class="ask-l">${escapeHtml(o.label)}</span>`
+          + (o.description ? `<span class="ask-d">${escapeHtml(o.description)}</span>` : "")
+          + `</span>`;
+        b.onclick = () => {
+          if (q.multiSelect) {
+            sel[qi].has(o.label) ? sel[qi].delete(o.label) : sel[qi].add(o.label);
+          } else {
+            sel[qi].clear(); sel[qi].add(o.label);   // the picker can only hold one
+          }
+          askTextSet(d.session_id, qi, "");          // a pick clears free text
+          renderAskInbox(state);
+        };
+        row.appendChild(b);
+      });
+
+      const inp = document.createElement("input");
+      inp.type = "text"; inp.className = "ask-ft";
+      inp.placeholder = "…or answer in your own words";
+      inp.value = askTextGet(d.session_id, qi);
+      inp.maxLength = 300;
+      // Chrome's enhanced spellcheck ships field contents to Google, and this carries an
+      // answer about Kyle's work — same stance as the compose textareas.
+      inp.spellcheck = false;
+      inp.setAttribute("autocorrect", "off");
+      inp.oninput = () => {
+        askTextSet(d.session_id, qi, inp.value);
+        if (inp.value.trim()) sel[qi].clear();       // Other REPLACES the selection
+        const send = row.querySelector(".ask-send");
+        if (send) send.disabled = !!busy || !askReady(d);
+        row.querySelectorAll(".ask-opt").forEach((x) => x.classList.remove("on"));
+      };
+      row.appendChild(inp);
+    });
+
+    const err = askErr.get(d.session_id);
+    if (err) {
+      const e = document.createElement("div");
+      e.className = "ask-err"; e.textContent = err;
+      row.appendChild(e);
+    }
+
+    const send = document.createElement("button");
+    send.className = "push-approve ask-send";
+    send.textContent = busy === "answer" ? "Sending…" : "Send answer";
+    send.disabled = !!busy || !askReady(d);
+    send.onclick = () => askPost(d, "", {
+      answers: sel.map((s) => [...s]),
+      free_text: d.questions.map((_, qi) => askTextGet(d.session_id, qi) || null),
+    }, "answer", state);
+
+    const dec = document.createElement("button");
+    dec.className = "push-deny";
+    dec.textContent = busy === "decline" ? "Declining…" : "Decline";
+    dec.title = "Sends Escape — the session is told you declined, rather than left waiting";
+    dec.disabled = !!busy;
+    dec.onclick = () => askPost(d, "/decline", null, "decline", state);
+
+    const acts = document.createElement("div");
+    acts.className = "ask-actions";
+    acts.append(send, dec);
+    row.appendChild(acts);
+    return row;
+  });
+
+  box.replaceChildren(title, ...rows);
+}
+window.renderAskInbox = renderAskInbox;
+
 function renderPushInbox(state) {
   const box = document.getElementById("push-inbox");
   if (!box) return;

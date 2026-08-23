@@ -2205,3 +2205,24 @@ body.link-mode .tile-actions { visibility: hidden; }
 /* The wind-down's own driver: present in the un-acked list, but never a straggler to chase. */
 .wd-manager { color: #58a6ff; font-size: 0.85em; margin-left: 4px; }
 .wd-nudges  { color: var(--text-dim, #8b949e); font-size: 0.85em; margin-left: 4px; }
+
+/* ── Ask inbox — answer a Claude's question from the board ─────────────────── */
+.ask-inbox{border-left-color:var(--accent, #7c5cff)}
+.ask-req{display:flex;flex-direction:column;gap:4px;padding:8px 10px;margin-top:6px;
+  background:var(--bg-panel, #16181d);border:1px solid var(--border, #333);border-radius:6px}
+.ask-head{font-size:.82rem;color:var(--text, #e6e6e6)}
+.ask-q{font-size:.9rem;color:var(--text, #e6e6e6);margin:4px 0 2px}
+.ask-opt{display:flex;gap:8px;align-items:flex-start;text-align:left;width:100%;
+  padding:6px 8px;border-radius:5px;border:1px solid var(--border, #333);
+  background:var(--bg-panel, #16181d);color:var(--text, #e6e6e6);cursor:pointer;font:inherit;font-size:.84rem}
+.ask-opt:hover{border-color:var(--accent, #7c5cff)}
+.ask-opt.on{border-color:var(--accent, #7c5cff);background:color-mix(in srgb,var(--accent, #7c5cff) 14%,transparent)}
+.ask-mark{flex:0 0 1em;color:var(--accent, #7c5cff);font-weight:700}
+.ask-l{display:block;font-weight:600}
+.ask-d{display:block;color:var(--text-dim, #8a8a8a);font-size:.78rem;margin-top:1px}
+.ask-ft{width:100%;box-sizing:border-box;margin-top:4px;padding:6px 8px;font:inherit;
+  font-size:.84rem;color:var(--text, #e6e6e6);background:var(--bg-panel, #16181d);
+  border:1px solid var(--border, #333);border-radius:5px}
+.ask-ft:focus{outline:2px solid var(--accent, #7c5cff);outline-offset:1px}
+.ask-actions{display:flex;gap:6px;margin-top:6px}
+.ask-err{font-size:.78rem;color:var(--status-ended, #e0655c);margin-top:2px}

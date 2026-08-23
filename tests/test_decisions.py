@@ -280,3 +280,66 @@ def test_decision_for_none_when_not_asking(tmp_path):
     app.decisions = [{"session_id": "other", "cwd": str(tmp_path / "elsewhere"),
                       "questions": [{"question": "Q?"}]}]
     assert app._decision_for(rec) is None
+
+
+# ── free text via the picker's "Other" field, and declining ────────────────────
+# The digit protocol was measured on a live picker; so was the existence of an Other
+# field as the LAST numbered option, and Escape as a real decline. What is NOT yet
+# measured is whether Other needs its own Return before the review tab — the plan
+# therefore emits exactly one, and that count is asserted here so a change to it is a
+# deliberate act with a failing test, not a silent edit.
+
+_ABC = ("A", "B", "C")
+
+
+def test_other_is_numbered_after_the_real_options():
+    from conductor.decisions import OTHER_TEXT, TYPE_PREFIX, plan_keystrokes
+    keys = plan_keystrokes([_q()], [[OTHER_TEXT + "my own words"]])
+    # 3 captured options -> the picker renders Other as 4
+    assert keys == ["4", TYPE_PREFIX + "my own words", "Return"]
+    assert keys.count("Return") == 1, "exactly one Return — see the UNVERIFIED note"
+
+
+def test_other_index_tracks_the_option_count():
+    from conductor.decisions import OTHER_TEXT, plan_keystrokes
+    for n in (1, 5, 8):
+        opts = tuple(chr(ord("A") + i) for i in range(n))
+        assert plan_keystrokes([_q(opts=opts)], [[OTHER_TEXT + "x"]])[0] == str(n + 1)
+
+
+def test_refuses_unreachable_other():
+    from conductor.decisions import OTHER_TEXT, plan_keystrokes
+    # 9 options -> Other would be 10, and the picker only numbers 1-9. Refuse rather
+    # than press a digit that means something else.
+    opts = tuple(chr(ord("A") + i) for i in range(9))
+    with pytest.raises(ValueError, match="more than 8 options"):
+        plan_keystrokes([_q(opts=opts)], [[OTHER_TEXT + "x"]])
+
+
+def test_refuses_empty_and_multiline_free_text():
+    from conductor.decisions import OTHER_TEXT, plan_keystrokes
+    with pytest.raises(ValueError, match="empty"):
+        plan_keystrokes([_q()], [[OTHER_TEXT + "   "]])
+    # a newline would commit the picker mid-sentence and submit a truncated answer
+    with pytest.raises(ValueError, match="single line"):
+        plan_keystrokes([_q()], [[OTHER_TEXT + "line one\nline two"]])
+
+
+def test_free_text_cannot_be_mixed_with_a_picked_option():
+    from conductor.decisions import OTHER_TEXT, plan_keystrokes
+    with pytest.raises(ValueError):
+        plan_keystrokes([_q(multi=True)], [["A", OTHER_TEXT + "and also this"]])
+
+
+def test_normal_picks_are_byte_for_byte_unchanged():
+    """The free-text branch must not perturb the measured digit protocol."""
+    from conductor.decisions import plan_keystrokes
+    assert plan_keystrokes([_q()], [["B"]]) == ["2", "Return"]
+    assert plan_keystrokes([_q(multi=True)], [["A", "C"]]) == ["1", "3", "Right", "Return"]
+
+
+def test_sender_and_planner_agree_on_the_type_prefix():
+    """A mismatch would make the sender PRESS a key literally named '\\x00type:hello'."""
+    from conductor.decisions import TYPE_PREFIX
+    from conductor.windows import TYPE_ACTION
+    assert TYPE_ACTION == TYPE_PREFIX

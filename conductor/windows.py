@@ -648,6 +648,11 @@ def _focus_session_input(
     return True
 
 
+# Mirrors conductor.decisions.TYPE_PREFIX. A plan entry carrying this prefix is TYPED,
+# not pressed — the only such case is the picker's free-text "Other" field.
+TYPE_ACTION = "\x00type:"
+
+
 def send_key_sequence(
     *,
     keys: list[str],
@@ -681,6 +686,16 @@ def send_key_sequence(
         return False
     try:
         for key in keys:
+            if key.startswith(TYPE_ACTION):
+                # A free-text answer for the picker's "Other" field. This is the ONE
+                # place typing is correct rather than dangerous: the field is already
+                # open, so characters land in it instead of being stolen into it.
+                # --clearmodifiers so a held key on the human's keyboard cannot smuggle
+                # a modifier into the text.
+                _run_x(["xdotool", "type", "--clearmodifiers", "--delay", "12",
+                        key[len(TYPE_ACTION):]], check=True, timeout=10.0)
+                time.sleep(_KEY_STEP_S)
+                continue
             # One key per call: the picker re-renders between keystrokes and a batched
             # `xdotool key a b c` can outrun the redraw.
             _run_x(["xdotool", "key", "--clearmodifiers", key], check=True, timeout=3.0)

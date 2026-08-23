@@ -79,6 +79,10 @@ const told = new Set();     // cycle-keys we've already told. Survives re-render
                             // nothing. That is exactly how Kyle sent the same stall
                             // message three times.
 const answering = new Set(); // session_ids whose answer POST is in flight — same reason
+const declining = new Set(); // decline POST in flight
+// Free text per (session, question): "none of the above". Kept OUT of the DOM so a
+// scan-tick rebuild cannot wipe what he typed — the v2.24.3 lesson.
+const freeText = new Map(); // session_id -> Map(qIndex -> string)
                             // as `sending`: a refresh mid-POST would rebuild the card
                             // with a live Send button and invite a second answer.
 const answerErr = new Map(); // session_id -> a persistent, actionable error message. When the
@@ -102,6 +106,19 @@ function ago(sec) {
   return `${Math.round(s / 86400)}d`;
 }
 
+// Free text lives in a Map, never in the DOM: renderInbox() rebuilds these cards on
+// every scan tick, and state painted onto an element is wiped by the next repaint.
+function ftGet(sid, qi) { return (freeText.get(sid) || new Map()).get(qi) || ""; }
+function ftSet(sid, qi, v) {
+  if (!freeText.has(sid)) freeText.set(sid, new Map());
+  freeText.get(sid).set(qi, v);
+}
+// A question counts as answered if it has a pick OR free text — the two are
+// alternatives, because the picker's Other field replaces the selection.
+function answeredAll(d, sel) {
+  return d.questions.every((q, qi) =>
+    sel[qi].size > 0 || ftGet(d.session_id, qi).trim().length > 0);
+}
 const bare = (t) => String(t || "").replace(/^\[|\]$/g, "").replace(/^other:/, "");
 const nameOf = (cwd) => String(cwd || "").split("/").filter(Boolean).pop() || "?";
 
@@ -253,13 +270,64 @@ function decisionCard(d) {
           sel[qi].add(o.label);
         }
         el.querySelectorAll(".opt").forEach((x) => x.dispatchEvent(new Event("repaint")));
-        submit.disabled = answering.has(d.session_id) || sel.some((s) => s.size === 0);
+        submit.disabled = answering.has(d.session_id) || !answeredAll(d, sel);
       });
       b.addEventListener("repaint", paint);
       paint();
       el.appendChild(b);
     });
   });
+
+  // ── free text: the picker's own "Other" field, reachable from the phone ──────
+  d.questions.forEach((q, qi) => {
+    const wrap = document.createElement("div");
+    wrap.className = "ft-wrap";
+    const inp = document.createElement("input");
+    inp.type = "text";
+    inp.className = "ft";
+    inp.placeholder = "…or answer in your own words";
+    inp.value = ftGet(d.session_id, qi);
+    inp.maxLength = 300;
+    // Same privacy stance as the compose textareas (v2.39.0): Chrome's enhanced
+    // spellcheck ships field contents to Google, and this field carries an answer
+    // to a Claude about Kyle's work.
+    inp.spellcheck = false;
+    inp.setAttribute("autocorrect", "off");
+    inp.setAttribute("autocapitalize", "sentences");
+    inp.addEventListener("input", () => {
+      ftSet(d.session_id, qi, inp.value);
+      // Typing here REPLACES the selection, exactly as the picker's Other field does —
+      // so the UI must not let him believe both are being sent.
+      if (inp.value.trim()) sel[qi].clear();
+      el.querySelectorAll(".opt").forEach((x) => x.dispatchEvent(new Event("repaint")));
+      submit.disabled = answering.has(d.session_id) || !answeredAll(d, sel);
+    });
+    wrap.appendChild(inp);
+    el.appendChild(wrap);
+  });
+
+  const decline = document.createElement("button");
+  decline.className = "btn";
+  decline.style.width = "100%";
+  decline.style.marginTop = "6px";
+  decline.textContent = declining.has(d.session_id) ? "Declining…" : "Decline to answer";
+  decline.disabled = declining.has(d.session_id) || answering.has(d.session_id);
+  decline.addEventListener("click", async () => {
+    if (declining.has(d.session_id)) return;
+    declining.add(d.session_id);
+    renderInbox();
+    try {
+      await api(`/api/decisions/${encodeURIComponent(d.session_id)}/decline`, { method: "POST" });
+      selected.delete(d.session_id); freeText.delete(d.session_id);
+      declining.delete(d.session_id);
+      await refresh();
+    } catch (e) {
+      declining.delete(d.session_id);
+      answerErr.set(d.session_id, "Couldn't decline — try at the keyboard");
+      renderInbox();
+    }
+  });
+  el.appendChild(decline);
 
   const submit = document.createElement("button");
   submit.className = "btn btn-primary";
@@ -273,7 +341,7 @@ function decisionCard(d) {
   if (err) submit.classList.add("btn-warn");        // visually distinct + still tappable to retry
   // Stays enabled on an error so a retry (after focusing the terminal) lands — the failure is
   // recoverable, not a dead end.
-  submit.disabled = busy || sel.some((s) => s.size === 0);
+  submit.disabled = busy || declining.has(d.session_id) || !answeredAll(d, sel);
   submit.addEventListener("click", async () => {
     if (answering.has(d.session_id)) return;
     answerErr.delete(d.session_id);    // fresh attempt — drop any prior error message
@@ -282,7 +350,10 @@ function decisionCard(d) {
     try {
       await api(`/api/decisions/${encodeURIComponent(d.session_id)}`, {
         method: "POST",
-        body: JSON.stringify({ answers: sel.map((s) => [...s]) }),
+        body: JSON.stringify({
+          answers: sel.map((s) => [...s]),
+          free_text: d.questions.map((_, qi) => ftGet(d.session_id, qi) || null),
+        }),
       });
       selected.delete(d.session_id);
       answerErr.delete(d.session_id);    // it landed — drop any lingering error state
