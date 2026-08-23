@@ -24,6 +24,12 @@ TERMINAL_NAMES = {
     "tilix", "gnome-terminal-server", "gnome-terminal", "alacritty",
     "kitty", "wezterm-gui", "wezterm", "xterm", "konsole", "terminator",
     "tmux", "screen",
+    # Windows: the processes that own a WINDOW. `powershell.exe` / `cmd.exe` are deliberately
+    # absent for the same reason `bash` is — they are shells sitting between the session and
+    # the window, and stopping the walk there would hand back something you cannot raise.
+    # PROVISIONAL: written from win_conductor's measured chain
+    # (claude.exe <- powershell.exe <- WindowsTerminal.exe); unverified on silicon by me.
+    "WindowsTerminal.exe", "conhost.exe",
 }
 
 
@@ -71,24 +77,102 @@ def tag_to_state_basename(tag: str) -> str:
     return tag.strip("[]")
 
 
+def _looks_like_claude_argv(cmdline: list[str]) -> bool:
+    r"""Is argv[0] the claude binary or shim? `.exe` stripped; both separators accepted.
+
+    ⚠️ NOT `os.path.basename`. Conductor runs on the box it watches, so on Linux os.path is
+    posixpath and `posixpath.basename(r"C:\Users\kylef\.local\bin\claude.exe")` returns
+    the WHOLE string — no backslash is a separator there. That is fine in production and a
+    trap in a test: the Windows cmdlines this must handle are pasted verbatim into the suite
+    and would silently fail to match, so the test would be measuring posixpath rather than
+    the predicate. Splitting on both separators makes the rule mean the same thing wherever
+    it runs. Same shape as the `os.sep` bug win_conductor found in persist-gate.
+    """
+    if not cmdline:
+        return False
+    base = cmdline[0].replace("\\", "/").rsplit("/", 1)[-1]
+    return base[:-4] == "claude" if base.endswith(".exe") else base == "claude"
+
+
+def _own_args(cmdline: list[str]) -> list[str]:
+    """The argv that belongs to THIS process — everything up to the first bare ``--``.
+
+    ⚠️ Everything AFTER a bare ``--`` is a different process's command line, and treating
+    the whole list as one string is how you count one session twice. The Windows pty-host
+    wrapper carries the entire real session command after the separator, ``--session-id``
+    and all, so a substring test over ``" ".join(cmdline)`` matches the wrapper AND the
+    session it wraps: two live processes, one session id, one transcript. That does not
+    look like a scanner bug — it looks like a duplicate session, which is exactly what
+    ``detect_collisions`` exists to report, and it would fire falsely on every Windows
+    session. Measured by win_conductor against a live topology, 2026-08-23.
+    """
+    out: list[str] = []
+    for arg in cmdline[1:]:
+        if arg == "--":
+            break
+        out.append(arg)
+    return out
+
+
 def is_claude_process(proc: psutil.Process) -> bool:
-    """Lenient match: cmdline mentions @anthropic-ai/claude-code or a `claude` script."""
+    """Is this a Claude Code SESSION process — not one of its helpers?
+
+    "Session" is the load-bearing word. A single session spawns several processes that all
+    run the same binary: a background daemon, and on Windows one or more pty hosts. Counting
+    those is not a harmless over-count — the scanner keeps one record per project dir but
+    ``detect_collisions`` counts live processes per cwd, so a helper sharing its session's
+    cwd reads as two Claudes in one repo.
+
+    ⚠️ On Windows the native build defeated all three original branches at once: there is no
+    node, the cmdline never contains ``@anthropic-ai/claude-code``, and argv[0] is
+    ``claude.exe``, not ``claude``. Four live processes, zero matches — a board with no tiles
+    and every session in the dormant dock, which reads as a scanner fault when it is process
+    identification. Measured by win_conductor, 2026-08-23.
+    """
     try:
         cmdline = proc.cmdline()
     except (psutil.NoSuchProcess, psutil.AccessDenied):
         return False
     if not cmdline:
         return False
-    joined = " ".join(cmdline)
-    if "@anthropic-ai/claude-code" in joined:
+
+    # Helpers first, so no later branch can rescue one. `daemon` is real on Linux today
+    # (it lands in proc_groups and then reports "no resolvable transcript", which is noise
+    # about a process that was never a session); `--bg-pty-host` is the Windows wrapper.
+    own = _own_args(cmdline)
+    if own[:1] == ["daemon"] or "--bg-pty-host" in own:
+        return False
+
+    # ⚠️ A claude whose PARENT is also claude is something a session SPAWNED — a pty host, a
+    # sub-agent — not a session. Without this, Windows yields TWO live processes for one
+    # session in one cwd (the launcher the user typed, and the worker the pty host started
+    # with the same --session-id), which detect_collisions reads as two Claudes in one repo.
+    #
+    # The launcher is the right one to keep, and the argument is not aesthetic: the worker's
+    # ancestry runs back through the daemon, whose own parent is already GONE, so
+    # find_terminal_pid can reach no terminal from it. The launcher's chain is
+    # claude.exe <- powershell.exe <- WindowsTerminal.exe — the only one that can be focused.
+    #
+    # MEASURED to change nothing on Linux: 0 of skippy's 17 claude processes have a claude
+    # parent. Derived from win_conductor's measured Windows topology; UNVERIFIED on Windows
+    # by me, and flagged to it for exactly that.
+    try:
+        if _looks_like_claude_argv(psutil.Process(proc.ppid()).cmdline()):
+            return False
+    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+        pass
+
+    if "@anthropic-ai/claude-code" in " ".join(cmdline):
         return True
-    # Fallback: a node process whose argv[1] basename is `claude` or `cli.js` under claude-code.
+    # A node process whose argv[1] basename is `claude` or `cli.js` under claude-code.
     if cmdline[0].endswith(("node", "node.exe")):
         for arg in cmdline[1:]:
             if "claude-code" in arg or os.path.basename(arg) == "claude":
                 return True
-    # Direct invocation of a `claude` shim script.
-    if os.path.basename(cmdline[0]) == "claude":
+    # Direct invocation of the `claude` shim (POSIX) or the native binary (Windows).
+    # splitext strips `.exe`; on POSIX a file genuinely named `claude.exe` would also match,
+    # which is harmless and beats carrying a platform branch through a hot predicate.
+    if _looks_like_claude_argv(cmdline):
         return True
     return False
 
