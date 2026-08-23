@@ -45,6 +45,29 @@ CLAIMS="$COORD/push-claims"   # short-lived hand-off to the pre-push enforcer (s
 # DUPLICATED VERBATIM IN push-gate.sh, ON PURPOSE. A gate that must `source` a helper
 # acquires a new silent-failure mode — file missing, function undefined, gate wide open
 # — which is the exact bug being fixed. Twelve duplicated lines beat a load-bearing dot.
+# ---- D: A DEGRADED GATE MUST LEAVE A TRACE ---------------------------------------
+# Neither gate wrote a single line anywhere when it took a degraded path. That is why the
+# fail-open survived: from the outside it is identical to a quiet fleet. "A silent no-op is
+# a lie of omission" is this project's own rule (v2.37) and the gates were exempt from it.
+#
+# Deliberately NOT logged: normal denials and normal allows. A denial already files a
+# request and prints a banner; an allow is the common case and logging it would produce a
+# log nobody reads, which is the same as no log. Only ANOMALIES land here.
+# ⚠️ LAZY. My first version ran the mkdir and the writability probe at the TOP of the file,
+# i.e. on EVERY Bash/Edit/Write in EVERY session — two syscalls added to the hot path of a
+# hook whose stated design constraint is "instant no-op for anything that is not a
+# candidate". Setting a variable is free; touching the filesystem is not. So the preparation
+# happens in _gate_log_ready, called only once we are past the fast path and about to spawn
+# python anyway. Caught by re-reading the file's own header after writing the patch.
+_GATE_LOG="${BUS_STATE_DIR:-$HOME/.claude/bus-state}/gate.log"
+_gate_log_ready() {
+  mkdir -p "$(dirname "$_GATE_LOG")" 2>/dev/null || true
+  # If the log is unwritable, degrade to /dev/null rather than letting a failed redirect
+  # take the gate down. A logging bug must never become an outage in the thing it logs.
+  { : >> "$_GATE_LOG"; } 2>/dev/null || _GATE_LOG=/dev/null
+}
+_gate_log() { printf '%s\t%s\t%s\n' "$(date '+%F %T')" "$1" "$2" >> "$_GATE_LOG" 2>/dev/null || true; }
+
 _gate_py() {
   [ -n "${_GATE_PY:-}" ] && { printf '%s' "$_GATE_PY"; return 0; }
   # unquoted on purpose: "py -3" must split into a command plus its argument.
@@ -64,6 +87,7 @@ printf '%s' "$INPUT" | grep -q 'push' || exit 0
 # This is the fail-closed half. Past this point the gate's verdict comes from python; if
 # python cannot run, the gate has NO VERDICT — and "no verdict" must never be spelled the
 # same way as "allowed". Loud beats silent for a control whose entire job is to stop things.
+_gate_log_ready
 if ! _PYBIN="$(_gate_py)"; then
   cat >&2 <<'EOF'
 🛑 PUSH GATE — DENIED, because the gate is blind.
@@ -76,6 +100,7 @@ Fix the interpreter, or point the gate at a known-good one:
     export CLAUDE_BUS_PYTHON=/absolute/path/to/python
 This gate is armed; a push cannot proceed while it cannot see what it is gating.
 EOF
+  _gate_log push "no usable Python interpreter — DENIED (the gate could not evaluate)"
   exit 2
 fi
 
@@ -96,8 +121,13 @@ try:
     cwd = d.get("cwd", "") or ""
     cmd = (d.get("tool_input") or {}).get("command", "") or ""
 except Exception:
-    sys.stdout.write("\n\n")
-    raise SystemExit
+    # WAS: write two blank lines and exit 0 — which the caller read as "no push here" and
+    # ALLOWED. A parse failure is not evidence of innocence; it is the absence of evidence,
+    # and this gate exists precisely to stop guessing in the permissive direction. Exit 3
+    # so the caller can tell a crash from a clean no-match, and print why.
+    import traceback
+    traceback.print_exc()
+    sys.exit(3)
 
 eff = cwd
 m = re.search(r'\bgit\s+(?:-(?!C\b)[^\s]+\s+)*-C\s+([^\s;&|]+)', cmd)
@@ -118,7 +148,20 @@ sys.stdout.write((cwd or "") + "\n")
 sys.stdout.write(os.path.normpath(eff) + "\n")
 sys.stdout.write(cmd)
 PY
-_parsed="$(printf '%s' "$INPUT" | $_PYBIN -c "$_PY" 2>/dev/null || printf '\n\n')"
+_parsed="$(printf '%s' "$INPUT" | $_PYBIN -c "$_PY" 2>>"$_GATE_LOG")"
+_rc=$?
+if [ "$_rc" != 0 ]; then
+  _gate_log push "parse crashed (rc=$_rc) — DENIED; traceback above"
+  cat >&2 <<'EOF'
+🛑 PUSH GATE — DENIED, because the gate itself failed.
+It could not parse the tool call, so it cannot tell whether this is a push or where it
+would land. It will not guess in the permissive direction.
+
+The traceback is in the gate log:
+    tail ~/.claude/bus-state/gate.log
+EOF
+  exit 2
+fi
 CWD="$(printf '%s' "$_parsed" | sed -n 1p)"       # the session's cwd
 PUSHDIR="$(printf '%s' "$_parsed" | sed -n 2p)"   # where the push actually runs
 CMD="$(printf '%s' "$_parsed" | tail -n +3)"

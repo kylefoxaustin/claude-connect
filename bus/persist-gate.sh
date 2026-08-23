@@ -71,6 +71,29 @@ CLAUDE_HOME="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 # DUPLICATED VERBATIM IN push-gate.sh, ON PURPOSE. A gate that must `source` a helper
 # acquires a new silent-failure mode — file missing, function undefined, gate wide open
 # — which is the exact bug being fixed. Twelve duplicated lines beat a load-bearing dot.
+# ---- D: A DEGRADED GATE MUST LEAVE A TRACE ---------------------------------------
+# Neither gate wrote a single line anywhere when it took a degraded path. That is why the
+# fail-open survived: from the outside it is identical to a quiet fleet. "A silent no-op is
+# a lie of omission" is this project's own rule (v2.37) and the gates were exempt from it.
+#
+# Deliberately NOT logged: normal denials and normal allows. A denial already files a
+# request and prints a banner; an allow is the common case and logging it would produce a
+# log nobody reads, which is the same as no log. Only ANOMALIES land here.
+# ⚠️ LAZY. My first version ran the mkdir and the writability probe at the TOP of the file,
+# i.e. on EVERY Bash/Edit/Write in EVERY session — two syscalls added to the hot path of a
+# hook whose stated design constraint is "instant no-op for anything that is not a
+# candidate". Setting a variable is free; touching the filesystem is not. So the preparation
+# happens in _gate_log_ready, called only once we are past the fast path and about to spawn
+# python anyway. Caught by re-reading the file's own header after writing the patch.
+_GATE_LOG="${BUS_STATE_DIR:-$HOME/.claude/bus-state}/gate.log"
+_gate_log_ready() {
+  mkdir -p "$(dirname "$_GATE_LOG")" 2>/dev/null || true
+  # If the log is unwritable, degrade to /dev/null rather than letting a failed redirect
+  # take the gate down. A logging bug must never become an outage in the thing it logs.
+  { : >> "$_GATE_LOG"; } 2>/dev/null || _GATE_LOG=/dev/null
+}
+_gate_log() { printf '%s\t%s\t%s\n' "$(date '+%F %T')" "$1" "$2" >> "$_GATE_LOG" 2>/dev/null || true; }
+
 _gate_py() {
   [ -n "${_GATE_PY:-}" ] && { printf '%s' "$_GATE_PY"; return 0; }
   # unquoted on purpose: "py -3" must split into a command plus its argument.
@@ -129,6 +152,7 @@ printf '%s' "$INPUT" | grep -qiE 'claude|settings|systemctl|crontab|bashrc|bash_
 # This is the fail-closed half. Past this point the gate's verdict comes from python; if
 # python cannot run, the gate has NO VERDICT — and "no verdict" must never be spelled the
 # same way as "allowed". Loud beats silent for a control whose entire job is to stop things.
+_gate_log_ready
 if ! _PYBIN="$(_gate_py)"; then
   cat >&2 <<'EOF'
 🔒 PERSISTENCE GATE — DENIED, because the gate is blind.
@@ -141,11 +165,12 @@ Fix the interpreter, or point the gate at a known-good one:
     export CLAUDE_BUS_PYTHON=/absolute/path/to/python
 This gate is armed; a persistent write cannot proceed while it cannot see.
 EOF
+  _gate_log persist "no usable Python interpreter — DENIED (the gate could not evaluate)"
   exit 2
 fi
 
 read -r -d '' _PY <<'PY' || true
-import json, os, re, sys
+import json, os, re, sys, traceback
 
 HOME = os.path.expanduser("~")
 CH = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(HOME, ".claude")
@@ -193,13 +218,45 @@ def gated_path(p: str) -> bool:
     return any(p == g or p.startswith(g + "/") for g in GATED_PREFIXES)
 
 
+# EXIT CODES ARE THE VERDICT CHANNEL. Until 2026-08-23 a crash and a clean "nothing to
+# gate" were the SAME OBSERVABLE — both printed nothing, and `|| true` in the caller threw
+# the status away — so a bug in this script was indistinguishable from an innocent command
+# and was resolved as ALLOW. The exit code already told them apart; nobody was listening.
+#   0 = ran to completion (a match was printed, or there was nothing to match)
+#   3 = crashed where this gate promises EXACTNESS -> the caller DENIES
+#   4 = crashed on the Bash path, which this file documents as best-effort -> caller ALLOWS
+#       and LOGS. Not silence: an allow nobody can see is how the first bug survived.
+# An unparseable payload is code 3, not 4: we do not know what tool this even is, so
+# "the Bash branch is allowed to be incomplete" cannot be claimed. Blind is not best-effort.
+EXACT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
+_tool_seen = [""]
+
+
+def _crash(exc_type, exc, tb):
+    """Top-level handler, installed instead of wrapping 90 lines in a try block.
+
+    Reindenting the body of a security control to add error handling is a large diff over
+    logic that is load-bearing and easy to get subtly wrong; an excepthook is three lines
+    and touches none of it. SystemExit does not come through here (it is not an Exception),
+    so every existing `sys.exit(0)` keeps its meaning.
+    """
+    traceback.print_exception(exc_type, exc, tb)
+    sys.stderr.flush()
+    t = _tool_seen[0]
+    os._exit(4 if (t and t not in EXACT_TOOLS) else 3)
+
+
+sys.excepthook = _crash
+
 try:
     d = json.load(sys.stdin)
     tool = d.get("tool_name", "") or ""
+    _tool_seen[0] = tool
     ti = d.get("tool_input") or {}
     cwd = d.get("cwd", "") or ""
 except Exception:
-    sys.exit(0)                      # unparseable -> allow. Never break a session on a bug here.
+    traceback.print_exc()
+    sys.exit(3)                      # unparseable -> we are BLIND, and blind must not allow.
 
 # --- EXACT PATH: the file-editing tools. This is the one that covers settings.json. -------
 if tool in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
@@ -297,7 +354,35 @@ for tok in targets:
         sys.exit(0)
 PY
 
-_hit="$(printf '%s' "$INPUT" | $_PYBIN -c "$_PY" 2>/dev/null || true)"
+# ⚠️ THE STATUS IS THE POINT. `|| true` used to discard it, which is what made a crashed
+# gate and an innocent command produce the identical verdict. stderr goes to the log rather
+# than /dev/null, so when this denies there is a traceback saying why.
+_hit="$(printf '%s' "$INPUT" | $_PYBIN -c "$_PY" 2>>"$_GATE_LOG")"
+_rc=$?
+if [ "$_rc" = 4 ]; then
+  # The Bash path. This file's own header calls it BEST-EFFORT and fail-OPEN, on purpose:
+  # a shell can do anything and no regex catches it all. Failing closed here would deny a
+  # large share of ordinary commands (in a repo whose path contains "claude", the prefilter
+  # matches nearly everything) to defend a branch that never claimed to be complete.
+  # So: allow — but never silently again.
+  _gate_log persist "bash-path analysis crashed (rc=4) — ALLOWED, best-effort by design; traceback above"
+  exit 0
+elif [ "$_rc" != 0 ]; then
+  # An EXACT path (Edit/Write/MultiEdit/NotebookEdit) or a payload we could not even parse.
+  # This is the branch that covers settings.json — the fleet-wide RCE — and the header
+  # promises it fails CLOSED. Until today it did not.
+  _gate_log persist "gate logic crashed on an exact path (rc=$_rc) — DENIED; traceback above"
+  cat >&2 <<'EOF'
+🔒 PERSISTENCE GATE — DENIED, because the gate itself failed.
+This gate could not finish evaluating the tool call, and this is one of the paths where it
+promises an exact answer (Edit/Write/MultiEdit/NotebookEdit, or a payload it could not
+parse at all). It will not guess in the permissive direction.
+
+The traceback is in the gate log:
+    tail ~/.claude/bus-state/gate.log
+EOF
+  exit 2
+fi
 [ -n "$_hit" ] || exit 0
 
 # EVERY FIELD MUST BE ONE LINE. A multi-line command wrote newlines into the request file and
