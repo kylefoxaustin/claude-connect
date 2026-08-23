@@ -205,6 +205,72 @@ if [ -n "$_slug" ] && [ "$_slug" = "$FLEET_BACKUP_SLUG" ]; then
   exit 0                                        # ALLOW — private backup, auto-push is the point
 fi
 
+# ---- exemption: msgbox-only pushes on the Finding Together repo ------------------
+# Kyle's policy (2026-08-22): three people now work on findingtogether, each with
+# their own Claude session, and msgbox/ is the channel those sessions talk on. A
+# reply that needs a human tap is a channel with a human in the middle of every
+# sentence — the two remote sessions can converse freely while this one cannot,
+# which makes the box asymmetric and mostly useless from this side.
+#
+# So: a push is auto-allowed IFF EVERY changed file is under msgbox/. Anything
+# touching app/, scripts/, docs/, vercel.json, middleware.js or CLAUDE.md still
+# needs Kyle. Message traffic flows; code still gets a human.
+#
+# SPOOF-RESISTANT, same as fleet-backup above: keyed off the ORIGIN REMOTE slug,
+# not the directory basename, so a stray `mkdir findingtogether` is not exempt.
+#
+# FAILS CLOSED at every step. No upstream, a git error, an empty file list, a
+# flag, a refspec, or a branch that is not the current one — any of them fall
+# through to the normal gate. The only path to `exit 0` is a provable,
+# msgbox-only, fast-forward push of the current branch.
+FT_SLUG="${FT_SLUG:-FindingTogether/findingtogether}"
+if [ -n "$_slug" ] && [ "$_slug" = "$FT_SLUG" ]; then
+  _mb_args="$(printf '%s' "$CMD" | grep -Eo '\bpush\b[^;&|]*' | head -1 | sed -E 's/^push[[:space:]]*//; s/[[:space:]]*$//')"
+  # ⚠️ DROP SHELL REDIRECTIONS FIRST. A real tool call looks like
+  #   `git push origin main 2>&1 | tail -4`
+  # and the grep above stops at the pipe but KEEPS `2>&1`, which then counts as a
+  # third argument and fails the shape check below. That is fail-closed, so it was
+  # not dangerous — but it denied every actual push and made the exemption look
+  # like it simply did not work. Found by running the real command after the
+  # crafted tests (which had no redirects) all passed.
+  _mb_clean=""
+  for _a in $_mb_args; do
+    case "$_a" in
+      *'>'*|*'<'*) continue ;;       # 2>&1, >log, >>log …
+      *) _mb_clean="$_mb_clean $_a" ;;
+    esac
+  done
+  _mb_args="$(printf '%s' "$_mb_clean" | sed -E 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  _mb_ok=1
+  case "$_mb_args" in
+    *-*) _mb_ok=0 ;;                 # any flag: --force, --tags, --delete, -f …
+    *:*) _mb_ok=0 ;;                 # a refspec / delete syntax
+  esac
+  if [ "$_mb_ok" = 1 ]; then
+    # Allowed shapes: "", "<remote>", "<remote> <branch>" where branch == current.
+    set -- $_mb_args
+    if [ "$#" -gt 2 ]; then
+      _mb_ok=0
+    elif [ "$#" = 2 ]; then
+      _mb_cur="$(git -C "$PUSHDIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+      [ -n "$_mb_cur" ] && [ "$2" = "$_mb_cur" ] || _mb_ok=0
+    fi
+  fi
+  if [ "$_mb_ok" = 1 ]; then
+    _mb_ahead="$(git -C "$PUSHDIR" rev-list --count '@{u}..HEAD' 2>/dev/null || true)"
+    case "$_mb_ahead" in ''|*[!0-9]*) _mb_ahead=0 ;; esac
+    _mb_behind="$(git -C "$PUSHDIR" rev-list --count 'HEAD..@{u}' 2>/dev/null || true)"
+    case "$_mb_behind" in ''|*[!0-9]*) _mb_behind=1 ;; esac   # unknown -> treat as diverged
+    if [ "$_mb_ahead" -gt 0 ] && [ "$_mb_behind" = 0 ]; then
+      _mb_files="$(git -C "$PUSHDIR" diff --name-only '@{u}..HEAD' 2>/dev/null || true)"
+      if [ -n "$_mb_files" ] && ! printf '%s\n' "$_mb_files" | grep -qv '^msgbox/'; then
+        rm -f "$REQUESTS/$KEY" 2>/dev/null || true
+        exit 0                                  # ALLOW — msgbox traffic only
+      fi
+    fi
+  fi
+fi
+
 # The commit this push would land (for the SHA-pin below + the request record). HEAD is the
 # right proxy: a plain `git push` / `git push <remote>` pushes the current branch's tip = HEAD.
 # A fancier push (explicit ref, --all) whose pushed ref != HEAD fails SAFE — it mismatches and
