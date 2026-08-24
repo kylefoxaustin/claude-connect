@@ -116,8 +116,25 @@ fi
 # Conductor can find the Claude that asked and tell it when it's approved.
 read -r -d '' _PY <<'PY' || true
 import json, os, re, sys
+# ⚠️ NOT json.load(sys.stdin). TWO Windows defaults break that, and both fail in the
+# deny-everything direction now that the gate fails closed:
+#   1. A UTF-8 BOM. PowerShell prepends one whenever it pipes to a native process — and
+#      Claude Code runs hook commands through PowerShell when Git Bash is not installed,
+#      which is the default state of a fresh Windows box. json.loads then raises
+#      "Unexpected UTF-8 BOM" and EVERY gated act is refused. Measured by win_conductor
+#      on 2026-08-23 (144 bytes in, 146 received); reachable in production is a
+#      hypothesis with a measured mechanism, not yet an end-to-end observation.
+#   2. sys.stdin decodes with the locale encoding, which on Windows is cp1252, so a
+#      payload with any non-ASCII byte mangles before json ever sees it.
+# Reading .buffer and decoding utf-8-sig fixes both, costs one argument, and is a no-op
+# on Linux. Same family as the os.sep and posixpath bugs: a default that is invisible on
+# the platform you develop on.
+def _payload():
+    return json.loads(sys.stdin.buffer.read().decode("utf-8-sig"))
+
+
 try:
-    d = json.load(sys.stdin)
+    d = _payload()
     cwd = d.get("cwd", "") or ""
     cmd = (d.get("tool_input") or {}).get("command", "") or ""
 except Exception:
