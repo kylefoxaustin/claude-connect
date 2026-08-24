@@ -197,6 +197,17 @@ print(pid)
 # is the current turn's promptId (from the Stop payload's transcript). Match -> commit + clear;
 # mismatch -> the writing turn never completed, so discard WITHOUT committing (never mark-read what
 # a dead turn emitted). Silent, best-effort.
+# Write <ts> into <file> ONLY if it is strictly newer than what is there. Timestamps are
+# `YYYY-MM-DD HH:MM[:SS]`, which is lexicographically ordered, so a string compare is the right
+# compare — and it handles the mixed-precision bus correctly ("16:12:30" > "16:12").
+_cursor_fwd_only() {   # <file> <ts>
+  local f="$1" ts="$2" cur=""
+  [ -f "$f" ] && IFS= read -r cur < "$f" 2>/dev/null || true
+  if [ -z "$cur" ] || [[ "$ts" > "$cur" ]]; then
+    printf '%s\n' "$ts" > "$f" 2>/dev/null || true
+  fi
+}
+
 _cursor_commit_delivered() {   # <member> <current_marker> -> prints the OUTCOME (for the debug log)
   local m="$1" cur="$2" df line ts mk
   df="$_CURSOR_SD/$m.delivered"
@@ -205,8 +216,17 @@ _cursor_commit_delivered() {   # <member> <current_marker> -> prints the OUTCOME
   ts="${line%%$'\t'*}"; mk="${line#*$'\t'}"
   if [ -n "$ts" ] && [ "$mk" = "$cur" ] && [ -n "$cur" ]; then
     # same turn completed -> commit (TAG here is the Stop hook's cwd; _cursor_put_seen dual-writes)
-    printf '%s\n' "$ts" > "$_CURSOR_SD/$m.last-seen" 2>/dev/null || true
-    if [ "$m" != "$TAG" ]; then printf '%s\n' "$ts" > "$_CURSOR_SD/$TAG.last-seen" 2>/dev/null || true; fi
+    # ⚠️ A CURSOR MAY ONLY EVER MOVE FORWARD. This used to write $ts unconditionally, so a commit
+    # could move a watermark BACKWARDS and re-deliver mail already marked read. Observed live on
+    # 2026-08-24: image_gen hand-repaired its cursor to 2026-08-23 21:32:06 while a .delivered
+    # record from earlier in the SAME turn (ts 2026-08-02 14:03:23, left behind because a later
+    # `check` found nothing new and exited before overwriting it) was still pending. The marker
+    # matched — same turn — so the Stop hook dutifully committed the OLDER timestamp over the
+    # repair. That is why image_gen reported "my cursor keeps reverting", which it then
+    # misattributed to the timestamp regex. Guarding each file independently, because the member
+    # and tag files can legitimately be at different points and neither may regress.
+    _cursor_fwd_only "$_CURSOR_SD/$m.last-seen" "$ts"
+    if [ "$m" != "$TAG" ]; then _cursor_fwd_only "$_CURSOR_SD/$TAG.last-seen" "$ts"; fi
     rm -f "$df" 2>/dev/null || true
     printf 'committed %s\n' "$ts"
   else
@@ -2067,8 +2087,26 @@ if os.environ.get("WL") == "1":
             # step 5b: write a PENDING advance keyed on the member; the Stop hook commits it iff
             # the turn completes with the same promptId. Do NOT advance .last-seen here.
             marker = os.environ.get("MY_MARKER", "") or ""
-            with open(os.path.join(sd, (mem or me) + ".delivered"), "w") as f:
-                f.write(ts + "\t" + marker + "\n")
+            # ⚠️ ONE SLOT PER MEMBER, SO A SECOND READ IN THE SAME TURN OVERWRITES THE FIRST —
+            # and a SMALLER advance silently discarded a bigger one. Observed live 2026-08-24:
+            # `catchup -n 300` advanced to 2026-08-23 21:32:06 and printed "Now current", then a
+            # `check` in the same turn wrote its first-page newest (2026-08-02 14:03:23) over it,
+            # and the Stop hook committed only that. No mail is lost (at-least-once redelivery),
+            # but catchup-then-check in one turn was a no-op and "Now current" was a lie by
+            # turn-end. Merge forward instead. Only within the SAME turn: a record carrying a
+            # different marker belongs to a turn that never completed and the Stop hook discards
+            # it as stale, so it must not be allowed to hold this turn's cursor back.
+            _dpath = os.path.join(sd, (mem or me) + ".delivered")
+            _keep = ts
+            try:
+                with open(_dpath) as _f:
+                    _prev_ts, _, _prev_mk = _f.readline().rstrip("\n").partition("\t")
+                if _prev_mk == marker and _prev_ts > _keep:
+                    _keep = _prev_ts
+            except OSError:
+                pass
+            with open(_dpath, "w") as f:
+                f.write(_keep + "\t" + marker + "\n")
             for k in keys:      # provisional pending (recomputed by the next prompt-check)
                 with open(os.path.join(sd, k + ".pending"), "w") as f:
                     f.write("0\n")
@@ -2281,8 +2319,26 @@ if os.environ.get("WL") == "1":
         os.makedirs(sd, exist_ok=True)
         if os.environ.get("TWO_PHASE") == "1":      # step 5b: pending advance, Stop commits it
             marker = os.environ.get("MY_MARKER", "") or ""
-            with open(os.path.join(sd, (mem or me) + ".delivered"), "w") as f:
-                f.write(ts + "\t" + marker + "\n")
+            # ⚠️ ONE SLOT PER MEMBER, SO A SECOND READ IN THE SAME TURN OVERWRITES THE FIRST —
+            # and a SMALLER advance silently discarded a bigger one. Observed live 2026-08-24:
+            # `catchup -n 300` advanced to 2026-08-23 21:32:06 and printed "Now current", then a
+            # `check` in the same turn wrote its first-page newest (2026-08-02 14:03:23) over it,
+            # and the Stop hook committed only that. No mail is lost (at-least-once redelivery),
+            # but catchup-then-check in one turn was a no-op and "Now current" was a lie by
+            # turn-end. Merge forward instead. Only within the SAME turn: a record carrying a
+            # different marker belongs to a turn that never completed and the Stop hook discards
+            # it as stale, so it must not be allowed to hold this turn's cursor back.
+            _dpath = os.path.join(sd, (mem or me) + ".delivered")
+            _keep = ts
+            try:
+                with open(_dpath) as _f:
+                    _prev_ts, _, _prev_mk = _f.readline().rstrip("\n").partition("\t")
+                if _prev_mk == marker and _prev_ts > _keep:
+                    _keep = _prev_ts
+            except OSError:
+                pass
+            with open(_dpath, "w") as f:
+                f.write(_keep + "\t" + marker + "\n")
             for k in keys:
                 with open(os.path.join(sd, k + ".pending"), "w") as f:
                     f.write("0\n")
