@@ -253,8 +253,15 @@ mark_seen_if_bus_tag() {
   is_whitelisted "$TAG" || return 0
   local STATE_DIR="$HOME/.claude/bus-state"
   mkdir -p "$STATE_DIR"
+  # ⚠️ SECONDS ARE OPTIONAL BECAUSE THE BUS SPEAKS TWO DIALECTS. Headers used to be
+  # HH:MM; interactive posts now carry HH:MM:SS. The `HH:MM \[` form matched only the
+  # minute-precision minority and kept working, which is why nothing ever errored.
+  # MEASURED on the live bus 2026-08-24: 14 of 567 headers matched — every one of them
+  # from an automated sender (tenant-watch, resource-watchdog, operator) — so NEWEST
+  # resolved to 2026-08-23 16:12 while the true newest was 2026-08-24 13:21:33.
+  # Found by image_gen; census reproduced here before changing anything.
   local NEWEST
-  NEWEST="$(grep -E '^## [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2} \[' "$BUS_FILE" 2>/dev/null | tail -1 | awk '{print $2 " " $3}')"
+  NEWEST="$(grep -E '^## [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}(:[0-9]{2})? \[' "$BUS_FILE" 2>/dev/null | tail -1 | awk '{print $2 " " $3}')"
   if [ -n "$NEWEST" ]; then
     _cursor_put_seen "$NEWEST"   # dual-write member + tag (step 5)
     _cursor_put_pending 0
@@ -2566,9 +2573,14 @@ $SS_CTX"
       _cursor_put_seen "$LAST_SEEN"
     fi
 
-    # Parse header lines: "## YYYY-MM-DD HH:MM [tag]"
+    # Same two-dialect bug as mark_seen_if_bus_tag (~line 257): this counter could only
+    # SEE minute-precision headers, i.e. 14 of 567, so the per-prompt nudge reported
+    # "N pending, newest <an automated message from yesterday>" while directed mail sat
+    # unmentioned. Confirmed first-hand: two messages addressed to claude-connect on
+    # 2026-08-24 never appeared in the nudge; Kyle had to say "check messages".
+    # Parse header lines: "## YYYY-MM-DD HH:MM[:SS] [tag]"
     # Keep only those with timestamp > LAST_SEEN and tag != [$TAG]
-    NEW_MSGS="$(grep -E '^## [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2} \[' "$BUS_FILE" 2>/dev/null \
+    NEW_MSGS="$(grep -E '^## [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}(:[0-9]{2})? \[' "$BUS_FILE" 2>/dev/null \
       | awk -v last="$LAST_SEEN" -v me="[$TAG]" '
         {
           ts  = $2 " " $3
