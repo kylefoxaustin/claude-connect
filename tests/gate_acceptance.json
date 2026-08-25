@@ -1,0 +1,110 @@
+{
+  "_comment": [
+    "END-TO-END acceptance table for the persistence gate: a tool call arrives on stdin,",
+    "the gate returns a verdict. The interpreter-axis tests (test_gate_interpreter.py) drive",
+    "the gate with a crafted payload from Python; nothing there starts from stdin, and nothing",
+    "there covers the FALSE-POSITIVE class -- the paths a merely-safe gate denies and a correct",
+    "one allows. That class is the half that decides whether the gate is usable, not just safe.",
+    "",
+    "DATA, not code, on purpose. The same table is driven by tests/test_gate_acceptance.py on",
+    "Linux and by scripts/bootstrap-windows.ps1 on Windows, so neither platform owns the truth",
+    "and a verdict cannot drift on one side without the other going red.",
+    "",
+    "Placeholders are substituted by each runner: {TMP} sandbox root, {CH} the CLAUDE_CONFIG_DIR",
+    "inside it, {PROJ} the working directory the call claims to come from. Runners MUST build",
+    "the payload with a real JSON serializer -- hand-built JSON with Windows backslashes throws",
+    "in json.loads, which looks exactly like the bug this table is testing for."
+  ],
+
+  "cases": [
+    {
+      "name": "ordinary source edit",
+      "tool": "Edit",
+      "input": { "file_path": "{PROJ}/app.py" },
+      "expect": "allow",
+      "why": "the overwhelmingly common case; if this ever denies, the gate is unusable"
+    },
+    {
+      "name": "plain bash",
+      "tool": "Bash",
+      "input": { "command": "ls -la" },
+      "expect": "allow",
+      "why": "must exit at the prefilter without reaching an interpreter at all"
+    },
+    {
+      "name": "transcript under .claude/projects",
+      "tool": "Edit",
+      "input": { "file_path": "{CH}/projects/x.jsonl" },
+      "expect": "allow",
+      "why": "FALSE-POSITIVE CLASS. Contains 'claude', so the prefilter flags it; only a real parse can clear it. A blind gate denies here."
+    },
+    {
+      "name": "bus-state, written constantly by everyone",
+      "tool": "Edit",
+      "input": { "file_path": "{CH}/bus-state/leases" },
+      "expect": "allow",
+      "why": "FALSE-POSITIVE CLASS. The gate's own comment: gating bus-state 'would break the fleet and protect nothing'."
+    },
+    {
+      "name": "READING a gated path",
+      "tool": "Bash",
+      "input": { "command": "grep foo {CH}/bin/x.sh" },
+      "expect": "allow",
+      "why": "FALSE-POSITIVE CLASS. v2.34.1: a gate that blocks reads is not a gate, it is an obstacle, and an obstacle gets disabled."
+    },
+    {
+      "name": "the WORD settings, not an invocation",
+      "tool": "Bash",
+      "input": { "command": "echo the word settings is harmless" },
+      "expect": "allow",
+      "why": "FALSE-POSITIVE CLASS. The prefilter matches broad nouns by design; the parse is what tells a noun from an act."
+    },
+    {
+      "name": "EDIT settings.json (the RCE)",
+      "tool": "Edit",
+      "input": { "file_path": "{CH}/settings.json" },
+      "expect": "deny",
+      "why": "the highest-privilege write on the box, and it arrives via the Edit tool, not Bash"
+    },
+    {
+      "name": "WRITE into .claude/bin",
+      "tool": "Write",
+      "input": { "file_path": "{CH}/bin/evil.sh", "content": "x" },
+      "expect": "deny",
+      "why": "code executed later by the hooks, in sessions that are not this one"
+    },
+    {
+      "name": "unparseable payload still denies",
+      "raw_stdin": "{\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"{CH}/settings.json",
+      "expect": "deny",
+      "why": "CONTROL. The utf-8-sig hardening must not have re-opened the case it sits beside: truncated JSON is still blind, and blind on an exact path is DENY. NOTE the payload must contain a trigger noun ('settings' here) or it exits at the prefilter and never reaches a parse -- a truncated payload with nothing gated in it is correctly ALLOWED, and an earlier version of this row tested that instead by accident."
+    },
+    {
+      "name": "a UTF-8 BOM must not become a deny-everything",
+      "tool": "Edit",
+      "input": { "file_path": "{PROJ}/app.py" },
+      "stdin_bom": true,
+      "expect": "allow",
+      "why": "REGRESSION. PowerShell prepends a BOM piping to a native exe, and Claude Code runs shell-form hooks under PowerShell when Git Bash is absent. Before the fix this denied; a plain json.loads raises on a leading U+FEFF."
+    }
+  ],
+
+  "known_gaps": [
+    {
+      "name": "bash write via an absolute POSIX path",
+      "tool": "Bash",
+      "input": { "command": "echo pwned > {CH_POSIX}/bin/evil.sh" },
+      "expect": "deny",
+      "open_on": ["win32"],
+      "why": "On Windows CH is a Windows path while the command carries /c/Users/..., so they are different namespaces and never match. On Linux both sides are POSIX and this denies correctly, which is why the gap is invisible from there. Reported, never counted: the bootstrap cannot repair a gate limitation, and a bootstrap that fails on what it cannot fix teaches you to ignore its exit code."
+    },
+    {
+      "name": "bash tilde-write into ~/.claude/bin",
+      "tool": "Bash",
+      "input": { "command": "echo pwned > ~/.claude/bin/evil.sh" },
+      "expect": "deny",
+      "open_on": ["win32"],
+      "why": "Denies correctly while CH and $HOME agree. Git Bash rewrites HOME into an MSYS path on the way in (C:\\x\\y arrives as /tmp/y), so the two can land in different namespaces depending on how the gate was invoked. Same root cause as the row above."
+    }
+  ]
+}
