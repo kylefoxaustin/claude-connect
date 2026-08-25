@@ -1324,6 +1324,23 @@ function renderBlocked() {
     bits.push(el);
   }
 
+  // STALE READER (image_gen): a LIVE session sitting on mail addressed to it. The backend does
+  // not trigger on cursor age — raw age fires on every running session — so anything here is
+  // already the harm case: someone is talking to a session that is up and not listening.
+  for (const c of ops.stale_cursors || []) {
+    const el = document.createElement("div");
+    el.className = "card";
+    const who = (c.senders || []).join(", ") || "someone";
+    const n = c.directed_unread;
+    el.innerHTML =
+      `<div class="card-who">📪 ${esc(c.tag)} isn't reading its mail</div>` +
+      `<div class="row-sub" style="white-space:normal">${n} message${n === 1 ? "" : "s"} addressed ` +
+      `to it, oldest ${esc(ago(c.unread_age))}, from ${esc(who)}.</div>` +
+      `<div class="row-sub" style="white-space:normal;margin-top:6px">Its process is running; its ` +
+      `bus cursor is at ${esc(c.cursor_ts)}. Nudge it, or open it and run /msg-check.</div>`;
+    bits.push(el);
+  }
+
   for (const c of w.cycles || []) {
     const el = document.createElement("div");
     el.className = "card" + (c.deadlock ? " card-hot" : "");

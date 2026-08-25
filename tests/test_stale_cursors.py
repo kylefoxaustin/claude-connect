@@ -166,3 +166,38 @@ def test_the_threshold_is_the_knob(tmp_path, hours, expect):
     b = bus(tmp_path, ("2026-08-01 09:00:00", "to:t"), "2026-08-24 13:00:00")
     d = cursors(tmp_path, t="2026-07-01 00:00:00")
     assert stale_cursors(b, d, now=NOW, stale_h=hours)[0]["stale"] is expect
+
+
+# =======================================================================================
+# The signal has to REACH a surface. A fleet-health alarm that is computed and never
+# rendered is the silent no-op this whole family of bugs is made of, so these pin the
+# wiring: the field is on the payload the desktop reads, on the phone's aggregate, seeded
+# on websocket connect, and referenced by both frontends.
+# =======================================================================================
+
+def test_the_signal_is_wired_all_the_way_to_both_surfaces():
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    main = (root / "conductor" / "main.py").read_text()
+    # broadcast on change, seeded on connect, and present in the phone aggregate
+    assert 'broadcast("stale_cursors"' in main
+    assert '"kind": "stale_cursors"' in main, "a client connecting mid-session would never see it"
+    assert main.count('"stale_cursors": self._stale_cursors') >= 1
+    assert '"stale_cursors": state._stale_cursors' in main
+
+    app = (root / "frontend" / "app.js").read_text()
+    assert 'case "stale_cursors":' in app, "the desktop would drop the live update"
+    assert "state.stale_cursors = payload.stale_cursors" in app, "and the initial payload too"
+    assert "alert-stale" in app
+
+    ops = (root / "frontend" / "m" / "ops.js").read_text()
+    assert "ops.stale_cursors" in ops, "the phone would never show it"
+
+    css = (root / "frontend" / "style.css").read_text()
+    # ⚠️ v2.40 shipped a rule whose only colour came from an UNDEFINED var, which yields no
+    # colour and no error. Every colour here must carry a literal fallback.
+    import re
+    for m in re.finditer(r"\.alert-stale[^{]*\{([^}]*)\}", css):
+        for var in re.finditer(r"var\(\s*(--[\w-]+)\s*(,)?", m.group(1)):
+            assert var.group(2), f"{var.group(1)} is used with no fallback — it will render as nothing"
+

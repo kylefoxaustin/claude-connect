@@ -480,6 +480,10 @@ body.link-mode .tile-actions { display: none; }
 .alert-dead strong { color: #e06c75; }
 .alert-quiet strong { color: #e5c07b; }
 .alert-lostrc strong { color: #e5c07b; }   /* alive but lost /RC = amber: reconnect, don't relaunch */
+/* Not reading its mail = amber. Nothing is broken and nobody is dead — a live session is
+   simply not listening, and someone is waiting on it. Every colour here carries a fallback
+   for the same reason the v2.40 phone bug did: an undefined var yields no colour, silently. */
+.alert-stale strong { color: var(--warn, #e5c07b); }
 .alert-webpush strong { color: #e06c75; }  /* paging is down = red: you won't be alerted */
 /* No display = red, and the loudest of the set: not one dead feature, the whole action surface. */
 .alert-x11 strong { color: #e06c75; }

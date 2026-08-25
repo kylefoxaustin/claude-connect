@@ -2149,6 +2149,7 @@ class AppState:
             "parked": parked,
             "members": self._members,        # member registry (v4 §3.4): member -> role summary
             "silent": self._silent,          # dead-reader alarm (holobench)
+            "stale_cursors": self._stale_cursors,   # live but not reading its mail (image_gen)
             "collisions": self._collisions,  # two live sessions, one member (holobench)
             "lost_rc": self._lost_rc,        # alive but lost /RC (§3.4.1, rt1180)
             "webpush": self._webpush_status(),  # can we actually page the phone? (2026-07-22)
@@ -3651,6 +3652,7 @@ async def get_ops(request: Request) -> dict[str, Any]:
         # Dead-reader alarm + dual-session collisions (holobench). Both are "something is wrong
         # with a session's REACHABILITY that only a human resolves" — surfaced on the phone too.
         "silent": state._silent,
+        "stale_cursors": state._stale_cursors,   # live but not reading its mail (image_gen)
         "collisions": state._collisions,
         "lost_rc": state._lost_rc,        # live-but-lost-/RC alarm (§3.4.1, rt1180)
         # If this is not ok, every button on this phone that types at a session is dead — the
@@ -4199,6 +4201,8 @@ async def websocket(ws: WebSocket) -> None:
         await ws.send_text(json.dumps({"kind": "services", "payload": state.services}))
         await ws.send_text(json.dumps({"kind": "waiting", "payload": state.waiting}))
         await ws.send_text(json.dumps({"kind": "silent", "payload": {"silent": state._silent}}))
+        await ws.send_text(json.dumps({"kind": "stale_cursors",
+                                       "payload": {"stale_cursors": state._stale_cursors}}))
         await ws.send_text(json.dumps({"kind": "collisions", "payload": {"collisions": state._collisions}}))
         await ws.send_text(json.dumps({"kind": "lost_rc", "payload": {"lost_rc": state._lost_rc}}))
         await ws.send_text(json.dumps({"kind": "decisions", "payload": {"decisions": state.decisions}}))

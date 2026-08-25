@@ -278,6 +278,7 @@ function handleMessage({ kind, payload }) {
       // the REST endpoint, the connect snapshot and a rescan all send everything.
       state.sessions = payload.sessions || [];
       state.silent = payload.silent || [];
+      state.stale_cursors = payload.stale_cursors || [];
       if (payload.parked !== undefined) state.parked = payload.parked || [];
       if (payload.fadeout_seconds !== undefined) state.fadeoutSeconds = payload.fadeout_seconds ?? 30;
       if (payload.wmctrl_available !== undefined) state.wmctrlAvailable = !!payload.wmctrl_available;
@@ -294,6 +295,10 @@ function handleMessage({ kind, payload }) {
       applyLinkClasses();
       requestAnimationFrame(() => redrawLines(state));
       refresh3D();
+      break;
+    case "stale_cursors":
+      state.stale_cursors = (payload && payload.stale_cursors) || [];
+      renderFleetAlerts(state);
       break;
     case "silent":
       state.silent = (payload && payload.silent) || [];
@@ -1849,11 +1854,17 @@ function renderFleetAlerts(state) {
   const silent = state.silent || [];
   const dead = silent.filter((s) => s.dead);
   const quiet = silent.filter((s) => !s.dead);   // addressed + silent but a process is still alive
+  // STALE READER (image_gen, 2026-08-24): a LIVE session sitting on mail addressed to it that
+  // it has not read in hours. The backend deliberately does NOT trigger on cursor age — raw age
+  // fires on every running session on this fleet — so anything that arrives here is already the
+  // harm case: someone is talking to a session that is up and not listening.
+  const staleReaders = state.stale_cursors || [];
   const wp = state.webpush;                       // can we page the phone? (2026-07-22)
   const wpBroken = wp && wp.healthy === false;
   const x11 = state.x11;                          // can we reach a display AT ALL? (2026-08-05)
   const x11Broken = x11 && x11.ok === false;
-  if (!collisions.length && !lostRc.length && !dead.length && !quiet.length && !wpBroken && !x11Broken) {
+  if (!collisions.length && !lostRc.length && !dead.length && !quiet.length && !staleReaders.length
+      && !wpBroken && !x11Broken) {
     box.hidden = true; box.replaceChildren(); return;
   }
   box.hidden = false;
@@ -1938,6 +1949,21 @@ function renderFleetAlerts(state) {
       + `${fmtSilence(s.silent_for)}. <span class="alert-sub">Its process is alive — maybe deep in a task, maybe not reading its mail.</span>`;
     rows.push(row);
   }
+  for (const c of staleReaders) {
+    const row = document.createElement("div");
+    row.className = "alert-row alert-stale";
+    const who = (c.senders || []).join(", ") || "someone";
+    const n = c.directed_unread;
+    row.innerHTML =
+      `<strong>📪 ${escapeHtml(c.tag)} isn't reading its mail</strong> — ${n} message`
+      + `${n === 1 ? "" : "s"} addressed to it, oldest ${escapeHtml(fmtAgo(c.unread_age))}, from `
+      + `${escapeHtml(who)}.`
+      + `<div class="alert-sub" style="margin-top:4px">Its process is running and its bus cursor `
+      + `is at <code>${escapeHtml(c.cursor_ts)}</code>. Nudge it (📬) or open it and run `
+      + `<code>/msg-check</code> — a session that never reads is indistinguishable from one that `
+      + `has nothing to say, which is how a cursor sat three weeks behind unnoticed.</div>`;
+    rows.push(row);
+  }
   const title = document.createElement("div");
   title.className = "fleet-alerts-title";
   const parts = [];
@@ -1945,6 +1971,7 @@ function renderFleetAlerts(state) {
   if (lostRc.length) parts.push(`${lostRc.length} lost /RC`);
   if (dead.length) parts.push(`${dead.length} dead reader${dead.length > 1 ? "s" : ""}`);
   if (quiet.length) parts.push(`${quiet.length} unresponsive`);
+  if (staleReaders.length) parts.push(`${staleReaders.length} not reading mail`);
   if (wpBroken) parts.push(`notifications down`);
   if (x11Broken) parts.push(`DISPLAY unreachable`);
   title.textContent = `🩺 Fleet health — ${parts.join(" · ")}`;
