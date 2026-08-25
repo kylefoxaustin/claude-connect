@@ -153,7 +153,7 @@ function Set-BusPython {
 # only faithful way to reproduce what Claude Code hands a hook is to drive the process
 # directly and write the bytes ourselves.
 function Invoke-GateWithStdin {
-    param([string] $BashExe, [string] $Gate, [string] $Payload)
+    param([string] $BashExe, [string] $Gate, [string] $Payload, [switch] $Bom)
     # Stdin is taken out of the picture ENTIRELY: the payload goes to a file written as raw
     # BOM-less bytes, and bash redirects from it. Three ways of piping were tried first and
     # all three put a UTF-8 BOM at byte 0 -- `$x | & bash` does, and so does writing to
@@ -162,7 +162,11 @@ function Invoke-GateWithStdin {
     # exactly like the gate being broken. A file has no encoding negotiation to lose.
     $pf   = [System.IO.Path]::GetTempFileName()
     $utf8 = New-Object System.Text.UTF8Encoding($false)
-    [System.IO.File]::WriteAllBytes($pf, $utf8.GetBytes($Payload))
+    $bytes = $utf8.GetBytes($Payload)
+    # -Bom deliberately puts the BOM back, for the regression row that pins the utf-8-sig
+    # fix. Everywhere else it stays off, because an accidental BOM is the bug, not the test.
+    if ($Bom) { $bytes = ([byte[]](0xEF,0xBB,0xBF)) + $bytes }
+    [System.IO.File]::WriteAllBytes($pf, $bytes)
     $mGate = '/' + ($Gate -replace '^([A-Za-z]):','$1' -replace '\\','/')
     $mPf   = '/' + ($pf   -replace '^([A-Za-z]):','$1' -replace '\\','/')
 
@@ -193,27 +197,37 @@ function Test-GateBehaviour {
         New-Item -ItemType Directory -Force -Path (Join-Path $tmp $d) | Out-Null
     }
 
-    # verdict 2 = DENY, 0 = ALLOW
-    $cases = @(
-        @{ n='ordinary source edit';               tool='Edit'; inp=@{file_path=(Join-Path $tmp 'proj\app.py')};                    want=0 },
-        @{ n='plain bash';                         tool='Bash'; inp=@{command='ls -la'};                                            want=0 },
-        @{ n='transcript under .claude/projects';  tool='Edit'; inp=@{file_path=(Join-Path $tmp 'claude\projects\x.jsonl')};        want=0 },
-        @{ n='bus-state (fleet writes constantly)';tool='Edit'; inp=@{file_path=(Join-Path $tmp 'claude\bus-state\leases')};        want=0 },
-        @{ n='READING a gated path';               tool='Bash'; inp=@{command=('grep foo ' + (Join-Path $tmp 'claude\bin\x.sh'))};  want=0 },
-        @{ n='the WORD settings, not an act';      tool='Bash'; inp=@{command='echo the word settings is harmless'};                want=0 },
-        @{ n='EDIT settings.json (the RCE)';       tool='Edit'; inp=@{file_path=(Join-Path $tmp 'claude\settings.json')};           want=2 },
-        @{ n='WRITE into .claude/bin';             tool='Write';inp=@{file_path=(Join-Path $tmp 'claude\bin\evil.sh'); content='x'}; want=2 }
-    )
+    # THE TABLE IS NOT DEFINED HERE. It lives in tests/gate_acceptance.json and is driven
+    # by tests/test_gate_acceptance.py on Linux as well, so a verdict cannot drift on one
+    # platform without the other going red, and neither platform owns the truth.
+    # Add cases to the JSON, never to this file.
+    $tablePath = Join-Path $RepoRoot 'tests\gate_acceptance.json'
+    if (-not (Test-Path $tablePath)) { Say "SKIPPED: $tablePath not found"; return $null }
+    $table = Get-Content -Raw -Encoding UTF8 $tablePath | ConvertFrom-Json
 
-    # Reported, never failed: a gate limitation the bootstrap cannot repair, and a bootstrap
-    # that fails on something it cannot fix teaches you to ignore its exit code.
-    $known = @(
-        @{ n='bash write via an MSYS-ABSOLUTE path'; tool='Bash'
-           inp=@{command=('echo pwned > /' + (($tmp -replace '^([A-Za-z]):','$1') -replace '\\','/') + '/claude/bin/evil.sh')}
-           want=2; why='CH is a Windows path, the command carries /c/... -- different namespaces, no match. On Linux both are POSIX so this DOES deny there.' },
-        @{ n='bash tilde-write ~/.claude/bin'; tool='Bash'; inp=@{command='echo pwned > ~/.claude/bin/evil.sh'}
-           want=2; why='MEASURED to DENY correctly when CH is $HOME/.claude, and to allow when they diverge -- Git Bash rewrites HOME into an MSYS path on the way in, so `~` and CH can land in different namespaces. Same root cause as the row above.' }
-    )
+    # verdict 2 = DENY, 0 = ALLOW
+    # Substitute the table's placeholders with THIS sandbox's Windows paths. The POSIX
+    # spelling is provided too, for the rows that deliberately probe the other namespace.
+    $chPosix = '/' + (($tmp -replace '^([A-Za-z]):','$1') -replace '\\','/') + '/claude'
+    $vals = @{
+        TMP       = $tmp
+        CH        = (Join-Path $tmp 'claude')
+        PROJ      = (Join-Path $tmp 'proj')
+        CH_POSIX  = $chPosix
+    }
+    function Sub($s) { foreach ($k in $vals.Keys) { $s = $s.Replace('{' + $k + '}', $vals[$k]) }; return $s }
+
+    # Build one payload. ConvertTo-Json is a REAL serializer -- hand-built JSON with Windows
+    # backslashes throws in json.loads and looks exactly like the bug under test.
+    function Build($case) {
+        if ($case.PSObject.Properties.Name -contains 'raw_stdin' -and $case.raw_stdin) {
+            return (Sub $case.raw_stdin)
+        }
+        $inp = @{}
+        foreach ($pp in $case.input.PSObject.Properties) { $inp[$pp.Name] = (Sub $pp.Value) }
+        return (@{ cwd = $vals.PROJ; tool_name = $case.tool; tool_input = $inp } |
+                ConvertTo-Json -Compress -Depth 8)
+    }
 
     # BUS_STATE_DIR is set EXPLICITLY. The gate derives it from $HOME otherwise, and Git Bash
     # rewrites HOME into an MSYS path on the way in ('C:\...\x' arrives as '/tmp/x'), so the
@@ -232,8 +246,9 @@ function Test-GateBehaviour {
 
     $pass = 0; $fail = 0
     try {
-        foreach ($c in $cases) {
-            $payload = (@{ cwd=(Join-Path $tmp 'proj'); tool_name=$c.tool; tool_input=$c.inp } | ConvertTo-Json -Compress -Depth 8)
+        foreach ($c in $table.cases) {
+            $payload = Build $c
+            $bom = ($c.PSObject.Properties.Name -contains 'stdin_bom' -and $c.stdin_bom)
             # ⚠️ NOT `$payload | & $BashExe`. PowerShell's UTF-8 $OutputEncoding prepends a
             # BOM when piping to a native exe -- measured: 144 chars in, 146 out, leading
             # ﻿ -- and json.loads raises on that. The gate then (correctly) denies an
@@ -241,13 +256,15 @@ function Test-GateBehaviour {
             # Worth knowing beyond this script: Claude Code runs shell-form hooks through
             # PowerShell when Git Bash is absent, so a BOM-prefixed payload is reachable in
             # production on such a box, not just in tests.
-            $res = Invoke-GateWithStdin -BashExe $BashExe -Gate $gate -Payload $payload
+            $res = Invoke-GateWithStdin -BashExe $BashExe -Gate $gate -Payload $payload -Bom:$bom
             $rc  = $res.Code
             $got = if ($rc -eq 2) { 'DENY' } elseif ($rc -eq 0) { 'ALLOW' } else { "rc=$rc" }
-            $exp = if ($c.want -eq 2) { 'DENY' } else { 'ALLOW' }
-            if ($rc -eq $c.want) { $pass++; Good ("ok  {0,-42} {1}" -f $c.n, $got) }
+            $want = if ($c.expect -eq 'deny') { 2 } else { 0 }
+            $exp = $c.expect.ToUpper()
+            if ($rc -eq $want) { $pass++; Good ("ok  {0,-42} {1}" -f $c.name, $got) }
             else {
-                $fail++; Bad ("!!  {0,-42} {1}  (expected {2})" -f $c.n, $got, $exp)
+                $fail++; Bad ("!!  {0,-42} {1}  (expected {2})" -f $c.name, $got, $exp)
+                Bad ("      why this row exists: " + $c.why)
                 $why = (($res.Out + $res.Err).Trim() -split "`r?`n" | Where-Object { $_ } | Select-Object -First 3)
                 foreach ($w in $why) { Bad ("      | " + $w.Substring(0, [Math]::Min(96, $w.Length))) }
                 if (-not $why) { Bad "      | (gate produced no output -- it did not think it was refusing)" }
@@ -255,13 +272,19 @@ function Test-GateBehaviour {
         }
         Write-Host ""
         Say "known gaps (reported, not counted -- the bootstrap cannot fix these):"
-        foreach ($k in $known) {
-            $payload = (@{ cwd=(Join-Path $tmp 'proj'); tool_name=$k.tool; tool_input=$k.inp } | ConvertTo-Json -Compress -Depth 8)
-            $rc = (Invoke-GateWithStdin -BashExe $BashExe -Gate $gate -Payload $payload).Code
+        foreach ($k in $table.known_gaps) {
+            $rc  = (Invoke-GateWithStdin -BashExe $BashExe -Gate $gate -Payload (Build $k)).Code
             $got = if ($rc -eq 2) { 'DENY' } elseif ($rc -eq 0) { 'ALLOW' } else { "rc=$rc" }
-            if ($rc -eq $k.want) { Good ("      CLOSED  {0,-38} {1}" -f $k.n, $got) }
-            else { Write-Host ("      OPEN    {0,-38} {1}  (want {2})" -f $k.n, $got, 'DENY') -ForegroundColor Yellow
-                   Write-Host ("              {0}" -f $k.why) -ForegroundColor DarkYellow }
+            $want = if ($k.expect -eq 'deny') { 2 } else { 0 }
+            if ($rc -eq $want) {
+                # CLOSED where the table says it should be open: say so loudly. The row wants
+                # moving into cases, and a silent pass would leave the table claiming a gap
+                # that no longer exists.
+                Good ("      CLOSED  {0,-38} {1}   <- move it into cases" -f $k.name, $got)
+            } else {
+                Write-Host ("      OPEN    {0,-38} {1}  (want {2})" -f $k.name, $got, $k.expect.ToUpper()) -ForegroundColor Yellow
+                Write-Host ("              {0}" -f $k.why) -ForegroundColor DarkYellow
+            }
         }
     } finally {
         # The gate logs a traceback here when it degrades. Surface it BEFORE deleting the
