@@ -8,7 +8,7 @@ Reads the named-resource leases that ``bus.sh res`` writes (under
 
 from __future__ import annotations
 
-import fcntl
+from .locks import exclusive
 import time
 from pathlib import Path
 from typing import Any
@@ -31,8 +31,10 @@ def touch_lease_activity(res_dir: Path, now: int | None = None) -> bool:
     lease = res_dir / "lease"
     now = int(time.time()) if now is None else int(now)
     try:
-        with open(res_dir / ".lock", "a+") as lockf:
-            fcntl.flock(lockf, fcntl.LOCK_EX)
+        # The lock was previously released only by the handle closing. `exclusive` releases
+        # on the way out of the block instead, which matters on Windows: a byte-range lock
+        # leaked by an early `return` is not reclaimed as promptly as an flock is.
+        with open(res_dir / ".lock", "a+") as lockf, exclusive(lockf):
             try:
                 text = lease.read_text(encoding="utf-8", errors="replace")
             except OSError:
