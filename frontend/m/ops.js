@@ -159,8 +159,12 @@ function render() {
   setBadge("auto", ops.autonomy.length, "badge badge-ok");
   setBadge("resources", resAlert, "badge badge-warn");
   // Projects tab badge: projects that want you (a plan to approve, an open escalation, a dead lead).
+  // ⚠️ ANY project that renders a card in NEEDS YOU must also be counted here, or the header
+  // says "nothing needs you" directly above a card that needs you — which is what Kyle's phone
+  // showed for ieee-paper. The summary and the list must never disagree; a green header is a
+  // stronger signal than a card, so the disagreement resolves the wrong way.
   const projAlert = (ops.all_projects || []).filter(
-    (p) => p.needs === "approve-plan" || p.open_kyle > 0 || p.lead_offline).length;
+    (p) => p.needs || p.open_kyle > 0 || p.lead_offline).length;
   setBadge("projects", projAlert, "badge badge-warn");
   $("inbox-n").textContent = c.needs_you ? `· ${c.needs_you}` : "";
 }
@@ -648,11 +652,32 @@ function projectInfoRow(p) {
   const el = document.createElement("div");
   el.className = "card";
   const nom = p.last_nomination;
-  const why = p.needs === "awaiting-nominee"
-    ? `nominee ${esc(bare(p.lead) || "?")} hasn't answered yet`
-    : (nom && nom.response === "suggested"
-        ? `${esc(nom.session)} suggested ${esc(nom.suggested)} — re-nominate`
-        : `lead seat is empty — re-nominate`);
+  // ⚠️ THE LAST BRANCH USED TO BE THE FALLBACK FOR EVERYTHING, and it asserted a fact.
+  // ieee-paper sat on Kyle's phone for days reading "lead seat is empty — re-nominate"
+  // while its state was `active`, its lead was `claude-connect`, and the actual problem was
+  // three orders nobody had claimed in 29 days. A card that names the wrong reason is worse
+  // than one that says nothing: it sends you to fix something that was never broken, and it
+  // hides the thing that is. Every `needs` value now has its own line, and an unknown one
+  // says so rather than borrowing the nearest sentence.
+  let why;
+  if (p.needs === "awaiting-nominee") {
+    why = `nominee ${esc(bare(p.lead) || "?")} hasn't answered yet`;
+  } else if (p.needs === "renominate") {
+    why = nom && nom.response === "suggested"
+      ? `${esc(nom.session)} suggested ${esc(nom.suggested)} — re-nominate`
+      : `lead seat is empty — re-nominate`;
+  } else if (p.needs === "stalled") {
+    const st = p.stalls || [];
+    const worst = st[0];
+    const days = worst && worst.order_age_hours ? Math.floor(worst.order_age_hours / 24) : null;
+    const who = [...new Set(st.map((x) => bare(x.to)).filter(Boolean))].slice(0, 3).join(", ");
+    why = `${st.length} job${st.length === 1 ? "" : "s"} stalled`
+      + (days != null ? `, oldest ${days}d` : "")
+      + (who ? ` — ${esc(who)}` : "")
+      + `. Lead: ${esc(bare(p.lead) || "nobody")}.`;
+  } else {
+    why = `needs attention (${esc(p.needs || "unspecified")})`;
+  }
   el.innerHTML =
     `<div class="card-head"><span class="card-who">📋 ${esc(p.id)}</span></div>` +
     `<div class="row-sub" style="white-space:normal">${why}</div>`;

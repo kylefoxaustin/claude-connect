@@ -3684,7 +3684,13 @@ async def get_ops(request: Request) -> dict[str, Any]:
         "counts": {
             "needs_you": (len(state.decisions) + len(state._push_requests)
                           + len(state._push_proposals) + len(state._persist_requests)
-                          + sum(1 for p in state.projects if p.get("needs") == "approve-plan")
+                          # ⚠️ COUNT EVERY PROJECT THE INBOX RENDERS, not just the plan gate.
+                          # This counted approve-plan only, while the inbox showed a card for any
+                          # project with a `needs` — so Kyle's phone read "nothing needs you" in
+                          # green directly above an ieee-paper card. A green summary is a stronger
+                          # signal than a card, so the disagreement resolves the wrong way: he
+                          # trusts the header and the card becomes furniture he stops seeing.
+                          + sum(1 for p in projects_needing_operator(state.projects))
                           + len(open_escalations(state.projects, target="kyle"))),
             "blocked": state.waiting.get("blocked_count", 0),
             "dead": sum(1 for s in state._silent if s.get("dead")),
