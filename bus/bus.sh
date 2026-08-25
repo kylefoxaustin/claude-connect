@@ -112,13 +112,26 @@ if [ -n "$_BUS_DIR" ] && [ -r "$_BUS_DIR/project.sh" ]; then . "$_BUS_DIR/projec
 # hooks (SessionStart / UserPromptSubmit) are the ONLY place session_id is visible, so they seed the
 # join. Best-effort: only when stdin is the piped payload (never a tty — that read would hang), and
 # it can never fail or block the hook (a provenance breadcrumb is not allowed to break delivery).
+#
+# ⚠️ IT TAKES THE PAYLOAD AS AN ARGUMENT WHEN THE CALLER ALREADY HAS IT. Reading stdin here
+# CONSUMES it, so anything downstream that also needs the payload gets nothing — and gets it
+# silently. v2.36 hit this exact trap building the two-phase commit ("the payload parse first got
+# empty stdin, _hook_pidjoin consumed it"), and I walked straight into it again today adding the
+# provenance reader: PC_PAYLOAD came back empty and the whole feature was quietly inert. Twice is
+# a design smell, so the stdin read is now the FALLBACK, not the default.
 _hook_pidjoin() {
   command -v pidjoin_record >/dev/null 2>&1 || return 0
-  [ -t 0 ] && return 0
-  local sid
-  sid="$(python3 -c 'import sys,json
+  local sid payload="${1:-}"
+  if [ -n "$payload" ]; then
+    sid="$(printf '%s' "$payload" | python3 -c 'import sys,json
 try: print(json.load(sys.stdin).get("session_id","") or "")
 except Exception: print("")' 2>/dev/null || true)"
+  else
+    [ -t 0 ] && return 0
+    sid="$(python3 -c 'import sys,json
+try: print(json.load(sys.stdin).get("session_id","") or "")
+except Exception: print("")' 2>/dev/null || true)"
+  fi
   pidjoin_record "$sid" 2>/dev/null || true
 }
 
@@ -2613,7 +2626,10 @@ $SS_CTX"
     # If count > 0, emits JSON with a one-line additionalContext nudge
     # so Claude knows pending messages exist (without injecting content).
     # Silent + no-op outside the bus whitelist.
-    _hook_pidjoin   # step 3: seed the join for ALL sessions (before the whitelist exit)
+    # Capture the payload BEFORE anything else can drink stdin, then hand it on.
+    PC_PAYLOAD=""
+    [ -t 0 ] || PC_PAYLOAD="$(cat 2>/dev/null || true)"
+    _hook_pidjoin "$PC_PAYLOAD"   # step 3: seed the join for ALL sessions (before the whitelist exit)
     is_whitelisted "$TAG" || exit 0
 
     STATE_DIR="$HOME/.claude/bus-state"
@@ -2685,6 +2701,104 @@ $SS_CTX"
       fi
     fi
 
+    # ---- WHO TYPED THIS? (the v2.30 ledger, finally read) ---------------------------------
+    # v2.30 built the attestation ledger and wired the WRITER only. Conductor has been faithfully
+    # recording every keystroke it injects — 40 entries — and no session was ever told. So a
+    # /msg-check from Conductor and one from Kyle arrived byte-identical, and 95emulator spent a
+    # night triaging the bus on an instruction Kyle never gave, then reported back to him as
+    # though he had asked. Nothing broke; every turn rested on a false premise about who was
+    # speaking. This is the reader.
+    #
+    # ⭐ AND AN UNATTESTED INJECTABLE PROMPT IS "UNKNOWN", NEVER "KYLE". That asymmetry is the
+    # security property, such as it is: the attack on a ledger is OMISSION, not forgery, so if
+    # absence-of-entry meant "the human", suppressing the file would BUY an injector Kyle's
+    # authority. Absence means "I cannot tell", and then omission buys nothing.
+    #
+    # ADVISORY ONLY. It may change what a session SAYS and whether it interrupts a human. It may
+    # never change what a session is PERMITTED to do — permission stays with the harness and with
+    # consumable grants. A provenance label that confers authority is the I-accept-the-risk
+    # checkbox with better branding.
+    PROV_LINES="$(BUS_PC_PAYLOAD="$PC_PAYLOAD" BUS_PC_TAG="$TAG" BUS_PC_SD="$STATE_DIR" \
+      python3 - <<'PROVPY' 2>/dev/null || true
+import json, os, sys, time
+
+sd = os.environ.get("BUS_PC_SD", "")
+tag = os.environ.get("BUS_PC_TAG", "")
+try:
+    payload = json.loads(os.environ.get("BUS_PC_PAYLOAD") or "{}")
+except ValueError:
+    payload = {}
+prompt = (payload.get("prompt") or "").strip()
+if not prompt or not sd:
+    raise SystemExit
+
+# Only ever speak about prompts that COULD have been injected. Saying "source unverified" under
+# every sentence Kyle types would be noise, and noise is how a real signal gets discounted.
+INJECTABLE = {"/msg-check", "/rc"}
+injectable = prompt in INJECTABLE
+
+led = os.path.join(sd, "injections.jsonl")
+rows = []
+try:
+    with open(led, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except ValueError:
+                rows.append(None)          # keep the slot so we rewrite the file faithfully
+except OSError:
+    rows = []
+
+now = time.time()
+STALE = 6 * 3600
+hit = None
+for i, e in enumerate(rows):
+    if not isinstance(e, dict) or e.get("consumed"):
+        continue
+    if now - float(e.get("ts") or 0) > STALE:
+        continue
+    # Match on (tag, text). The pid would be a stronger join, but a UserPromptSubmit hook cannot
+    # reliably walk to its own claude — the same reason the Stop hook reads session_id from its
+    # payload. A tag collision could mis-attribute; collisions are separately and loudly alarmed.
+    if (e.get("target_tag") or "").strip("[]") != tag.strip("[]"):
+        continue
+    if (e.get("text") or "").strip() != prompt:
+        continue
+    hit = i
+    break
+
+if hit is not None:
+    rows[hit]["consumed"] = True
+    try:
+        tmp = led + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            for e in rows:
+                if e is not None:
+                    fh.write(json.dumps(e, ensure_ascii=False) + "\n")
+        os.replace(tmp, led)
+    except OSError:
+        pass          # failing to consume repeats a true statement; failing loudly would be worse
+    e = rows[hit]
+    who = e.get("actor") or "conductor"
+    why = e.get("why") or "no reason recorded"
+    if who.startswith("kyle"):
+        print(f"🖐 PROVENANCE: this '{prompt}' was sent BY KYLE through Conductor ({who}) — "
+              f"reason: {why}. He is present and waiting on you.")
+    else:
+        print(f"🤖 PROVENANCE: this '{prompt}' was INJECTED BY CONDUCTOR, not typed by Kyle "
+              f"(reason: {why}; attested {int(now - float(e.get('ts') or now))}s before it "
+              f"arrived). Triage quietly and act only on what is addressed to you. Do NOT "
+              f"compose a human-facing summary or ask him questions — he is not waiting.")
+elif injectable:
+    print(f"❓ PROVENANCE: '{prompt}' has NO attestation. It may be Kyle, or an injector that "
+          f"did not record itself — this cannot tell the difference, and does not guess. Treat "
+          f"the request as genuine, but do not assume a human is waiting on your answer.")
+PROVPY
+)"
+
     # Resource-reservation awareness: a line per held resource (silent when all free).
     RES_LINES="$(res_hook_lines 2>/dev/null || true)"
     # Service-queue awareness: if I run a service with queued jobs and I'm idle, remind me
@@ -2699,13 +2813,17 @@ $SS_CTX"
 
     # Nothing pending, no retraction, no collision, no service backlog, and every resource
     # free -> stay silent.
-    if [ -z "$NOTE" ] && [ -z "$RES_LINES" ] && [ -z "$SVC_LINES" ] && [ -z "$RETRACT_LINES" ] && [ -z "$SIBLING_LINES" ]; then
+    if [ -z "$NOTE" ] && [ -z "$RES_LINES" ] && [ -z "$SVC_LINES" ] && [ -z "$RETRACT_LINES" ] \
+       && [ -z "$SIBLING_LINES" ] && [ -z "$PROV_LINES" ]; then
       exit 0
     fi
 
     NL=$'\n'
     FULL=""
-    [ -n "$SIBLING_LINES" ] && FULL="$SIBLING_LINES"   # identity first — who am I talking as?
+    # Provenance leads even the collision warning: before "which of me is this?" comes
+    # "who is even talking to me?". Everything downstream is read differently depending on it.
+    [ -n "$PROV_LINES" ] && FULL="$PROV_LINES"
+    if [ -n "$SIBLING_LINES" ]; then FULL="${FULL:+$FULL$NL}$SIBLING_LINES"; fi   # then: which of me?
     if [ -n "$RETRACT_LINES" ]; then FULL="${FULL:+$FULL$NL}$RETRACT_LINES"; fi   # then retractions
     if [ -n "$NOTE" ]; then FULL="${FULL:+$FULL$NL}$NOTE"; fi
     if [ -n "$SVC_LINES" ]; then FULL="${FULL:+$FULL$NL}$SVC_LINES"; fi           # my service backlog

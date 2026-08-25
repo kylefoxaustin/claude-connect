@@ -53,6 +53,7 @@ One JSON object per line, NUL-free by construction, never shared with stdout.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -68,6 +69,103 @@ _LEDGER = "injections.jsonl"
 # (which happens — see the push-notice bug). Reaping them keeps an unconsumed entry from
 # attaching itself to an unrelated prompt hours later.
 STALE_AFTER_S = 6 * 3600
+
+# ---- TAMPER-EVIDENCE, AND WHAT IT IS HONESTLY FOR ------------------------------------
+# Kyle asked whether the ledger itself can be spoofed, and whether it wants encryption. It can,
+# and it does not.
+#
+# ⭐ THE ATTACK IS OMISSION, NOT FORGERY. An entry says "Conductor typed this, Kyle did not", so
+# FORGING one merely makes a session distrust a real human prompt — annoying, not dangerous. The
+# attack that gains something is the reverse: an injector that simply never attests. It does not
+# need to defeat this file at all; it needs only to type with xdotool and skip the choke point.
+# **A ledger cannot bind what never passes through it.**
+#
+# Which is why signing would be theatre here: a signature proves AUTHORSHIP OF A LINE, and the
+# property under attack is COMPLETENESS OF THE LOG. Worse, every session on this host runs as the
+# same user, so any key Conductor could sign with is a key every session can read and sign with.
+# A signature you can forge is decoration.
+#
+# So instead, two cheap things that are actually true:
+#   1. a keyless HASH CHAIN — each entry carries the digest of the one before it, which makes
+#      deletion and reordering DETECTABLE. It does not prevent tampering; it prevents SILENT
+#      tampering, which is the property worth having.
+#   2. the reader treats an UNATTESTED injectable prompt as "source unknown", never as "Kyle".
+#      That is the change that makes omission useless: suppressing this file degrades to
+#      uncertainty rather than to borrowed human authority.
+#
+# ⚠️ AND THE BOUNDARY, STATED SO NOBODY INFERS A STRONGER ONE: this distinguishes CONDUCTOR'S OWN
+# injections. It is not a defence against another process on this box typing directly, and Kyle
+# never designed it to be one. A real trust boundary needs the attester outside the sessions'
+# reach — its own UID, with this file append-only to them. That is a different build, worth doing
+# only if this ever leaves a single-operator machine.
+_CHAIN_SEED = "conductor-injection-ledger-v1"
+
+
+def _digest(entry: dict[str, Any], prev: str) -> str:
+    """Digest of an entry's meaningful fields plus the previous digest.
+
+    Excludes ``consumed`` and ``hash`` on purpose: consuming an entry is a legitimate later
+    mutation, so including it would make every normal read look like tampering.
+    """
+    body = {k: entry.get(k) for k in
+            ("ts", "target_pid", "target_tag", "text", "why", "source", "actor")}
+    payload = json.dumps(body, sort_keys=True, ensure_ascii=False) + "|" + prev
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
+
+
+def _last_hash(path: Path) -> str:
+    """The chain tip, or the seed for an empty/absent ledger."""
+    try:
+        tip = _CHAIN_SEED
+        with path.open("r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    h = json.loads(line).get("hash")
+                except ValueError:
+                    continue
+                if h:
+                    tip = h
+        return tip
+    except OSError:
+        return _CHAIN_SEED
+
+
+def verify_chain(state_dir: Path) -> dict[str, Any]:
+    """Re-derive every digest. Returns ``{entries, ok, first_bad, reason}``.
+
+    ``ok`` False means a line was altered, removed or reordered after it was written. It does NOT
+    say who did it or why — only that the file is no longer the file that was appended to.
+    """
+    path = ledger_path(state_dir)
+    prev, n, bad = _CHAIN_SEED, 0, None
+    reason = ""
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return {"entries": 0, "ok": True, "first_bad": None, "reason": "no ledger"}
+    for i, line in enumerate(lines, 1):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            e = json.loads(line)
+        except ValueError:
+            bad, reason = i, "unparseable line"
+            break
+        n += 1
+        if "hash" not in e:
+            # Pre-chain entries: skip rather than condemn. A mechanism added later must not
+            # report the history that predates it as tampering.
+            continue
+        want = _digest(e, prev)
+        if e["hash"] != want:
+            bad, reason = i, "digest mismatch — an entry was altered, removed or reordered"
+            break
+        prev = e["hash"]
+    return {"entries": n, "ok": bad is None, "first_bad": bad, "reason": reason}
 
 
 def ledger_path(state_dir: Path) -> Path:
@@ -110,6 +208,8 @@ def attest(
     try:
         p = ledger_path(state_dir)
         p.parent.mkdir(parents=True, exist_ok=True)
+        entry["prev"] = _last_hash(p)
+        entry["hash"] = _digest(entry, entry["prev"])
         with p.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except OSError:

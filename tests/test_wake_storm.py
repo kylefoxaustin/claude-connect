@@ -46,6 +46,12 @@ NOW = 1_800_000_000.0
 @pytest.fixture
 def app(tmp_path, monkeypatch):
     a = AppState(load_settings())
+    # ⚠️ POINT THE STATE DIR AT tmp_path. Without this the suite wrote real entries into the REAL
+    # attestation ledger (~/.claude/bus-state/injections.jsonl) every time it ran — three rows
+    # tagged [other:x], pid 1, sitting in production provenance data. Found 2026-08-25 while
+    # reading that ledger for a genuine investigation and having to work out which lines were
+    # mine. An audit log that its own test suite writes into is not an audit log.
+    a.settings.bus.state_dir = str(tmp_path / "bus-state")
     a.coord_root = tmp_path / "coord"
     a._wake_outstanding = {}
     a._directed_unread = {"[other:x]": {"count": 3, "senders": ["y"], "latest_ts": "2026-07-12 02:00"}}
