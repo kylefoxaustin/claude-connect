@@ -2636,14 +2636,36 @@ $SS_CTX"
     # 2026-08-24 never appeared in the nudge; Kyle had to say "check messages".
     # Parse header lines: "## YYYY-MM-DD HH:MM[:SS] [tag]"
     # Keep only those with timestamp > LAST_SEEN and tag != [$TAG]
-    NEW_MSGS="$(grep -E '^## [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}(:[0-9]{2})? \[' "$BUS_FILE" 2>/dev/null \
-      | awk -v last="$LAST_SEEN" -v me="[$TAG]" '
-        {
-          ts  = $2 " " $3
-          tag = $4
-          if (ts > last && tag != me) print ts " " tag
+    # ⚠️ AND THIS COUNTS FLEET TRAFFIC, NOT YOUR MAIL — which is a different quantity, and the
+    # old wording ("N pending message(s) from …") made every session on the fleet read it as the
+    # second one. lostchild reconciled it arithmetically on its own cursor (2026-08-24): 10 new
+    # since the cursor, minus 1 of its own posts, = 9, exactly the badge — and ZERO of the 9 were
+    # addressed to it. Two denominators, so their disagreeing was never evidence of a broken
+    # cursor, and a whole branch of a cursor investigation went down that hole. Its wording note is
+    # the fix, and it is worth more than the diagnosis was: say BOTH numbers, so "20 new, none for
+    # you" is a glance instead of a `check`.
+    #
+    # So the pass now also reads each new message's ADDRESS LINE (the first non-empty body line,
+    # the same `to:` convention _address_targets parses) and counts how many are directed at me or
+    # broadcast. Header-only was why this could not tell the difference.
+    _ME_PLAIN="${TAG#other:}"
+    NEW_MSGS="$(awk -v last="$LAST_SEEN" -v me="[$TAG]" -v mine="$_ME_PLAIN" -v mytag="$TAG" '
+        /^## [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9](:[0-9][0-9])? \[/ {
+          ts = $2 " " $3; tag = $4
+          keep = (ts > last && tag != me)
+          if (keep) { pend_ts = ts; pend_tag = tag; want = 1 } else { want = 0 }
+          next
         }
-      ' || true)"
+        want && NF {
+          # first body line: the address line, if there is one
+          d = 0
+          if ($0 ~ ("to:" mine "([^A-Za-z0-9_-]|$)")) d = 1
+          if ($0 ~ ("to:" mytag "([^A-Za-z0-9_-]|$)")) d = 1
+          if ($0 ~ /to:all([^A-Za-z0-9_-]|$)/) d = 1
+          print pend_ts " " pend_tag " " d
+          want = 0
+        }
+      ' "$BUS_FILE" 2>/dev/null || true)"
 
     if [ -z "$NEW_MSGS" ]; then
       _cursor_put_pending 0
@@ -2653,7 +2675,14 @@ $SS_CTX"
       _cursor_put_pending "$COUNT"
       SENDERS="$(printf '%s\n' "$NEW_MSGS" | awk '{print $3}' | sort -u | tr '\n' ' ' | sed 's/ *$//')"
       NEWEST="$(printf '%s\n' "$NEW_MSGS" | tail -1 | awk '{print $1 " " $2}')"
-      NOTE="Claude Bus — $COUNT pending message(s) from $SENDERS on the cross-session log since you last checked (newest: $NEWEST). Content NOT shown. At a natural pause in your current work, mention to the user that pending messages exist and ask whether to check them now; run /msg-check once approved."
+      MINE="$(printf '%s\n' "$NEW_MSGS" | awk '$4 == 1' | wc -l | tr -d ' ')"
+      MINE_FROM="$(printf '%s\n' "$NEW_MSGS" | awk '$4 == 1 {print $3}' | sort -u | tr '\n' ' ' | sed 's/ *$//')"
+      # Lead with the number that decides whether to stop what you are doing.
+      if [ "$MINE" -gt 0 ]; then
+        NOTE="Claude Bus — $MINE message(s) ADDRESSED TO YOU from $MINE_FROM ($COUNT new on the bus in total since you last checked; newest: $NEWEST). Content NOT shown. At a natural pause, tell the user mail is waiting and ask whether to read it; run /msg-check once approved."
+      else
+        NOTE="Claude Bus — $COUNT new on the bus since you last checked, NONE addressed to you (senders: $SENDERS; newest: $NEWEST). Nothing needs you; read it with /msg-check only if the user asks or you want the context."
+      fi
     fi
 
     # Resource-reservation awareness: a line per held resource (silent when all free).

@@ -58,11 +58,14 @@ nudge() {
 
 out="$(nudge)"
 
-# 1. the count must cover both dialects
+# 1. the count must cover both dialects.
+# ⚠️ The wording moved after this was written: the nudge now leads with how many are ADDRESSED
+# TO YOU and reports the fleet total second (lostchild's two-denominators finding). So assert on
+# the total, which is the number this test is actually about, rather than on a phrase.
 case "$out" in
-  *"3 pending"*) ok "nudge counts all dialects (3 pending, not 1)" ;;
-  *"1 pending"*) bad "nudge saw only the minute-precision message — the regex is still HH:MM-only" ;;
-  *)             bad "nudge produced no recognisable count: $(printf '%s' "$out" | head -c 120)" ;;
+  *"3 new on the bus"*) ok "nudge counts all dialects (3 total, not 1)" ;;
+  *"1 new on the bus"*) bad "nudge saw only the minute-precision message — the regex is still HH:MM-only" ;;
+  *)                    bad "no recognisable total: $(printf '%s' "$out" | tr -d '\n' | head -c 160)" ;;
 esac
 
 # 2. the DIRECTED seconds-precision sender must be named. This is the one that cost a
@@ -83,10 +86,14 @@ esac
 #    "counts more" would be satisfied by a counter that simply always counts.
 printf '2026-08-24 00:00:00\n' > "$SB/home/.claude/bus-state/other:claude-connect.last-seen"
 out2="$(nudge)"
-case "$out2" in
-  *pending*) bad "reported pending mail with a cursor newer than every message" ;;
-  *)         ok "cursor past the tail: silent (no false positives)" ;;
-esac
+# ⚠️ This used to match on the word "pending", which the nudge no longer contains — so the
+# control would have passed no matter what the nudge said. Assert SILENCE, which is the
+# property, not a phrase that can be reworded out from under the test.
+if [ -z "$out2" ]; then
+  ok "cursor past the tail: silent (no false positives)"
+else
+  bad "nudged with nothing new: $(printf '%s' "$out2" | tr -d '\n' | head -c 140)"
+fi
 
 # 5. the shape itself, so nobody reintroduces it in a third call site
 if grep -qE "\[0-9\]\{2\}:\[0-9\]\{2\} \\\\\[" "$BUS"; then
