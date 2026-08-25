@@ -63,6 +63,10 @@ class BusSettings:
     # counter cannot see. `addressed_window_hours` is how recently someone must
     # have tried to reach it to count as "being addressed".
     silent_reader_silence_hours: float = 4.0
+    # How far behind the bus tail a LIVE member's read cursor may fall before it is
+    # surfaced. Only live members are ever checked — see stale_cursors() for why age
+    # alone is noise on a fleet with dormant projects in it.
+    stale_cursor_hours: float = 6.0
     silent_reader_addressed_window_hours: float = 12.0
     # How long a live session must have LOST its /RC bridge (was on the phone, now
     # isn't) before it raises the "alive but lost /RC" alarm (§3.4.1, the rt1180 fix
@@ -202,6 +206,7 @@ def dump_settings(settings: Settings, path: Path | str | None = None) -> None:
             "autodeliver": settings.bus.autodeliver,
             "autodeliver_exempt": settings.bus.autodeliver_exempt,
             "silent_reader_silence_hours": settings.bus.silent_reader_silence_hours,
+            "stale_cursor_hours": settings.bus.stale_cursor_hours,
             "silent_reader_addressed_window_hours": settings.bus.silent_reader_addressed_window_hours,
             "lost_rc_alert_minutes": settings.bus.lost_rc_alert_minutes,
             "page_dead_readers": settings.bus.page_dead_readers,

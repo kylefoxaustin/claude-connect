@@ -76,7 +76,8 @@ from .coord import (
     read_winddown,
     write_wake_state,
 )
-from .deps import build_wait_graph, compute_lost_rc, open_ask_edges, silent_addressees
+from .deps import (build_wait_graph, compute_lost_rc, open_ask_edges, silent_addressees,
+                   stale_cursors)
 from .projects import (
     open_escalations,
     projects_needing_operator,
@@ -505,6 +506,7 @@ class AppState:
         self.waiting: dict[str, Any] = {"edges": [], "cycles": [], "bottlenecks": [],
                                         "blocked_count": 0}   # who is blocked on whom
         self._silent: list[dict[str, Any]] = []               # dead-reader alarm (holobench)
+        self._stale_cursors: list[dict[str, Any]] = []        # stale read cursor (image_gen)
         self._collisions: list[dict[str, Any]] = []           # two live sessions, one member (holobench)
         self._lost_rc: list[dict[str, Any]] = []              # live-but-lost-/RC alarm (§3.4.1, rt1180)
         self._x11: dict[str, Any] = {}                        # can we reach a display? (2026-08-05)
@@ -819,6 +821,30 @@ class AppState:
         if silent != self._silent:
             self._silent = silent
             await self.hub.broadcast("silent", {"silent": silent})
+
+        # STALE READ CURSOR (image_gen, 2026-08-24): a reader whose bus watermark has fallen
+        # behind the log. The failure is self-concealing — a stuck cursor and a quiet inbox both
+        # render as "the number goes up" — and image_gen's sat three weeks behind before anyone
+        # thought the count looked absurd.
+        #
+        # ⚠️ SCOPED TO LIVE MEMBERS, and that scoping is the whole design. Raw cursor age fires on
+        # the graveyard: this fleet has watermarks at 06-14, 06-28, 06-30, 07-04, nearly all of
+        # them dormant or deleted projects. image_gen itself was CLOSED for the three weeks in
+        # question, and a closed session's cursor is supposed to stand still. An alarm that fires
+        # on every dormant project is one you learn to swipe away — which is the same argument
+        # that keeps Conductor paging on exactly two things.
+        cursors = await asyncio.to_thread(
+            stale_cursors,
+            self.settings.bus.markdown_path_resolved,
+            Path(self.settings.bus.state_dir_resolved),
+            stale_h=self.settings.bus.stale_cursor_hours,
+        )
+        stale = [c for c in cursors if c["stale"] and _plain_name(c["tag"]) in live_plain]
+        for c in stale:
+            c["live"] = True
+        if stale != self._stale_cursors:
+            self._stale_cursors = stale
+            await self.hub.broadcast("stale_cursors", {"stale_cursors": stale})
 
         # DUAL-SESSION COLLISION (holobench): two live Claude PROCESSES under one tag — a tag that
         # points at two sessions because it's derived from the cwd. This MUST count processes, not

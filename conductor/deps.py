@@ -48,6 +48,7 @@ qualcomm is the fleet's critical path and that's where a human minute is worth m
 
 from __future__ import annotations
 
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -239,6 +240,120 @@ def silent_addressees(
 
 
 _NONPOSTING = {"operator", "human", "kyle"}
+
+
+
+_CURSOR_TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2})?$")
+
+
+def stale_cursors(
+    markdown_path: Path,
+    state_dir: Path,
+    *,
+    now: float | None = None,
+    stale_h: float = 24.0,
+) -> list[dict[str, Any]]:
+    """A reader with DIRECTED mail it has not read in hours — the self-concealing failure.
+
+    image_gen's watermark sat at 2026-07-28 while the bus ran on to 2026-08-24 and nothing said a
+    word: a stuck cursor and a quiet inbox produce the identical observation, which is that the
+    number goes up. It surfaced only because a human thought 157 unread looked absurd.
+
+    ⚠️ THE OBVIOUS VERSION OF THIS ALARM IS A FIREHOSE, AND I MEASURED THAT BEFORE SHIPPING IT.
+    "Cursor is old" fires on **36 of 36** cursors on this fleet. Scoping to live members: **17 of
+    17** — every running session. Adding "was active in the last hour" changes nothing, because
+    hooks touch every transcript constantly. A lagging cursor is not abnormal here; it is the
+    normal state of a session that has had no reason to run a bus read. An alarm that fires on
+    everything is one you learn to swipe away, which is worse than no alarm at all.
+
+    ⭐ SO THE TRIGGER IS HARM, NOT HOUSEKEEPING: mail **addressed to you** that you have not read
+    for ``stale_h`` hours. A cursor days behind the tail while nobody is talking to you is fine —
+    that is most of the fleet, most of the time. Measured on the same snapshot that gave 17 of 17,
+    this fires on **8**, and it correctly stays silent for the one session I could verify by hand
+    was healthy (mail 0.4 h old, read on arrival). Broadcasts and mass-cc do not count: being cc'd
+    is not a debt, the same rule the wait-graph uses.
+
+    Pure function of the bus log plus the cursor files. The caller annotates ``live`` and alarms on
+    live members only — a closed session's cursor is *supposed* to stand still, which is exactly
+    what image_gen's was doing (116 transcript records on Jul 28, three on Aug 6, all ``/exit``,
+    then nothing until Aug 24). No turns, no reads, no commits, no defect.
+
+    Returns, worst-first: ``tag``, ``cursor_ts``, ``cursor_ep``, ``behind`` (seconds behind the
+    newest message on the bus), ``directed_unread``, ``oldest_unread_ep``, ``unread_age`` (seconds
+    since the oldest directed unread message), ``senders``, and ``stale``.
+    """
+    now = time.time() if now is None else now
+    try:
+        lines = Path(markdown_path).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+
+    msgs: list[dict[str, Any]] = []
+    cur: dict[str, Any] | None = None
+    tail_ep = 0.0
+    for line in lines:
+        m = _HEADER_RE.match(line)
+        if m:
+            ep = _ts_to_epoch(f"{m.group(1)} {m.group(2)}", now)
+            tail_ep = max(tail_ep, ep)
+            cur = {"ep": ep, "snd": _plain(m.group(3)), "first": None}
+            msgs.append(cur)
+        elif cur is not None and line.strip() and cur["first"] is None:
+            cur["first"] = line
+    if tail_ep <= 0:
+        return []          # an unknown tail must produce NO alarm, never flag the whole fleet
+    for mm in msgs:
+        mm["to"] = {t for t in _address_targets(mm["first"] or "")
+                    if t not in ("all", "p:wake", "p:low") and t not in _NONPOSTING}
+
+    try:
+        entries = list(Path(state_dir).glob("*.last-seen"))
+    except OSError:
+        return []
+
+    out: list[dict[str, Any]] = []
+    for f in entries:
+        tag = f.name[: -len(".last-seen")]
+        if not tag:
+            continue
+        try:
+            raw = f.read_text(encoding="utf-8", errors="replace").strip().splitlines()
+        except OSError:
+            continue
+        ts = raw[0].strip() if raw else ""
+        # Cursors carry the same two dialects the headers do (HH:MM and HH:MM:SS) — a cursor
+        # written before the seconds era is old, not malformed.
+        #
+        # ⚠️ VALIDATE THE SHAPE, do not just split on a space. _ts_to_epoch falls back to NOW on a
+        # parse failure, so garbage in a cursor file would render as a perfectly CURRENT reader —
+        # a corrupted watermark disguised as a healthy one, which is strictly worse than the stuck
+        # cursor this exists to find. Caught by its own test.
+        if not _CURSOR_TS_RE.match(ts):
+            continue
+        ep = _ts_to_epoch(ts, now)
+        me = _plain(tag)
+        # A mass-cc is an announcement, not a debt — the same >4-recipient rule the wake floor and
+        # the wait-graph use, and the reason orb_slam was woken for six hours by traffic it was
+        # merely copied on. Being cc'd does not make you a delinquent reader.
+        unread = [mm for mm in msgs
+                  if mm["ep"] > ep and me in mm["to"] and mm["snd"] != me
+                  and 1 <= len(mm["to"]) <= _WAKE_MAX_RECIPIENTS]
+        oldest = min((mm["ep"] for mm in unread), default=None)
+        out.append({
+            "tag": tag,
+            "cursor_ts": ts,
+            "cursor_ep": ep,
+            "behind": max(0.0, tail_ep - ep),
+            "directed_unread": len(unread),
+            "oldest_unread_ep": oldest,
+            "unread_age": max(0.0, now - oldest) if oldest is not None else 0.0,
+            "senders": sorted({mm["snd"] for mm in unread})[:6],
+            "stale": oldest is not None and (now - oldest) > stale_h * 3600.0,
+            # (a clock-skewed future header yields age 0 above, so it can never alarm)
+            "bus_tail_ep": tail_ep,
+        })
+    out.sort(key=lambda r: -r["unread_age"])
+    return out
 
 
 def _plain(tag: str) -> str:
