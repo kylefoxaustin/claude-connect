@@ -1336,8 +1336,8 @@ function renderBlocked() {
       `<div class="card-who">📪 ${esc(c.tag)} isn't reading its mail</div>` +
       `<div class="row-sub" style="white-space:normal">${n} message${n === 1 ? "" : "s"} addressed ` +
       `to it, oldest ${esc(ago(c.unread_age))}, from ${esc(who)}.</div>` +
-      `<div class="row-sub" style="white-space:normal;margin-top:6px">Its process is running; its ` +
-      `bus cursor is at ${esc(c.cursor_ts)}. Nudge it, or open it and run /msg-check.</div>`;
+      `<div class="row-sub" style="white-space:normal;margin-top:6px">Running; cursor at ` +
+      `${esc(c.cursor_ts)}. Nudge it, or run /msg-check.</div>`;
     bits.push(el);
   }
 

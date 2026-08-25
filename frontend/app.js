@@ -1958,10 +1958,11 @@ function renderFleetAlerts(state) {
       `<strong>📪 ${escapeHtml(c.tag)} isn't reading its mail</strong> — ${n} message`
       + `${n === 1 ? "" : "s"} addressed to it, oldest ${escapeHtml(fmtAgo(c.unread_age))}, from `
       + `${escapeHtml(who)}.`
-      + `<div class="alert-sub" style="margin-top:4px">Its process is running and its bus cursor `
-      + `is at <code>${escapeHtml(c.cursor_ts)}</code>. Nudge it (📬) or open it and run `
-      + `<code>/msg-check</code> — a session that never reads is indistinguishable from one that `
-      + `has nothing to say, which is how a cursor sat three weeks behind unnoticed.</div>`;
+      // ⚠️ The rationale sentence lived HERE first and rendered SEVEN TIMES on a real board —
+      // the same paragraph under every row, which buries the one line that differs. Said once,
+      // in the panel title, where it explains the whole group.
+      + `<div class="alert-sub" style="margin-top:4px">Running; cursor at `
+      + `<code>${escapeHtml(c.cursor_ts)}</code>. Nudge it (📬) or run <code>/msg-check</code>.</div>`;
     rows.push(row);
   }
   const title = document.createElement("div");
@@ -1975,6 +1976,15 @@ function renderFleetAlerts(state) {
   if (wpBroken) parts.push(`notifications down`);
   if (x11Broken) parts.push(`DISPLAY unreachable`);
   title.textContent = `🩺 Fleet health — ${parts.join(" · ")}`;
+  if (staleReaders.length) {
+    // Said once for the group: why "not reading" is worth a row at all.
+    const why = document.createElement("div");
+    why.className = "alert-sub";
+    why.style.marginTop = "2px";
+    why.textContent = "A session that never reads is indistinguishable from one with nothing to "
+      + "say — which is how a cursor sat three weeks behind unnoticed.";
+    title.appendChild(why);
+  }
   box.replaceChildren(title, ...rows);
 }
 window.renderFleetAlerts = renderFleetAlerts;
