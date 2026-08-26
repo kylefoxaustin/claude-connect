@@ -1404,6 +1404,7 @@ class AppState:
                     f"✅ Kyle approved your git push to {note['repo']} — re-run it whenever "
                     "you're ready. The approval waits for you; it covers exactly one push."),
                 f"push verdict for {note['repo']}",
+                actor=note.get("actor", "conductor"),
             )
             if not sent:
                 self._push_notices[key] = note     # inject failed -> put it back to retry
@@ -2818,10 +2819,17 @@ async def decide_push(key: str, action: str, request: Request) -> dict[str, Any]
         # And it stays an ACCELERATOR, never the mechanism: the grant is durable, so an agent
         # that never hears a word still pushes fine on its next attempt. That is what saved
         # this one.
+        # ⚠️ RECORD WHO DECIDED. The notice is Conductor's keystrokes but KYLE's decision, and
+        # the ledger could not tell those apart — the provenance line on its first real firing
+        # said "INJECTED BY CONDUCTOR", which is true of the typing and wrong about the intent.
+        # A session reading that concludes nobody is waiting on it, when in fact a human just
+        # tapped Approve and is watching for the push to land. Conductor decided vs Kyle decided
+        # and Conductor delivered is exactly the distinction this mechanism exists to draw.
         state._push_notices[key] = {
             "cwd": req.get("cwd", ""),
             "repo": req.get("repo_name", key),
             "queued": time.time(),
+            "actor": f"human:{request.client.host if request.client else '?'}",
         }
         rec = state._session_for_cwd(req.get("cwd", ""))
         notified = rec.tag if rec is not None else None

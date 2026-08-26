@@ -89,11 +89,37 @@ esac
 [ -z "$(ctx 'okay do the thing')" ] && ok "silent on a prompt Kyle actually typed" \
   || bad "annotated an ordinary prompt — this will train sessions to ignore the line"
 
-# 5. Kyle driving Conductor is NOT the same as Conductor deciding
-entry '[other:claude-connect]' '/msg-check' 'kyle:192.168.1.5' 30
-case "$(ctx /msg-check)" in
-  *"BY KYLE"*) ok "a human-driven injection is attributed to the human" ;;
-  *) bad "actor=kyle:<client> was reported as an autonomous injection" ;;
+# 5. Kyle driving Conductor is NOT the same as Conductor deciding, and the GUIDANCE differs.
+#    The first version said "he is not waiting" for every injected turn — right for an unread-mail
+#    nudge, actively wrong for a push verdict he had just tapped Approve on. Advice that is right
+#    for the common case and wrong for the consequential one is how a line gets ignored.
+for actor in 'human:192.168.1.5' 'kyle:192.168.1.5'; do
+  entry '[other:claude-connect]' '/msg-check' "$actor" 30
+  out5="$(ctx /msg-check)"
+  case "$out5" in
+    *"KYLE'S OWN DECISION"*) ok "actor=$actor -> attributed to the human" ;;
+    *) bad "actor=$actor was reported as an autonomous injection" ;;
+  esac
+  case "$out5" in
+    *"not waiting"*) bad "actor=$actor still told the session nobody is waiting" ;;
+    *"report back"*) ok "and told to report back, because he IS waiting" ;;
+    *)               bad "no guidance for a human-driven injection" ;;
+  esac
+done
+
+# 5b. a Conductor-delivered VERDICT is neither of the two extremes: act on it, keep it short.
+entry '[other:claude-connect]' '/msg-check' 'conductor' 20
+python3 - "$SD/injections.jsonl" <<'FIX'
+import json, sys
+p = sys.argv[1]
+e = json.loads(open(p).read().strip())
+e["why"] = "push verdict for claude-connect"
+open(p, "w").write(json.dumps(e) + "\n")
+FIX
+out5b="$(ctx /msg-check)"
+case "$out5b" in
+  *"reports a decision a human made"*) ok "a delivered verdict is not read as an autonomous nudge" ;;
+  *) bad "a push verdict got the generic 'he is not waiting' guidance: ${out5b:0:100}" ;;
 esac
 
 # 6. an attestation for a DIFFERENT session must never be claimed by this one

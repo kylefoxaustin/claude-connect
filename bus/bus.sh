@@ -2784,14 +2784,25 @@ if hit is not None:
     e = rows[hit]
     who = e.get("actor") or "conductor"
     why = e.get("why") or "no reason recorded"
-    if who.startswith("kyle"):
-        print(f"🖐 PROVENANCE: this '{prompt}' was sent BY KYLE through Conductor ({who}) — "
-              f"reason: {why}. He is present and waiting on you.")
+    age = int(now - float(e.get("ts") or now))
+    # ⚠️ THE GUIDANCE DEPENDS ON WHAT WAS INJECTED, not one sentence for everything. The first
+    # version told every injected turn "he is not waiting" — correct for an unread-mail nudge,
+    # actively wrong for a push verdict, where Kyle had just tapped Approve and was watching for
+    # the push to land. Advice that is right for the common case and wrong for the consequential
+    # one is how a provenance line gets ignored.
+    if who.startswith("human") or who.startswith("kyle"):
+        print(f"🖐 PROVENANCE: this '{prompt}' carries KYLE'S OWN DECISION, delivered by "
+              f"Conductor ({who}) — reason: {why}. He acted deliberately and is watching for "
+              f"the result. Do the thing and report back.")
+    elif "verdict" in why or "approved" in (prompt or "").lower():
+        print(f"🤖 PROVENANCE: this '{prompt}' was DELIVERED BY CONDUCTOR (reason: {why}; "
+              f"attested {age}s earlier) — but it reports a decision a human made. Act on it, "
+              f"and keep the report short.")
     else:
         print(f"🤖 PROVENANCE: this '{prompt}' was INJECTED BY CONDUCTOR, not typed by Kyle "
-              f"(reason: {why}; attested {int(now - float(e.get('ts') or now))}s before it "
-              f"arrived). Triage quietly and act only on what is addressed to you. Do NOT "
-              f"compose a human-facing summary or ask him questions — he is not waiting.")
+              f"(reason: {why}; attested {age}s before it arrived). Triage quietly and act only "
+              f"on what is addressed to you. Do NOT compose a human-facing summary or ask him "
+              f"questions — he is not waiting.")
 elif injectable:
     print(f"❓ PROVENANCE: '{prompt}' has NO attestation. It may be Kyle, or an injector that "
           f"did not record itself — this cannot tell the difference, and does not guess. Treat "
