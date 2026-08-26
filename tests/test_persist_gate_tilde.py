@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -39,7 +40,10 @@ def gate(cmd: str, env: dict) -> int:
 def env(tmp_path):
     (tmp_path / "claude" / "bin").mkdir(parents=True)
     (tmp_path / "claude" / "commands").mkdir()
-    e = dict(PATH="/usr/bin:/bin", HOME=str(tmp_path),
+    # CLAUDE_BUS_PYTHON pins the interpreter: the PATH here is POSIX-only, so on Windows
+    # it resolves nothing, the gate correctly reports blind, and every "stays free" row
+    # goes red because the gate is working rather than broken.
+    e = dict(PATH="/usr/bin:/bin", HOME=str(tmp_path), USERPROFILE=str(tmp_path), CLAUDE_BUS_PYTHON=sys.executable,
              CLAUDE_CONFIG_DIR=str(tmp_path / "claude"))
     return e
 

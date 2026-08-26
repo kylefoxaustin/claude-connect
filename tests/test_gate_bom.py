@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -45,7 +46,18 @@ def env(tmp_path):
         "CLAUDE_CONFIG_DIR": str(tmp_path / "claude"),
         "BUS_STATE_DIR": str(tmp_path / "bus-state"),
         "HOME": str(tmp_path),
+        # MEASURED: os.path.expanduser ignores HOME on Windows and honours USERPROFILE,
+        # so with HOME alone every `~` in these payloads expands to the REAL profile of
+        # whoever runs the suite -- the tilde rows then evaluate against that machine's
+        # actual ~/.claude instead of the sandbox. The gate's bash half reads $HOME and
+        # its embedded python calls expanduser, so both must land inside tmp_path.
+        "USERPROFILE": str(tmp_path),
         "PATH": "/usr/bin:/bin",
+        # Pin the interpreter. The PATH above is POSIX-only, so on Windows it resolves
+        # NOTHING and the gate correctly reports blind and DENIES -- which turns every
+        # "stays free" row red for a reason that is the gate working, not failing. This
+        # suite tests the DECISION; test_gate_interpreter.py owns the RESOLUTION axis.
+        "CLAUDE_BUS_PYTHON": sys.executable,
         "_root": tmp_path,
     }
 

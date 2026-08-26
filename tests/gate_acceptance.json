@@ -103,7 +103,15 @@
       "input": { "command": "echo pwned > {CH_POSIX}/bin/evil.sh" },
       "expect": "deny",
       "open_on": ["win32"],
-      "why": "On Windows CH is a Windows path while the command carries /c/Users/..., so they are different namespaces and never match. On Linux both sides are POSIX and this denies correctly, which is why the gap is invisible from there. Reported, never counted: the bootstrap cannot repair a gate limitation, and a bootstrap that fails on what it cannot fix teaches you to ignore its exit code."
+      "why": "On Linux this denies correctly, which is why the gap is invisible from there. Reported, never counted: the bootstrap cannot repair a gate limitation, and a bootstrap that fails on what it cannot fix teaches you to ignore its exit code."
+    },
+    {
+      "name": "bash write via an absolute WINDOWS path",
+      "tool": "Bash",
+      "input": { "command": "echo pwned > {CH}\\bin\\evil.sh" },
+      "expect": "deny",
+      "open_on": ["win32"],
+      "why": "ADDED 2026-08-26 because the row above under-described the gap. I had recorded it as a namespace MISMATCH -- CH being a Windows path while the command carried /c/Users/... -- but the Windows-form path, where both sides ARE the same namespace, is missed too. MEASURED: tilde DENIES, MSYS-absolute ALLOWS, Windows-absolute ALLOWS. So the Bash best-effort path on Windows matches only the tilde form and misses BOTH absolute spellings, which is a bigger hole than a spelling mismatch and a different fix. This is what makes test_persist_gate.py::test_shell_writes_to_gated_paths and test_persist_gate_tilde.py::test_expanded_form_still_gated red here; those rows are CORRECTLY red and must not be relaxed to expect ALLOW."
     }
   ]
 }
