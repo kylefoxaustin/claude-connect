@@ -2753,12 +2753,24 @@ except OSError:
     rows = []
 
 now = time.time()
+# ⚠️ TWO DIFFERENT HORIZONS, AND CONFLATING THEM MIS-ATTRIBUTED A REAL PROMPT.
+# 6h is the GARBAGE-COLLECTION horizon (provenance.STALE_AFTER_S) — how long an entry is kept
+# before it is assumed to be wreckage. It is NOT a plausible arrival delay: v2.30 measured
+# injection-to-arrival at 6 to 13 MINUTES, worst case, on a busy session.
+#
+# Using the GC horizon to MATCH let a 4.9-hour-old entry claim a prompt that had just arrived —
+# observed 2026-08-26, on a push verdict whose text is identical to an earlier one, so the reader
+# matched the oldest unconsumed copy and reported "attested 17692s before it arrived". The
+# attribution was right in substance and wrong in fact, it consumed the wrong record, and it left
+# the fresh one to attach itself to something later. An hour is still four times the worst delay
+# ever measured; anything older is a record nobody collected, not an explanation of this turn.
+MATCH_WINDOW = 3600
 STALE = 6 * 3600
 hit = None
 for i, e in enumerate(rows):
     if not isinstance(e, dict) or e.get("consumed"):
         continue
-    if now - float(e.get("ts") or 0) > STALE:
+    if now - float(e.get("ts") or 0) > MATCH_WINDOW:
         continue
     # Match on (tag, text). The pid would be a stronger join, but a UserPromptSubmit hook cannot
     # reliably walk to its own claude — the same reason the Stop hook reads session_id from its

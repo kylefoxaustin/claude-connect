@@ -130,11 +130,21 @@ case "$(ctx /msg-check)" in
   *)                         bad "unexpected: cross-session match" ;;
 esac
 
-# 7. a stale entry (past the 6h GC horizon) must not attach to an unrelated prompt hours later
-entry '[other:claude-connect]' '/msg-check' 'conductor' 25000
+# 7. AGE. Two horizons, and conflating them mis-attributed a real prompt: 6h is the GC horizon,
+#    not a plausible arrival delay (measured worst case: 6-13 MINUTES). A 4.9h-old entry claimed a
+#    just-arrived push verdict on 2026-08-26 and reported "attested 17692s before it arrived".
+for age in 25000 17692; do
+  entry '[other:claude-connect]' '/msg-check' 'conductor' "$age"
+  case "$(ctx /msg-check)" in
+    *"NO attestation"*) ok "a ${age}s-old entry does not claim this prompt" ;;
+    *)                  bad "a ${age}s-old entry claimed a just-arrived prompt" ;;
+  esac
+done
+# and the control: something that plausibly just arrived MUST still match
+entry '[other:claude-connect]' '/msg-check' 'conductor' 300
 case "$(ctx /msg-check)" in
-  *"NO attestation"*) ok "a stale attestation is not attached to a later prompt" ;;
-  *)                  bad "a 7-hour-old entry claimed this prompt" ;;
+  *"INJECTED BY CONDUCTOR"*) ok "a 5-minute-old entry still matches (the window is not too tight)" ;;
+  *)                         bad "tightening the window broke the normal case" ;;
 esac
 
 echo "── bus-provenance-reader: $pass passed, $fail failed"
