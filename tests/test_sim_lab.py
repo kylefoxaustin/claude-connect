@@ -51,7 +51,13 @@ class Fleet:
                             lambda sd, tag: self.app._last_seen.get(tag, ""))
         monkeypatch.setattr("conductor.main.attest", lambda *a, **k: None)
 
-        async def fake_inject(rec, text, why):
+        # ⚠️ **_kw ON PURPOSE. The real _inject_text has always had `*, actor=...`; a fake
+        # with a NARROWER signature than the thing it replaces passes right up until a
+        # caller uses the argument, then fails as a TypeError in production code rather
+        # than as a wrong answer. Same family as the v2.26.1 fakes that lacked
+        # last_activity_at — a fake missing what the real one always has is a fake that
+        # passes while production breaks on the same line.
+        async def fake_inject(rec, text, why, **_kw):
             # record intent the way _inject_text does, then yield (mirrors the real awaits on
             # attest + send_keys_to_session running in a thread pool)
             self.injects.append((rec.tag, why))
@@ -186,7 +192,7 @@ def test_push_notice_is_kept_when_the_inject_fails(monkeypatch):
     f.app._push_notices = {"cc": {"cwd": "/proj/cc", "repo": "cc", "queued": NOW, "text": "x"}}
     monkeypatch.setattr(f.app, "_session_for_cwd", lambda cwd: rec)
 
-    async def fail_inject(rec, text, why):
+    async def fail_inject(rec, text, why, **_kw):
         f.injects.append((rec.tag, why))
         return False                          # keystroke didn't land
     monkeypatch.setattr(f.app, "_inject_text", fail_inject)
