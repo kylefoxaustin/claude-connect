@@ -38,7 +38,12 @@ def sandbox(tmp_path):
     """A throwaway ~/.claude. BUS_STATE_DIR is set EXPLICITLY: the gate derives it from
     $HOME otherwise, and Git Bash rewrites HOME into an MSYS path on the way in, so the
     sandbox and the thing under test end up disagreeing about where state lives."""
-    ch = tmp_path / "claude"
+    # ".claude", WITH the dot, so `~/.claude/...` and CLAUDE_CONFIG_DIR name the SAME
+    # directory. Named "claude" originally, which meant the tilde row pointed somewhere
+    # the sandbox had never created, the gated prefix genuinely did not match, and the
+    # gate correctly allowed -- so the row was GREEN while never exercising the tilde
+    # path at all. Caught by skippy-claude, 2026-08-26.
+    ch = tmp_path / ".claude"
     for d in ("bin", "commands", "bus-state/registry", "projects"):
         (ch / d).mkdir(parents=True, exist_ok=True)
     (tmp_path / "coord").mkdir(exist_ok=True)
@@ -54,6 +59,14 @@ def sandbox(tmp_path):
             "CLAUDE_CONFIG_DIR": str(ch),
             "BUS_STATE_DIR": str(ch / "bus-state"),
             "HOME": str(tmp_path),
+            # BOTH, and this is not belt-and-braces. MEASURED on Windows: os.path
+            # .expanduser ignores HOME entirely and honours USERPROFILE, so a fixture
+            # that sandboxes with HOME alone leaves `~` pointing at the developer's REAL
+            # profile -- the tilde rows then evaluate against the actual ~/.claude on the
+            # machine running the suite, and their verdict depends on how that box is laid
+            # out. The gate's bash half reads $HOME; its embedded python calls expanduser.
+            # Both have to land inside the sandbox or the two halves disagree.
+            "USERPROFILE": str(tmp_path),
             # Pin the interpreter so this suite tests the DECISION, not the resolution.
             # test_gate_interpreter.py owns the resolution axis.
             "CLAUDE_BUS_PYTHON": sys.executable,

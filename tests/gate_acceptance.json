@@ -80,6 +80,13 @@
       "why": "CONTROL. The utf-8-sig hardening must not have re-opened the case it sits beside: truncated JSON is still blind, and blind on an exact path is DENY. NOTE the payload must contain a trigger noun ('settings' here) or it exits at the prefilter and never reaches a parse -- a truncated payload with nothing gated in it is correctly ALLOWED, and an earlier version of this row tested that instead by accident."
     },
     {
+      "name": "bash tilde-write into ~/.claude/bin",
+      "tool": "Bash",
+      "input": { "command": "echo pwned > ~/.claude/bin/evil.sh" },
+      "expect": "deny",
+      "why": "PROMOTED from known_gaps 2026-08-26. It was recorded as open on Windows with a confident explanation about Git Bash rewriting HOME into an MSYS path -- and that was wrong. The row was never exercising the tilde path at all: the fixture named its config dir 'claude' while the payload targeted '~/.claude', two different directories, so the gate correctly allowed and the inverted assertion went green. With the fixture corrected it DENIES on Windows, same as Linux. The gap was mine, not the gate's."
+    },
+    {
       "name": "a UTF-8 BOM must not become a deny-everything",
       "tool": "Edit",
       "input": { "file_path": "{PROJ}/app.py" },
@@ -97,14 +104,6 @@
       "expect": "deny",
       "open_on": ["win32"],
       "why": "On Windows CH is a Windows path while the command carries /c/Users/..., so they are different namespaces and never match. On Linux both sides are POSIX and this denies correctly, which is why the gap is invisible from there. Reported, never counted: the bootstrap cannot repair a gate limitation, and a bootstrap that fails on what it cannot fix teaches you to ignore its exit code."
-    },
-    {
-      "name": "bash tilde-write into ~/.claude/bin",
-      "tool": "Bash",
-      "input": { "command": "echo pwned > ~/.claude/bin/evil.sh" },
-      "expect": "deny",
-      "open_on": ["win32"],
-      "why": "Denies correctly while CH and $HOME agree. Git Bash rewrites HOME into an MSYS path on the way in (C:\\x\\y arrives as /tmp/y), so the two can land in different namespaces depending on how the gate was invoked. Same root cause as the row above."
     }
   ]
 }
