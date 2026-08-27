@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import json
 import time
 from pathlib import Path
@@ -28,18 +29,25 @@ from conductor.models import Status
 from conductor.x11 import _best_title_match, _token_match
 
 
+# encode_cwd realpaths BEFORE encoding, and realpath is platform-dependent: on Windows a
+# rooted POSIX path picks up the current drive, so "/home/kyle" encodes as "C--home-kyle".
+# Spelling the drive out here keeps the assertions below hardcoded -- they still state the
+# substitution rule rather than recomputing the function under test -- while staying true
+# on both platforms.
+_DRIVE = os.path.splitdrive(os.path.realpath("/"))[0].replace(":", "-")   # "C-" on Windows, "" on POSIX
+
 def test_encode_cwd_replaces_slashes():
-    assert encode_cwd("/home/kyle/code/keyhole") == "-home-kyle-code-keyhole"
-    assert encode_cwd("/") == "-"
+    assert encode_cwd("/home/kyle/code/keyhole") == _DRIVE + "-home-kyle-code-keyhole"
+    assert encode_cwd("/") == _DRIVE + "-"
 
 
 def test_encode_cwd_replaces_underscores_and_dots():
     # Current Claude replaces every non-alphanumeric char with '-', so paths with
     # underscores or dots map to hyphens (e.g. elm7_engine -> elm7-engine).
-    assert encode_cwd("/home/u/elm7_engine") == "-home-u-elm7-engine"
-    assert encode_cwd("/home/u/my.app") == "-home-u-my-app"
+    assert encode_cwd("/home/u/elm7_engine") == _DRIVE + "-home-u-elm7-engine"
+    assert encode_cwd("/home/u/my.app") == _DRIVE + "-home-u-my-app"
     # Existing hyphens are preserved (already valid).
-    assert encode_cwd("/home/u/riscv-tools/riscv-baremetal") == "-home-u-riscv-tools-riscv-baremetal"
+    assert encode_cwd("/home/u/riscv-tools/riscv-baremetal") == _DRIVE + "-home-u-riscv-tools-riscv-baremetal"
 
 
 def test_last_recorded_cwd_tracks_latest(tmp_path: Path):

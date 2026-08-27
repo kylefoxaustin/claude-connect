@@ -139,7 +139,11 @@ def test_parse_markdown_blocks_truncates_to_80():
 
 def test_derive_tag_known_dirs(monkeypatch, tmp_path: Path):
     # Map ~ → tmp_path so we can build the canonical paths without polluting $HOME.
+    # USERPROFILE too: os.path.expanduser ignores HOME on Windows, so with HOME alone
+    # the "~/code/api" keys expand to the real profile, never match tmp_path, and
+    # derive_tag falls through to [other:api]. Same root cause as the gate fixtures.
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     tag_map = {
         "~/code/api": "api",
         "~/code/web": "[web]",  # bracketed form is accepted too

@@ -14,6 +14,7 @@ tool-inflight hook writes at PreToolUse, self-clearing once the transcript advan
 
 from __future__ import annotations
 
+import os
 import asyncio
 import types
 
@@ -38,19 +39,25 @@ def _write_marker(coord_root, *, cwd, started, sid="s1", tool="Bash", name=None)
 
 # --- read_inflight -----------------------------------------------------------
 def test_read_inflight_parses_and_keys_by_realpath(tmp_path):
-    _write_marker(tmp_path, cwd="/home/kyle/proj", started=int(NOW))
+    # A REAL path, not a fictional "/home/kyle/proj". read_inflight keys by realpath, and
+    # realpath is platform-dependent -- on Windows a rooted POSIX path gains a drive, so
+    # the fixture and the assertion named two different strings. A tmp_path child realpaths
+    # to itself on both platforms, so the test states what it means: the key is the cwd.
+    proj = str(tmp_path / "proj")
+    _write_marker(tmp_path, cwd=proj, started=int(NOW))
     out = read_inflight(tmp_path, now=NOW)
-    assert "/home/kyle/proj" in out
-    assert out["/home/kyle/proj"]["started_epoch"] == int(NOW)
-    assert out["/home/kyle/proj"]["tool"] == "Bash"
+    assert proj in out
+    assert out[proj]["started_epoch"] == int(NOW)
+    assert out[proj]["tool"] == "Bash"
 
 
 def test_read_inflight_newest_marker_for_a_cwd_wins(tmp_path):
-    _write_marker(tmp_path, cwd="/p", started=int(NOW) - 100, sid="old", name="old")
-    _write_marker(tmp_path, cwd="/p", started=int(NOW), sid="new", name="new")
+    p = str(tmp_path / "p")
+    _write_marker(tmp_path, cwd=p, started=int(NOW) - 100, sid="old", name="old")
+    _write_marker(tmp_path, cwd=p, started=int(NOW), sid="new", name="new")
     out = read_inflight(tmp_path, now=NOW)
-    assert out["/p"]["started_epoch"] == int(NOW)
-    assert out["/p"]["session_id"] == "new"
+    assert out[p]["started_epoch"] == int(NOW)
+    assert out[p]["session_id"] == "new"
 
 
 def test_read_inflight_drops_ancient_ttl(tmp_path):
@@ -72,6 +79,17 @@ def test_read_inflight_missing_dir(tmp_path):
 
 
 # --- _tool_in_flight logic ---------------------------------------------------
+
+# _tool_in_flight looks the session up by REALPATH of its project_dir, so the fixture's key
+# and the session's dir have to survive that round trip identically. "/p" does not: on
+# Windows realpath gives it a drive, the lookup misses, and _tool_in_flight returns False.
+#
+# Worth naming because it is not just a red test: the miss makes
+# test_safe_when_transcript_advanced_past_the_marker PASS for the wrong reason -- "no marker
+# found" and "marker is satisfied" are both False, so it was green on Windows while
+# exercising nothing.
+_P = os.path.realpath("/p")
+
 @pytest.fixture
 def app():
     a = AppState(load_settings())
@@ -81,17 +99,17 @@ def app():
 def _sess(activity):
     return types.SimpleNamespace(
         tag="[other:x]", status=Status.IDLE, pid=1, terminal_pid=2, title="t",
-        window_title="w", project_dir="/p", last_activity_at=activity)
+        window_title="w", project_dir=_P, last_activity_at=activity)
 
 
 def test_blocked_when_transcript_frozen_behind_the_marker(app):
-    app._inflight = {"/p": {"started_epoch": int(NOW), "session_id": "s1"}}
+    app._inflight = {_P: {"started_epoch": int(NOW), "session_id": "s1"}}
     # transcript last moved BEFORE the tool started ⇒ still pending ⇒ blocked
     assert app._tool_in_flight(_sess(activity=NOW - 30)) is True
 
 
 def test_safe_when_transcript_advanced_past_the_marker(app):
-    app._inflight = {"/p": {"started_epoch": int(NOW) - 30, "session_id": "s1"}}
+    app._inflight = {_P: {"started_epoch": int(NOW) - 30, "session_id": "s1"}}
     # transcript moved AFTER the tool started ⇒ tool resolved ⇒ safe
     assert app._tool_in_flight(_sess(activity=NOW)) is False
 
@@ -118,7 +136,7 @@ def _wire(app, monkeypatch):
 def test_inject_text_REFUSES_when_tool_in_flight(app, monkeypatch):
     """The whole point: no keystroke, and — just as important — no attestation of one that
     never happened."""
-    app._inflight = {"/p": {"started_epoch": int(NOW), "session_id": "s1"}}
+    app._inflight = {_P: {"started_epoch": int(NOW), "session_id": "s1"}}
     sent, attested = _wire(app, monkeypatch)
     ok = asyncio.run(app._inject_text(_sess(activity=NOW - 30), "/msg-check", "test"))
     assert ok is False
@@ -127,7 +145,7 @@ def test_inject_text_REFUSES_when_tool_in_flight(app, monkeypatch):
 
 
 def test_inject_text_TYPES_once_the_tool_resolved(app, monkeypatch):
-    app._inflight = {"/p": {"started_epoch": int(NOW) - 30, "session_id": "s1"}}
+    app._inflight = {_P: {"started_epoch": int(NOW) - 30, "session_id": "s1"}}
     sent, attested = _wire(app, monkeypatch)
     ok = asyncio.run(app._inject_text(_sess(activity=NOW), "/msg-check", "test"))
     assert ok is True
