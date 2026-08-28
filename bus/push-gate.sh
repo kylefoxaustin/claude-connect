@@ -396,6 +396,19 @@ if [ "${MISMATCH:-0}" = 1 ]; then
 elif [ "${EXPIRED:-0}" = 1 ]; then
   echo "🛑 Your approval for '$NAME'${EXPIRED_AT:+ (granted $EXPIRED_AT)} EXPIRED before this push ran — it did NOT go through, and it was NOT silently reused. A fresh request is filed: re-approve in Conductor's inbox (or 'bus.sh push approve $NAME'), then re-run this push." >&2
 else
-  echo "🛑 Push to '$NAME' needs Kyle's approval (commits are fine — only pushes are gated). Requested in Conductor's push inbox; approve there or Kyle runs 'bus.sh push approve $NAME', then re-run this push.${_precommit}" >&2
+  # The denial is where every session meets this process, at exactly the moment it needs it — so
+  # the process lives HERE, not only in a doc nobody re-reads. Kyle, 2026-08-28: "I'd rather all
+  # the sessions know what the process is... it just goes back and forth."
+  echo "🛑 Push to '$NAME' needs Kyle's approval. THE REQUEST IS NOW FILED — that is step 1 done." >&2
+  echo "" >&2
+  echo "   THE THREE STEPS. Every session follows these; nobody has to invent a dance." >&2
+  echo "     1. ATTEMPT the push. Being denied IS how the request reaches Kyle — you are here." >&2
+  echo "     2. TELL HIM ONCE, then wait: \"$NAME is filed and waiting for your tap.\"" >&2
+  echo "        Do NOT ask permission first. Asking before filing is what creates the loop:" >&2
+  echo "        he says yes, there is nothing to tap, you push, you get denied, he taps anyway." >&2
+  echo "     3. RE-RUN, then VERIFY it landed and say the sha. Approved is not pushed." >&2
+  echo "" >&2
+  echo "   He taps it in Conductor's inbox or on his phone. CLI: bus.sh push approve $NAME" >&2
+  echo "   Commits are free. Only the push is gated, and a genuine no-op never is.${_precommit}" >&2
 fi
 exit 2

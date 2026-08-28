@@ -1113,16 +1113,26 @@ push_list() {
   return 0
 }
 push_approve() {  # <repo-name-or-key>
-  local q="${1:-}" f name key repo matched=""
+  local q="${1:-}" f name key repo sha pid matched=""
   [ -n "$q" ] || { echo "usage: bus.sh push approve <repo-name>"; return 2; }
   mkdir -p "$PUSH_TOKENS"
   [ -d "$PUSH_REQUESTS" ] && for f in "$PUSH_REQUESTS"/*; do [ -f "$f" ] || continue
     name="$(_push_field repo_name "$f")"; repo="$(_push_field repo "$f")"; key="$(basename "$f")"
     sha="$(_push_field sha "$f")"   # the commit the gate recorded — pin the approval to it (qualcomm, 2026-07-22)
     if [ "$name" = "$q" ] || [ "$key" = "$q" ]; then
+      # ⭐ RECORD WHAT WAS APPROVED, NOT JUST WHERE IT SAT. The sha pin breaks the moment the
+      # session rebases (someone else pushed first), so an approval Kyle already gave stops
+      # matching commits whose CONTENT he approved unchanged — approve, rebase, denied, approve
+      # again. `git patch-id --stable` is invariant across a rebase exactly when the diff is
+      # unchanged, so pinning it keeps a clean rebase covered while a conflict resolution that
+      # ALTERED a diff correctly stops matching and asks again.
+      pid=""
+      [ -n "$sha" ] && [ -n "$repo" ] && pid="$(git -C "$repo" show "$sha" 2>/dev/null \
+        | git patch-id --stable 2>/dev/null | cut -d' ' -f1)"
       { echo "expires=$(( $(date +%s) + PUSH_TTL ))"
         echo "repo=$repo"; echo "repo_name=$name"
         [ -n "$sha" ] && echo "sha=$sha"
+        [ -n "$pid" ] && echo "patch_id=$pid"
         echo "approved=$(date +%s)"
         echo "approved_at=$(date '+%Y-%m-%d %H:%M')"; } > "$PUSH_TOKENS/$key"
       rm -f "$f"; matched=1

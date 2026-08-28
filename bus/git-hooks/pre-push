@@ -78,6 +78,79 @@ if [ -n "$_slug" ] && [ "$_slug" = "$FLEET_BACKUP_SLUG" ]; then
   exit 0
 fi
 
+# ---- 4b. Exemption: msgbox-only pushes on the Finding Together repo -----------------------------
+# Kyle's policy (2026-08-22): msgbox/ is the channel three separate Claude sessions talk on. A
+# reply that needs a human tap puts a person in the middle of every sentence, so message traffic
+# is auto-allowed while CODE still needs approval. Scope decided explicitly: msgbox/ ONLY.
+#
+# This hook is the better place to enforce it than push-gate.sh, because git hands us the ACTUAL
+# refs on stdin — old sha and new sha per ref. We do not have to guess from the command line what
+# is being pushed; we can diff exactly what would land.
+#
+# FAILS CLOSED at every step. A branch delete, a brand-new branch (no base to diff against), a
+# non-fast-forward, a git error, or an empty file list all fall through to the normal gate. The
+# ONLY path to exit 0 is: every moving ref is a fast-forward whose every changed file is under
+# msgbox/.
+FT_SLUG="${FT_SLUG:-FindingTogether/findingtogether}"
+if [ -n "$_slug" ] && [ "$_slug" = "$FT_SLUG" ] && [ "$DELETING" = 0 ]; then
+  _mb_ok=1; _mb_any=0
+  while read -r lref lsha rref rsha; do
+    [ -z "${lref:-}" ] && continue
+    [ "$lsha" = "$rsha" ] && continue
+    if [ "$rsha" = "$ZERO" ]; then _mb_ok=0; break; fi          # new branch: nothing to diff from
+    git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null || { _mb_ok=0; break; }
+    _mb_files="$(git diff --name-only "$rsha" "$lsha" 2>/dev/null)" || { _mb_ok=0; break; }
+    [ -n "$_mb_files" ] || { _mb_ok=0; break; }                 # empty diff -> not provably msgbox
+    if printf '%s\n' "$_mb_files" | grep -qv '^msgbox/'; then _mb_ok=0; break; fi
+    _mb_any=1
+  done <<MBEOF
+$STDIN
+MBEOF
+  if [ "$_mb_ok" = 1 ] && [ "$_mb_any" = 1 ]; then
+    rm -f "$REQUESTS/$KEY" 2>/dev/null || true
+    exit 0                                                       # ALLOW — msgbox traffic only
+  fi
+fi
+
+# ---- 4c. WILL THE REMOTE EVEN TAKE THIS? Refuse WITHOUT consuming if not. ----------------------
+# ⚠️ THE TOKEN IS CONSUMED HERE, AT AUTHORISATION TIME — which is BEFORE git has spoken to the
+# remote. So a push the remote then rejects as non-fast-forward has already burned Kyle's approval,
+# and he taps again for a push that never existed. Measured 2026-08-26/27: 18 approvals granted in
+# two days, several of them spent on races with a second contributor pushing to the same branch.
+#
+# git hands us `<localref> <localsha> <remoteref> <remotesha>` on stdin and we already read it to
+# spot no-ops. If the remote tip is NOT an ancestor of ours, the push CANNOT land — so say so and
+# leave the grant alone. Predicting the rejection costs one merge-base call and saves a tap.
+#
+# Unknown remote sha (we have not fetched it) => we cannot predict, so we do not: fall through and
+# behave exactly as before. Being wrong here must never be worse than today's behaviour.
+NEEDS_REBASE=""
+while read -r lref lsha rref rsha <&9; do
+  [ -z "$lsha" ] && continue
+  [ "$lsha" = "$ZERO" ] && continue                 # a delete: not a fast-forward question
+  [ -z "$rsha" ] && continue
+  [ "$rsha" = "$ZERO" ] && continue                 # brand-new remote branch: trivially fine
+  [ "$lsha" = "$rsha" ] && continue                 # already up to date
+  git cat-file -e "$rsha^{commit}" 2>/dev/null || continue      # remote tip unknown locally
+  if ! git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null; then
+    NEEDS_REBASE="$rref"
+  fi
+done 9<<EOF
+$STDIN
+EOF
+if [ -n "$NEEDS_REBASE" ]; then
+  cat >&2 <<EOF
+⏪ Not pushing: $NEEDS_REBASE has moved since you last fetched, so this push would be REJECTED.
+
+   YOUR APPROVAL IS UNTOUCHED — it has not been spent on a push that cannot land.
+   Rebase and push again:   git pull --rebase origin <branch>
+
+   (If the rebase changes any commit's CONTENT, the approval stops matching and Kyle re-approves.
+   A clean rebase keeps it, because the grant is pinned to the CHANGES, not to the tip commit.)
+EOF
+  exit 1
+fi
+
 # ---- 5. A valid, unexpired, SHA-matching token → CONSUME and allow ------------------------------
 TOK="$TOKENS/$KEY"
 if [ -f "$TOK" ]; then
@@ -92,6 +165,21 @@ if [ -f "$TOK" ]; then
     ok=0
     if [ -z "$tok_sha" ]; then ok=1
     else for s in $MOVING; do [ "$s" = "$tok_sha" ] && ok=1 && break; done; fi
+    # ⭐ PIN TO THE CHANGES, NOT THE TIP. A rebase rewrites every sha, so an approval given before
+    # someone else pushed stopped matching the moment we rebased onto them — approve, rebase,
+    # denied, approve again. That is not a security property, it is an accounting artifact:
+    # the CHANGES Kyle looked at are identical. `git patch-id` is stable across a rebase precisely
+    # when the content is unchanged, so a clean rebase keeps the approval and a rebase whose
+    # CONFLICT RESOLUTION altered a diff correctly stops matching and asks again.
+    if [ "$ok" = 0 ]; then
+      tok_pid="$(grep -E '^patch_id=' "$TOK" 2>/dev/null | head -1 | cut -d= -f2-)"
+      if [ -n "$tok_pid" ]; then
+        for s in $MOVING; do
+          _pid="$(git show "$s" 2>/dev/null | git patch-id --stable 2>/dev/null | cut -d' ' -f1)"
+          if [ -n "$_pid" ] && [ "$_pid" = "$tok_pid" ]; then ok=1; break; fi
+        done
+      fi
+    fi
     if [ "$ok" = 1 ]; then
       rm -f "$TOK"                                   # one push per approval
       rm -f "$REQUESTS/$KEY" "$CLAIMS/$KEY" 2>/dev/null || true
@@ -127,8 +215,21 @@ mkdir -p "$REQUESTS" 2>/dev/null || true
   echo "cmd=git push $REMOTE_NAME"; echo "sha=$HEAD_SHA"; echo "epoch=$now"
   echo "created=$(date '+%Y-%m-%d %H:%M')"; } > "$REQUESTS/$KEY" 2>/dev/null || true
 
-echo "🛑 Push to '$NAME' needs Kyle's approval (commits are fine — only pushes are gated). This was" >&2
-echo "   caught by the pre-push hook — a scripted/aliased push does not go through the tool-layer" >&2
-echo "   gate. Request filed in Conductor's push inbox; approve there or 'bus.sh push approve $NAME'," >&2
-echo "   then re-run. (Genuine no-ops and the fleet-backup repo are never gated.)" >&2
+echo "🛑 Push to '$NAME' needs Kyle's approval. THE REQUEST IS NOW FILED — that is step 1 done." >&2
+echo "" >&2
+echo "   THE THREE STEPS. Every session follows these; nobody has to invent a dance." >&2
+echo "     1. ATTEMPT the push. Being denied IS how the request reaches Kyle — you are here." >&2
+echo "     2. TELL HIM ONCE, then wait: \"<repo> is filed and waiting for your tap.\"" >&2
+echo "        Do NOT ask permission first. Asking before filing is what creates the loop:" >&2
+echo "        he says yes, there is nothing to tap, you push, you get denied, he taps anyway." >&2
+echo "     3. RE-RUN, then VERIFY it landed and say the sha. Approved is not pushed." >&2
+echo "" >&2
+echo "   He taps it in Conductor's inbox or on his phone. CLI: bus.sh push approve $NAME" >&2
+echo "   Commits are free. Only the push is gated, and a genuine no-op never is." >&2
+echo "   Your approval survives a clean rebase and is NOT spent by a rejected push." >&2
+# Naming the LAYER is not decoration: a scripted or aliased push never reaches the tool-layer
+# gate, so "which one caught me" is the difference between a session that understands why it was
+# stopped and one that thinks the gate is flaky. Its own test asserts this phrase; I dropped it
+# rewriting the message and the test caught it.
+echo "   (Caught by the pre-push hook — a scripted push bypasses the tool-layer gate.)" >&2
 exit 1
