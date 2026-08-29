@@ -402,7 +402,9 @@ else
   echo "🛑 Push to '$NAME' needs Kyle's approval. THE REQUEST IS NOW FILED — that is step 1 done." >&2
   echo "" >&2
   echo "   THE THREE STEPS. Every session follows these; nobody has to invent a dance." >&2
-  echo "     1. ATTEMPT the push. Being denied IS how the request reaches Kyle — you are here." >&2
+  echo "     1. FINISH COMMITTING FIRST, then ATTEMPT. Being denied IS how the request reaches" >&2
+  echo "        Kyle — you are here. A commit made AFTER the request invalidates the approval," >&2
+  echo "        correctly: he approved a tip, and the tip moved. Re-attempt to re-file." >&2
   echo "     2. TELL HIM ONCE, then wait: \"$NAME is filed and waiting for your tap.\"" >&2
   echo "        Do NOT ask permission first. Asking before filing is what creates the loop:" >&2
   echo "        he says yes, there is nothing to tap, you push, you get denied, he taps anyway." >&2
