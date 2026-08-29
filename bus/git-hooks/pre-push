@@ -131,7 +131,19 @@ while read -r lref lsha rref rsha <&9; do
   [ -z "$rsha" ] && continue
   [ "$rsha" = "$ZERO" ] && continue                 # brand-new remote branch: trivially fine
   [ "$lsha" = "$rsha" ] && continue                 # already up to date
-  git cat-file -e "$rsha^{commit}" 2>/dev/null || continue      # remote tip unknown locally
+  # ⚠️ THE REMOTE TIP IS NORMALLY *NOT* A LOCAL OBJECT, and that is the whole case this guard
+  # exists for: you learn the remote moved by being rejected, which is after the fetch you have
+  # not done. My first version simply skipped when the object was missing — so it took a branch
+  # production never reaches, and burned Kyle's approval on the very race it was written to stop.
+  # ⭐ AND MY TEST HID IT: the fixture fetched before invoking the hook, making the object local,
+  # so the suite exercised the easy branch and went green. A test that establishes the one
+  # precondition production lacks is a mirror.
+  # We are about to talk to the remote anyway, so fetching one ref costs nothing we were not
+  # already paying. If it still cannot be resolved, fall through unchanged — no prediction.
+  if ! git cat-file -e "$rsha^{commit}" 2>/dev/null; then
+    git fetch -q "$REMOTE_NAME" "$rref" 2>/dev/null || true
+    git cat-file -e "$rsha^{commit}" 2>/dev/null || continue
+  fi
   if ! git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null; then
     NEEDS_REBASE="$rref"
   fi

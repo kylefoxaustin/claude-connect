@@ -68,8 +68,11 @@ git -C "$other" update-ref refs/heads/main HEAD
 git --git-dir="$up" fetch -q "$other" main:main 2>/dev/null \
   || git --git-dir="$up" fetch -q "$other" HEAD:refs/heads/main
 THEIRS="$(git --git-dir="$up" rev-parse refs/heads/main)"
-git -C "$wt" fetch -q origin
-
+# ⚠️ DELIBERATELY NOT FETCHING. The first version of this test fetched here, which made the remote
+# tip a local object and let the guard take a branch production never reaches — so the suite went
+# green while the guard burned a real approval on the real race. In life you discover the remote
+# moved BY BEING REJECTED, which is after the fetch you have not done. The hook must resolve it
+# itself.
 mint "$MINE" "$PID"
 rc="$(run "$MINE" "$THEIRS")"
 [ "$rc" != 0 ] && ok "a push that cannot fast-forward is refused" \
