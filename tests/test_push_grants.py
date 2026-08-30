@@ -139,7 +139,10 @@ def test_it_is_delivered_once_the_session_goes_quiet(tmp_path, monkeypatch):
 
     sent = _run(app, monkeypatch)
     assert len(sent) == 1
-    assert "approved your git push" in sent[0]
+    # The notice is a DOORBELL now, not a sentence: bus.sh's hook expands it from the grant
+    # file at read time. Assert the token and the repo, which is all the keystroke carries —
+    # asserting prose here would just re-pin the thing we deliberately stopped typing.
+    assert sent[0].startswith("push approved:") and "claude-connect" in sent[0]
     assert app._push_notices == {}                        # delivered -> forgotten
 
 
