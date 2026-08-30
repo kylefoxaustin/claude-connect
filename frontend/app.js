@@ -1846,7 +1846,70 @@ function fmtAgo(sec) {
   if (h >= 1) return `${Math.floor(h)}h ago`;
   return `${Math.max(1, Math.floor(sec / 60))}m ago`;
 }
+// Fleet-health panel chrome: collapse, and per-row dismiss.
+//
+// Kyle, 2026-08-30, looking at eleven rows filling the whole window: "i'd sure like a way to
+// either dismiss or collapse all those warnings on conductor. takes up a lot of room."
+//
+// ⚠️ AND HE IS RIGHT TWICE. The panel is too tall, AND the count is a signal in itself: I scoped
+// the not-reading-mail alarm to fire on 7 and it now fires on 8 alongside 3 unresponsive. An
+// alarm occupying the whole viewport is one you scroll past, which is the failure the scoping
+// was supposed to prevent — so it needs a lid as well as a threshold.
+//
+// DISMISS IS KEYED ON THE STATE, NOT THE ROW. The key embeds what the alert is *about* (the tag
+// plus the oldest-unread timestamp), so dismissing "campmatch, oldest 34d" stays dismissed while
+// nothing changes and comes BACK the moment newer mail arrives for it. Same shape as the dormant
+// dock's chip dismissal (v2.6.0): dismissing must never be able to hide a NEW fact.
+const LS_ALERTS_COLLAPSED = "conductor.fleetAlerts.collapsed.v1";
+const LS_ALERTS_DISMISSED = "conductor.fleetAlerts.dismissed.v1";
+
+function alertsCollapsed() {
+  try { return localStorage.getItem(LS_ALERTS_COLLAPSED) === "1"; } catch { return false; }
+}
+function setAlertsCollapsed(v) {
+  try { localStorage.setItem(LS_ALERTS_COLLAPSED, v ? "1" : "0"); } catch {}
+}
+function dismissedAlerts() {
+  try { return new Set(JSON.parse(localStorage.getItem(LS_ALERTS_DISMISSED) || "[]")); }
+  catch { return new Set(); }
+}
+let _lastAlertState = {};
+function dismissAlert(key) {
+  const d = dismissedAlerts();
+  d.add(key);
+  // Bound it. An unbounded dismissal list would accumulate keys for states that can never recur,
+  // and the newest are the only ones that can still match anything.
+  try { localStorage.setItem(LS_ALERTS_DISMISSED, JSON.stringify([...d].slice(-200))); } catch {}
+  renderFleetAlerts(_lastAlertState);
+}
+window.dismissAlert = dismissAlert;
+
+// Dismissals are keyed on a DOUBLING BUCKET of the quantity that matters, never on the raw
+// number and never on the tag alone:
+//   * on the tag alone  -> dismissing "silent 9h" also hides "silent 90h". A dismissal would
+//     become permanent blindness to a condition that got much worse.
+//   * on the raw number -> "silent 9h" comes back at 9h1m, i.e. dismissing does nothing.
+// Doubling is the compromise: dismissed at 9h, back at 16h. You are never told the same thing
+// twice, and you are always told when it has materially deteriorated.
+function bucket(n) {
+  n = Number(n) || 0;
+  if (n <= 0) return 0;
+  return Math.pow(2, Math.floor(Math.log2(n)));
+}
+
+function withDismiss(row, key) {
+  row.dataset.alertKey = key;
+  const b = document.createElement("button");
+  b.className = "alert-dismiss";
+  b.textContent = "✕";
+  b.title = "Dismiss until this changes";
+  b.onclick = () => dismissAlert(key);
+  row.appendChild(b);
+  return row;
+}
+
 function renderFleetAlerts(state) {
+  _lastAlertState = state || {};
   const box = document.getElementById("fleet-alerts");
   if (!box) return;
   const collisions = state.collisions || [];
@@ -1915,7 +1978,7 @@ function renderFleetAlerts(state) {
       + `<code>[${escapeHtml(c.member)}]</code> — a reply can reach the wrong one.`
       + recent
       + `<div class="alert-sub" style="margin-top:4px">Both are live. Keep the one doing the work you want, close the other — or coordinate explicitly if the split is deliberate. In a shared repo a <code>git add -A</code> can also sweep the other session's work into your commit.</div>`;
-    rows.push(row);
+    rows.push(withDismiss(row, `collision:${c.member}:${c.count}`));
   }
   for (const r0 of lostRc) {
     const row = document.createElement("div");
@@ -1928,7 +1991,7 @@ function renderFleetAlerts(state) {
       + `<div class="alert-sub" style="margin-top:4px">Reconnect it (<code>/rc</code>) — do NOT relaunch, or you'll put a second session in the same repo.`
       + (r0.preview ? ` Last: ${escapeHtml((r0.preview || "").slice(0, 110))}` : "")
       + `</div>`;
-    rows.push(row);
+    rows.push(withDismiss(row, `lostrc:${r0.member}`));
   }
   for (const s of dead) {
     const row = document.createElement("div");
@@ -1938,7 +2001,7 @@ function renderFleetAlerts(state) {
       `<strong>💀 ${escapeHtml(s.tag)} isn't running</strong> — ${escapeHtml(who)} has `
       + `${s.open_ask_count} open question${s.open_ask_count === 1 ? "" : "s"} waiting on it `
       + `(${fmtSilence(s.silent_for)}). <span class="alert-sub">Relaunch it or it stays stuck.</span>`;
-    rows.push(row);
+    rows.push(withDismiss(row, `dead:${s.tag}:${s.open_ask_count}`));
   }
   for (const s of quiet) {
     const row = document.createElement("div");
@@ -1947,7 +2010,7 @@ function renderFleetAlerts(state) {
     row.innerHTML =
       `<strong>🕰 ${escapeHtml(s.tag)}</strong> is being addressed by ${escapeHtml(who)} but has `
       + `${fmtSilence(s.silent_for)}. <span class="alert-sub">Its process is alive — maybe deep in a task, maybe not reading its mail.</span>`;
-    rows.push(row);
+    rows.push(withDismiss(row, `quiet:${s.tag}:${bucket(s.silent_for)}`));
   }
   for (const c of staleReaders) {
     const row = document.createElement("div");
@@ -1963,8 +2026,13 @@ function renderFleetAlerts(state) {
       // in the panel title, where it explains the whole group.
       + `<div class="alert-sub" style="margin-top:4px">Running; cursor at `
       + `<code>${escapeHtml(c.cursor_ts)}</code>. Nudge it (📬) or run <code>/msg-check</code>.</div>`;
-    rows.push(row);
+    // Keyed on the message COUNT: dismissing means "yes, I know about these 20" — and the row
+    // returns the moment a 21st arrives, because that is a new fact.
+    rows.push(withDismiss(row, `stale:${c.tag}:${c.directed_unread}`));
   }
+  const dismissed = dismissedAlerts();
+  const kept = rows.filter((r) => !dismissed.has(r.dataset.alertKey || ""));
+
   const title = document.createElement("div");
   title.className = "fleet-alerts-title";
   const parts = [];
@@ -1975,7 +2043,34 @@ function renderFleetAlerts(state) {
   if (staleReaders.length) parts.push(`${staleReaders.length} not reading mail`);
   if (wpBroken) parts.push(`notifications down`);
   if (x11Broken) parts.push(`DISPLAY unreachable`);
-  title.textContent = `🩺 Fleet health — ${parts.join(" · ")}`;
+  // ⭐ THE COUNT IS NEVER HIDDEN, ONLY THE DETAIL. `parts` is computed from the FULL set above,
+  // before any dismissal or collapse is applied, so the headline still says "8 not reading mail"
+  // whether or not the rows are on screen. A control that could take a condition off the summary
+  // would be a mute button wearing a dismiss button's clothes — and this panel exists precisely
+  // because a fleet problem that says nothing is indistinguishable from no problem.
+  const collapsed = alertsCollapsed();
+  const gone = rows.length - kept.length;
+
+  const head = document.createElement("button");
+  head.className = "fleet-alerts-head";
+  head.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  head.onclick = () => { setAlertsCollapsed(!alertsCollapsed()); renderFleetAlerts(state); };
+  const caret = document.createElement("span");
+  caret.className = "alert-caret";
+  caret.textContent = collapsed ? "▸" : "▾";
+  const label = document.createElement("span");
+  label.textContent = `🩺 Fleet health — ${parts.join(" · ")}`;
+  head.append(caret, label);
+  if (gone) {
+    const hid = document.createElement("span");
+    hid.className = "alert-hidden-count";
+    hid.textContent = `${gone} dismissed`;
+    head.appendChild(hid);
+  }
+  title.appendChild(head);
+
+  if (collapsed) { box.replaceChildren(title); return; }
+
   if (staleReaders.length) {
     // Said once for the group: why "not reading" is worth a row at all.
     const why = document.createElement("div");
@@ -1985,7 +2080,18 @@ function renderFleetAlerts(state) {
       + "say — which is how a cursor sat three weeks behind unnoticed.";
     title.appendChild(why);
   }
-  box.replaceChildren(title, ...rows);
+  const tail = [];
+  if (gone) {
+    const restore = document.createElement("button");
+    restore.className = "alert-restore";
+    restore.textContent = `↺ show ${gone} dismissed`;
+    restore.onclick = () => {
+      try { localStorage.removeItem(LS_ALERTS_DISMISSED); } catch {}
+      renderFleetAlerts(state);
+    };
+    tail.push(restore);
+  }
+  box.replaceChildren(title, ...kept, ...tail);
 }
 window.renderFleetAlerts = renderFleetAlerts;
 

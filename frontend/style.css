@@ -471,7 +471,41 @@ body.link-mode .tile-actions { display: none; }
   padding: 8px 20px;
 }
 .fleet-alerts-title { font-size: 12px; font-weight: 600; color: #e5c07b; margin-bottom: 6px; }
-.alert-row { font-size: 12px; color: var(--text); padding: 3px 0; line-height: 1.4; }
+/* Collapse + per-row dismiss (Kyle, 2026-08-30: "takes up a lot of room" — eleven rows filled
+   the whole window). Every colour here carries a LITERAL fallback: v2.40 shipped two rules whose
+   vars were undefined, and an undefined CSS var is not an error — it yields no border and no
+   background, so the control renders as invisible floating text and looks like a dead button. */
+.fleet-alerts-head {
+  display: flex; align-items: baseline; gap: 6px; width: 100%;
+  background: none; border: 0; padding: 0; margin: 0;
+  font: inherit; color: inherit; text-align: left; cursor: pointer;
+}
+.fleet-alerts-head:hover .alert-caret { color: var(--text, #e6e6e6); }
+.fleet-alerts-head:focus-visible { outline: 1px solid #e5c07b; outline-offset: 2px; }
+.alert-caret { color: var(--text-dim, #8b93a1); font-size: 10px; width: 9px; }
+.alert-hidden-count {
+  margin-left: auto; font-weight: 400; font-size: 11px;
+  color: var(--text-dim, #8b93a1);
+}
+.alert-dismiss {
+  position: absolute; top: 1px; right: 0;
+  background: none; border: 0; padding: 0 6px; line-height: 1.4;
+  color: var(--text-dim, #8b93a1); opacity: 0.45;
+  font-size: 12px; cursor: pointer;
+}
+.alert-dismiss:hover { opacity: 1; color: var(--text, #e6e6e6); }
+.alert-dismiss:focus-visible { opacity: 1; outline: 1px solid #e5c07b; }
+.alert-restore {
+  margin-top: 6px; background: none; border: 0; padding: 0;
+  color: var(--text-dim, #8b93a1); font-size: 11px; cursor: pointer;
+}
+.alert-restore:hover { color: #e5c07b; text-decoration: underline; }
+/* padding-right RESERVES the ✕ gutter (v2.6.1's lesson from the dock, where an overlay
+   scrollbar landed on exactly the dismiss buttons). It lives in this shorthand and not in
+   a rule of its own ABOVE it — an equal-specificity `padding:` further down the sheet wins
+   and silently drops it, which is how you get a ✕ sitting on top of wrapped text. */
+.alert-row { font-size: 12px; color: var(--text); padding: 3px 26px 3px 0; line-height: 1.4;
+             position: relative; }
 .alert-row code { background: rgba(255,255,255,0.08); padding: 0 4px; border-radius: 3px; }
 .alert-row .alert-sub { color: var(--text-dim); font-weight: 400; }
 .alert-sess { margin: 4px 0 0 12px; font-size: 11px; }
