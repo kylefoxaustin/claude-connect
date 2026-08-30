@@ -1402,11 +1402,25 @@ class AppState:
             # once; restore-on-failure keeps the retry for a genuinely missed keystroke.
             if self._push_notices.pop(key, None) is None:
                 continue                           # another pass already claimed it
+            # ⭐ A DOORBELL, NOT A MESSAGE. This used to type 136 characters of prose. Two things
+            # were wrong with that, and the second is worse than the first.
+            #
+            # 1. Every character is a chance to be mangled. Under a contended display (Kyle on
+            #    RustDesk, 2026-08-30) xdotool typing arrives truncated and repeated — sessions
+            #    received "Kyle pproved", "waits f", and "waits for youuuuu" x130.
+            # 2. THE PROSE IS COMPOSED AT QUEUE TIME AND TYPED MINUTES LATER, so it asserts a
+            #    state it cannot see. 95emulator received four notices saying "approved" for a
+            #    repo with NOTHING PENDING, because the grant had already been consumed. A stale
+            #    sentence about an approval is exactly the kind of confident wrong thing this
+            #    project keeps hunting.
+            #
+            # So type a short token and let bus.sh's UserPromptSubmit hook expand it FROM THE
+            # GRANT FILE at read time — which is ground truth, cannot go stale, and travels over
+            # a path that never touches X11. The keystroke's only job is to make the session take
+            # a turn; the hook was always going to run anyway.
             sent = await self._inject_text(
                 rec,
-                note.get("text") or (
-                    f"✅ Kyle approved your git push to {note['repo']} — re-run it whenever "
-                    "you're ready. The approval waits for you; it covers exactly one push."),
+                note.get("text") or f"push approved: {note['repo']}",
                 f"push verdict for {note['repo']}",
                 actor=note.get("actor", "conductor"),
             )

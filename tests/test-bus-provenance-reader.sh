@@ -147,5 +147,41 @@ case "$(ctx /msg-check)" in
   *)                         bad "tightening the window broke the normal case" ;;
 esac
 
+# ---------------------------------------------------------------------------------------
+# 8. THE DOORBELL. Conductor types "push approved: <repo>" instead of 136 characters of prose,
+#    and the hook expands it FROM THE GRANT FILE. Two wins, and the second is the bigger one:
+#    fewer characters to mangle under a contended display, and an explanation that CANNOT be
+#    stale — the old sentence was composed at queue time and typed minutes later, so 95emulator
+#    received four notices saying "approved" for a repo with nothing pending.
+# ---------------------------------------------------------------------------------------
+mkdir -p "$SB/coord/push-tokens"
+export COORD_STATE_DIR="$SB/coord"
+: > "$SD/injections.jsonl"
+
+printf 'expires=%s\nrepo_name=sgm-bench\nsha=abc123\n' "$(( $(date +%s) + 82800 ))" \
+  > "$SB/coord/push-tokens/k"
+out8="$(ctx 'push approved: sgm-bench')"
+case "$out8" in
+  *"PUSH APPROVED"*) ok "a doorbell with an armed grant expands to the real approval" ;;
+  *) bad "doorbell not expanded: ${out8:0:110}" ;;
+esac
+case "$out8" in
+  *"h left"*) ok "and reports the grant's OWN remaining time, read just now" ;;
+  *)          bad "no TTL from the grant file — the expansion is not from ground truth" ;;
+esac
+
+# ⭐ The case the old prose got wrong, four times in one night.
+rm -f "$SB/coord/push-tokens/k"
+out8b="$(ctx 'push approved: sgm-bench')"
+case "$out8b" in
+  *"NO ARMED GRANT"*) ok "⭐ a doorbell with NO grant says so instead of claiming approval" ;;
+  *"PUSH APPROVED"*)  bad "claimed an approval that no longer exists — the 2026-08-30 bug" ;;
+  *)                  bad "unexpected: ${out8b:0:110}" ;;
+esac
+case "$out8b" in
+  *"Do not re-push"*) ok "and tells the session not to act on it" ;;
+  *)                  bad "no guidance on a stale doorbell" ;;
+esac
+
 echo "── bus-provenance-reader: $pass passed, $fail failed"
 [ "$fail" = 0 ]
