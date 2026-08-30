@@ -252,3 +252,71 @@ def test_dead_reader_pages_when_passed():
     it = items[0]
     assert it["key"] == "dead:rt1180" and it["tag"] == "deadreader"
     assert "holobench" in it["title"] and "isn't running" in it["title"]
+
+
+# --- key file permissions (win_conductor, 2026-08-27) ---------------------------------------
+def test_the_private_key_is_never_world_readable_at_any_point(tmp_path, monkeypatch):
+    """Not just after the write — DURING it.
+
+    The temp file used to be created at the umask default and tightened only after os.replace,
+    so the private key sat on disk readable for the width of that window. Asserting the final
+    mode would have passed against that.
+    """
+    import os
+    import stat as _stat
+
+    from conductor import webpush as wp
+
+    seen = []
+    real_replace = os.replace
+    key = tmp_path / "vapid.json"
+
+    def spy(src, dst):
+        seen.append(oct(os.stat(src).st_mode & 0o777))   # the temp file, pre-rename
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", spy)
+    wp._write_keys(key, {"public": "a", "private": "b"})
+
+    assert seen == ["0o600"], f"the temp file was world-readable before the rename: {seen}"
+    mode = key.stat().st_mode & 0o777
+    assert not (mode & (_stat.S_IRGRP | _stat.S_IROTH)), f"final key is {oct(mode)}"
+
+
+def test_a_failed_restriction_is_reported_not_swallowed(tmp_path, monkeypatch, caplog):
+    """⭐ The Windows behaviour, simulated: chmod raises nothing and changes nothing.
+
+    That is exactly the shape this project keeps killing — an operation that reports success by
+    saying nothing. It must not raise (web push is worth more than the marginal risk on a key the
+    directory already protects) and it must not be silent.
+
+    Note this drives `_restrict` directly rather than `_write_keys`: on Linux the O_CREAT mode
+    makes the file 0o600 before chmod is ever reached, so `_restrict` correctly stays quiet and
+    the whole path is unreachable from here. That is a real improvement — the key is right even
+    if chmod fails — and it means the warning branch has to be exercised at its own door.
+    """
+    import logging
+    import os
+
+    from conductor import webpush as wp
+
+    key = tmp_path / "vapid.json"
+    key.write_text("{}", encoding="utf-8")
+    os.chmod(key, 0o666)
+    monkeypatch.setattr(wp, "_perm_warned", False)
+    monkeypatch.setattr(os, "chmod", lambda *a, **k: None)      # the Windows no-op, verbatim
+
+    with caplog.at_level(logging.WARNING, logger="conductor"):
+        wp._restrict(key)                                       # must NOT raise
+
+    assert key.exists(), "hard-failed on a platform where the key is fine — that kills paging"
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("could not restrict" in m for m in msgs), \
+        "chmod silently did nothing and Conductor said nothing — the exact lie of omission"
+    assert any("0o666" in m for m in msgs), "the warning does not say what the mode actually is"
+
+    # ...and only once, or it is a warning you learn to filter.
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="conductor"):
+        wp._restrict(key)
+    assert not caplog.records, "the warning repeats on every key write"

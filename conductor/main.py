@@ -109,7 +109,9 @@ from .scanner import (
 from .reconstitute import build_plan
 from .roster import build_roster
 from .settings import DEFAULT_SETTINGS_PATH, Settings, dump_settings, load_settings
-from .x11 import (
+# Desktop automation goes through the backend selector, never a named platform. See desktop.py
+# for why the Linux/Windows seam is here (whoever can PROVE a half owns that half).
+from .desktop import (
     focus_session,
     send_key_sequence,
     send_key_to_session,

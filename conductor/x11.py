@@ -245,6 +245,19 @@ def human_recently_active(threshold_ms: int = _HUMAN_ACTIVE_MS) -> bool:
 
 
 def wmctrl_available() -> bool:
+    """Can this backend enumerate and raise windows at all?
+
+    Part of the six-function backend contract (see desktop.py). The NAME is Linux-specific and
+    the MEANING is not: everything that raises a window checks this first, and `/api/health`,
+    `/api/focus` and the focus toast all put it on the wire under this key. It is deliberately
+    NOT renamed to something portable like `can_focus_windows` — the string is a JSON field the
+    frontend reads and a settings key, so renaming it mid-port would hand the Windows side a
+    conflict across three files to buy a better word.
+
+    A backend with no way to raise windows returns False here, and every focus path then refuses
+    instead of pretending. That is the whole point: returning True and doing nothing is the
+    2026-08-05 wind-down outage.
+    """
     return shutil.which("wmctrl") is not None
 
 

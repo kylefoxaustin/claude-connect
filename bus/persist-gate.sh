@@ -189,8 +189,35 @@ CH = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(HOME, ".claude")
 # rather than sprinkling os.sep through five patterns where the next one added will forget.
 # ⚠️ STILL OPEN, and NOT claimed to be handled: Windows paths are case-insensitive, so
 # `C:\\users\\...` would evade these comparisons. That is the port's call, not this fix's.
+# ⚠️ TWO NAMESPACES FOR ONE FILE. Git Bash spells C:\Users\x as /c/Users/x, so a gate holding
+# one spelling and a command carrying the other compares two strings that name the SAME file and
+# matches neither. MEASURED by win_conductor 2026-08-26 against the armed gate: a tilde write
+# DENIED, an MSYS-absolute write ALLOWED, a Windows-absolute write ALLOWED. That is not a
+# spelling nit — it is the gate open to both absolute forms, i.e. FAILURE_MODES bug #1 again:
+# a gate that did not match looks exactly like a gate that found nothing.
+#
+# The translation is keyed on the NAMESPACE (does CLAUDE_HOME carry a drive letter?), never on
+# the platform. Two reasons, and the second is the one that matters: os.name is "nt" for a
+# Windows python but not for an MSYS one, so a platform test picks the wrong branch under the
+# very interpreter this gate is most likely to meet; and on Linux CH can never have a drive
+# letter, so this whole block is provably unreachable there and cannot regress it.
+_WIN_NS = bool(re.match(r"^[A-Za-z]:", CH.replace("\\", "/")))
+
+
+def _msys(p: str) -> str:
+    """/c/Users/x -> c:/Users/x, so both spellings land in one namespace before comparison."""
+    p = p.replace("\\", "/")
+    if not _WIN_NS:
+        return p
+    m = re.match(r"^/([A-Za-z])(/.*|$)", p)
+    return f"{m.group(1)}:{m.group(2) or '/'}" if m else p
+
+
 def _norm(p: str) -> str:
-    return p.replace("\\", "/")
+    p = _msys(p)
+    # Windows paths are case-insensitive, so C:\USERS\... names the same file as c:\users\...
+    # and a case-sensitive compare is an evasion the earlier fix explicitly left open.
+    return p.lower() if _WIN_NS else p
 
 
 CH = _norm(CH)
@@ -212,7 +239,14 @@ OTHER_GATED_RE = re.compile(
 def gated_path(p: str) -> bool:
     if not p:
         return False
-    p = _norm(os.path.realpath(os.path.expanduser(p)))
+    # Translate the namespace BEFORE any OS resolver sees the path. A Windows python handed the
+    # MSYS spelling "/c/Users/..." reads the leading slash as "root of the current drive" and
+    # returns C:\c\Users\... — a path that exists nowhere and matches nothing, which is an
+    # ALLOW. Resolution has to happen in the namespace the interpreter actually understands.
+    p = _msys(os.path.expanduser(p))
+    # A drive-lettered path is already absolute; realpath would only be able to join it onto the
+    # cwd. Keep realpath for the POSIX case, where symlink resolution is load-bearing.
+    p = _norm(os.path.normpath(p) if re.match(r"^[A-Za-z]:/", p) else os.path.realpath(p))
     if GATED_FILES_RE.search(p) or OTHER_GATED_RE.search(p):
         return True
     return any(p == g or p.startswith(g + "/") for g in GATED_PREFIXES)
@@ -345,7 +379,11 @@ if re.search(r'(^|[;&|(])\s*crontab(\s|$)', cmd):
 # Best-effort BY CONSTRUCTION and honest about it: a shell can do anything and no regex catches
 # it all. The Edit/Write gate above is the EXACT one, and it is the one that covers
 # settings.json — i.e. the RCE. This is defence in depth and does not pretend otherwise.
-PATHS = re.compile(r'[~/][^\s;&|>"\'`]+')
+# A path may start with ~, / OR a drive letter. The lookbehind stops "https://x" matching from
+# its own "s://" — harmless (it resolves to nothing gated) but it would put junk in the token
+# list on every URL in every command, on Linux included.
+_ABS = r'(?:(?<![A-Za-z0-9])[A-Za-z]:[\\/]|[~/])'
+PATHS = re.compile(_ABS + r'[^\s;&|>"\'`]+')
 LAST_ARG_VERBS = re.compile(r'^\s*(sudo\s+)?(cp|mv|install|ln)\b')
 ANY_ARG_VERBS = re.compile(r'^\s*(sudo\s+)?(tee|chmod|chown|touch|mkdir|rm|dd|patch)\b'
                            r'|^\s*(sudo\s+)?sed\s+[^;&|]*(-i|--in-place)')
@@ -353,7 +391,7 @@ ANY_ARG_VERBS = re.compile(r'^\s*(sudo\s+)?(tee|chmod|chown|touch|mkdir|rm|dd|pa
 targets: list[str] = []
 
 # Redirects: the target is whatever follows > or >>, wherever it appears.
-targets += re.findall(r'>>?\s*([~/][^\s;&|]+)', cmd)
+targets += re.findall(r'>>?\s*(' + _ABS + r'[^\s;&|]+)', cmd)
 
 # Per-segment verbs. Split on shell separators so a write in one segment cannot claim a path
 # that belongs to another.

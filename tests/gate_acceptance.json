@@ -15,61 +15,77 @@
     "the payload with a real JSON serializer -- hand-built JSON with Windows backslashes throws",
     "in json.loads, which looks exactly like the bug this table is testing for."
   ],
-
   "cases": [
     {
       "name": "ordinary source edit",
       "tool": "Edit",
-      "input": { "file_path": "{PROJ}/app.py" },
+      "input": {
+        "file_path": "{PROJ}/app.py"
+      },
       "expect": "allow",
       "why": "the overwhelmingly common case; if this ever denies, the gate is unusable"
     },
     {
       "name": "plain bash",
       "tool": "Bash",
-      "input": { "command": "ls -la" },
+      "input": {
+        "command": "ls -la"
+      },
       "expect": "allow",
       "why": "must exit at the prefilter without reaching an interpreter at all"
     },
     {
       "name": "transcript under .claude/projects",
       "tool": "Edit",
-      "input": { "file_path": "{CH}/projects/x.jsonl" },
+      "input": {
+        "file_path": "{CH}/projects/x.jsonl"
+      },
       "expect": "allow",
       "why": "FALSE-POSITIVE CLASS. Contains 'claude', so the prefilter flags it; only a real parse can clear it. A blind gate denies here."
     },
     {
       "name": "bus-state, written constantly by everyone",
       "tool": "Edit",
-      "input": { "file_path": "{CH}/bus-state/leases" },
+      "input": {
+        "file_path": "{CH}/bus-state/leases"
+      },
       "expect": "allow",
       "why": "FALSE-POSITIVE CLASS. The gate's own comment: gating bus-state 'would break the fleet and protect nothing'."
     },
     {
       "name": "READING a gated path",
       "tool": "Bash",
-      "input": { "command": "grep foo {CH}/bin/x.sh" },
+      "input": {
+        "command": "grep foo {CH}/bin/x.sh"
+      },
       "expect": "allow",
       "why": "FALSE-POSITIVE CLASS. v2.34.1: a gate that blocks reads is not a gate, it is an obstacle, and an obstacle gets disabled."
     },
     {
       "name": "the WORD settings, not an invocation",
       "tool": "Bash",
-      "input": { "command": "echo the word settings is harmless" },
+      "input": {
+        "command": "echo the word settings is harmless"
+      },
       "expect": "allow",
       "why": "FALSE-POSITIVE CLASS. The prefilter matches broad nouns by design; the parse is what tells a noun from an act."
     },
     {
       "name": "EDIT settings.json (the RCE)",
       "tool": "Edit",
-      "input": { "file_path": "{CH}/settings.json" },
+      "input": {
+        "file_path": "{CH}/settings.json"
+      },
       "expect": "deny",
       "why": "the highest-privilege write on the box, and it arrives via the Edit tool, not Bash"
     },
     {
       "name": "WRITE into .claude/bin",
       "tool": "Write",
-      "input": { "file_path": "{CH}/bin/evil.sh", "content": "x" },
+      "input": {
+        "file_path": "{CH}/bin/evil.sh",
+        "content": "x"
+      },
       "expect": "deny",
       "why": "code executed later by the hooks, in sessions that are not this one"
     },
@@ -82,36 +98,47 @@
     {
       "name": "bash tilde-write into ~/.claude/bin",
       "tool": "Bash",
-      "input": { "command": "echo pwned > ~/.claude/bin/evil.sh" },
+      "input": {
+        "command": "echo pwned > ~/.claude/bin/evil.sh"
+      },
       "expect": "deny",
       "why": "PROMOTED from known_gaps 2026-08-26. It was recorded as open on Windows with a confident explanation about Git Bash rewriting HOME into an MSYS path -- and that was wrong. The row was never exercising the tilde path at all: the fixture named its config dir 'claude' while the payload targeted '~/.claude', two different directories, so the gate correctly allowed and the inverted assertion went green. With the fixture corrected it DENIES on Windows, same as Linux. The gap was mine, not the gate's."
     },
     {
       "name": "a UTF-8 BOM must not become a deny-everything",
       "tool": "Edit",
-      "input": { "file_path": "{PROJ}/app.py" },
+      "input": {
+        "file_path": "{PROJ}/app.py"
+      },
       "stdin_bom": true,
       "expect": "allow",
       "why": "REGRESSION. PowerShell prepends a BOM piping to a native exe, and Claude Code runs shell-form hooks under PowerShell when Git Bash is absent. Before the fix this denied; a plain json.loads raises on a leading U+FEFF."
     }
   ],
-
   "known_gaps": [
     {
       "name": "bash write via an absolute POSIX path",
       "tool": "Bash",
-      "input": { "command": "echo pwned > {CH_POSIX}/bin/evil.sh" },
+      "input": {
+        "command": "echo pwned > {CH_POSIX}/bin/evil.sh"
+      },
       "expect": "deny",
-      "open_on": ["win32"],
-      "why": "On Linux this denies correctly, which is why the gap is invisible from there. Reported, never counted: the bootstrap cannot repair a gate limitation, and a bootstrap that fails on what it cannot fix teaches you to ignore its exit code."
+      "open_on": [
+        "win32"
+      ],
+      "why": "On Linux this denies correctly, which is why the gap is invisible from there. Reported, never counted: the bootstrap cannot repair a gate limitation, and a bootstrap that fails on what it cannot fix teaches you to ignore its exit code. || FIX ATTEMPTED 2026-08-30 (skippy): two root causes, both in persist-gate.sh. (1) PATHS and the redirect pattern anchored on [~/], so a DRIVE-LETTER token was never extracted as a path candidate at all — the Windows-absolute form was not checked-and-allowed, it was never seen. (2) gated_path called realpath BEFORE translating the namespace, and a Windows python reads '/c/Users/...' as the current drive's root, yielding C:\\c\\Users\\... which matches nothing. Both fixed, plus case-folding (the previous fix left case evasion open IN WRITING). Proven from Linux only, by driving the real gate with a drive-lettered CLAUDE_CONFIG_DIR (tests/test_gate_windows_namespace.py, 13 rows, mutation-checked: all three spellings ALLOW on the old gate and DENY on the new). That is the namespace logic, NOT a Windows harness — POSIX HOME, POSIX interpreter, no MSYS layer. This row stays OPEN until silicon says otherwise; the runner will fail with 'Good news' when it closes there."
     },
     {
       "name": "bash write via an absolute WINDOWS path",
       "tool": "Bash",
-      "input": { "command": "echo pwned > {CH}\\bin\\evil.sh" },
+      "input": {
+        "command": "echo pwned > {CH}\\bin\\evil.sh"
+      },
       "expect": "deny",
-      "open_on": ["win32"],
-      "why": "ADDED 2026-08-26 because the row above under-described the gap. I had recorded it as a namespace MISMATCH -- CH being a Windows path while the command carried /c/Users/... -- but the Windows-form path, where both sides ARE the same namespace, is missed too. MEASURED: tilde DENIES, MSYS-absolute ALLOWS, Windows-absolute ALLOWS. So the Bash best-effort path on Windows matches only the tilde form and misses BOTH absolute spellings, which is a bigger hole than a spelling mismatch and a different fix. This is what makes test_persist_gate.py::test_shell_writes_to_gated_paths and test_persist_gate_tilde.py::test_expanded_form_still_gated red here; those rows are CORRECTLY red and must not be relaxed to expect ALLOW."
+      "open_on": [
+        "win32"
+      ],
+      "why": "ADDED 2026-08-26 because the row above under-described the gap. I had recorded it as a namespace MISMATCH -- CH being a Windows path while the command carried /c/Users/... -- but the Windows-form path, where both sides ARE the same namespace, is missed too. MEASURED: tilde DENIES, MSYS-absolute ALLOWS, Windows-absolute ALLOWS. So the Bash best-effort path on Windows matches only the tilde form and misses BOTH absolute spellings, which is a bigger hole than a spelling mismatch and a different fix. This is what makes test_persist_gate.py::test_shell_writes_to_gated_paths and test_persist_gate_tilde.py::test_expanded_form_still_gated red here; those rows are CORRECTLY red and must not be relaxed to expect ALLOW. || FIX ATTEMPTED 2026-08-30 (skippy): two root causes, both in persist-gate.sh. (1) PATHS and the redirect pattern anchored on [~/], so a DRIVE-LETTER token was never extracted as a path candidate at all — the Windows-absolute form was not checked-and-allowed, it was never seen. (2) gated_path called realpath BEFORE translating the namespace, and a Windows python reads '/c/Users/...' as the current drive's root, yielding C:\\c\\Users\\... which matches nothing. Both fixed, plus case-folding (the previous fix left case evasion open IN WRITING). Proven from Linux only, by driving the real gate with a drive-lettered CLAUDE_CONFIG_DIR (tests/test_gate_windows_namespace.py, 13 rows, mutation-checked: all three spellings ALLOW on the old gate and DENY on the new). That is the namespace logic, NOT a Windows harness — POSIX HOME, POSIX interpreter, no MSYS layer. This row stays OPEN until silicon says otherwise; the runner will fail with 'Good news' when it closes there."
     }
   ]
 }

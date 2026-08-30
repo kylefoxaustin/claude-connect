@@ -97,12 +97,61 @@ def load_or_create_keys(coord_root: Path) -> dict[str, str]:
     return data
 
 
+# Logged at most once per process: a warning that repeats every key write is one you filter out,
+# and this one is worth reading the first time.
+_perm_warned = False
+
+
+def _restrict(path: Path) -> None:
+    """Make the private key owner-only, and SAY SO when that could not be done.
+
+    win_conductor MEASURED (2026-08-27) that `os.chmod(path, 0o600)` is a no-op on Windows: the
+    file stays 0o666. The key is still not world-readable there, but by directory ACL inheritance
+    rather than by anything Conductor did — which is a fine outcome and a terrible thing to be
+    unaware of.
+
+    ⭐ IT DOES NOT HARD-FAIL, deliberately. Refusing to run would take web push down on Windows to
+    protect a key the directory is already protecting, and Conductor pages the phone for exactly
+    two things — a Claude blocked on a question and a gated push — both meaning work has stopped
+    and a human is the only unblocker. Trading that away for a risk already mitigated is a bad
+    deal. But a silent no-op is the lie this project exists to stamp out, so the restriction is
+    ATTEMPTED, VERIFIED, and reported when it did not take. Checking is the whole point: chmod
+    itself raises nothing on Windows, so calling it and moving on is indistinguishable from
+    success.
+    """
+    global _perm_warned
+    try:
+        os.chmod(path, 0o600)
+        mode = path.stat().st_mode & 0o777
+    except OSError as e:
+        mode, err = None, e
+    else:
+        err = None
+    if mode == 0o600:
+        return
+    if not _perm_warned:
+        _perm_warned = True
+        log.warning(
+            "could not restrict the VAPID private key to owner-only: %s is mode %s (%s). "
+            "The key's protection is whatever the parent directory grants, which is normal on "
+            "Windows where chmod does not map onto ACLs. Nothing is broken; this is stated so it "
+            "is a known posture rather than an assumed one.",
+            path, oct(mode) if mode is not None else "unreadable", err or "chmod had no effect",
+        )
+
+
 def _write_keys(path: Path, data: dict[str, str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data), encoding="utf-8")
+    # Created restricted FROM THE START rather than chmod'd afterwards. The previous version wrote
+    # the temp file at the umask's default and tightened it only AFTER os.replace, so the private
+    # key existed on disk world-readable for the width of that window. Small, real, and free to
+    # close — on Windows the mode argument is largely ignored, which _restrict then reports.
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(data, fh)
     os.replace(tmp, path)
-    os.chmod(path, 0o600)          # it's a private key
+    _restrict(path)
 
 
 def _b64(raw: bytes) -> str:
