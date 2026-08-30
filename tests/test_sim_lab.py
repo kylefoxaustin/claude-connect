@@ -13,6 +13,7 @@ what qualcomm saw (11 /msg-check in ~200ms).
 
 from __future__ import annotations
 
+import time
 import asyncio
 import types
 
@@ -249,3 +250,65 @@ def test_start_is_idempotent_no_second_scan_loop(monkeypatch):
 
     first, second = asyncio.run(go())
     assert first is second, "start() spawned a second scan loop"
+
+
+def test_a_notice_that_never_lands_gives_up_instead_of_typing_forever(monkeypatch):
+    """⚠️ THE 2026-08-30 STORM. The notice was restored on every failed inject and retried at the
+    scan cadence for the whole hour-long TTL — up to ~1200 attempts, each one attesting and
+    typing. Measured that night: 282 injections into one session and 199 into another in two
+    hours, over a laggy RustDesk link, with pages of repeated characters in their terminals.
+    SEVEN approvals had been POSTed.
+
+    This is v2.26.1's finding, which this path never learned: A RE-INJECTION IS NOT A REPAIR. If
+    the keystrokes are not landing, sending them again does not make them land. And the notice is
+    an ACCELERATOR, never the channel — the grant is durable, so a session that never hears a word
+    still pushes fine. Nothing is lost by giving up; a great deal is lost by not.
+    """
+    import asyncio
+    import types as _t
+
+    a = AppState(load_settings())
+    a.settings.bus.state_dir = "/nonexistent-so-attest-is-a-noop"
+    tries = {"n": 0}
+
+    async def never_lands(rec, text, why, **_kw):
+        tries["n"] += 1
+        return False                      # xdotool "succeeded" but nothing arrived
+
+    rec = _t.SimpleNamespace(tag="[other:x]", status=Status.IDLE, pid=1, terminal_pid=2,
+                             title="t", window_title="w", project_dir="/p",
+                             last_activity_at=NOW)
+    monkeypatch.setattr(a, "_inject_text", never_lands)
+    monkeypatch.setattr(a, "_session_for_cwd", lambda cwd: rec)
+    a._push_notices["k"] = {"cwd": "/p", "repo": "r", "queued": time.time()}
+
+    for _ in range(50):                   # fifty scan ticks
+        asyncio.run(a._deliver_push_notices())
+
+    assert tries["n"] == a._NOTICE_MAX_TRIES, (
+        f"typed {tries['n']} times across 50 ticks — the retry is unbounded again")
+    assert "k" not in a._push_notices, "gave up but left the notice queued"
+
+
+def test_but_a_notice_that_lands_is_delivered_exactly_once(monkeypatch):
+    """The control. Without it, "stops after 3" is satisfied by never delivering at all."""
+    import asyncio
+    import types as _t
+
+    a = AppState(load_settings())
+    a.settings.bus.state_dir = "/nonexistent-so-attest-is-a-noop"
+    sent = {"n": 0}
+
+    async def lands(rec, text, why, **_kw):
+        sent["n"] += 1
+        return True
+
+    rec = _t.SimpleNamespace(tag="[other:x]", status=Status.IDLE, pid=1, terminal_pid=2,
+                             title="t", window_title="w", project_dir="/p",
+                             last_activity_at=NOW)
+    monkeypatch.setattr(a, "_inject_text", lands)
+    monkeypatch.setattr(a, "_session_for_cwd", lambda cwd: rec)
+    a._push_notices["k"] = {"cwd": "/p", "repo": "r", "queued": time.time()}
+    for _ in range(20):
+        asyncio.run(a._deliver_push_notices())
+    assert sent["n"] == 1, f"delivered {sent['n']} times, not once"

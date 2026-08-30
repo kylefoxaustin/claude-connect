@@ -1371,6 +1371,10 @@ class AppState:
             log.info("notified: %s", item["title"])
 
     _NOTICE_TTL_S = 3600.0
+    # Three attempts, not an hour of them. The TTL bounds how long a notice stays RELEVANT; it was
+    # never meant to bound how many times we type. See _deliver_push_notices for what happened when
+    # those two were the same number.
+    _NOTICE_MAX_TRIES = 3
     _RC_TTL_S = 1800.0        # a queued reconnect waits ≤30m for the session to go idle, then drops
 
     async def _deliver_push_notices(self) -> None:
@@ -1407,7 +1411,25 @@ class AppState:
                 actor=note.get("actor", "conductor"),
             )
             if not sent:
-                self._push_notices[key] = note     # inject failed -> put it back to retry
+                # ⚠️ BOUND THE RETRY. This restored the notice on every failure and retried at the
+                # scan cadence for the whole hour-long TTL — up to ~1200 attempts, each one
+                # attesting and typing. On 2026-08-30 that produced 282 injections into
+                # [other:95emulator] and 199 into [other:uni_stack_pull_script] in two hours,
+                # over a laggy RustDesk session, and pages of repeated characters in their
+                # terminals. Only SEVEN approvals were ever POSTed.
+                #
+                # This is v2.26.1's finding, which this path never learned: A RE-INJECTION IS NOT
+                # A REPAIR. If the keystrokes are not landing, sending them again does not make
+                # them land — it makes a second copy queue behind the first. And the notice is an
+                # ACCELERATOR, never the channel: the grant is durable, so a session that never
+                # hears a word still pushes fine. Nothing is lost by giving up.
+                note["tries"] = note.get("tries", 0) + 1
+                if note["tries"] < self._NOTICE_MAX_TRIES:
+                    self._push_notices[key] = note
+                else:
+                    log.warning("giving up on the push notice for %s after %d attempts — the "
+                                "grant is durable and waits; it will find out by pushing",
+                                note["repo"], note["tries"])
 
     _REMOTE_PROMPT_TTL_S = 900.0        # 15 min — a remote prompt that never lands goes stale
 
@@ -1622,7 +1644,13 @@ class AppState:
                 send_keys_to_session, text=text, pid=rec.pid,
                 terminal_pid=rec.terminal_pid, title=rec.title, window_title=rec.window_title,
             )
-            log.info("woke [%s] — %s", rec.tag, why)
+            # ⚠️ THIS LOGGED "woke" WHETHER OR NOT THE SEND SUCCEEDED, so a run of failures read
+            # in the journal as a run of successful deliveries — which is exactly how the
+            # 2026-08-30 storm looked healthy while it retried 482 times in two hours.
+            if ok:
+                log.info("woke [%s] — %s", rec.tag, why)
+            else:
+                log.warning("could NOT type at [%s] — %s (send_keys returned false)", rec.tag, why)
             return bool(ok)
         except Exception:
             log.exception("failed to wake [%s]", rec.tag)
