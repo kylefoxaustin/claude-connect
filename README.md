@@ -4,7 +4,7 @@
 
 **A local dashboard for watching all your Claude Code sessions at once — in your browser or as a standalone desktop app — plus an optional _message bus_ (a shared log your sessions post to) that lets them talk to each other.**
 
-[![version: 2.40](https://img.shields.io/badge/version-2.40-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
+[![version: 2.41](https://img.shields.io/badge/version-2.41-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
 [![platform: linux](https://img.shields.io/badge/platform-linux-orange)](#requirements)
 [![safety: read--only](https://img.shields.io/badge/safety-read--only-green)](#how-it-works)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -99,6 +99,7 @@ Access is over `tailscale serve --https` (HTTPS is required for Web Push + the s
 - 📬 **Cross-session messaging** with an animated bus tile showing live traffic
 - 📨 **Auto-delivery** *(new in 2.19)* — when an idle session has an unread message *addressed to it* (`to:<tag>`), Conductor wakes it to go read it, so you never prod a session to check the bus. Tiles show a "📨 N for you" badge; the topbar shows how many sessions are waiting
 - 🛑 **Retraction** *(new in 2.20)* — a session that told another "do X" and realized it's wrong can `/retract` (or `/supersede`) it; the recipient is woken **immediately, even mid-task**, and sees a loud warning before it acts. For the "A said do X, B is about to act destructively" race
+- 🕵️ **Input provenance** *(2.30 wrote it, 2.41 reads it)* — Conductor types into terminals, and those keystrokes arrive as a **user turn**, indistinguishable from you. Every injection is attested to a ledger *before* it happens, and the receiving session is now **told**: *"this was INJECTED BY CONDUCTOR, not typed by Kyle"*, with the reason. An unattested injectable prompt reads as **unknown**, never as you — so suppressing the ledger buys nothing. Advisory, never authority
 - 🔐 **Push gate** *(new in 2.21)* — an optional Claude Code hook holds every `git push` until you approve it from a Conductor inbox (one click). Nothing hits a repo without your say-so; commits stay free. Enforced at the tool level, and an instant no-op for any non-push command. A session can also **propose** a push (`/push-propose` — *"ready to push, or keep digging?"*, v2.27), so you approve it *with* the commits and its reasoning in front of you, in a single tap
 - 🔒 **Persistence gate** *(new in 2.31)* — your **second** hard control, for acts whose consequences **outlive the session**: writes to `~/.claude/bin`, `settings.json` (a hook there is fleet-wide code on every tool call), systemd units, crontabs. A Claude Code hook gates them the way the push gate holds a push — and the grant is bound to the **action**, not conveyed in prose, so *"Kyle approved this"* is never enough on its own. Ships **disarmed**, with a plain-terminal escape hatch so a hook can never lock you out. See [`docs/PERSISTENCE_GATE.md`](docs/PERSISTENCE_GATE.md)
 - 🩺 **Fleet-health signals** *(new in 2.35–2.36)* — four failure shapes an unread-message *count* can't distinguish: an **identity collision** (two Claudes in one repo posting under one bus tag — the card shows what each is doing, not just the clashing name), a **dead-reader alarm** (a tag others keep addressing that has itself gone silent for hours — mail rotting behind a reader that no longer exists), a **lost-`/RC` alarm** *(2.36)* — a session that's **alive but dropped its remote-control bridge**, so it's invisible in the phone's Claude app and *looks* crashed; Conductor watches the process, so it says "reconnect, don't relaunch" instead of letting you spawn a duplicate into the same repo — and a **phantom-stall fix** so the mutual-stall detector only draws an edge when *A asked B a question B hasn't answered*, never merely because *B has unread mail* — a session that's only cc'd is no longer threaded into a stall it has no part in
@@ -444,7 +445,7 @@ them wake each other"*:
 
 ### 🩺 Fleet-health signals
 
-Four fleet-health signals a plain dashboard glance misses. Three are states an
+Five fleet-health signals a plain dashboard glance misses. Three are states an
 unread-message **count** cannot tell apart — *"deliberating"*, *"has nothing to say"*,
 and *"isn't running"* are all the same number going up — plus one for a session that's
 **alive but unreachable**. Conductor surfaces each directly (found by *running* a real
@@ -473,6 +474,14 @@ fleet, v2.35–2.36):
   reconnect, don't relaunch."* Fires only on lost-it (was bridged, aged past a
   threshold), so it isn't noise; the relaunch guard's refusal also names the live one.
 
+- **📪 Not reading its mail** *(2.41)* — a **live** session sitting on mail addressed to
+  it that it hasn't read in hours. The obvious version of this alarm is a firehose, and
+  that was **measured before shipping it**: raw cursor age fires on **36 of 36** cursors
+  here and **17 of 17** live sessions — a lagging cursor is the *normal* state of a
+  session nobody is talking to. So the trigger is **harm, not housekeeping**: mail
+  *addressed to you*, unread past a threshold. On the same snapshot that fires on **7**.
+  A mass-cc doesn't count — being cc'd is not a debt.
+
 Conductor pages your phone (Web Push) on exactly **two** things — a session blocked
 on a *question*, and a *gated push*. Dead-reader is a surfaced signal, not a page,
 by default (a third alarm is an opt-in — `[bus].page_dead_readers`).
@@ -490,6 +499,23 @@ the session that committed it.**
   pushes are gated — and it's an instant no-op for any non-push command. A session
   can also `/push-propose` (*"ready, or keep digging?"*) so you decide **with** the
   commits and its reasoning in front of you.
+
+  **The three steps** *(2.41)* — printed by the gate itself at the moment it stops a
+  session, so nobody has to be told and nobody improvises:
+
+  1. **Finish committing, then attempt.** Being denied *is* how the request reaches you.
+     A commit made *after* the request invalidates the approval — correctly: you approved
+     a tip, and the tip moved.
+  2. **Tell you once, then wait.** *Never* ask permission first — that is the whole loop:
+     you say yes, there is nothing to tap because nothing is filed, the push is denied,
+     and you tap anyway. Two of your interactions where one would do.
+  3. **Re-run, verify it landed, report the sha.** Approved is not pushed.
+
+  Two accounting bugs that used to eat taps went with it: a push the remote **rejects**
+  no longer spends the approval (the hook predicts a non-fast-forward from the remote sha
+  and refuses *without consuming*), and a **clean rebase keeps** it — the grant is pinned
+  to `git patch-id`, invariant across a rebase exactly when the diff is unchanged. A
+  rebase whose conflict resolution *altered* a diff still asks again.
 - **🔒 Persistence gate** — the same shape for a *capability* that outlives the
   session: writes to `~/.claude/bin`, `settings.json` (a hook there is fleet-wide
   code on every tool call), systemd units, crontabs. The grant is bound to the

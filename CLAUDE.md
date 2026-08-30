@@ -23,6 +23,63 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - Settings live in `settings.toml` (copy from `settings.example.toml`).
 
 ## Phase status
+- ✅ v2.41.0: 🔁 **THE APPROVAL LOOP, AND FOUR WAYS A MESSAGE ABOUT AN APPROVAL CAN LIE.** Kyle:
+  *"i'd rather all the quad sessions know what the process here is... they say push and please approve
+  it and there's no approval until I tell them to push and then they go okay. now I've approved it but
+  I caught the gate. you need to approve it. it just goes back and forth."* **MEASURED: 18 approvals in
+  two days**, several buying nothing. ⭐ **THE PROTOCOL IS NOW PRINTED BY THE GATE ITSELF**, at the
+  moment it stops a session, so nobody improvises: **(1) finish committing, THEN attempt** — being
+  denied IS how the request reaches Kyle, and a commit made after the request correctly invalidates the
+  approval; **(2) tell him once, then wait** — *never ask permission first*, which is the whole loop
+  (he says yes, nothing is filed, the push is denied, he taps anyway); **(3) re-run, verify, report the
+  sha** — approved is not pushed. 🔧 **TWO ACCOUNTING BUGS, NEITHER A SECURITY PROPERTY.** The grant
+  was consumed at AUTHORISATION time, before git spoke to the remote, so a push the remote rejected as
+  non-fast-forward had already burned it — three times in one day racing a second contributor. git
+  hands the pre-push hook the remote sha on stdin, so the rejection is predictable: refuse **without
+  consuming**. And the pin was on the TIP COMMIT, so rebasing onto whoever landed first rewrote every
+  sha and the approval stopped matching changes Kyle approved UNCHANGED; the grant now also records
+  **`git patch-id --stable`**, invariant across a rebase exactly when the diff is unchanged. ⚠️ **AND
+  THE NO-BURN GUARD SHIPPED BROKEN AND BURNED A TAP THE SAME AFTERNOON** — it skipped when the remote
+  tip was not a local object, *which is every real race*, because you learn the remote moved BY BEING
+  REJECTED. **My test hid it: the fixture fetched first**, establishing the one precondition production
+  lacks. A test that sets up conditions the real path never has is a mirror. 🌩 **THEN AN INJECTION
+  STORM: 744 push-verdict injections, 101,345 characters typed into two live sessions over five hours**
+  — Kyle watching it from RustDesk. Cause: a failed inject was restored and retried at the scan cadence
+  for the whole hour-long TTL (~1200 attempts), each one typing. **v2.26.1's finding, never applied to
+  this path: A RE-INJECTION IS NOT A REPAIR.** Capped at 3. ⚠️ **AND THE LOG SAID `woke` ON FAILURE
+  TOO** — `log.info` ran before `return bool(ok)` regardless of ok, so five hours of failures read as
+  five hours of successful deliveries. ⭐⭐ **THE FIX KYLE ASKED FOR IS THE BEST PART: "maybe just the
+  checkmark and your push is approved."** Right — and for a better reason than length. **The prose was
+  composed at QUEUE time and typed minutes later, so it asserted a state it could not see**: 95emulator
+  received four notices saying *"Kyle approved your git push"* for a repo with **nothing pending**,
+  because the grant had already been consumed. So the keystroke is now a **DOORBELL** — `push approved:
+  <repo>`, **16 ASCII characters** instead of 136 containing `✅` and `—` (xdotool keysym remapping is a
+  known source of the stuck-key repeats: `waits for youuuuu` ×130) — and `bus.sh`'s hook **expands it
+  from the grant file at read time**, including the branch the old prose could not express: *"there is
+  NO ARMED GRANT for it now."* **The general rule, now in memory: content already travels reliably over
+  hooks and files; keystrokes are load-bearing ONLY for making an idle session take a turn, so anything
+  the keystroke SAYS is redundant with the hook that fires right after it.** 🕵️ **PROVENANCE: v2.30
+  SHIPPED THE WRITER AND NEVER THE READER** — 40 attested injections, nobody ever told. 95emulator
+  triaged the bus for a night on an instruction Kyle never gave and reported back as though he had
+  asked. The reader matches on (tag, text), consumes on match, and — the security property — treats an
+  **unattested injectable prompt as UNKNOWN, never as Kyle**, because the attack on a ledger is
+  **omission, not forgery**. Kyle asked about encryption; the honest answer is no: signing proves
+  authorship of a line while the property under attack is completeness of the log, and every session
+  here runs as the same user, so any key Conductor can sign with they can too. A keyless **hash chain**
+  makes deletion/reordering detectable instead. 📪 **FLEET HEALTH GAINS A FIFTH SIGNAL**, and the
+  measurement is the design: raw cursor age fires on **36 of 36** cursors and **17 of 17** live
+  sessions, so the trigger is **harm** — mail *addressed to you*, unread for hours — which fires on
+  **7**. 🐛 **BUS: THE HEADER REGEX NEVER LEARNED ABOUT SECONDS** (image_gen) — `HH:MM \[` matched **14
+  of 567** headers, all automated senders, so the nudge counted 2.5% of the log; cursors are now
+  **forward-only** (a Stop commit could move one BACKWARDS over a manual repair) and a turn commits its
+  **furthest** read (`catchup` then `check` in one turn was a no-op that printed *"Now current"*); and
+  the nudge separates **"addressed to you"** from **fleet traffic** (lostchild: two denominators, one
+  number, and a whole investigation went down that hole). 🪟 **WINDOWS**: `windows.py` → `x11.py`,
+  `is_claude_process` rewritten (the native build defeated all three branches at once — four live
+  `claude.exe`, zero matches — and the pty host smuggles the worker's `--session-id` after a bare `--`,
+  so a joined-argv match counts one session twice), gates hardened against a **missing** interpreter, a
+  **Store-alias stub that resolves and does not run**, `\` separators, a **UTF-8 BOM**, and cp1252.
+  **647 tests.**
 - ✅ v2.40.0: ❓ **THE DECISION QUEUE GROWS THE TWO ESCAPES A HUMAN ACTUALLY NEEDS — decline, and
   answer in your own words — and reaches the desktop board.** Kyle: *"when a session asks a question on
   my phone or on conductor on skippy I want the ability to decline to answer or enter my own response."*
