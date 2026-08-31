@@ -12,6 +12,18 @@ import conductor.x11 as w
 
 
 def _fast(monkeypatch):
+    # ⚠️ THE FIX FOR THE "ORDER-FLAKY" ENTRY IN CLAUDE.md, and it was never order at all.
+    #
+    # `_focus_session_input` refuses to steal focus while a human is at the keyboard, and that
+    # guard reads mutter's REAL idle time over D-Bus. Nothing here patched it, so the outcome
+    # depended on whether Kyle had touched his keyboard in the last four seconds: green when he
+    # was away, red while he was working. Diagnosed 2026-08-31 with mutter reporting 2103 ms —
+    # the test was measuring the operator, not the code.
+    #
+    # Every other suite that drives this path already patches it (test_focus_arrival.py:25);
+    # this one just never did. The guard keeps its own dedicated coverage in
+    # test_inject_targeting.py, so pinning it here removes the environment, not the assertion.
+    monkeypatch.setattr(w, "human_recently_active", lambda *a, **k: False)
     monkeypatch.setattr(w, "_FOCUS_POLL_TIMEOUT_S", 0.02)
     monkeypatch.setattr(w, "_FOCUS_POLL_STEP_S", 0.001)
     monkeypatch.setattr(w, "_TILE_SETTLE_S", 0.0)
