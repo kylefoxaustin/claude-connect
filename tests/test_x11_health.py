@@ -13,7 +13,9 @@ code would have passed against the broken code, which is the whole reason this f
 
 from __future__ import annotations
 
+
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -36,6 +38,31 @@ def _fake_tool(tmp_path: Path, name: str, *, body: str) -> Path:
     p.write_text("#!/bin/sh\n" + body + "\n")
     p.chmod(0o755)
     return p
+
+
+# ⚠️ WINDOWS, and the reason is in the process loader rather than in anything this file tests.
+#
+# `_fake_tool` writes a `#!/bin/sh` stub with no extension. `CreateProcess` does not read a
+# shebang and — unlike a shell — does not consult PATHEXT: given "wmctrl" it appends `.exe` and
+# nothing else. So a stub named `wmctrl`, `wmctrl.sh` or `wmctrl.cmd` is equally unreachable
+# through `subprocess.run(["wmctrl", ...])`, and every test below died with FileNotFoundError
+# from inside subprocess BEFORE reaching its assertion. That read as "the X11 code fails on
+# Windows" while none of it was being exercised.
+#
+# A `.cmd` shim delegating to Git Bash was tried first and does not work, for the PATHEXT reason
+# above. Making it work would mean changing `_run_x` to resolve tools through `shutil.which()`
+# — which WOULD find a `.cmd` — but that is skippy's production file, the change buys Linux
+# nothing, and on Windows `x11.py` is not the backend at all any more (`desktop_win.py` is), so
+# it would be product code edited solely to move a test from red to green. Declined.
+#
+# What is NOT skipped, and it is the part that matters: `_display_failed` — the actual stderr
+# sniffing these tests exist to guard — is covered by the four parametrized unit tests above,
+# which pass on Windows. What is skipped is only the subprocess PLUMBING around it.
+_needs_a_path_executable = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="fixture needs a shebang stub resolvable by name; CreateProcess only appends .exe, "
+           "so the sh stub is unreachable — _display_failed itself is still covered here",
+)
 
 
 # The exact observed behaviour of wmctrl/xdotool with no reachable display.
@@ -69,6 +96,7 @@ def test_unrelated_stderr_is_not_a_display_failure():
 
 # ── _run_x turns the lie into a real failure ──────────────────────────────────────────────
 
+@_needs_a_path_executable
 def test_run_x_forces_nonzero_when_the_tool_exits_zero_on_a_dead_display(tmp_path, monkeypatch):
     """THE REGRESSION. `wmctrl -i -a` exiting 0 against no display is what made `_raise_window`
     return True for a raise that never happened."""
@@ -81,6 +109,7 @@ def test_run_x_forces_nonzero_when_the_tool_exits_zero_on_a_dead_display(tmp_pat
     assert r.returncode != 0, "a call that could not open a display must not look successful"
 
 
+@_needs_a_path_executable
 def test_run_x_raises_for_check_true_callers(tmp_path, monkeypatch):
     """Callers that use check=True must see the failure through their existing except clause."""
     _fake_tool(tmp_path, "xdotool", body=_LIES_ABOUT_SUCCESS)
@@ -92,6 +121,7 @@ def test_run_x_raises_for_check_true_callers(tmp_path, monkeypatch):
         w._run_x(["xdotool", "key", "Return"], check=True)
 
 
+@_needs_a_path_executable
 def test_run_x_leaves_a_healthy_call_alone(tmp_path, monkeypatch):
     _fake_tool(tmp_path, "wmctrl", body='echo "0x04e00007  0 skippy Project claude connect"')
     monkeypatch.setenv("PATH", str(tmp_path))
@@ -102,6 +132,7 @@ def test_run_x_leaves_a_healthy_call_alone(tmp_path, monkeypatch):
     assert "claude connect" in r.stdout
 
 
+@_needs_a_path_executable
 def test_raise_window_reports_failure_on_a_dead_display(tmp_path, monkeypatch):
     """End-to-end on the function whose True return was the lie."""
     _fake_tool(tmp_path, "wmctrl", body=_LIES_ABOUT_SUCCESS)
@@ -112,6 +143,7 @@ def test_raise_window_reports_failure_on_a_dead_display(tmp_path, monkeypatch):
     assert w._raise_window(0x04E00007) is False
 
 
+@_needs_a_path_executable
 def test_list_windows_is_empty_but_the_call_is_not_silent(tmp_path, monkeypatch, caplog):
     """An empty window list reads to every caller as 'this session has no window'. When the real
     cause is an unreachable display that must be logged at WARNING, not swallowed at debug."""
@@ -148,6 +180,7 @@ def test_our_own_display_wins_over_discovery(monkeypatch):
     assert w.x11_env(force=True)["DISPLAY"] == ":1"
 
 
+@_needs_a_path_executable
 def test_a_moved_display_self_heals_without_a_restart(tmp_path, monkeypatch):
     """THE DRIFT CASE. skippy's display has been both :1 and :0 across reboots. A cached value
     that has gone stale must be re-discovered on the failing call, not held until someone
@@ -169,6 +202,7 @@ def test_a_moved_display_self_heals_without_a_restart(tmp_path, monkeypatch):
 
 # ── the alarm itself ──────────────────────────────────────────────────────────────────────
 
+@_needs_a_path_executable
 def test_health_reports_unreachable(tmp_path, monkeypatch):
     _fake_tool(tmp_path, "xdotool", body=_LIES_ABOUT_SUCCESS)
     monkeypatch.setenv("PATH", str(tmp_path))
@@ -181,6 +215,7 @@ def test_health_reports_unreachable(tmp_path, monkeypatch):
     assert h["detail"], "an alarm with no explanation is a red dot nobody can act on"
 
 
+@_needs_a_path_executable
 def test_health_reports_ok(tmp_path, monkeypatch):
     _fake_tool(tmp_path, "xdotool", body="echo 81825405")
     monkeypatch.setenv("PATH", str(tmp_path))

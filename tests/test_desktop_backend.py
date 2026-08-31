@@ -11,6 +11,7 @@ real Windows desktop). These tests pin the half this side owes.
 from __future__ import annotations
 
 import ast
+import sys
 import re
 from pathlib import Path
 
@@ -48,12 +49,30 @@ def test_the_contract_is_exactly_six_functions():
             f"main.{name} drifted away from the selector"
 
 
+@pytest.mark.skipif(sys.platform == "win32",
+                    reason="win32 selects desktop_win; the Linux wiring is pinned by "
+                           "test_desktop_win.py::test_the_selector_picks_this_backend_on_windows")
 def test_linux_is_wired_to_the_x11_backend():
     """The extraction must be a pure re-point: same function objects, no wrapper, no copy."""
     assert desktop.backend_name == "x11"
     for name in CONTRACT:
         assert getattr(desktop, name) is getattr(x11, name), \
             f"{name} is not the x11 implementation — the refactor changed behaviour, not just shape"
+
+
+def test_the_selector_points_at_the_backend_for_THIS_platform():
+    """Made platform-aware rather than relaxed, when win_conductor landed `desktop_win.py`.
+
+    The original asserted `backend_name == "x11"` unconditionally, which was correct while the
+    Windows backend did not exist and became wrong the moment it did. Deleting the assertion, or
+    loosening it to "some backend", would have removed the only check that the selector picks
+    anything deliberate — so it asserts the SAME property, per platform. The rule being honoured
+    is skippy's: a test may be made platform-aware; it may never be made to pass by weakening
+    what it asserts.
+    """
+    expected = "desktop_win" if sys.platform == "win32" else "x11"
+    assert desktop.backend_name == expected, (
+        f"on {sys.platform} the selector should bind {expected}, not {desktop.backend_name}")
 
 
 def test_a_missing_windows_backend_falls_back_to_something_that_REFUSES():
