@@ -10,6 +10,8 @@ from __future__ import annotations
 import sys
 import json
 
+import pytest
+
 from conductor.webpush import (
     RENOTIFY_AFTER_S,
     add_sub,
@@ -255,6 +257,13 @@ def test_dead_reader_pages_when_passed():
 
 
 # --- key file permissions (win_conductor, 2026-08-27) ---------------------------------------
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="asserts POSIX file modes; Windows chmod toggles only the read-only attribute and "
+           "cannot express owner-only at all, so 0o600 is unreachable by construction. The "
+           "Windows posture — detected, not swallowed, and logged once with the actual mode — is "
+           "asserted by test_a_failed_restriction_is_reported_not_swallowed, which passes here.",
+)
 def test_the_private_key_is_never_world_readable_at_any_point(tmp_path, monkeypatch):
     """Not just after the write — DURING it.
 

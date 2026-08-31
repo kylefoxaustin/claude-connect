@@ -19,6 +19,7 @@ everything about a session that is running and not reading.
 
 from __future__ import annotations
 
+import sys
 import time
 
 import pytest
@@ -49,6 +50,31 @@ def cursors(tmp_path, **tag_to_ts: str):
     for tag, ts in tag_to_ts.items():
         (d / f"{tag.replace('__', ':')}.last-seen").write_text(ts + "\n", encoding="utf-8")
     return d
+
+
+# ⚠️ A COLON IN A TAG CANNOT BE A FILENAME ON NTFS, and this is a PRODUCT defect, not a fixture
+# one — which is why the rows below are xfail(strict) rather than skipped.
+#
+# The cursor file is `<tag>.last-seen` (conductor/bus.py:402, bus.sh `_cursor_put_seen`), and real
+# tags carry a colon: `other:image_gen`, `other:qualcomm`. On NTFS `other:image_gen.last-seen`
+# does not name a file — the colon opens an ALTERNATE DATA STREAM, so the bytes land on a stream
+# of a file called `other` and `glob("*.last-seen")` returns nothing. No error is raised at any
+# point: the write "succeeds" and the read finds an empty fleet.
+#
+# Measured 2026-08-30 on Windows 11. It is the same root cause as the push-gate finding sent to
+# skippy the same day — a Windows path/identifier becoming a filename with the drive-or-stream
+# colon still in it — in a second, unrelated subsystem, which is why it is worth fixing at the
+# naming layer rather than per-site.
+#
+# strict=True on purpose: the day the tag-to-filename encoding is fixed these XPASS, and an XPASS
+# under strict is a FAILURE that says so. That is the known_gaps table's self-announcing property,
+# and the alternative — a skip — would let the fix land silently and leave the marker lying.
+_colon_tag_on_ntfs = pytest.mark.xfail(
+    sys.platform == "win32",
+    strict=True,
+    reason="tag contains ':' -> on NTFS the cursor file becomes an alternate data stream, so the "
+           "glob finds nothing. Product defect, reported to skippy 2026-08-30.",
+)
 
 
 def test_unread_mail_addressed_to_you_is_the_trigger(tmp_path):
@@ -86,6 +112,7 @@ def test_a_mass_cc_is_not_a_debt(tmp_path):
     assert stale_cursors(b, d, now=NOW, stale_h=24.0)[0]["stale"] is False
 
 
+@_colon_tag_on_ntfs
 def test_your_own_message_is_not_unread_mail(tmp_path):
     b = bus(tmp_path, ("2026-08-01 09:00:00", "to:other:sender"), "2026-08-24 13:00:00")
     d = cursors(tmp_path, other__sender="2026-07-01 00:00:00")
@@ -99,6 +126,7 @@ def test_worst_first(tmp_path):
     assert [r["tag"] for r in stale_cursors(b, d, now=NOW)][:2] == ["older", "newer"]
 
 
+@_colon_tag_on_ntfs
 def test_a_cursor_far_behind_the_tail_is_flagged(tmp_path):
     b = bus(tmp_path, "2026-08-24 13:00:00")
     d = cursors(tmp_path, other__behind="2026-07-28 13:21:42")
@@ -107,6 +135,7 @@ def test_a_cursor_far_behind_the_tail_is_flagged(tmp_path):
     assert rows[0]["behind"] > 20 * 24 * HOUR, "the age is still reported, it is just not the trigger"
 
 
+@_colon_tag_on_ntfs
 def test_a_current_cursor_is_not_flagged(tmp_path):
     b = bus(tmp_path, ("2026-08-24 13:00:00", "to:other:fresh"))
     d = cursors(tmp_path, other__fresh="2026-08-24 12:59:00")

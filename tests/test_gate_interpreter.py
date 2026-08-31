@@ -70,7 +70,7 @@ def env(tmp_path):
 
 def _run(gate: Path, env, payload: dict) -> subprocess.CompletedProcess:
     e = {k: v for k, v in env.items() if not k.startswith("_")}
-    return subprocess.run(["bash", str(gate)], input=json.dumps(payload), text=True,
+    return subprocess.run(["bash", str(gate)], input=json.dumps(payload), text=True, encoding="utf-8", errors="replace",
                           capture_output=True, env=e)
 
 
@@ -139,7 +139,13 @@ def test_the_stub_really_does_satisfy_an_existence_check(env):
     e = {**{k: v for k, v in env.items() if not k.startswith("_")}}
     assert subprocess.run(["bash", "-c", "command -v python3"], env=e,
                           capture_output=True, text=True).returncode == 0
-    assert subprocess.run([str(p), "-c", "pass"], capture_output=True).returncode == 49
+    # ⚠️ Invoked THROUGH BASH, which is how the gate itself invokes a candidate. Calling the stub
+    # directly from Python passed on Linux and raised WinError 193 on Windows — CreateProcess does
+    # not read a shebang — so the premise looked broken on the one platform the Store alias it
+    # models actually exists on. Going through bash pins the premise the gate depends on rather
+    # than an incidental detail of who spawns it.
+    assert subprocess.run(["bash", "-c", f'"{p}" -c pass'],
+                          capture_output=True).returncode == 49
 
 
 # --------------------------------------------------------------------------------------

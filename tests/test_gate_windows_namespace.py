@@ -46,7 +46,7 @@ DENIED, ALLOWED = 2, 0
 
 def gate(cmd: str, env: dict) -> int:
     payload = json.dumps({"cwd": "/tmp", "tool_name": "Bash", "tool_input": {"command": cmd}})
-    return subprocess.run(["bash", str(GATE)], input=payload, text=True,
+    return subprocess.run(["bash", str(GATE)], input=payload, text=True, encoding="utf-8", errors="replace",
                           capture_output=True, env=env).returncode
 
 
@@ -110,6 +110,12 @@ def test_the_false_positive_class_still_passes(cmd, winenv):
     assert gate(cmd, winenv) == ALLOWED, f"false positive — the gate denied a safe command: {cmd}"
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="a Linux-namespace regression guard: its premise is that CH carries NO drive letter, "
+           "which is false here because tmp_path is C:\\... — the Windows namespace is covered by "
+           "the other rows in this file, which pass",
+)
 def test_posix_namespace_is_untouched(tmp_path):
     """⭐ THE REGRESSION GUARD. On Linux none of the above may change anything.
 
