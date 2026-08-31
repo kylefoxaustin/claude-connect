@@ -171,7 +171,7 @@ def _board(tmp_path, name, owner, last_active_age, smi=None):
 
 
 def _last_active(tmp_path, name):
-    for ln in (tmp_path / name / "lease").read_text().splitlines():
+    for ln in (tmp_path / name / "lease").read_text(encoding="utf-8").splitlines():
         if ln.startswith("last_active_epoch="):
             return int(ln.split("=", 1)[1])
     return 0

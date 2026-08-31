@@ -49,7 +49,7 @@ def test_the_missing_lead_case_still_reports_itself():
 
 def test_the_inbox_counter_counts_exactly_what_the_inbox_renders():
     """Both sides read from projects_needing_operator, so they cannot drift apart."""
-    main = (ROOT / "conductor" / "main.py").read_text()
+    main = (ROOT / "conductor" / "main.py").read_text(encoding="utf-8")
     m = re.search(r'"needs_you":\s*\((.*?)\),\n', main, re.S)
     assert m, "the needs_you counter moved — re-point this test"
     body = m.group(1)
@@ -62,7 +62,7 @@ def test_the_inbox_counter_counts_exactly_what_the_inbox_renders():
 def test_every_needs_value_has_its_own_line_on_the_phone():
     """No fallback may assert a fact. An unknown `needs` must say it is unknown rather than
     borrowing the nearest sentence — which is how a stalled project claimed to have no lead."""
-    ops = (ROOT / "frontend" / "m" / "ops.js").read_text()
+    ops = (ROOT / "frontend" / "m" / "ops.js").read_text(encoding="utf-8")
     m = re.search(r"function projectInfoRow\(p\) \{(.*?)\n\}", ops, re.S)
     assert m, "projectInfoRow moved — re-point this test"
     body = m.group(1)

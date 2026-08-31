@@ -355,7 +355,7 @@ def read_pending(state_dir: Path, tag: str) -> int:
     bare = tag.strip("[]")
     for candidate in (state_dir / f"{tag}.pending", state_dir / f"{bare}.pending"):
         try:
-            txt = candidate.read_text().strip()
+            txt = candidate.read_text(encoding="utf-8").strip()
         except (FileNotFoundError, OSError):
             continue
         try:
@@ -401,7 +401,7 @@ def _read_last_seen(state_dir: Path, tag: str) -> str | None:
     bare = tag.strip("[]")
     for name in (f"{tag}.last-seen", f"{bare}.last-seen"):
         try:
-            return (state_dir / name).read_text().strip() or None
+            return (state_dir / name).read_text(encoding="utf-8").strip() or None
         except (FileNotFoundError, OSError):
             continue
     return None
@@ -638,7 +638,7 @@ def read_active_tags(state_dir: Path) -> list[str]:
     """Bracketed tags listed in the ``active-tags`` data file (one bare tag per
     line; blanks and ``#`` comments ignored). Empty if the file is absent."""
     try:
-        lines = _active_tags_path(state_dir).read_text().splitlines()
+        lines = _active_tags_path(state_dir).read_text(encoding="utf-8").splitlines()
     except OSError:
         return []
     out: list[str] = []

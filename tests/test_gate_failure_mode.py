@@ -73,7 +73,7 @@ def _run(gate: Path, env, raw: str) -> subprocess.CompletedProcess:
 
 def log(env) -> str:
     p = env["_root"] / "bus-state" / "gate.log"
-    return p.read_text() if p.exists() else ""
+    return p.read_text(encoding="utf-8") if p.exists() else ""
 
 
 def payload(**kw) -> str:

@@ -55,7 +55,7 @@ def test_read_active_tags_ignores_comments_and_brackets(tmp_path):
 def test_append_message_round_trips(tmp_path):
     log = tmp_path / "messages.md"
     append_message(log, "operator", "hello everyone")
-    events = parse_markdown_blocks(log.read_text())
+    events = parse_markdown_blocks(log.read_text(encoding="utf-8"))
     assert len(events) == 1
     assert events[0].source_session == "[operator]"
     assert events[0].payload_summary == "hello everyone"
@@ -66,7 +66,7 @@ def test_append_message_normalizes_tag_and_appends(tmp_path):
     log.write_text("## 2026-05-21 09:00 [backend]\n\nfirst\n")
     # Bracketed/whitespace sender is normalized to a bare tag in the header.
     append_message(log, "[kyle] ", "@to [other:elm-forge]\nread this")
-    events = parse_markdown_blocks(log.read_text())
+    events = parse_markdown_blocks(log.read_text(encoding="utf-8"))
     assert [e.source_session for e in events] == ["[backend]", "[kyle]"]
     # The directed "@to" line is preserved in the body.
     assert events[1].payload_summary.startswith("@to [other:elm-forge]")

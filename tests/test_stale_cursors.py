@@ -178,22 +178,22 @@ def test_the_threshold_is_the_knob(tmp_path, hours, expect):
 def test_the_signal_is_wired_all_the_way_to_both_surfaces():
     from pathlib import Path
     root = Path(__file__).resolve().parent.parent
-    main = (root / "conductor" / "main.py").read_text()
+    main = (root / "conductor" / "main.py").read_text(encoding="utf-8")
     # broadcast on change, seeded on connect, and present in the phone aggregate
     assert 'broadcast("stale_cursors"' in main
     assert '"kind": "stale_cursors"' in main, "a client connecting mid-session would never see it"
     assert main.count('"stale_cursors": self._stale_cursors') >= 1
     assert '"stale_cursors": state._stale_cursors' in main
 
-    app = (root / "frontend" / "app.js").read_text()
+    app = (root / "frontend" / "app.js").read_text(encoding="utf-8")
     assert 'case "stale_cursors":' in app, "the desktop would drop the live update"
     assert "state.stale_cursors = payload.stale_cursors" in app, "and the initial payload too"
     assert "alert-stale" in app
 
-    ops = (root / "frontend" / "m" / "ops.js").read_text()
+    ops = (root / "frontend" / "m" / "ops.js").read_text(encoding="utf-8")
     assert "ops.stale_cursors" in ops, "the phone would never show it"
 
-    css = (root / "frontend" / "style.css").read_text()
+    css = (root / "frontend" / "style.css").read_text(encoding="utf-8")
     # ⚠️ v2.40 shipped a rule whose only colour came from an UNDEFINED var, which yields no
     # colour and no error. Every colour here must carry a literal fallback.
     import re

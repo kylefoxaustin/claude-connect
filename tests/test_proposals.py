@@ -75,7 +75,7 @@ def test_the_minted_grant_is_readable_by_the_GATE(tmp_path):
     """It must be byte-compatible with what push-gate.sh parses, or Kyle's tap arms a token
     the gate ignores — and the push is denied after he already said yes."""
     _mint_grant(tmp_path, "repo_a", "cc", "/repo")
-    txt = (tmp_path / "push-tokens" / "repo_a").read_text()
+    txt = (tmp_path / "push-tokens" / "repo_a").read_text(encoding="utf-8")
     assert txt.startswith("expires=")
     exp = int(txt.split("\n")[0].split("=")[1])
     assert exp > time.time()

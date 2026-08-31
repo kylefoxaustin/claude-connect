@@ -41,7 +41,7 @@ def test_an_untouched_ledger_verifies(tmp_path):
 def test_a_deleted_entry_is_detected(tmp_path):
     """The attack that matters, if the attacker bothers with this file at all."""
     _seed(tmp_path)
-    lines = ledger_path(tmp_path).read_text().splitlines()
+    lines = ledger_path(tmp_path).read_text(encoding="utf-8").splitlines()
     ledger_path(tmp_path).write_text("\n".join([lines[0], lines[2]]) + "\n")
     r = verify_chain(tmp_path)
     assert r["ok"] is False and r["first_bad"] == 2
@@ -50,7 +50,7 @@ def test_a_deleted_entry_is_detected(tmp_path):
 def test_an_altered_entry_is_detected(tmp_path):
     """Rewriting a reason to make an injection look like something else."""
     _seed(tmp_path)
-    lines = [json.loads(x) for x in ledger_path(tmp_path).read_text().splitlines()]
+    lines = [json.loads(x) for x in ledger_path(tmp_path).read_text(encoding="utf-8").splitlines()]
     lines[1]["why"] = "kyle asked for this"
     ledger_path(tmp_path).write_text("\n".join(json.dumps(x) for x in lines) + "\n")
     assert verify_chain(tmp_path)["ok"] is False
@@ -58,7 +58,7 @@ def test_an_altered_entry_is_detected(tmp_path):
 
 def test_reordering_is_detected(tmp_path):
     _seed(tmp_path)
-    lines = ledger_path(tmp_path).read_text().splitlines()
+    lines = ledger_path(tmp_path).read_text(encoding="utf-8").splitlines()
     ledger_path(tmp_path).write_text("\n".join([lines[0], lines[2], lines[1]]) + "\n")
     assert verify_chain(tmp_path)["ok"] is False
 
@@ -68,7 +68,7 @@ def test_consuming_an_entry_is_not_tampering(tmp_path):
     must exclude it — otherwise every normal read would look like an attack, and an alarm that
     fires on correct behaviour is one you switch off."""
     _seed(tmp_path)
-    rows = [json.loads(x) for x in ledger_path(tmp_path).read_text().splitlines()]
+    rows = [json.loads(x) for x in ledger_path(tmp_path).read_text(encoding="utf-8").splitlines()]
     rows[1]["consumed"] = True
     ledger_path(tmp_path).write_text("\n".join(json.dumps(x) for x in rows) + "\n")
     assert verify_chain(tmp_path)["ok"] is True

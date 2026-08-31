@@ -183,7 +183,7 @@ def test_the_request_record_cannot_lie_about_what_it_is(env):
     ch = env["_root"] / "claude"
     assert bash(env, f"cp a b\necho two\ncp c {ch}/bin/x.sh") == DENIED
     req = next((Path(env["COORD_STATE_DIR"]) / "persist-requests").iterdir())
-    lines = req.read_text().splitlines()
+    lines = req.read_text(encoding="utf-8").splitlines()
     keys = [ln.split("=", 1)[0] for ln in lines if "=" in ln]
     assert keys == ["kind", "target", "target_name", "detail", "cwd", "epoch", "created"]
     assert dict(ln.split("=", 1) for ln in lines if "=" in ln)["target_name"] == "x.sh"

@@ -56,7 +56,7 @@ def _get(base: str, token: str, path: str) -> dict:
 
 def _load_throttle() -> dict:
     try:
-        return json.loads(STATE.read_text())
+        return json.loads(STATE.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
 

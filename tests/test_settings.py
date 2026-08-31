@@ -66,7 +66,7 @@ def test_dump_settings_round_trips_bus_tags(tmp_path: Path):
     s = Settings()
     s.bus.tags = {"~/code/my-api": "api", "~/code/my-web": "web"}
     dump_settings(s, p)
-    assert "[bus.tags]" in p.read_text()
+    assert "[bus.tags]" in p.read_text(encoding="utf-8")
     reloaded = load_settings(p)
     assert reloaded.bus.tags == {"~/code/my-api": "api", "~/code/my-web": "web"}
 
@@ -75,7 +75,7 @@ def test_dump_settings_preserves_types(tmp_path: Path):
     # bool/int/float/str must survive the hand-rolled TOML writer.
     p = tmp_path / "settings.toml"
     dump_settings(Settings(), p)
-    text = p.read_text()
+    text = p.read_text(encoding="utf-8")
     assert "port = 8765" in text          # int, unquoted
     assert "interval_seconds = 3.0" in text  # float, unquoted
     assert 'adapter = "markdown"' in text    # str, quoted

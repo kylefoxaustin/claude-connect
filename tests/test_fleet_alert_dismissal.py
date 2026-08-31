@@ -29,7 +29,7 @@ node = shutil.which("node")
 
 def _eval(expr_lines):
     """Run bucket() — lifted verbatim out of app.js — against the given expressions."""
-    src = APP.read_text()
+    src = APP.read_text(encoding="utf-8")
     m = re.search(r"^function bucket\(n\) \{.*?^\}", src, re.S | re.M)
     assert m, "bucket() not found in app.js — the dismissal keying changed shape; fix this test"
     prog = m.group(0) + "\nconsole.log(JSON.stringify([" + ",".join(expr_lines) + "]));"
@@ -59,7 +59,7 @@ def test_zero_and_garbage_do_not_collapse_into_one_bucket():
 
 def test_the_headline_count_is_computed_before_dismissal():
     """⭐ The property that makes dismissing safe at all."""
-    src = APP.read_text()
+    src = APP.read_text(encoding="utf-8")
     body = src[src.index("function renderFleetAlerts("):]
     body = body[: body.index("\n}\n")]
     # Every headline term must come from a FULL array. `kept` may only reach the paint step and
@@ -80,7 +80,7 @@ def test_dismiss_gutter_is_reserved_in_the_winning_declaration():
     `.alert-row{...padding:3px 0...}`), and its symptom is a ✕ sitting on top of wrapped text —
     a visual bug no unit test would ever have seen.
     """
-    rules = re.findall(r"^\.alert-row \{[^}]*\}", CSS.read_text(), re.S | re.M)
+    rules = re.findall(r"^\.alert-row \{[^}]*\}", CSS.read_text(encoding="utf-8"), re.S | re.M)
     assert rules, ".alert-row rule vanished"
     last = rules[-1]
     assert "position: relative" in last and re.search(r"padding: 3px 26px", last), \

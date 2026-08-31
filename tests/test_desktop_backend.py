@@ -34,7 +34,7 @@ CONTRACT = (
 
 def test_main_names_the_seam_not_the_platform():
     """`main.py` must not import from `.x11` again, or the seam rots shut."""
-    src = (SRC / "main.py").read_text()
+    src = (SRC / "main.py").read_text(encoding="utf-8")
     assert "from .desktop import" in src, "main.py stopped importing the backend selector"
     assert not re.search(r"^from \.x11 import", src, re.M), \
         "main.py imports the Linux backend directly again — Windows has no seam to sit behind"
@@ -66,7 +66,7 @@ def test_a_missing_windows_backend_falls_back_to_something_that_REFUSES():
     check explains itself — refusing loudly is the correct Windows behaviour until a real backend
     lands.
     """
-    src = (SRC / "desktop.py").read_text()
+    src = (SRC / "desktop.py").read_text(encoding="utf-8")
     assert "_backend = _linux" in src, "the no-backend fallback disappeared"
     # And the contract is stated where an implementer will actually read it.
     assert "MUST return False" in src, "the backend contract is no longer stated in the module"
