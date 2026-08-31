@@ -90,8 +90,93 @@ def _looks_like_claude_argv(cmdline: list[str]) -> bool:
     """
     if not cmdline:
         return False
-    base = cmdline[0].replace("\\", "/").rsplit("/", 1)[-1]
-    return base[:-4] == "claude" if base.endswith(".exe") else base == "claude"
+    argv0 = cmdline[0].replace("\\", "/")
+    base = argv0.rsplit("/", 1)[-1]
+    if base[:-4] == "claude" if base.endswith(".exe") else base == "claude":
+        return True
+    # ⚠️ A SESSION MAY NOT BE NAMED `claude` AT ALL. Claude Code 2.1.251 execs its VERSIONED
+    # binary directly rather than going through the `claude` shim, so argv[0] — and `comm` —
+    # are a version number:
+    #
+    #     /home/kyle/.local/share/claude/versions/2.1.251 --resume <transcript> --model ...
+    #
+    # Every branch of the predicate missed it: no node, no `@anthropic-ai/claude-code` in the
+    # cmdline, and a basename of "2.1.251". The session was alive, reachable from Kyle's phone
+    # over /rc, and had NO TILE — the same "zero matches, board with no tiles" shape
+    # win_conductor measured on the Windows native build, arriving on Linux by way of a
+    # Claude Code upgrade. Found by Kyle, 2026-08-31: "95 qemu is up and running, i can talk
+    # to it remotely via my android phone but conductor on skippy isn't showing its tile."
+    #
+    # Match the INSTALL LAYOUT rather than the name, because the name is a version string and
+    # will differ on every upgrade — pinning a version here would re-break on the next one.
+    return "/claude/versions/" in argv0
+
+
+def _is_helper_argv(cmdline: list[str]) -> bool:
+    """A daemon or pty host: runs the claude binary, hosts sessions, is not one."""
+    own = _own_args(cmdline)
+    return own[:1] == ["daemon"] or "--bg-pty-host" in own
+
+
+def select_sessions(cands: list[tuple[Any, str, bool]]) -> list[Any]:
+    """Given (process, cwd, is_hosted) triples, keep one process per real session.
+
+    A cwd with at least one UN-hosted candidate has a launcher, so its hosted siblings are
+    that launcher's worker and are dropped. A cwd whose candidates are ALL hosted has no
+    launcher — the worker is the session — and everything survives.
+
+    Pure, and separated from the psutil walk on purpose: this is the rule that was wrong in
+    both directions within one afternoon, and it should be testable without a process table.
+    Keyed on cwd because proc_groups and the per-project record are keyed on cwd too, so the
+    dedup cannot disagree with the grouping it feeds.
+    """
+    has_launcher = {cwd for _, cwd, hosted in cands if cwd and not hosted}
+    return [proc for proc, cwd, hosted in cands if not (hosted and cwd in has_launcher)]
+
+
+def _is_hosted(proc: psutil.Process, _depth: int = 4) -> bool:
+    """Does this process have a claude-BINARY ancestor — i.e. was it launched by a session?
+
+    ⚠️ DELIBERATELY MATCHES argv[0], NOT the `--bg-pty-host` flag, and that distinction decides
+    a real case. It means the Linux pty host does NOT count as a hosting ancestor, because its
+    argv[0] is the single token ``claude bg-pty-host`` (a space, not a path), which is not the
+    binary's name.
+
+    That reads like a bug and is the correct behaviour, measured on skippy 2026-08-31. The
+    qualcomm repo held TWO live sessions with DIFFERENT --session-ids: one started in a
+    terminal, one daemon-hosted. Counting the daemon-hosted one as "hosted" would let the cwd
+    rule in select_sessions drop it as the terminal session's worker — hiding a genuine
+    identity collision, which is the exact harm detect_collisions exists to report, and doing
+    it silently.
+
+    On Windows the wrapper's argv[0] IS a clean path to claude.exe, so the launcher/worker
+    dedup that win_conductor measured still fires there. The rule is therefore: a claude
+    ancestor whose argv[0] is the binary means "something a session spawned"; the daemon and
+    pty host are infrastructure that HOST sessions rather than own them.
+
+    Bounded walk: a session's own ancestry reaches a terminal or init within a step or two,
+    and an unbounded loop over a table that can change under us is how a scanner hangs.
+    """
+    try:
+        parent = psutil.Process(proc.ppid())
+        for _ in range(_depth):
+            cmd = parent.cmdline()
+            if _looks_like_claude_argv(cmd):
+                return True
+            parent = psutil.Process(parent.ppid())
+    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, ValueError):
+        pass
+    return False
+
+
+def _is_session_argv(cmdline: list[str]) -> bool:
+    """Claude's binary AND not one of its helpers.
+
+    Split out so the self-test and the parent-test cannot drift: they were the same question
+    asked two different ways, and the difference was invisible until a topology arrived where
+    a session's parent was a helper rather than another session.
+    """
+    return _looks_like_claude_argv(cmdline) and not _is_helper_argv(cmdline)
 
 
 def _own_args(cmdline: list[str]) -> list[str]:
@@ -139,8 +224,7 @@ def is_claude_process(proc: psutil.Process) -> bool:
     # Helpers first, so no later branch can rescue one. `daemon` is real on Linux today
     # (it lands in proc_groups and then reports "no resolvable transcript", which is noise
     # about a process that was never a session); `--bg-pty-host` is the Windows wrapper.
-    own = _own_args(cmdline)
-    if own[:1] == ["daemon"] or "--bg-pty-host" in own:
+    if _is_helper_argv(cmdline):
         return False
 
     # ⚠️ A claude whose PARENT is also claude is something a session SPAWNED — a pty host, a
@@ -156,24 +240,51 @@ def is_claude_process(proc: psutil.Process) -> bool:
     # MEASURED to change nothing on Linux: 0 of skippy's 17 claude processes have a claude
     # parent. Derived from win_conductor's measured Windows topology; UNVERIFIED on Windows
     # by me, and flagged to it for exactly that.
-    try:
-        if _looks_like_claude_argv(psutil.Process(proc.ppid()).cmdline()):
-            return False
-    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-        pass
+    # ⚠️ THE LAUNCHER/WORKER DEDUP USED TO LIVE HERE AND COULD NOT. It excluded any claude
+    # whose parent was also claude, which is right on Windows (a launcher in a terminal, plus
+    # the worker the pty host started with the same --session-id: two processes, one session,
+    # and detect_collisions reads that as two Claudes in one repo).
+    #
+    # But on 2026-08-31 a Linux session arrived with this tree and NO LAUNCHER AT ALL:
+    #
+    #     claude daemon run  ->  claude bg-pty-host  ->  <versioned binary> --resume ...
+    #
+    # It is byte-for-byte the Windows worker shape, so the rule excluded it — and that session
+    # is the only process there is. Kyle could drive it from his phone and had no tile.
+    #
+    # The two topologies differ in exactly one way: whether a terminal-parented launcher also
+    # exists. A single process cannot see that, so the decision moved to
+    # _iter_claude_processes, which holds the whole table. This predicate now answers only
+    # "is this a session process rather than infrastructure", which is a question it CAN
+    # answer alone.
 
-    if "@anthropic-ai/claude-code" in " ".join(cmdline):
+    # ── PRECISE BRANCH ── argv[0] IS the binary: the `claude` shim, the Windows native build,
+    # or the versioned binary. Nothing else runs under that name, so no parent guard is needed
+    # and none may be applied — a launcher and the worker a pty host hosts BOTH land here, and
+    # telling them apart needs the process table (see _iter_claude_processes).
+    if _looks_like_claude_argv(cmdline):
         return True
+
+    # ── LOOSE BRANCHES ── these match a MENTION of claude-code anywhere in the command line,
+    # and they need the parent guard the precise branch must not have.
+    #
+    # ⚠️ A SESSION'S OWN TOOL CALLS MATCH HERE. Every `bash -c` a session runs sources its
+    # shell snapshot, whose path contains claude-code, so without the guard every tool call in
+    # every session counts as a session — on this box that is a dozen `bash -c` processes,
+    # each sharing its real session's cwd, which detect_collisions would report to Kyle as a
+    # pile of identity collisions demanding he close something.
+    #
+    # I removed this guard wholesale on 2026-08-31 while moving the launcher/worker dedup out,
+    # and the existing suite caught it immediately. The guard was doing TWO jobs and only one
+    # of them moved.
+    hosted_by_claude = _is_hosted(proc, _depth=1)
+    if "@anthropic-ai/claude-code" in " ".join(cmdline):
+        return not hosted_by_claude
     # A node process whose argv[1] basename is `claude` or `cli.js` under claude-code.
     if cmdline[0].endswith(("node", "node.exe")):
         for arg in cmdline[1:]:
             if "claude-code" in arg or os.path.basename(arg) == "claude":
-                return True
-    # Direct invocation of the `claude` shim (POSIX) or the native binary (Windows).
-    # splitext strips `.exe`; on POSIX a file genuinely named `claude.exe` would also match,
-    # which is harmless and beats carrying a platform branch through a hot predicate.
-    if _looks_like_claude_argv(cmdline):
-        return True
+                return not hosted_by_claude
     return False
 
 
@@ -1012,12 +1123,42 @@ class SessionScanner:
         return out
 
     def _iter_claude_processes(self) -> Iterable[psutil.Process]:
+        """Live session processes, with a launcher preferred over the worker it hosts.
+
+        ⭐ PREFER, not "drop workers". A worker is dropped only when a launcher for the same
+        cwd actually exists, because the two shapes are otherwise identical:
+
+            Windows   powershell -> claude          (launcher, focusable)
+                      daemon -> pty host -> claude  (worker, same session)   -> drop the worker
+            Linux     daemon -> pty host -> claude  (worker, and there is nothing else)
+                                                                             -> KEEP it
+
+        Dropping unconditionally hides a real session (Kyle, 2026-08-31); never dropping
+        double-counts every Windows session and reports a false identity collision. The
+        launcher wins when both exist for the documented reason: the worker's ancestry runs
+        back through the daemon, whose own parent is gone, so find_terminal_pid can reach no
+        terminal from it.
+
+        A genuine collision — two independent launches in one repo — is still two launchers,
+        neither hosted, so both survive and detect_collisions still sees them.
+        """
+        cands: list[tuple[psutil.Process, str, bool]] = []
         for proc in psutil.process_iter(["pid"]):
             try:
-                if is_claude_process(proc):
-                    yield proc
+                if not is_claude_process(proc):
+                    continue
+                cands.append((proc, self._proc_cwd(proc), _is_hosted(proc)))
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
+
+        yield from select_sessions(cands)
+
+    @staticmethod
+    def _proc_cwd(proc: psutil.Process) -> str:
+        try:
+            return proc.cwd() or ""
+        except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+            return ""
 
     def _cpu_sample(self, proc: psutil.Process) -> float:
         """Non-blocking CPU% sample. First call seeds the counter; second returns the rate."""
