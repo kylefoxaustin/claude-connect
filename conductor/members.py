@@ -18,7 +18,7 @@ so must be granted, never inferred).
 """
 from __future__ import annotations
 
-import fcntl
+from .locks import exclusive
 import os
 import tempfile
 from pathlib import Path
@@ -74,22 +74,18 @@ def _write_atomic(bus_state: Path, rows: dict[str, dict[str, str]]) -> None:
         project = rec.get("project", "").strip()
         body.append(f"{sid}\t{member}\t{role}\t{project}")
     data = "\n".join(body) + "\n"
-    with open(lock, "w") as lf:
-        fcntl.flock(lf, fcntl.LOCK_EX)
+    with open(lock, "w") as lf, exclusive(lf):
+        fd, tmp = tempfile.mkstemp(dir=str(bus_state), prefix=".members.")
         try:
-            fd, tmp = tempfile.mkstemp(dir=str(bus_state), prefix=".members.")
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(data)
+            os.replace(tmp, str(members_path(bus_state)))
+        except BaseException:
             try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    f.write(data)
-                os.replace(tmp, str(members_path(bus_state)))
-            except BaseException:
-                try:
-                    os.unlink(tmp)
-                except OSError:
-                    pass
-                raise
-        finally:
-            fcntl.flock(lf, fcntl.LOCK_UN)
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
 
 
 def bind(bus_state: Path, session_id: str, member: str, *,
