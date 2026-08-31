@@ -452,15 +452,43 @@ def _token_match(windows: list[tuple[int, int, str]], *hints: str | None) -> int
         for t in re.split(r"[^a-z0-9]+", h.lower()):
             if len(t) >= 2:
                 toks.add(t)
-    if not toks:
+    if not toks or not windows:
         return None
-    best_wid, best_score = None, 0
-    for wid, _pid, title in windows:
-        tl = title.lower()
-        score = sum(1 for t in toks if t in tl)
-        if score > best_score:
-            best_wid, best_score = wid, score
-    return best_wid if best_score > 0 else None
+
+    # ⭐ A TOKEN EVERY CANDIDATE SHARES IS NOT EVIDENCE, AND COUNTING IT PICKS AN ARBITRARY
+    # WINDOW. Kyle, 2026-08-31: clicking 95emulator's focus button opened QUALCOMM's terminal.
+    #
+    # 95emulator is daemon-hosted and has NO terminal window at all, so nothing could match.
+    # But every tilix window on this box is titled "✳ Project <name>", so the token `project`
+    # scored 1 against all nineteen of them, `score > best_score` kept the first, and focus
+    # confidently raised a live colleague's session. The hint shared exactly one word with the
+    # window it chose, and that word was in every other window too.
+    #
+    # Same shape as the fleet-health alarm that fired on 36 of 36 cursors: a signal present in
+    # every candidate discriminates nothing, however true it is of each one.
+    #
+    # So weight by how RARE a token is among the candidates, computed from the window list
+    # itself rather than a hardcoded stopword list — "project" is only noise because of what
+    # else is on this screen, and on a different desktop it might be the discriminating word.
+    n = len(windows)
+    lowered = [(wid, title.lower()) for wid, _pid, title in windows]
+    df = {t: sum(1 for _, tl in lowered if t in tl) for t in toks}
+    # Keep a token if it is nearly unique (df<=1 — maximally discriminating) or appears in at
+    # most half the candidates. The df<=1 clause is what keeps a single-window search working.
+    disc = {t for t in toks if df[t] <= 1 or df[t] * 2 <= n}
+    if not disc:
+        return None
+
+    scored = sorted(((sum(1 for t in disc if t in tl), wid) for wid, tl in lowered), reverse=True)
+    best_score, best_wid = scored[0]
+    if best_score == 0:
+        return None
+    # ⚠️ A TIE IS A REFUSAL, not a coin flip. Ambiguity is exactly when guessing does the most
+    # damage — the wrong window here is another Claude's live terminal — and the caller's next
+    # strategy ("the terminal's sole window") already declines rather than pick a sibling.
+    if len(scored) > 1 and scored[1][0] == best_score:
+        return None
+    return best_wid
 
 
 def _resolve_window(
@@ -570,7 +598,20 @@ def focus_session(
     wid = _resolve_window(
         terminal_pid=terminal_pid, title=title, window_title=window_title,
     )
-    return wid is not None and _raise_window(wid)
+    if wid is None:
+        return False
+    # ⚠️ VERIFY BEFORE RAISING. send_keys_to_session already refuses to TYPE into a window whose
+    # title does not carry the target's hint, but focus_session had no such check — so a
+    # mis-resolution still yanked the screen to a colleague's terminal, which is what Kyle saw.
+    # Raising the wrong window is not harmless even when nothing is typed: it steals focus from
+    # whatever he was doing and, on the typing path, fires the human-active guard on the very
+    # session it just interrupted.
+    if not _window_belongs_to_target(wid, title, window_title):
+        log.warning("refusing to focus window 0x%x for %s / %s — its title does not match; "
+                    "this session may have no terminal window (daemon-hosted)",
+                    wid, window_title, title)
+        return False
+    return _raise_window(wid)
 
 
 def _focus_session_input(

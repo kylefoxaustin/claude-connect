@@ -2653,7 +2653,20 @@ async def focus(session_id: str, request: Request) -> dict[str, Any]:
         title=rec.title,
         window_title=rec.window_title,
     )
-    return {"focused": ok, "wmctrl_available": wmctrl_available()}
+    # ⚠️ SAY WHY IT FAILED. Until 2026-08-31 the focus button mis-resolved a windowless session
+    # onto a colleague's terminal; now it correctly refuses — and a button that correctly does
+    # nothing, silently, is the same lie of omission wearing better manners. A daemon-hosted
+    # session (no terminal ancestry, driven over /rc) has no window to raise and never will, so
+    # the UI must say that rather than let Kyle click twice and wonder.
+    reason = ""
+    if not ok:
+        if not wmctrl_available():
+            reason = "no_wmctrl"
+        elif rec.terminal_pid is None:
+            reason = "no_terminal"
+        else:
+            reason = "no_window"
+    return {"focused": ok, "wmctrl_available": wmctrl_available(), "reason": reason}
 
 
 @app.post("/api/sessions/{session_id}/check")

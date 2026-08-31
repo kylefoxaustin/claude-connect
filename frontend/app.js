@@ -1466,12 +1466,33 @@ relaunchGo?.addEventListener("click", async () => {
   }
 });
 
+// A focus that cannot happen must SAY SO. This used to swallow `focused: false` into a
+// console.warn nobody reads — fine while focus always worked, and a silent no-op the moment it
+// legitimately refuses. Kyle clicked 95emulator's focus button and got qualcomm's terminal
+// (2026-08-31); the fix makes it refuse, and refusing quietly would just be a different lie.
+const FOCUS_WHY = {
+  no_terminal: "This session has no terminal window — it runs under the background daemon, "
+             + "so there is nothing on this screen to raise. Reach it with /rc from your phone.",
+  no_window: "Couldn't find this session's window. It may have been closed or retitled — "
+           + "try Refresh, which re-runs a real scan.",
+  no_wmctrl: "Can't focus windows — wmctrl/xdotool unavailable.",
+};
+
 window.requestFocus = async function requestFocus(sessionId) {
   try {
     const r = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/focus`, { method: "POST" });
-    if (!r.ok) console.warn("focus failed", r.status);
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      showToast("Couldn't reach the session.", { kind: "warn" });
+      return;
+    }
+    if (body.focused === false) {
+      showToast(FOCUS_WHY[body.reason] || "Couldn't focus this session's window.",
+                { kind: "warn" });
+    }
   } catch (e) {
     console.warn("focus error", e);
+    showToast("Couldn't reach Conductor to focus that session.", { kind: "warn" });
   }
 };
 
