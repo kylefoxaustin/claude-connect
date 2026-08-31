@@ -47,7 +47,10 @@
 [CmdletBinding()]
 param(
     [ValidateSet('User','Project')] [string] $Scope = 'User',
-    [switch] $SkipInstall
+    [switch] $SkipInstall,
+    # Arm the push gate globally (installs the pre-push hook + sets core.hooksPath).
+    # OFF by default and it stays off until the verification below passes -- see step 5.
+    [switch] $ArmPushGate
 )
 
 $ErrorActionPreference = 'Stop'
@@ -193,7 +196,7 @@ function Test-GateBehaviour {
     if (-not (Test-Path $gate)) { Say "SKIPPED: $gate not found"; return $null }
 
     $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("condboot-" + [guid]::NewGuid().ToString('N').Substring(0,8))
-    foreach ($d in 'claude\bin','claude\commands','claude\bus-state\registry','claude\projects','coord','proj') {
+    foreach ($d in '.claude\bin','.claude\commands','.claude\bus-state\registry','.claude\projects','coord','proj') {
         New-Item -ItemType Directory -Force -Path (Join-Path $tmp $d) | Out-Null
     }
 
@@ -208,10 +211,10 @@ function Test-GateBehaviour {
     # verdict 2 = DENY, 0 = ALLOW
     # Substitute the table's placeholders with THIS sandbox's Windows paths. The POSIX
     # spelling is provided too, for the rows that deliberately probe the other namespace.
-    $chPosix = '/' + (($tmp -replace '^([A-Za-z]):','$1') -replace '\\','/') + '/claude'
+    $chPosix = '/' + (($tmp -replace '^([A-Za-z]):','$1') -replace '\\','/') + '/.claude'
     $vals = @{
         TMP       = $tmp
-        CH        = (Join-Path $tmp 'claude')
+        CH        = (Join-Path $tmp '.claude')
         PROJ      = (Join-Path $tmp 'proj')
         CH_POSIX  = $chPosix
     }
@@ -235,9 +238,23 @@ function Test-GateBehaviour {
     # showed up as "no gate.log written" while the gate had been writing one all along.
     $envBlock = @{
         COORD_STATE_DIR   = (Join-Path $tmp 'coord')
-        CLAUDE_CONFIG_DIR = (Join-Path $tmp 'claude')
-        BUS_STATE_DIR     = (Join-Path $tmp 'claude\bus-state')
+        CLAUDE_CONFIG_DIR = (Join-Path $tmp '.claude')
+        BUS_STATE_DIR     = (Join-Path $tmp '.claude\bus-state')
         HOME              = $tmp
+        # ⚠️ BOTH, and it is not belt-and-braces. MEASURED: os.path.expanduser on Windows
+        # IGNORES $HOME and honours $USERPROFILE. The gate has two halves -- bash expands `~`
+        # from $HOME, its embedded python expands it with expanduser -- so sandboxing only HOME
+        # leaves the python half resolving `~` to the REAL profile of whoever runs this script.
+        # The tilde row then evaluated against the developer's actual ~/.claude, found no
+        # matching prefix, and the gate correctly ALLOWED -- reported here as "the gate is
+        # broken on Windows" when the harness was.
+        #
+        # tests/test_gate_acceptance.py fixed exactly this on its own fixture and this copy did
+        # not follow, so the two harnesses driving the SAME shared table disagreed about the same
+        # row: pytest said DENY, the bootstrap said ALLOW. That disagreement is the only reason
+        # it was found. USERPROFILE has now broken four separate suites; it is worth a line in
+        # CLAUDE.md rather than a fifth rediscovery.
+        USERPROFILE       = $tmp
         CLAUDE_BUS_PYTHON = $BusPython
     }
     $saved = @{}
@@ -291,7 +308,7 @@ function Test-GateBehaviour {
         # sandbox -- "the gate itself failed" tells you it crashed but not on what, and the
         # difference between a crash and a disagreement changes what you do next.
         if ($fail -gt 0) {
-            $log = Join-Path $tmp 'claude\bus-state\gate.log'
+            $log = Join-Path $tmp '.claude\bus-state\gate.log'
             if (Test-Path $log) {
                 Write-Host ""
                 Say "gate.log (why it degraded):"
@@ -303,6 +320,108 @@ function Test-GateBehaviour {
         Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
     }
     return [pscustomobject]@{ Pass = $pass; Fail = $fail }
+}
+
+# ---------------------------------------------------------------------------
+# THE PUSH GATE, and why "installed" is not the thing worth reporting
+# ---------------------------------------------------------------------------
+# skippy, 2026-08-30, on putting this in the bootstrap: "Manual-per-clone IS how a control ends
+# up absent on exactly one box and nobody notices for three days" -- measured here, where the
+# gate was missing on this machine while the fleet-wide claim was that every push is gated.
+#
+# And the half that matters more, their words: the bootstrap must VERIFY the gate, not just
+# place the files. This file's own history is gates that were present and did not run --
+# v2.34.1 shipped an armed persist-gate whose prefilter exited before the real check, twice --
+# so "installed", asserted from a file existing, is exactly that class.
+#
+# ⭐ SO THIS VERIFIES BOTH DIRECTIONS, because a gate is a DOOR and a door that only ever shuts
+# is not working either. Two probes, against a throwaway bare repo -- never a real remote:
+#
+#   DENY     an unapproved push must be refused and must land nothing
+#   APPROVE  a token written the way CONDUCTOR writes it must let the push through
+#
+# The second probe exists because of what was measured on Windows on 2026-08-30: the token key
+# is the repo path with '/' and space translated but NOT ':', so on this platform every key is
+# `C:_Users_...`. MSYS writes that colon as U+F03A; native Python -- which is what Conductor is
+# -- cannot stat the request and cannot create the token at all. The gate can DENY and nothing
+# can APPROVE, so the inbox tap and the phone are both dead while the gate keeps printing "THE
+# REQUEST IS NOW FILED" and telling the session to wait. A bootstrap that verified only the DENY
+# would call that healthy and arm it.
+function Test-PushGate {
+    param([string] $BashExe, [string] $PythonExe)
+
+    $hook = Join-Path $RepoRoot 'bus\git-hooks\pre-push'
+    if (-not (Test-Path $hook)) { Say "SKIPPED: $hook not found"; return $null }
+
+    $lab = Join-Path ([System.IO.Path]::GetTempPath()) ("condgate-" + [guid]::NewGuid().ToString('N').Substring(0,8))
+    $coord = Join-Path $lab 'coord'
+    $hooks = Join-Path $lab 'hooks'
+    $work  = Join-Path $lab 'work'
+    New-Item -ItemType Directory -Force -Path $coord, $hooks, $work | Out-Null
+    $saved = $env:COORD_STATE_DIR
+    $denied = $false; $approved = $false; $note = ''
+    try {
+        $env:COORD_STATE_DIR = $coord
+        Copy-Item $hook (Join-Path $hooks 'pre-push') -Force
+        git init --bare -q (Join-Path $lab 'target.git') | Out-Null
+        Push-Location $work
+        try {
+            git init -q | Out-Null
+            git remote add origin (Join-Path $lab 'target.git')
+            git config user.email 'bootstrap@example.invalid'
+            git config user.name  'bootstrap'
+            # Repo-LOCAL hooksPath: the real hook, real refs, real stdin, and NOTHING global
+            # touched. Arming is a separate, explicit act below.
+            git config core.hooksPath $hooks
+            'probe' | Out-File -FilePath (Join-Path $work 'f.txt') -Encoding utf8
+            git add -A | Out-Null
+            git commit -q -m 'probe' | Out-Null
+
+            # --- probe 1: DENY -------------------------------------------------------------
+            # ⚠️ NO `2>&1` on a native command here. In Windows PowerShell 5.1 that wraps each
+            # stderr line in an ErrorRecord (NativeCommandError), and with the
+            # $ErrorActionPreference = 'Stop' set at the top of this script it makes the GATE'S
+            # OWN REFUSAL MESSAGE a terminating error -- so the probe died precisely when the
+            # thing it is testing worked, and reported that as a bootstrap failure.
+            $ErrorActionPreference = 'Continue'
+            git push origin master 2>$null | Out-Null
+            $landed = (git --git-dir=(Join-Path $lab 'target.git') log --oneline --all 2>$null)
+            $denied = [string]::IsNullOrWhiteSpace($landed)
+
+            # --- probe 2: can an approval be GRANTED the way Conductor grants one? ----------
+            # Conductor is native Python, so the token is written by Python here on purpose.
+            # Writing it from bash would prove only that bash agrees with bash.
+            $repoTop = (git rev-parse --show-toplevel)
+            $py = @"
+import os, sys, time
+repo, coord = sys.argv[1], sys.argv[2]
+key = repo.replace('/', '_').replace(' ', '_').lstrip('_')
+d = os.path.join(coord, 'push-tokens')
+os.makedirs(d, exist_ok=True)
+try:
+    with open(os.path.join(d, key), 'w', encoding='utf-8') as f:
+        f.write('expires=%d\n' % (int(time.time()) + 3600))
+    print('WROTE')
+except Exception as e:
+    print('FAILED:%s:%s' % (type(e).__name__, e))
+"@
+            $pyFile = Join-Path $lab 'grant.py'
+            $py | Out-File -FilePath $pyFile -Encoding utf8
+            $grant = (& $PythonExe $pyFile $repoTop $coord 2>&1) -join ' '
+            if ($grant -notmatch 'WROTE') {
+                $note = "Conductor could not write the approval token: $grant"
+            } else {
+                git push origin master 2>$null | Out-Null
+                $landed2 = (git --git-dir=(Join-Path $lab 'target.git') log --oneline --all 2>$null)
+                $approved = -not [string]::IsNullOrWhiteSpace($landed2)
+                if (-not $approved) { $note = 'the token was written but the push was still refused' }
+            }
+        } finally { Pop-Location }
+    } finally {
+        $env:COORD_STATE_DIR = $saved
+        Remove-Item -Recurse -Force $lab -ErrorAction SilentlyContinue
+    }
+    return [pscustomobject]@{ Denied = $denied; Approvable = $approved; Note = $note }
 }
 
 # ===========================================================================
@@ -364,13 +483,59 @@ if ($null -eq $r) {
     exit 0
 }
 Write-Host ""
-if ($r.Fail -eq 0) {
-    Good "$($r.Pass)/$($r.Pass) acceptance payloads correct. Gates are usable on this box."
-    Write-Host ""
-    Say "Restart Claude Code (or open /hooks) so the new env is picked up by running sessions."
-    exit 0
+if ($r.Fail -ne 0) {
+    Bad "$($r.Fail) of $($r.Pass + $r.Fail) payloads WRONG."
+    Bad "CLAUDE_BUS_PYTHON is recorded but the gates do not behave correctly with it."
+    Bad "Do NOT install the hooks until this is 0 -- report the failing rows."
+    exit 1
 }
-Bad "$($r.Fail) of $($r.Pass + $r.Fail) payloads WRONG."
-Bad "CLAUDE_BUS_PYTHON is recorded but the gates do not behave correctly with it."
-Bad "Do NOT install the hooks until this is 0 -- report the failing rows."
-exit 1
+Good "$($r.Pass)/$($r.Pass) acceptance payloads correct. Gates are usable on this box."
+
+Head "5. Push gate: verify it can BOTH deny and be approved"
+$g = Test-PushGate -BashExe $bash -PythonExe $interp.Real
+if ($null -eq $g) {
+    Say "push gate not present in this checkout; nothing to verify or arm."
+} else {
+    if ($g.Denied) { Good "DENY    an unapproved push was refused and landed nothing" }
+    else           { Bad  "DENY    an unapproved push WAS NOT REFUSED" }
+
+    if ($g.Approvable) { Good "APPROVE a Conductor-written token released the push" }
+    else {
+        Bad "APPROVE a Conductor-written token could NOT release the push"
+        if ($g.Note) { Bad "        $($g.Note)" }
+    }
+
+    Write-Host ""
+    if ($g.Denied -and $g.Approvable) {
+        if ($ArmPushGate) {
+            # Arming is GLOBAL and outlives this session, which is why it needs the flag AND a
+            # passing verification. Never clobber an existing core.hooksPath -- that would
+            # silently disable whatever else the human has installed there.
+            $hookDir = Join-Path $env:USERPROFILE '.claude\git-hooks'
+            New-Item -ItemType Directory -Force -Path $hookDir | Out-Null
+            Copy-Item (Join-Path $RepoRoot 'bus\git-hooks\pre-push') (Join-Path $hookDir 'pre-push') -Force
+            $cur = (git config --global --get core.hooksPath 2>$null)
+            if ([string]::IsNullOrWhiteSpace($cur)) {
+                git config --global core.hooksPath $hookDir
+                Good "ARMED: core.hooksPath -> $hookDir"
+            } elseif ($cur -eq $hookDir) {
+                Good "ARMED already: core.hooksPath -> $hookDir"
+            } else {
+                Bad "core.hooksPath is already '$cur' -- NOT overwriting it."
+                Say "Drop bus\git-hooks\pre-push into that directory yourself (chain if one exists)."
+            }
+        } else {
+            Say "Verified but NOT ARMED. Re-run with -ArmPushGate to install it globally."
+        }
+    } else {
+        # skippy asked for this exact wording rather than a success line it has not earned.
+        Bad "GATE NOT VERIFIED -- not arming, and -ArmPushGate will not override this."
+        Say "A gate that denies but cannot be approved is a one-way door: the session is told"
+        Say "to wait for a tap that cannot be delivered. Fix the approval path first."
+        exit 1
+    }
+}
+
+Write-Host ""
+Say "Restart Claude Code (or open /hooks) so the new env is picked up by running sessions."
+exit 0
