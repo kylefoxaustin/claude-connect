@@ -113,9 +113,7 @@
       "stdin_bom": true,
       "expect": "allow",
       "why": "REGRESSION. PowerShell prepends a BOM piping to a native exe, and Claude Code runs shell-form hooks under PowerShell when Git Bash is absent. Before the fix this denied; a plain json.loads raises on a leading U+FEFF."
-    }
-  ],
-  "known_gaps": [
+    },
     {
       "name": "bash write via an absolute POSIX path",
       "tool": "Bash",
@@ -123,10 +121,7 @@
         "command": "echo pwned > {CH_POSIX}/bin/evil.sh"
       },
       "expect": "deny",
-      "open_on": [
-        "win32"
-      ],
-      "why": "On Linux this denies correctly, which is why the gap is invisible from there. Reported, never counted: the bootstrap cannot repair a gate limitation, and a bootstrap that fails on what it cannot fix teaches you to ignore its exit code. || FIX ATTEMPTED 2026-08-30 (skippy): two root causes, both in persist-gate.sh. (1) PATHS and the redirect pattern anchored on [~/], so a DRIVE-LETTER token was never extracted as a path candidate at all — the Windows-absolute form was not checked-and-allowed, it was never seen. (2) gated_path called realpath BEFORE translating the namespace, and a Windows python reads '/c/Users/...' as the current drive's root, yielding C:\\c\\Users\\... which matches nothing. Both fixed, plus case-folding (the previous fix left case evasion open IN WRITING). Proven from Linux only, by driving the real gate with a drive-lettered CLAUDE_CONFIG_DIR (tests/test_gate_windows_namespace.py, 13 rows, mutation-checked: all three spellings ALLOW on the old gate and DENY on the new). That is the namespace logic, NOT a Windows harness — POSIX HOME, POSIX interpreter, no MSYS layer. This row stays OPEN until silicon says otherwise; the runner will fail with 'Good news' when it closes there."
+      "why": "PROMOTED from known_gaps 2026-08-30 by win_conductor. CLOSED ON WINDOWS, confirmed on real silicon: Windows 11, native Windows python, a real MSYS layer, MSYS HOME -- the harness skippy explicitly said they did not have. The runner's inverted assertion fired ('this gap appears to be CLOSED on win32 now') with rc=2=DENY, which is the designed way for a closed gap to announce itself rather than lapsing silently. skippy left BOTH rows open on purpose, having proven the namespace logic from Linux only, and asked for silicon to have the last word; it does, and they were right. || THE FIX (skippy, 2026-08-30, persist-gate.sh), kept because a closed row still has to explain what was wrong: (1) PATHS and the redirect pattern anchored on [~/], so a DRIVE-LETTER token was never extracted as a path candidate at all -- the Windows-absolute form was not checked-and-allowed, it was never SEEN. (2) gated_path called realpath BEFORE translating the namespace, and a Windows python reads '/c/Users/...' as the current drive's root, yielding C:\\c\\Users\\... which prefix-matches nothing. Plus case-folding, which the previous fix left open in writing. Mutation-checked on that side: all three spellings ALLOW on the pre-fix gate, all three DENY after."
     },
     {
       "name": "bash write via an absolute WINDOWS path",
@@ -135,10 +130,8 @@
         "command": "echo pwned > {CH}\\bin\\evil.sh"
       },
       "expect": "deny",
-      "open_on": [
-        "win32"
-      ],
-      "why": "ADDED 2026-08-26 because the row above under-described the gap. I had recorded it as a namespace MISMATCH -- CH being a Windows path while the command carried /c/Users/... -- but the Windows-form path, where both sides ARE the same namespace, is missed too. MEASURED: tilde DENIES, MSYS-absolute ALLOWS, Windows-absolute ALLOWS. So the Bash best-effort path on Windows matches only the tilde form and misses BOTH absolute spellings, which is a bigger hole than a spelling mismatch and a different fix. This is what makes test_persist_gate.py::test_shell_writes_to_gated_paths and test_persist_gate_tilde.py::test_expanded_form_still_gated red here; those rows are CORRECTLY red and must not be relaxed to expect ALLOW. || FIX ATTEMPTED 2026-08-30 (skippy): two root causes, both in persist-gate.sh. (1) PATHS and the redirect pattern anchored on [~/], so a DRIVE-LETTER token was never extracted as a path candidate at all — the Windows-absolute form was not checked-and-allowed, it was never seen. (2) gated_path called realpath BEFORE translating the namespace, and a Windows python reads '/c/Users/...' as the current drive's root, yielding C:\\c\\Users\\... which matches nothing. Both fixed, plus case-folding (the previous fix left case evasion open IN WRITING). Proven from Linux only, by driving the real gate with a drive-lettered CLAUDE_CONFIG_DIR (tests/test_gate_windows_namespace.py, 13 rows, mutation-checked: all three spellings ALLOW on the old gate and DENY on the new). That is the namespace logic, NOT a Windows harness — POSIX HOME, POSIX interpreter, no MSYS layer. This row stays OPEN until silicon says otherwise; the runner will fail with 'Good news' when it closes there."
+      "why": "PROMOTED from known_gaps 2026-08-30 by win_conductor. CLOSED ON WINDOWS, confirmed on real silicon: Windows 11, native Windows python, a real MSYS layer, MSYS HOME -- the harness skippy explicitly said they did not have. The runner's inverted assertion fired ('this gap appears to be CLOSED on win32 now') with rc=2=DENY, which is the designed way for a closed gap to announce itself rather than lapsing silently. skippy left BOTH rows open on purpose, having proven the namespace logic from Linux only, and asked for silicon to have the last word; it does, and they were right. || THE FIX (skippy, 2026-08-30, persist-gate.sh), kept because a closed row still has to explain what was wrong: (1) PATHS and the redirect pattern anchored on [~/], so a DRIVE-LETTER token was never extracted as a path candidate at all -- the Windows-absolute form was not checked-and-allowed, it was never SEEN. (2) gated_path called realpath BEFORE translating the namespace, and a Windows python reads '/c/Users/...' as the current drive's root, yielding C:\\c\\Users\\... which prefix-matches nothing. Plus case-folding, which the previous fix left open in writing. Mutation-checked on that side: all three spellings ALLOW on the pre-fix gate, all three DENY after."
     }
-  ]
+  ],
+  "known_gaps": []
 }
