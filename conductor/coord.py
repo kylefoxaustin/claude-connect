@@ -140,6 +140,12 @@ def read_push_requests(coord_root: Path) -> list[dict[str, Any]]:
             "repo_name": d.get("repo_name", f.name),
             "cwd": d.get("cwd", ""),
             "cmd": d.get("cmd", ""),
+            # WHAT is being pushed, in words ("main", "tag v1.1-rules", "delete old-branch").
+            # Without it two requests for one repo are indistinguishable in the inbox: Kyle
+            # approved a branch, saw the TAG request appear, and read it as the same ask coming
+            # back — "didn't see any new ones to tap" (2026-08-31). Older gates do not write the
+            # field; "" renders as the plain repo name, exactly as before.
+            "refs": d.get("refs", ""),
             "created": d.get("created", ""),
             "epoch": int(d["epoch"]) if d.get("epoch", "").isdigit() else 0,
         })

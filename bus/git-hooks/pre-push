@@ -46,15 +46,38 @@ fi
 # ---- 2. Is anything actually MOVING? (a no-op push never needs approval) -----------------------
 # Collect the local shas that would become new remote tips (local != remote, local not all-zero).
 # All-zero local = a branch delete: that IS a real, gated push, so record a sentinel for it.
-MOVING=""; DELETING=0
+#
+# We also record WHAT is moving, in words. Kyle, 2026-08-31, after approving a push and then
+# being asked again by what looked like the identical request: "didn't see any new ones to tap."
+# The first was a branch and the second was the TAG for the same release — the gate was behaving
+# correctly and the inbox could not say so, because both requests rendered as the repo name and
+# nothing else. Two approvals that look the same, one of which the human has already given, is
+# the loop the three-step protocol exists to end, arriving through the display instead of the
+# policy. git hands us the refs on stdin; we were reading them for the shas and throwing the
+# names away.
+MOVING=""; DELETING=0; REFS=""
+_ref_label() {                                # refs/heads/main -> main ; refs/tags/v1 -> tag v1
+  case "$1" in
+    refs/heads/*) printf '%s' "${1#refs/heads/}" ;;
+    refs/tags/*)  printf 'tag %s' "${1#refs/tags/}" ;;
+    "")           printf '(unknown ref)' ;;
+    *)            printf '%s' "$1" ;;
+  esac
+}
 while read -r lref lsha rref rsha; do
   [ -z "${lref:-}" ] && continue
-  if [ "$lsha" = "$ZERO" ]; then DELETING=1; continue; fi   # delete of rref
+  if [ "$lsha" = "$ZERO" ]; then
+    DELETING=1
+    REFS="$REFS, delete $(_ref_label "$rref")"
+    continue
+  fi
   [ "$lsha" = "$rsha" ] && continue                          # this ref is up-to-date
   MOVING="$MOVING $lsha"
+  REFS="$REFS, $(_ref_label "$lref")"
 done <<EOF
 $STDIN
 EOF
+REFS="${REFS#, }"
 # Nothing moves and nothing is deleted → genuine no-op → allow, consume nothing.
 if [ -z "$MOVING" ] && [ "$DELETING" = 0 ]; then exit 0; fi
 
@@ -225,9 +248,10 @@ HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || printf '%s' "${MOVING## }")"
 mkdir -p "$REQUESTS" 2>/dev/null || true
 { echo "repo=$REPO"; echo "repo_name=$NAME"; echo "cwd=$PWD"
   echo "cmd=git push $REMOTE_NAME"; echo "sha=$HEAD_SHA"; echo "epoch=$now"
+  echo "refs=$REFS"
   echo "created=$(date '+%Y-%m-%d %H:%M')"; } > "$REQUESTS/$KEY" 2>/dev/null || true
 
-echo "🛑 Push to '$NAME' needs Kyle's approval. THE REQUEST IS NOW FILED — that is step 1 done." >&2
+echo "🛑 Push of ${REFS:-changes} to '$NAME' needs Kyle's approval. THE REQUEST IS NOW FILED — that is step 1 done." >&2
 echo "" >&2
 echo "   THE THREE STEPS. Every session follows these; nobody has to invent a dance." >&2
 echo "     1. FINISH COMMITTING FIRST, then ATTEMPT. Being denied IS how the request reaches" >&2

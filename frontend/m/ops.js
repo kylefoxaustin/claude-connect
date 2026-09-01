@@ -427,7 +427,10 @@ function proposalCard(p) {
 
   el.innerHTML =
     `<div class="card-head">` +
-    `<span class="card-who">📤 ${esc(p.repo_name)} wants to push</span>` +
+    // Name the ref, or a tag push is indistinguishable from the branch push already approved
+    // (Kyle, 2026-08-31: "didn't see any new ones to tap"). Absent on older gates -> unchanged.
+    `<span class="card-who">📤 ${esc(p.repo_name)} wants to push` +
+      (p.refs ? ` <code>${esc(p.refs)}</code>` : "") + `</span>` +
     `<span class="row-age">${ago(age)}</span></div>` +
     `<div class="card-q">${esc(p.why)}</div>` +
     (p.commits.length
@@ -763,7 +766,7 @@ function pushCard(p) {
     `<div class="card-head">` +
     `<span class="card-who">🔐 ${esc(repo)}</span>` +
     `<span class="row-age">${ago(age)}</span></div>` +
-    `<div class="row-sub">wants to push · <code>${esc(p.cmd || "git push")}</code></div>`;
+    `<div class="row-sub">wants to push · <code>${esc(p.refs || p.cmd || "git push")}</code></div>`;
 
   const row = document.createElement("div");
   row.className = "btn-row";

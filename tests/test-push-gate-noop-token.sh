@@ -18,11 +18,44 @@ mkdir -p "$COORD_STATE_DIR/push-tokens" "$COORD_STATE_DIR/push-requests"
 GA=(-c user.name=t -c user.email=t@e -c commit.gpgsign=false -c init.defaultBranch=main)
 
 # A bare "remote" + a working clone tracking it → HEAD == origin/main (nothing ahead).
+#
+# ⚠️ THE `-u` BELOW IS LOAD-BEARING AND WAS MISSING, so this suite failed 4 of 11 for reasons
+# that had nothing to do with the gate. Cloning an EMPTY bare repo sets no upstream, and a plain
+# `git push origin main` does not create one — so `@{u}` did not resolve, `rev-list --count
+# @{u}..HEAD` printed nothing, and the no-op branch (which requires the count to equal "0") was
+# UNREACHABLE. The gate then fell through and consumed, which is its documented behaviour when
+# there is no upstream. The suite was reporting a defect the gate does not have, in a path it
+# never executed.
+#
+# Same family as the no-burn guard's test earlier today, and the exact mirror of it: that one
+# established a precondition production LACKS (it fetched first); this one failed to establish
+# one production HAS. A fixture whose setup does not match reality measures the fixture.
+# ⚠️ THE FIXTURE MUST NOT USE `git push`, AND THAT IS WHY THIS SUITE WAS RED. `core.hooksPath`
+# is set globally, so the pre-push hook fires inside a scratch repo in /tmp too — it DENIED the
+# setup push, so `refs/remotes/origin/main` was never created, so `@{u}` did not resolve, so
+# `rev-list --count @{u}..HEAD` printed nothing, so the no-op branch (which requires "0") was
+# UNREACHABLE and the gate fell through and consumed. Four assertions failed describing a defect
+# the gate does not have, in a path they never executed.
+#
+# ⭐ The security control broke its own test's setup, and nothing noticed because these 30 shell
+# suites are not wired into `make test` — a check that did not run looks exactly like a check
+# that passed (M51), applied to the suite instead of the code.
+#
+# Seed the remote by FETCHING from the work tree, the way test-push-approval-survives-a-rebase.sh
+# already does. That establishes a real upstream with no push invocation to be gated, and without
+# teaching a bypass anyone could copy into a real repo.
 git "${GA[@]}" init -q --bare "$SB/remote.git"
-git "${GA[@]}" clone -q "$SB/remote.git" "$SB/work" 2>/dev/null
+git "${GA[@]}" init -q "$SB/work"
 WORK="$SB/work"
-( cd "$WORK" && echo hi > f && git "${GA[@]}" add f && git "${GA[@]}" commit -qm init \
-  && git "${GA[@]}" push -q origin main ) 2>/dev/null   # now upstream == HEAD
+( cd "$WORK" && echo hi > f && git "${GA[@]}" add f && git "${GA[@]}" commit -qm init ) 2>/dev/null
+git --git-dir="$SB/remote.git" fetch -q "$WORK" main:refs/heads/main 2>/dev/null
+( cd "$WORK" && git "${GA[@]}" remote add origin "$SB/remote.git" \
+  && git "${GA[@]}" fetch -q origin && git "${GA[@]}" branch -q -u origin/main main ) 2>/dev/null
+# The precondition every assertion below depends on. Prove it rather than assume it — assuming it
+# is precisely how this suite spent weeks reporting a gate bug that did not exist.
+if [ "$(cd "$WORK" && git rev-list --count '@{u}..HEAD' 2>/dev/null)" != "0" ]; then
+  echo "  FATAL fixture: no upstream, so the no-op path cannot be exercised"; exit 1
+fi
 
 KEY="$(printf '%s' "$WORK" | tr '/ ' '__' | sed 's/^_*//')"
 TOK="$COORD_STATE_DIR/push-tokens/$KEY"
@@ -47,7 +80,9 @@ mktok
 [ ! -f "$TOK" ] && ok "real push: token CONSUMED" || bad "real push did not consume token"
 
 # 4. non-bare push (explicit branch) with nothing ahead → CONSUMED (conservative)
-( cd "$WORK" && git "${GA[@]}" push -q origin main ) 2>/dev/null   # re-sync: nothing ahead
+# Re-sync without a push, for the same reason as the setup above.
+git --git-dir="$SB/remote.git" fetch -q "$WORK" main:refs/heads/main 2>/dev/null
+( cd "$WORK" && git "${GA[@]}" fetch -q origin ) 2>/dev/null   # re-sync: nothing ahead
 mktok
 [ "$(run 'git push origin main')" = 0 ] && ok "explicit-ref no-op: ALLOWED" || bad "explicit-ref denied"
 [ ! -f "$TOK" ] && ok "explicit-ref no-op: CONSUMED (not treated as bare)" || bad "explicit-ref wrongly preserved"

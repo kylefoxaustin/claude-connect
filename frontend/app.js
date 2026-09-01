@@ -1808,8 +1808,13 @@ function renderPushInbox(state) {
   const rows = reqs.map((r) => {
     const meta = document.createElement("div");
     meta.className = "push-req-meta";
-    meta.innerHTML = `<strong>🔐 ${r.repo_name}</strong> wants to push`
-      + (r.created ? ` <span class="push-when">· ${r.created}</span>` : "");
+    // Name WHAT is being pushed. Two requests for one repo used to render identically, so a
+    // tag push looked like the branch approval coming back — Kyle approved, saw an unchanged
+    // inbox, and reported "didn't see any new ones to tap" (2026-08-31). Older gates send no
+    // `refs`, and then this reads exactly as it did before.
+    meta.innerHTML = `<strong>🔐 ${escapeHtml(r.repo_name)}</strong> wants to push`
+      + (r.refs ? ` <span class="push-refs">${escapeHtml(r.refs)}</span>` : "")
+      + (r.created ? ` <span class="push-when">· ${escapeHtml(r.created)}</span>` : "");
     meta.title = r.cmd || "";
     const approve = document.createElement("button");
     approve.className = "push-approve"; approve.textContent = "Approve push";
