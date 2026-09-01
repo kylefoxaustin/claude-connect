@@ -135,7 +135,7 @@ FAMILY 2 — COORDINATION  (an ACTION wearing the appearance of being OWNED)
 > ### owner. Independence fails by correlation; coverage fails by allocation; ownership fails by
 > ### diffusion. Every failure in this document is exactly one of those three.**
 
-## ⚠️ WHAT THIS DOCUMENT CANNOT TELL YOU## ⚠️ WHAT THIS DOCUMENT CANNOT TELL YOU
+## ⚠️ WHAT THIS DOCUMENT CANNOT TELL YOU
 
 **Two limits, both raised by reviewers, both fatal to a naive reading.**
 
