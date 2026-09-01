@@ -180,9 +180,14 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
   Standing rule now in memory: never test an end-of-turn-committing bus command from inside the turn
   that runs it. 🔒 Also: `spellcheck="false"` on the two textareas carrying bus content (desktop
   Compose + the phone's `[operator]` broadcast) — Chrome's enhanced spell check ships textarea
-  contents to Google; tagged SOURCED, not MEASURED. **547 tests** (21 new). Known: `test_x11_health`
-  fails on a clean tree and `test_windows_focus` is order-flaky — both consult the REAL X server
-  instead of being hermetic.
+  contents to Google; tagged SOURCED, not MEASURED. **547 tests** (21 new). ~~Known:
+  `test_x11_health` fails on a clean tree and `test_windows_focus` is order-flaky~~ — **BOTH FIXED
+  2026-08-31, and neither was about X11 flakiness.** `test_x11_focus` left the human-active guard
+  live, so it graded whether Kyle had touched his keyboard in the last 4 s; `test_x11_health`
+  primed a hand-built env dict with no `PATH`, so `subprocess` fell back to `/bin:/usr/bin` and ran
+  the REAL `xdotool` against his REAL display. Both now pin the environment, and the health test
+  asserts its stub actually EXECUTED before believing what it returned. *A known-red line in a
+  phase note is a trained habit of ignoring one failure; it took two releases to spend that.*
 - ✅ v2.38.0: 🧯 **DR CAPSTONE — the fleet is now rebuildable on a new machine in one flow, incl.
   FROM THE PHONE.** Completes the v2.37 disaster-recovery arc with the pieces that turn "the data is
   backed up" into "one screen rebuilds the fleet." ⭐ **THE RECONSTITUTE SCREEN** (`conductor/

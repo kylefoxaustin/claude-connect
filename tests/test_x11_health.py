@@ -185,17 +185,36 @@ def test_a_moved_display_self_heals_without_a_restart(tmp_path, monkeypatch):
     """THE DRIFT CASE. skippy's display has been both :1 and :0 across reboots. A cached value
     that has gone stale must be re-discovered on the failing call, not held until someone
     restarts the service — inheriting once is the original bug."""
-    # Succeeds only for DISPLAY=:0; the cache is primed with the stale :1.
+    # ⚠️ THE ENV DICTS BELOW MUST CARRY PATH, and this test was red for weeks because they did
+    # not. `_run_x` passes `env=x11_env(...)` to subprocess, and on POSIX an unqualified command
+    # is resolved against the PASSED env's PATH. The real `x11_env()` is a full os.environ copy
+    # and always has one; a hand-built `{"DISPLAY": ":1"}` does not — so resolution fell back to
+    # os.defpath (`/bin:/usr/bin`), ran the REAL xdotool against Kyle's REAL :1 display, and
+    # returned his actual active window id. The fake was never executed at all.
+    #
+    # Same class as v2.26.1's test fakes: a fake missing a field the real object always has is a
+    # fake that passes while production takes a different path. Here it inverted — the fake FAILED
+    # while production was fine — and it cost the suite a permanent known-red line in CLAUDE.md
+    # that trained everyone to ignore one failure.
+    ran = tmp_path / "the-fake-ran"
     _fake_tool(tmp_path, "xdotool", body=(
+        # `: > file` is a shell BUILTIN plus a redirect. `touch` would be looked up on PATH,
+        # and PATH here is the stub dir alone — so the marker silently never appeared and
+        # made a stub that WAS running look like one that never ran.
+        f': > {ran}\n'
         'if [ "$DISPLAY" = ":0" ]; then echo 81825405; exit 0; fi\n'
         'echo "Cannot open display." >&2\nexit 0'
     ))
     monkeypatch.setenv("PATH", str(tmp_path))
     monkeypatch.delenv("DISPLAY", raising=False)
-    w._x11_env_cache = (float("inf"), {"DISPLAY": ":1"})     # stale, and "fresh" by TTL
-    monkeypatch.setattr(w, "_discover_display_env", lambda: {"DISPLAY": ":0"})
+    envp = {"PATH": str(tmp_path)}
+    w._x11_env_cache = (float("inf"), {"DISPLAY": ":1", **envp})   # stale, and "fresh" by TTL
+    monkeypatch.setattr(w, "_discover_display_env", lambda: {"DISPLAY": ":0", **envp})
 
     r = w._run_x(["xdotool", "getactivewindow"])
+    # ⭐ Prove the STUB ran before believing anything it "returned". Without this the test can
+    # silently grade the host's real X server, which is exactly what it was doing.
+    assert ran.exists(), "the real xdotool ran instead of the stub — this test is not hermetic"
     assert r.returncode == 0, "the retry must re-discover the moved display"
     assert r.stdout.strip() == "81825405"
 
