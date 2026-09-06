@@ -34,11 +34,38 @@ _claude_pid() {
   # CLAUDE_PID_OVERRIDE to name one. Advisory only — the pid-join confers NO authority (it just
   # picks the cursor key), so an override can never escalate anything; it is not a security seam.
   [ -n "${CLAUDE_PID_OVERRIDE:-}" ] && { printf '%s' "$CLAUDE_PID_OVERRIDE"; return 0; }
-  local p="$$" c i
+  #
+  # ⚠️ NEVER IDENTIFY THE PROCESS BY `comm`. Found by qualcomm and independently confirmed by
+  # lostchild, 2026-09-04, after qualcomm's read cursor sat frozen for two weeks.
+  #
+  # Claude Code execs its VERSIONED binary directly, so `comm` is a version string:
+  #     hop 1  pid=2396401  comm='bash'
+  #     hop 2  pid=3844859  comm='2.1.237'   <- the claude process
+  #     exe of 3844859: /home/kyle/.local/share/claude/versions/2.1.237
+  # No hop is named "claude", so this returned EMPTY -> my_session_id empty -> _turn_marker empty
+  # -> the writer staged "<ts><TAB>" with no marker -> Stop held a REAL marker from its payload ->
+  # mismatch -> `rm -f` -> the cursor could never advance. Not a broken Stop hook: a marker that
+  # was never written. The session read its mail and threw away the receipt every single turn.
+  #
+  # ⭐ AND IT SPREADS ON ITS OWN. Two version strings are live right now (2.1.237, 2.1.257) and
+  # lostchild's cursor works only because its process happens to still be literally named
+  # `claude`. Every session that restarts onto a versioned launcher freezes, one at a time,
+  # silently. 170 of 188 pid-join rows are dead for the same reason.
+  #
+  # `comm` is also truncated at 15 bytes, which bit this corpus before
+  # (`qemu-system-aarch64` -> `qemu-system-aar`). So: resolve the EXE PATH and identify the
+  # install, never the name. Same fix, same day, as conductor/scanner.py's is_claude_process —
+  # which is the part that stings: that lesson was written down on 2026-08-31 and not swept for
+  # elsewhere, and this file had the identical predicate the whole time.
+  local p="$$" c e i
   for i in 1 2 3 4 5 6 7 8; do
     [ -r "/proc/$p/comm" ] || break
     c="$(cat "/proc/$p/comm" 2>/dev/null || true)"
-    if [ "$c" = "claude" ]; then printf '%s' "$p"; return 0; fi
+    [ "$c" = "claude" ] && { printf '%s' "$p"; return 0; }
+    e="$(readlink "/proc/$p/exe" 2>/dev/null || true)"
+    case "$e" in
+      */claude/versions/*|*/bin/claude|*/claude) printf '%s' "$p"; return 0 ;;
+    esac
     p="$(awk '{print $4}' "/proc/$p/stat" 2>/dev/null || true)"
     case "$p" in ''|0|1) break ;; esac
   done
