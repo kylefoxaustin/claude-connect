@@ -416,12 +416,17 @@ def _unpack_wake(v: Any) -> tuple[str, float, float, str]:
     """``(seen, woke_at)`` / ``(…, activity_at)`` / ``(…, activity_at, latest_ts)`` — the tuple
     has grown over time; older entries are read back safely.
 
-    ``coord/wake-state.json`` persists across restarts, and only the first two fields ever reach
-    disk (see write_wake_state), so any run reads back short tuples. Treating a short one as
-    corrupt and dropping it would re-prod every session with unread mail once — the very storm
-    this machinery exists to end. Missing ``activity_at`` defaults to +inf so a legacy entry can
-    never satisfy the "active since we typed" retry test; missing ``latest_ts`` defaults to ""
-    (harmless — with activity +inf the retry is already blocked).
+    ``coord/wake-state.json`` persists across restarts. It USED to persist only the first two
+    fields, so every run read back short tuples and every entry got activity ``+inf`` — which is
+    safe against a boot storm and, unnoticed until 2026-09-17, also meant the lost-keystroke retry
+    could never fire after a restart. Four live sessions sat on 2,475 unread messages with their
+    dedup key pinned to a watermark only a successful read could move. write_wake_state now
+    persists the whole tuple; this stays tolerant of the short legacy form.
+
+    Treating a short entry as corrupt and dropping it would re-prod every session with unread mail
+    once — the very storm this machinery exists to end. So missing ``activity_at`` still defaults
+    to +inf (legacy entries stay retry-blocked until they are rewritten with a real stamp);
+    missing ``latest_ts`` defaults to "".
     """
     if isinstance(v, (list, tuple)):
         if len(v) >= 4:

@@ -84,7 +84,7 @@ def read_winddown(coord_root: Path) -> dict[str, Any]:
     return {"active": active, "acks": acks}
 
 
-def read_wake_state(coord_root: Path) -> dict[str, tuple[str, float]]:
+def read_wake_state(coord_root: Path) -> dict[str, tuple]:
     """Which sessions we've already prodded to check the bus, and at what watermark.
 
     Persisted (unlike most of Conductor's state, which is deliberately restart-clean)
@@ -97,23 +97,40 @@ def read_wake_state(coord_root: Path) -> dict[str, tuple[str, float]]:
         raw = json.loads(f.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
-    out: dict[str, tuple[str, float]] = {}
+    out: dict[str, tuple] = {}
     if isinstance(raw, dict):
         for tag, v in raw.items():
-            if isinstance(v, list) and len(v) == 2:
+            # Accept 2-, 3- and 4-element forms and pass the WHOLE tuple through;
+            # the caller normalises. This used to accept ONLY len==2, which silently
+            # dropped every richer entry — so widening the writer alone would have
+            # emptied the map on restart and re-prodded the entire fleet, the exact
+            # storm this file is persisted to prevent. Widen both sides or neither.
+            if isinstance(v, (list, tuple)) and 2 <= len(v) <= 4:
                 try:
-                    out[str(tag)] = (str(v[0]), float(v[1]))
+                    rest = tuple(v[2:])
+                    out[str(tag)] = (str(v[0]), float(v[1])) + rest
                 except (TypeError, ValueError):
                     continue
     return out
 
 
-def write_wake_state(coord_root: Path, state: dict[str, tuple[str, float]]) -> None:
-    """Best-effort persist. Never raises — a failure here must not break a scan."""
+def write_wake_state(coord_root: Path, state: dict[str, tuple]) -> None:
+    """Best-effort persist. Never raises — a failure here must not break a scan.
+
+    Persist the WHOLE tuple. This used to write ``[v[0], v[1]]`` while the scanner
+    stored a 4-tuple ``(watermark, woke_at, last_activity_at, latest_ts)``, so the
+    activity stamp never survived a restart; ``read_wake_state`` then read the
+    2-element form back with activity ``+inf``, and the lost-keystroke retry — whose
+    test is "the transcript MOVED while the watermark did NOT" — could never fire
+    again, because nothing exceeds infinity. A session that missed one wake stayed
+    silent forever. Measured 2026-09-17: four live sessions held 2,475 unread
+    messages with their dedup key pinned to a watermark only a successful read
+    could advance.
+    """
     try:
         coord_root.mkdir(parents=True, exist_ok=True)
         tmp = coord_root / "wake-state.json.tmp"
-        tmp.write_text(json.dumps({k: [v[0], v[1]] for k, v in state.items()}), encoding="utf-8")
+        tmp.write_text(json.dumps({k: list(v) for k, v in state.items()}), encoding="utf-8")
         tmp.replace(coord_root / "wake-state.json")   # atomic
     except OSError:
         pass
