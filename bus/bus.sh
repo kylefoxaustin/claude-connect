@@ -628,6 +628,48 @@ retract_hook_lines() {  # myplain last_seen
   printf '%s' "$out"
 }
 
+
+# ══ THE MUST-READ LANE ═══════════════════════════════════════════════════════════════════════
+# A tiny, fleet-wide, CURSOR-INDEPENDENT channel, shown IN FULL on every prompt to every session.
+#
+# WHY IT EXISTS. Every delivery defect this fleet has hit was a READ-POSITION bug, not a storage
+# bug: frozen cursors (4 sessions, 2,475 unread), a capped catchup that dropped the oldest, a wake
+# dedup keyed on the watermark only a successful wake could advance, and a reader truncating its own
+# output. The bus log is already one file — but at ~987k tokens nobody can read all of it, so a
+# subset is required, and a subset needs a read position, and a read position can break.
+# This lane has NO read position. It cannot freeze, cannot be capped past, cannot deadlock, and
+# cannot be truncated by a reader, because it is injected whole and it is deliberately tiny.
+#
+# WHAT GOES IN IT: retractions, fleet-wide corrections, "stop doing X, it is wrong". The class where
+# missing it is expensive. NOT ordinary traffic — the moment it carries chatter it becomes another
+# inbox and everyone learns to scroll past it, which is the only way this fails.
+#
+# ⚠️ A FULL LANE REFUSES THE WRITE. It does not drop the oldest to make room. Dropping the oldest
+# silently is precisely the defect we fixed in catchup the same week; scarcity here has to be felt
+# by the writer, not paid for by the reader.
+MUSTREAD_FILE="$COORD_ROOT/must-read"
+MUSTREAD_MAX="${BUS_MUSTREAD_MAX:-6}"        # live entries
+MUSTREAD_TTL_H="${BUS_MUSTREAD_TTL_H:-48}"   # hours
+MUSTREAD_CHARS="${BUS_MUSTREAD_CHARS:-240}"  # per entry — brevity is enforced, not requested
+
+_mustread_live() {   # prints live (unexpired) entries, oldest first: epoch<TAB>sender<TAB>text
+  [ -f "$MUSTREAD_FILE" ] || return 0
+  local now cutoff; now="$(date +%s)"; cutoff=$(( now - MUSTREAD_TTL_H * 3600 ))
+  awk -F'\t' -v c="$cutoff" 'NF>=3 && $1+0 >= c' "$MUSTREAD_FILE" 2>/dev/null || true
+}
+
+_mustread_lines() {  # the block injected into every prompt
+  local live n out=""
+  live="$(_mustread_live)"; [ -n "$live" ] || return 0
+  n="$(printf '%s\n' "$live" | wc -l | tr -d ' ')"
+  out="📌 MUST-READ ($n live, fleet-wide, not addressed to anyone in particular — shown to every session every turn):"$'\n'
+  while IFS=$'\t' read -r ep sender text; do
+    [ -n "$ep" ] || continue
+    out="${out}   • [$sender] ${text}"$'\n'
+  done <<< "$live"
+  printf '%s' "$out"
+}
+
 # ---- Fleet wind-down: the ordered shutdown protocol (the mirror of session-start) ----
 # startup ORIENTS a session (session-start injects standing orders + catch-up); wind-down PERSISTS it
 # (flush findings + memory + commits + leases, then ACK). Conductor closes ONLY acked sessions; a busy
@@ -2677,6 +2719,69 @@ $SS_CTX"
 
 
 
+  mustread)
+    # bus.sh mustread                 — list the live lane
+    # bus.sh mustread "<text>"        — add an entry (REFUSES if full; never drops to make room)
+    # bus.sh mustread drop <n>        — remove entry n (1-based, as listed)
+    # bus.sh mustread clear           — remove every entry you wrote
+    _sub="${1:-list}"
+    mkdir -p "$COORD_ROOT" 2>/dev/null || true
+    case "$_sub" in
+      list|"")
+        _live="$(_mustread_live)"
+        if [ -z "$_live" ]; then echo "must-read lane is EMPTY (this is the healthy state)."; exit 0; fi
+        echo "=== MUST-READ — live entries (shown to every session on every prompt) ==="
+        _i=0
+        while IFS=$'\t' read -r _ep _snd _txt; do
+          [ -n "$_ep" ] || continue
+          _i=$((_i+1))
+          printf '%2d. [%s] %s\n    added %s\n' "$_i" "$_snd" "$_txt" "$(date -d "@$_ep" '+%F %H:%M' 2>/dev/null || echo "$_ep")"
+        done <<< "$_live"
+        printf -- '--- %d/%d slots used · entries expire after %sh ---\n' "$_i" "$MUSTREAD_MAX" "$MUSTREAD_TTL_H"
+        ;;
+      drop)
+        _n="${2:-}"; [ -n "$_n" ] || { echo "usage: bus.sh mustread drop <n>" >&2; exit 2; }
+        _live="$(_mustread_live)"
+        _keep="$(printf '%s\n' "$_live" | awk -v k="$_n" 'NR!=k')"
+        printf '%s\n' "$_keep" | grep -v '^$' > "$MUSTREAD_FILE.tmp" 2>/dev/null || true
+        mv "$MUSTREAD_FILE.tmp" "$MUSTREAD_FILE"
+        echo "dropped entry $_n."
+        ;;
+      clear)
+        _live="$(_mustread_live)"
+        printf '%s\n' "$_live" | awk -F'\t' -v me="$TAG" '$2 != me' | grep -v '^$' > "$MUSTREAD_FILE.tmp" 2>/dev/null || true
+        mv "$MUSTREAD_FILE.tmp" "$MUSTREAD_FILE"
+        echo "cleared your own entries."
+        ;;
+      *)
+        _txt="$*"
+        # brevity is enforced. A long entry is a bus message, not a must-read.
+        if [ "${#_txt}" -gt "$MUSTREAD_CHARS" ]; then
+          echo "🛑 REFUSED — ${#_txt} chars, limit is $MUSTREAD_CHARS." >&2
+          echo "   The lane is shown to EVERY session on EVERY prompt. If it needs more than" >&2
+          echo "   $MUSTREAD_CHARS characters it is a bus message; post it with 'bus.sh send -'" >&2
+          echo "   and put a one-line pointer here." >&2
+          exit 2
+        fi
+        # ⚠️ FULL MEANS REFUSE, NOT EVICT. Dropping the oldest to make room is the catchup defect
+        # in a new costume — the writer must feel the scarcity, not the reader pay for it.
+        _live="$(_mustread_live)"
+        _n="$(printf '%s' "$_live" | grep -c . || true)"
+        if [ "${_n:-0}" -ge "$MUSTREAD_MAX" ]; then
+          echo "🛑 REFUSED — the must-read lane is FULL ($_n/$MUSTREAD_MAX)." >&2
+          echo "   Nothing was dropped to make room, deliberately. Either wait for an entry to" >&2
+          echo "   expire (${MUSTREAD_TTL_H}h), or remove one you own:  bus.sh mustread list" >&2
+          echo "   then  bus.sh mustread drop <n>" >&2
+          exit 2
+        fi
+        printf '%s\t%s\t%s\n' "$(date +%s)" "$TAG" "$_txt" >> "$MUSTREAD_FILE"
+        echo "📌 added to the must-read lane ($(( _n + 1 ))/$MUSTREAD_MAX). Every session sees this on its next prompt."
+        echo "   It expires in ${MUSTREAD_TTL_H}h. Remove it sooner with: bus.sh mustread list / drop <n>"
+        ;;
+    esac
+    exit 0
+    ;;
+
   prompt-check)
     # Called by UserPromptSubmit hook. Counts new messages on the bus
     # that arrived AFTER last-seen AND are not from this session's tag.
@@ -2933,8 +3038,12 @@ PROVPY
 
     # Nothing pending, no retraction, no collision, no service backlog, and every resource
     # free -> stay silent.
+      # Compute the must-read lane BEFORE the silence check. Wired only into FULL below, a turn
+      # whose ONLY content is a must-read entry would exit here and the one channel that cannot
+      # fail would fail. Found by reading the guard, not by running it.
+      MUSTREAD_BLOCK="$(_mustread_lines)"
     if [ -z "$NOTE" ] && [ -z "$RES_LINES" ] && [ -z "$SVC_LINES" ] && [ -z "$RETRACT_LINES" ] \
-       && [ -z "$SIBLING_LINES" ] && [ -z "$PROV_LINES" ]; then
+       && [ -z "$SIBLING_LINES" ] && [ -z "$PROV_LINES" ] && [ -z "$MUSTREAD_BLOCK" ]; then
       exit 0
     fi
 
@@ -2945,6 +3054,9 @@ PROVPY
     [ -n "$PROV_LINES" ] && FULL="$PROV_LINES"
     if [ -n "$SIBLING_LINES" ]; then FULL="${FULL:+$FULL$NL}$SIBLING_LINES"; fi   # then: which of me?
     if [ -n "$RETRACT_LINES" ]; then FULL="${FULL:+$FULL$NL}$RETRACT_LINES"; fi   # then retractions
+    # The must-read lane leads — before mail counts, resources, everything. It is the only
+    # channel with no read position, so it is the only one guaranteed to arrive.
+    if [ -n "$MUSTREAD_BLOCK" ]; then FULL="${MUSTREAD_BLOCK}${FULL:+$NL$FULL}"; fi
     if [ -n "$NOTE" ]; then FULL="${FULL:+$FULL$NL}$NOTE"; fi
     if [ -n "$SVC_LINES" ]; then FULL="${FULL:+$FULL$NL}$SVC_LINES"; fi           # my service backlog
     if [ -n "$RES_LINES" ]; then FULL="${FULL:+$FULL$NL}$RES_LINES"; fi
