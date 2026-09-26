@@ -158,6 +158,35 @@ _cursor_get() {   # the authoritative last-seen VALUE (member-keyed, migrated); 
   local m; m="$(_cursor_name)"; _cursor_migrate "$m"
   cat "$_CURSOR_SD/$m.last-seen" 2>/dev/null || true
 }
+# ── Is an autonomy window ("let them talk") live for THIS member? ────────────────────────────
+# Conductor owns the window (coord/autonomy.json: members + expires). bus.sh never read it, so the
+# per-prompt notice hard-coded "ask the user first" regardless — a SECOND SOURCE OF TRUTH for a
+# decision the operator had already made globally in one place. Measured cost (rt1180renode,
+# 2026-09-25): it sat on 6 messages while working and asked twice for permission; two of them were
+# a peer team accepting its root cause. One switch, not two.
+# FAILS CLOSED: missing file, parse error, expired window or non-membership => ASK. The conservative
+# direction is the one that cannot surprise the human.
+_autonomy_active() {
+  local f="$_CURSOR_SD/coord/autonomy.json"
+  [ -f "$f" ] || return 1
+  MY_TAG="$TAG" MY_MEMBER="$(_cursor_name 2>/dev/null || echo "$TAG")" python3 - "$f" 2>/dev/null <<'PYEOF' || return 1
+import json, os, sys, time
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+ws = d if isinstance(d, list) else d.get("windows", [])
+me = {os.environ.get("MY_TAG", ""), os.environ.get("MY_MEMBER", "")}
+me |= {f"[{x}]" for x in list(me) if x and not x.startswith("[")}
+me |= {x.strip("[]") for x in list(me) if x}
+now = time.time()
+for w in ws:
+    if float(w.get("expires", 0)) > now and me & set(w.get("members", [])):
+        sys.exit(0)
+sys.exit(1)
+PYEOF
+}
+
 _cursor_put_seen() {   # <ts> — dual-write the last-seen watermark (member + current tag)
   local m; m="$(_cursor_name)"; mkdir -p "$_CURSOR_SD" 2>/dev/null || true
   printf '%s\n' "$1" > "$_CURSOR_SD/$m.last-seen" 2>/dev/null || true
@@ -2103,7 +2132,7 @@ if os.environ.get("WL") == "1":
     mem = os.environ.get("MY_MEMBER") or ""
     if mem and mem != me:
         keys.append(mem)
-    ts = sel[-1]["ts"]
+    ts = shown[-1]["ts"]      # only as far as we SHOWED — never past an undisplayed message
     try:
         os.makedirs(sd, exist_ok=True)
         if os.environ.get("TWO_PHASE") == "1":
@@ -2299,18 +2328,28 @@ if total == 0:
     print("Already current — no unread since your last check (%s)." % (last or "ever"))
     sys.exit(0)
 
-# Digest every unread message. If a pathological backlog exceeds the ceiling, keep the NEWEST CAP
-# (most useful for triage) and DISCLOSE that the oldest were marked read without display — a
-# disclosed omission, never the silent truncation-then-advance that lost 91emulator 193 messages.
-if total > CAP:
-    shown = sel[-CAP:]
+# ⚠️ WHEN WE CANNOT SHOW EVERYTHING, SHOW THE OLDEST — NOT THE NEWEST.
+# The cursor is a single high-water mark, so "read" can only ever mean "everything at or below X".
+# This used to keep the NEWEST CAP and advance to the newest, which left the undisplayed OLDEST
+# messages BELOW the watermark and therefore unreachable. That omission was DISCLOSED — and a
+# disclosed omission is still an omission: disclosure does not make the messages recoverable, and
+# the skip lands on the oldest end, which is the start of a returning session's gap and the part it
+# most needs. Measured 2026-09-22: pai-sizer at 1,119 unread would have lost 119 from 24 senders.
+# So when capped we digest the OLDEST CAP and advance only as far as we actually SHOWED. Everything
+# under the watermark was displayed, repeated runs drain the gap in order, and the last run (now
+# under the ceiling) reverts to newest-first triage.
+capped = total > CAP
+if capped:
+    shown = sel[:CAP]
     undisplayed = total - CAP
 else:
     shown = sel
     undisplayed = 0
 
 # Default NEWEST-first (triage: live state first); --thread-order gives the oldest-first replay.
-display = shown if thread_order else list(reversed(shown))
+# A capped run is a REPLAY of a gap, not triage, and it is advancing through that gap in order —
+# so it reads oldest-first regardless.
+display = shown if (thread_order or capped) else list(reversed(shown))
 for m in display:
     hhmm = m["ts"][11:]                             # "YYYY-MM-DD HH:MM" -> "HH:MM"
     bell = "🔔 " if m["_wake"] else ""
@@ -2322,22 +2361,28 @@ for m in display:
 order = "oldest-first" if thread_order else "newest-first"
 print()
 if undisplayed:
-    print("--- digested the newest %d of %d unread (%s) · %d OLDER marked read without display — "
-          "`bus.sh check --all` for their text. Now current. ---" % (len(shown), total, order, undisplayed))
+    # NEVER print "Now current" here. It used to appear in this branch too, inside the same sentence
+    # as the omission warning, so the phrase carried no information and was the one a reader's eye
+    # stopped on (holobench, 2026-09-22 — its own rule 2 in a new costume).
+    print("--- digested the OLDEST %d of %d unread (oldest-first) · NOT CURRENT: %d newer still "
+          "unread and still yours. Run `bus.sh catchup` again to continue. ---"
+          % (len(shown), total, undisplayed))
 else:
     print("--- caught up: %d message(s) digested (%s). Now current. Full body: `bus.sh check --all`. ---"
           % (total, order))
 
-# Advance the cursor to the NEWEST unread (sel[-1]) — fully current in one call, the whole point of
-# catchup. Sound: when total<=CAP everything was shown; in the rare ceiling case the only
-# undisplayed messages are the OLDEST and that omission was DISCLOSED above (not a silent skip).
+# Advance the cursor to the newest message we ACTUALLY SHOWED (shown[-1]). Under the ceiling that is
+# the newest unread, so catchup is still fully current in one call — the whole point of it. Over the
+# ceiling it is the newest of the oldest CAP, so the watermark never passes a message the reader was
+# not given. The invariant, and it is the only one that makes a high-water mark safe:
+#     THE CURSOR MAY NEVER ADVANCE PAST SOMETHING THAT WAS NOT DISPLAYED.
 if os.environ.get("WL") == "1":
     sd = os.path.expanduser("~/.claude/bus-state")
     keys = [me]                                     # member-keyed cursor + tag dual-write (step 5)
     mem = os.environ.get("MY_MEMBER") or ""
     if mem and mem != me:
         keys.append(mem)
-    ts = sel[-1]["ts"]
+    ts = shown[-1]["ts"]      # only as far as we SHOWED — never past an undisplayed message
     try:
         os.makedirs(sd, exist_ok=True)
         if os.environ.get("TWO_PHASE") == "1":      # step 5b: pending advance, Stop commits it
@@ -2630,6 +2675,8 @@ $SS_CTX"
     [ "$SS_HAD_WATERMARK" -eq 1 ] || mark_seen_if_bus_tag
     ;;
 
+
+
   prompt-check)
     # Called by UserPromptSubmit hook. Counts new messages on the bus
     # that arrived AFTER last-seen AND are not from this session's tag.
@@ -2704,7 +2751,11 @@ $SS_CTX"
       MINE="$(printf '%s\n' "$NEW_MSGS" | awk '$4 == 1' | wc -l | tr -d ' ')"
       MINE_FROM="$(printf '%s\n' "$NEW_MSGS" | awk '$4 == 1 {print $3}' | sort -u | tr '\n' ' ' | sed 's/ *$//')"
       # Lead with the number that decides whether to stop what you are doing.
-      if [ "$MINE" -gt 0 ]; then
+      if [ "$MINE" -gt 0 ] && _autonomy_active; then
+        # Window live and I am a member: this was already granted globally. Reading is not acting —
+        # committing to new work or any fleet-wide action still goes to the human.
+        NOTE="Claude Bus — $MINE message(s) ADDRESSED TO YOU from $MINE_FROM ($COUNT new on the bus in total since you last checked; newest: $NEWEST). An autonomy window is LIVE for you: read and triage this yourself with /msg-check — do NOT ask permission first. Still surface: anything that commits you to new work, and any fleet-wide action."
+      elif [ "$MINE" -gt 0 ]; then
         NOTE="Claude Bus — $MINE message(s) ADDRESSED TO YOU from $MINE_FROM ($COUNT new on the bus in total since you last checked; newest: $NEWEST). Content NOT shown. At a natural pause, tell the user mail is waiting and ask whether to read it; run /msg-check once approved."
       else
         NOTE="Claude Bus — $COUNT new on the bus since you last checked, NONE addressed to you (senders: $SENDERS; newest: $NEWEST). Nothing needs you; read it with /msg-check only if the user asks or you want the context."
