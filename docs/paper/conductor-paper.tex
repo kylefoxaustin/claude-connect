@@ -41,34 +41,31 @@ Email: \textit{[to fill at submission]}}}
 
 % ---- ABSTRACT (drafted from draft-v4; trim to venue word limit if needed) ----
 \begin{abstract}
-Conductor is a fleet of persistent, memory-divergent agent sessions
---- one base model, durable per-session context, a shared append-only
-bus, and a human gating only irreversible actions. Over a
-months-long live deployment it grew to 35 concurrent projects for
-roughly constant total human prompting --- so attention per project
-fell by half, an observational trend, not a controlled measurement ---
-while the sessions co-designed and
-hardened their own coordination substrate in vivo under adversarial
-peer review --- closing $\sim$20 named failure modes --- and caught one
-another's defects from divergent empirical vantages. Our central
-finding, \emph{on the tasks we could construct}: what carries capability
-is the committed carrier --- the code, asserts, and checked-in docs any
-fresh session can read --- not the session's lived context. The scope
-qualifier is load-bearing, and \S V-D explains why: every task sterile
-enough to pre-register was one an unprimed agent could already solve, so
-the study has no specimen in which capability was the binding constraint. Context buys \emph{efficiency and
-recognition} --- 2.6$\times$ wall-clock and 36\% fewer steps on the
-pre-registered task --- and on some tasks \emph{costs} a
-thoroughness regression (pattern-match-and-stop; one arm RECALLED, \S V-D). We establish this by testing
-the intuition such designs rest on --- that accumulated context makes
-a session more capable on task $N{+}1$ because of tasks $1{\dots}N$ ---
-under six A/B ablations and a pre-registered baseline: every fresh session
-holding the carrier re-derived every fix; memory changed the path
-cost, never the outcome. The practitioner consequence: run
-context-heavy sessions as the default workforce, routing work by
-demonstrated history; commit everything that must stay true to the
-carrier; and audit long-lived sessions with periodic fresh-eyed
-clones.
+Conductor is a fleet of persistent, memory-divergent agent sessions --- one base model, durable
+per-session context, a shared append-only bus, and a human gating only irreversible actions. Over a
+months-long live deployment the sessions co-designed and hardened their own coordination substrate in
+vivo under adversarial peer review, closing roughly twenty named failure modes, and caught one
+another's defects from divergent empirical vantages. We report two things the deployment supports. The
+first is a reusable taxonomy of \emph{silent} coordination defects --- failures that return a
+plausible answer rather than an error, and so survive every gate that checks for errors --- with a
+distinct remedy per class, because a single generic discipline sails past most of them. The second is
+that peer sessions catch defects their author and the human miss, evidenced from the timestamped
+record rather than recalled. We also report, at length, what the deployment could \emph{not}
+establish. We set out to test whether accumulated context makes a session more capable on task
+$N{+}1$; an earlier version of this paper reported that it does not, and we withdraw that negative.
+The ablation behind it never manipulated the construct it named, and no arm of any task ever failed,
+so its falsifier was unreachable. The pre-registered replacement cannot be fielded here at all: a
+fleet running one session per repository has no second session with the same history, so it cannot
+furnish a within-domain control arm for any claim about accumulated context --- a property of the
+architecture, not of the hypothesis. Two further claims are withdrawn on defects found by outside
+review after we considered the paper ready, both in the direction that flattered it, and we report
+them as specimens of our own taxonomy: a longitudinal human-attention trend whose instrument drops
+records at a rate that rises with fleet size --- the same direction as the claimed effect --- and a
+pre-registered baseline whose target turned out to be one day old, measuring authorship recency
+rather than accumulated context. The practitioner consequences we still stand behind: commit
+everything that must stay true to the carrier any fresh session can read; give silent-failure classes
+named remedies rather than a general injunction to be careful; and treat a peer with a different
+vantage as an instrument, not a courtesy.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -84,49 +81,74 @@ experience report, ablation study, self-adaptive systems
 \IEEEPARstart{T}{he} prevailing agentic pattern is an orchestrator dispatching to
 stateless workers --- reproducible, but \emph{permanently at task 1}: no carried expertise,
 no division of labour, no shared context. Conductor inverts the premise: long-lived sessions
-with divergent memories talk to each other and build their own coordination substrate. Our
-contributions, stated at the level the evidence supports:
+with divergent memories talk to each other and build their own coordination substrate.
+
+This paper reports what that deployment established, and it is narrower than what we set out to
+show. Two contributions survive contact with their own evidence:
 
 \begin{enumerate}
-\item A method --- in-vivo adversarial co-design under reversibility-calibrated HITL.
-  The substrate's primitives were not designed up front; they were \emph{provoked by
-  silent-loss failures} the fleet hit in operation, proposed and attacked by peers on the bus,
-  and gated by a human whose approval is scoped to \emph{irreversibility} (commits are free;
-  pushes, and anything that outlives the session, are gated). We present it as a \emph{replicable
-  process with a stated mechanism and an existence proof} --- it produced and hardened a working
-  substrate --- not as a result validated against an up-front-design alternative (\S I-A).
-\item A system implementing it (bus, verified orders, a project layer, a decision
-  shield, measured governance), described as an experience report with the mechanical record.
-\item An evaluation that separates what the deployment \emph{establishes} from
-  what it only \emph{suggests}, and an account of the method's own failure modes ---
-  including a circularity we fell into and were corrected on.
+\item \textbf{A reusable taxonomy of silent coordination defects}, derived from the failure modes
+  closed in a live multi-agent substrate (\S V-B). Several are ablation-structured --- disable the
+  mechanism and the failure returns --- and at least one ablated in operation. The taxonomy's value
+  is that a single discipline (``just replicate,'' ``just tag'') sails past most of its classes,
+  each of which has a distinct remedy.
+\item \textbf{Cross-context peer review catches defects that individual sessions and the human
+  miss} (\S V-C), evidenced from the timestamped record: A ships at $t_0$, B refutes at $t_1$, both
+  attested. This is the claim the deployment supports best, and it is the one we were least
+  expecting to lead with.
 \end{enumerate}
 
-This is an experience report, and we ask to be judged at that bar: the contribution is what a
-months-long real deployment reveals --- we claim neither statistical generality ($N{=}1$ deployment)
+The system and the method that produced them --- in-vivo adversarial co-design under
+reversibility-calibrated HITL, where primitives were \emph{provoked by silent-loss failures} rather
+than designed up front, and a human's approval is scoped to \emph{irreversibility} (commits are
+free; pushes, and anything outliving the session, are gated) --- are reported as the \emph{setting},
+not as a validated result. We never ran the method against an engineer specifying the primitives up
+front, so we claim only that it is replicable, has a stated mechanism, and demonstrably produced a
+working substrate.
+
+This is an experience report and we ask to be judged at that bar: the contribution is what a
+months-long real deployment reveals. We claim neither statistical generality ($N{=}1$ deployment)
 nor emergent intelligence.
 
-Summary of findings (\S V): \emph{context compounds; capability does not.} \emph{What compounded}
-(confirmed by the record): (1)~stable roles and a load-shared division of labour; (2)~a fleet-designed,
-fleet-hardened coordination substrate --- the reusable method; (3)~cross-context peer review catching
-defects individual sessions and the human missed; and (4)~real efficiency from lived context.
-\emph{What did not}: task-solving capability --- under six A/B ablations and the
-pre-registered baseline it resides in the committed carrier, not the session.
+\emph{What we cannot claim, stated first because an earlier draft claimed it.} We set out to show
+that capability compounds --- that a context-carrying session solves what a fresh one cannot. It
+does not appear here, for two separate reasons, and neither is a null result. Our original ablation
+never manipulated the construct it named, and no arm of any task ever failed, so the falsifier was
+unreachable (\S V-D). The pre-registered replacement then could not be fielded at all: this fleet
+runs one session per repository, so the only domain able to supply six live context-carrying arms is
+the one the authors wrote (\S VIII). Per that pre-registration's committed interpretation, inability
+to construct a discriminating task is reported as a \emph{measurement-capability limit of the
+deployment} and never as evidence for the negative.
 
-\subsection{What we set out to show, and what survived}
-The contributions are not epistemically equal. The compounding-competence hypothesis --- capability
-on task $N{+}1$ from tasks $1{\dots}N$ --- \textbf{did not survive} (\S V-D, \S V-E), and that negative is the paper's most solid \emph{evaluated}
-result. The method (contribution~1), by contrast, has \emph{no controlled
-evidence}: we did not run in-vivo adversarial co-design head-to-head against an engineer specifying
-the primitives up front, so we do not claim it is superior --- only that it is a replicable process
-with a described mechanism that demonstrably \emph{produced} a working, hardened substrate. Its
-falsifier: the method claim weakens if the failures the adversarial process caught would
-have been caught as readily by ordinary single-author review, or if the primitives it converged on
-were worse than a competent up-front design. One \emph{observational} signal is consistent with it
-(not a controlled test): human prompts per active project declined as concurrent projects grew
-(Table~\ref{tab:touch}; a finer weekly series in \S V-A shows the same direction). The human moves
-from courier toward architect, which is what the method is for --- a trend with the usual
-longitudinal confounds, not proof.
+\subsection{What each contribution rests on, and what would falsify it}
+The two contributions are not epistemically equal, and neither is a controlled result.
+
+\textbf{The taxonomy (contribution~1)} rests on failure modes we closed and can point at: the fix
+commits exist, several are ablation-structured, and the classes were derived from the defects rather
+than imposed on them. \emph{Falsifier:} the taxonomy weakens if its classes collapse into one another
+under a larger corpus, or if a single generic discipline --- replicate everything, tag everything ---
+would have caught the same defects without the classification. We report the classes we could not
+merge; a reader who can merge them has refuted this.
+
+\textbf{Peer catching (contribution~2)} rests on the timestamped record: A ships at $t_0$, B refutes
+at $t_1$. \emph{Falsifier:} it weakens if the catches would have been made as readily by ordinary
+single-author review, or if the peer's advantage is really access rather than vantage --- B seeing a
+file A could not. We separate those two claims explicitly in \S V-C because an earlier draft
+conflated them. \emph{And a limit we cannot engineer away:} the fleet's primary record is an
+append-only message log held outside the public repository, so catches are attested by us and
+verifiable by a reader only through the curated extract we publish. The classification is checkable;
+the completeness of the underlying log is not.
+
+\textbf{The method} has no controlled evidence at all and we do not claim it is superior to up-front
+design. \emph{Falsifier:} the method claim weakens if the primitives it converged on are worse than a
+competent engineer's up-front design --- a comparison we did not run.
+
+\emph{A note on the direction of our own errors.} Every correction forced on this paper by review
+moved a claim \emph{down}: a negative we called solid was unsound, a signal we called supporting was
+confounded, and two catch attributions were wrong in the flattering direction. We have found no
+instance of review moving one of our claims up. A reader should weight the remaining claims
+accordingly, and we say so here rather than in a closing threats section, where it would arrive too
+late to be used.
 
 \begin{table}[t]
 \centering\footnotesize
@@ -334,7 +356,15 @@ forces are \emph{local} --- one attractor per domain --- not because anyone bala
 identity is an emergent property of continuity-plus-routing, not an org chart --- which is why it is the
 foundation the later findings rest on rather than a policy that could be tuned away.
 
-\subsection{RQ1 --- Courier elimination (proxy, with a latency tradeoff)}
+\subsection{RQ1 --- Courier elimination: a claim we withdraw, and the class it belongs to}
+\label{sec:rq1}
+\textbf{We do not claim this result.} We report it because the way it failed is a specimen of the
+taxonomy in \S V-B, found in our own headline measurement, by a third party, after we considered the
+paper ready --- and because the alternative, burying it in threats to validity, would model exactly
+the behaviour this paper argues against. The original argument and its evidence follow, then the
+defect.
+
+
 1,109 directed messages (as-of the corpus stamp) are \emph{candidates} for auto-delivery ---
 hand-offs a human would otherwise relay --- so the count is a ceiling on relays avoided,
 not a claim that all were delivered: the realized count is a \textbf{GAP} --- auto-delivery is a
@@ -407,6 +437,37 @@ was faster. The substrate optimizes the human's attention (fewer relays to run),
 can \emph{worsen} the critical-path latency of any single hand-off. The honest claim
 is \emph{attention saved}, not \emph{time saved} --- RQ5 (\S V-E) shows the same shape at the
 single-agent level (context bought steps and wall-clock but \emph{more} tokens).
+
+\subsubsection*{The defect, and why it is fatal rather than a caveat}
+The instrument is \texttt{history.jsonl}, which records human prompts. It loses records. The
+mechanism was found by reading the writer rather than by auditing the data: a file lock is attempted
+and, after a bounded number of failures, silently abandoned --- the write is dropped with no error,
+no retry and no marker. Contention rises with the number of concurrently active sessions, so
+\textbf{the loss is concentrated rather than random, and it scales with fleet size.}
+
+That is the same direction as the claimed effect. Our claim was that human touch per active project
+\emph{falls} as concurrent projects \emph{rise}; the instrument drops more records exactly as
+concurrency rises. A decline would therefore appear in this measurement whether or not one occurred.
+This is not a limitation to disclose alongside the result --- it is a mechanism that can manufacture
+the entire result, and it runs in the direction that flatters the paper's thesis.
+
+\textbf{It is class-2 in \S V-B's terms: informative missingness.} The taxonomy already names the
+shape --- a monitoring mechanism whose failures concentrate on the cases satisfying the condition it
+certifies, so the census is \emph{biased, not merely thinned}. We wrote that class from the
+acknowledgment-routine defect (\S V-C addendum) and did not apply it to the measurement three
+subsections earlier. \emph{Knowing the class did not protect the author who wrote it.}
+
+Two further properties make it a good specimen rather than merely an error. It is \textbf{silent}:
+no count is implausible, no arithmetic fails, and every figure in Table~\ref{tab:touch} is internally
+consistent. And it is \textbf{invisible from inside the measurement}: no analysis of
+\texttt{history.jsonl} can detect records that were never written --- only reading the writer can,
+which is what happened. A completeness check requires a second, independent enumeration, and we had
+none.
+
+\textbf{What we would need to claim it.} An independent record of human prompts --- a
+terminal-level capture, or a writer whose dropped writes are counted rather than discarded --- and a
+re-measurement against it. We did not have one, and we do not report the effect. The counting
+machinery remains in the replication package so a future measurement can be compared against it.
 
 \subsection{RQ2 --- Failure modes closed, with real ablations (+ the defect taxonomy)}
 \textbf{MEASURED}: of the 38 \texttt{fix} commits (as-of the corpus stamp), $\sim$20 close \emph{named coordination failure modes}.
@@ -516,208 +577,63 @@ bound on the substrate, not only a credit to the peer.} The episode is a class-3
 exit status, not a same-input reasoning disagreement --- it leaves \S V-D's
 no-same-input-reasoning-catch statement \textbf{unaffected}.
 
-\subsection{RQ4 --- Compounding competence: claim, confound, and the ablation test}
-We split the claim into RQ4a (the crisp-symptom floor: does context lower re-derivation cost
-on a task with an objective oracle?) and RQ4b (the open-search ceiling: does it on a task a
-fresh agent cannot cheaply bisect?), and test both below.
-\textbf{Correlation, MEASURED:} context-carrying sessions recognized bug-classes fast (e.g.\ a
-register-coverage gate green over 12/370, the class recognized in seconds because prior tasks
-had named it; one-line fix $\rightarrow$ 12/370$\rightarrow$370/370, surfacing a
-dead-time-zero shoot-through). The confound (owned): same model $\rightarrow$ this may be ``persistent
-memory works,'' a known result, and memory-\emph{present} is not memory-\emph{causal}.
-\textbf{The test (LANDED) --- six A/B ablations + the RQ5 baseline, and the naive claim does not hold
-up.} A \emph{genuinely isolated} fresh session
-(harness-isolation caveat binding) vs.\ a context-carrying one on the same task, measuring
-re-derivation cost:
+\subsection{RQ4 --- Compounding capability: withdrawn, and why it could not be retested here}
+We set out to show that a session carrying lived context solves what a fresh one cannot. An earlier
+draft reported the negative --- that it does not --- and called it the paper's most solid evaluated
+result. \textbf{We withdraw both the claim and the negative.} The study could not detect the effect
+whose absence it reported, for two independent reasons, each verified against our own artifacts after
+an adversarial review raised them.
 
-\begin{itemize}
-\item game-coach --- the best-powered arm, and the backbone of the negative result
-  (coach affordance overriding an engine fact; N=8 per arm --- the only powered
-  ablation of the six): 16/16 reached the real architectural fix; BLIND mean 5.4
-  tool-calls / 37.4k tok vs PRIMED 6.5 / 44.2k --- priming cost a little and bought
-  benefit, and all 16 used no git history. A clean, powered NEGATIVE: a fresh clone
-  holding the carrier re-derives the fix; session-memory adds nothing to the \emph{outcome}. We
-  lead with this arm deliberately --- a negative result is only as strong as its best-powered
-  evidence.
-\item mcu-emu --- a COUNTER-CURRENT (color), not the foundation (register-coverage hole;
-  N=3 blind arms on a single task instance, post-hoc-graded, and its own author cautions
-  against causal weight): all three re-derived the identical one-line fix (3--5 tool calls, 46--105
-  s). Beyond negative, it showed a vivid \emph{thoroughness regression} --- the
-  context-carrying run pattern-matched a pre-staged answer and stopped, missing a
-  second register class (DISMAP) the blind arm caught. \textbf{Its warm arm is RECALLED, not
-  MEASURED}: it was not re-instrumented, so the comparison rests on the author's account of the
-  original run. We tag it because a provenance ladder used only where it is free is decoration. Suggestive, but single-instance
-  and unpowered; we present it as color on the powered result above, never as its base.
-\item emu-B (idle-vs-load clock constant; N=18, fictional subject to
-  kill harness contamination): cost-contingent. When measuring is
-  \emph{hypothetical/costly} the standing-order arm wins unanimously (control ships the
-  confidently-wrong idle value; treatment re-derives the hazard); when the measurement is made
-  cheap (a runnable probe), both arms 6/6 ship the right number --- the base
-  model just does it. The residual real effect is \emph{a disposition at a cost/effort fork},
-  not added capability.
-\item media-npu (INT8) (INT8 class-score collapse; objective corr $>$ 0.90): the fresh
-  agent reached the same root cause in $\sim$the same $\sim$4 steps, solved it (6 m 44
-  s, 16 calls, cls-corr 0.956). A PARTIAL NEGATIVE --- refines the claim to a \emph{bound}
-  (below).
-\item perf-A (one of the two pre-registered ablations --- rubric hash published to
-  the bus before any agent launched; N=3/arm): tests whether a \emph{wrong} carrier actively
-  harms. It does not --- stale docs had zero measurable effect
-  (misled-to-wrong-file 0/3 in \emph{both} arms; the stale-doc arm was marginally
-  \emph{cheaper}, and every agent detected the staleness unprompted). \emph{Bonus:}
-  a blind zero-context arm caught a real overstatement in the author's
-  own case in nine tool calls.
-\item media-npu (C2 open-search sequel) (pre-registered rubric
-  --- hashed and independently witnessed before the fresh arms ran; Arm~A scored \emph{post-hoc}
-  from the bus record): a distinct
-  experiment from the INT8 ablation above, testing the open-search \emph{ceiling}, with the same
-  A/B shape --- Arm~A the context-carrying session (scored post-hoc from record: it produced
-  the correct empirical rule immediately on the bus, R1--R4 satisfied at $\approx$one message) vs.\
-  Arm~B four fresh isolated agents run under the hashed rubric. Its symmetric
-  falsifier fired --- all four fresh arms \emph{also} solved the constructed task at floor cost, so it
-  was secretly bisectable --- and it is reported as a \textbf{NULL} (no capability gap observed, but
-  no clean ceiling measurement either), with the finding \emph{why} (reproducibility
-  $\perp$ open-search; detailed below).
-\item RQ5 (\S V-E, the baseline, not an ablation): both arms correct with zero help; context bought 2.6$\times$
-  wall-clock and 36\% fewer steps but more tokens.
-\end{itemize}
+\textbf{The ablation never manipulated the construct it named.} The text described ``a genuinely
+isolated fresh session versus a context-carrying one.'' The ablation record shows \emph{both arms
+were fresh memoryless subagents}, differing only by a hand-distilled summary placed in the prompt.
+What was refuted, therefore, is that a summary injected into a prompt helps --- a different and much
+weaker proposition. No arm of any ablation ever ran a live context-carrying session against a fresh
+one.
 
-\textbf{The result, stated plainly: the committed carrier is what carries capability; lived
-context buys efficiency and recognition, not capability.} This is a powered negative that corrects a widely-held
-intuition. A fresh clone \emph{holding the repo} re-derives the fix
-because what carries is what is still true in the carrier when the next session reads it,
-and the executable carrier governs
-(code / assert / invariant); a \emph{prose} carrier is ``neither the asset nor the liability
-anyone claimed'' (perf-A's wrong-doc ablation is self-refuting because the code is there to
-check it against). The efficiency/capability line, made operational (so ``efficiency''
-is falsifiable, not a relabel that absorbs every gain): we score an ablation arm as a
-\emph{capability} gain iff the context-carrying arm reaches a correct fix the fresh arm
-does NOT, and an \emph{efficiency} gain iff it reaches the \emph{same} correct fix
-\emph{more cheaply} (fewer steps/tokens/time). Under that test the five floor ablations (the five non-C2 ablations, all testing the
-crisp-symptom floor) + RQ5 are efficiency, not capability --- across every arm the fresh agent reached a correct fix
-(game-coach 16/16, mcu-emu 3/3, emu-B 6/6, INT8 in $\sim$4 steps, perf-A 3/3 correct in
-\emph{both} arms (0/3 misled), both RQ5 arms), so the measured advantages (RQ5's 2.6$\times$ fewer steps;
-game-coach's flat outcome) are cheaper-path, not can-vs-cannot. C2, the sixth ablation, is
-excluded from this verdict on purpose: both its arms reached the answer, but its symmetric
-falsifier fired (the task was not genuinely open-search), so C2 yields \emph{no}
-capability-vs-efficiency signal about the ceiling --- it is a pre-registered NULL (below), not a
-data point in the efficiency finding. \emph{This is a falsifiable claim: a single
-ablation where the fresh arm FAILS and the context arm succeeds would move it to
-``capability'' --- we looked and did not find one on the tasks tested.} The
-defensible, bounded RQ4b claim: accumulated context compounds most on an open
-search a fresh agent cannot cheaply bisect and least on a crisp symptom with an
-objective oracle (any agent bisects fast); on some specimens context even shows a
-\emph{thoroughness regression} (pattern-match-and-stop). \textbf{This bound is half-measured:
-the crisp-symptom FLOOR is MEASURED (the five floor ablations bisected fast, and even C2's ceiling
-attempt collapsed to a fast bisection); the open-search CEILING
-resists measurement --- and we report the \emph{pre-registered sequel that tried to measure it
-and why it could not.}} A fresh attempt (media-npu, C2 --- rubric hashed and bus-published +
-independently witnessed BEFORE any arm ran) built a ``hard'' open-search task in a sterile,
-reproducible sandbox; its pre-registered symmetric falsifier fired: all 4 fresh arms reached
-the correct answer at floor cost ($\sim$4 tool calls, $\sim$60 s), so the task was secretly
-\emph{bisectable}, and per the pre-registration it is reported as a NULL --- NOT as support for
-the floor. The finding is the reason: reproducibility and the open-search property are in
-TENSION --- a sterile, offline, pre-registerable task must place its answer in an inspectable
-artifact, and the instant the answer is in an artifact, \texttt{strings} turns the task into a
-bisection. Real open-search cost lives in the answer being \emph{absent from every artifact}
-(learnable only by iterating on hardware over days --- the SoC converter case). So the
-ceiling is HARD TO INSTRUMENT, which is a \emph{different} claim from being ABSENT; the honest
-earning test is a field A/B on real hardware (natural-history, controlled where
-possible), not a sandbox --- and a contrived ``open'' task that looked bisectable would have
-manufactured a \emph{false null on the floor}, which the pre-registered symmetric falsifier
-exists to prevent, and did. We report the naive ``memory makes task \emph{N+1} dramatically
-cheaper'' as refuted on the tasks tested, and the open-search ceiling as an
-\textbf{honest, reasoned GAP} --- measurable floor, un-sandboxable ceiling --- rather than a
-claim dressed as a result.
-We conjecture the unmeasured ceiling is task \emph{origination} ---
-identifying that the work needs doing at all, a step every ablation and the baseline held fixed by
-construction --- which is what the field replication (\S VIII) is designed to expose.
+\textbf{And the falsifier was unreachable.} Across six ablations and the baseline, \emph{no arm of
+any task ever failed}. A design whose falsifier requires the fresh arm to fail cannot fire on tasks
+nobody fails; the uniform success is a ceiling effect, not a null.
 
-A discipline the fleet imposed on us, and it is the sharper point: the C2 null and
-\texttt{perf-A}'s stale-doc null (\S V-B/RQ2) are NOT independent corroboration --- they
-are one mechanism on two surfaces. Both tasks were \emph{bisectable by construction because
-the ground truth was inspectable in the artifacts}: perf-A's arms scored 0/3-misled because the
-code was there to check the doc against; C2's arms scored 4/4-solved because the
-answer was \texttt{strings}-able out of the model file. By the convergence-provenance
-rule (\S V-D independence), this is common-dependency at the mechanism tier (and
-shared-base-model) --- near-zero independent weight. So we cite them as two
-illustrations of one constraint (reproducibility $\perp$ open-search), never as two nulls
-agreeing. What \emph{is} load-bearing is the constraint itself: it held across two
-domains (stale-doc/app vs converter/NPU) and two opposite failure directions (0/3 vs 4/4),
-which is evidence the constraint is real --- \emph{even though the two nulls do not
-independently corroborate it.} The finding generalizes; the data points do not
-replicate.
-\emph{(Sequel artifacts --- the hash-pinned pre-registration and results --- are in the anonymized
-replication package; DOI at camera-ready.)} (Grading: two of the six ablations pre-registered
-their rubric, \texttt{perf-A} and the C2 sequel; the rest are post-hoc graded --- \S VII.)
+\subsubsection*{The replacement, and the limit that stopped it}
+We pre-registered a corrected experiment before running anything: fixed $N$, interleaved arms,
+isolation established by construction and transcript audit rather than self-report, a rubric hashed
+with the file, and grading by a session that authored neither the code under test nor the
+registration. It was witnessed by non-authors, amended three times pre-results in response to their
+objections, and every amendment is a pure append --- the registered text is byte-identical under
+every later revision.
 
-The independence sub-claim (RQ4-adjacent) --- the measured bound, at exactly the strength the
-record supports. A skeptic rightly objects that our divergence proxies (disjoint task histories, low
-memory-file overlap, divergent tool-call sequences) measure divergence of \emph{inputs}, whereas
-independence of estimators requires uncorrelated \emph{errors} --- and two same-model sessions share a
-generative prior, so their reasoning errors can correlate even with different inputs. We tested this
-directly rather than waving at it. We classified the 13 solid record-attested cross-session
-catches (\S V-C; a 14th is an incidental exposure, excluded) as factual/local (a discrete
-fact the catcher held differently) vs.\ reasoning-shaped (the catcher reasoned to a
-different conclusion). The split is 6 factual, 7 reasoning-shaped --- $\approx$1:1, which
-\emph{at face value would refute} an ``input-divergence-only'' reading. But the honest reading is narrower, and it is the one
-the record supports: every reasoning-shaped catch was made by a peer at a different
-\emph{empirical vantage} --- a measurement relocated into the subject (a guest-emitted clock),
-different physical silicon, or the ship-vs-implement test-direction asymmetry --- not by an
-independent reasoner spotting a co-located reasoning flaw from identical inputs. The corpus authors
-say so themselves (``a different vantage point, a property of the substrate, not of any one model
-being smarter''), and there is no instance in the record of a peer catching a same-input
-reasoning error. We therefore claim independence \emph{only relative to} the divergence proxies,
-never absolutely: peers do catch reasoning-shaped defects, but they catch them by being
-\emph{empirically positioned} differently --- the input/grounding divergence the proxies measure ---
-which is a measured bound on the claim, not evidence of uncorrelated errors in the estimator sense.
-A second pre-registered instrument on the same catches agrees. A rubric hashed before any
-classification (\texttt{perf-A}'s, executed by a non-author, \texttt{rq3\_categorisation\_test-*}) tested
-a sharper form --- whether peer catches cluster in naming/categorisation rather than
-logic (the ``an author cannot search for what they mis-filed'' hypothesis). It was
-refuted over the same 13 classifiable catches ($L{=}7$, $N{=}6$; robust to every borderline
-call, and with two biases --- a write-up selection effect and an $N$-generous tie-break --- both
-running \emph{toward} naming and it still lost): peer catches are a \emph{mix}, not a naming cluster,
-the same picture the factual/reasoning split gives. A shared-lineage counter-specimen makes that divergence concrete at the artifact
-level
-(owner-confirmed on three trees; \texttt{cases\_emu-C\_flash-lock-three-way.md}): the same QEMU model
-family (three sibling SoC emulators, one vendor family) encoded \emph{one} flash-controller lock
-register three different ways --- emu-C buggy (lock keyed off the wrong bit $\rightarrow$ a 5\,ms
-stall), emu-B clean-and-faithful, emu-A clean-but-latent-wrong (a hardcoded lock, wrong at reset). A defect on one tree was \emph{structurally
-impossible} on its siblings from the same lineage, and even the two passes diverged in fidelity. So
-shared model is a prior to \emph{check}, never a finding to \emph{inherit} --- what discharges
-it per tree is a receipt (file:line + a test), not the lineage. Same generative prior, three distinct
-implementations: exactly the divergence the proxies measure. (Honest limit, which the specimen states:
-the three ports share a bus, so we cannot claim the encodings were arrived at \emph{independently} ---
-only that the artifacts diverged and each tree confirmed its own by test.)
-\subsection{RQ5 --- Baseline: cold orchestrator vs.\ peer substrate (pre-registered)}
-One matched task, run both ways, pre-registered (frozen spec + black-box acceptance
-test + directional prediction committed before either arm ran; the instrument was first proven
-satisfiable via a throwaway reference impl, then proven to actually test the feature against
-the unmodified baseline). Task: add \texttt{project pause/resume} to the $\sim$700-line
-\texttt{project.sh} state machine --- a \emph{new instance of a familiar class}, objectively
-gradeable on six behaviors. Arm A = a genuinely memoryless fresh session (separate
-\texttt{\$HOME}, no memory/bus/hooks, verified at run time). Arm B = \texttt{api-svc},
-the peer with the most lived \texttt{project.sh} history, business-as-usual (not told it was an
-experiment). Both worked from an identical repo copy that \emph{includes} \texttt{CLAUDE.md} (a
-real clone has it --- the conservative choice, it helps Arm A) but excludes the spec and
-\texttt{.git}.
+It has not run, and on this deployment it cannot. A qualifying task must have a live
+context-carrying arm with genuine domain history, at the registered $N$. \textbf{This fleet runs one
+session per repository}, so the only domain that can supply that many live arms is the one the
+authors wrote --- which fails the registration's own author-circularity criterion. Three candidate
+tasks were nominated and disqualified for three structurally different reasons (access, cheap
+re-derivation, and author-circularity); the constraint is not candidate quality.
 
-\textbf{MEASURED result --- and it does not simply flatter the thesis.} Both arms reached a
-\emph{functionally correct} implementation (all six behaviors) with zero substantive
-human help. So a fair clone \emph{holding the committed carrier} is fully capable with no
-session-memory --- corroborating the ablation convergence in \S V-D. But lived context
-bought real efficiency: Arm B finished in 7.8 min vs 20.1 (2.6$\times$), with
-36\% fewer tool calls (14 vs 22) and 41\% fewer lines added (39 vs 66 --- more surgical) --- it
-\emph{recognized} the state machine rather than exploring it. The honest counter-current,
-reported: Arm B used 38\% \emph{more} output tokens (35.2k vs 25.6k) --- the
-compounding benefit here is speed and recognition, not token cost. The pre-registered
-prediction (B fewer human turns + less wall-clock) was confirmed on wall-clock/steps,
-tied at zero on human turns (the task was tractable enough that neither needed intervention
---- so RQ5 measures the single-agent efficiency delta, \emph{not} the courier delta of RQ1).
-\emph{Bonus, in-apparatus:} the frozen acceptance test carried a latent defect (a
-crude substring assert tripping on a correct ``NOT dispatched'' refusal); it was
-disclosed, not patched --- editing a frozen instrument post-hoc is the exact sin this
-paper studies (\S V-F). Full protocol + both arms' diffs: \texttt{cases\_rq5-baseline.md}.
+The registration committed in advance to how this outcome is read, precisely because it flatters a
+reframe we were separately considering: \emph{inability to construct a discriminating task is
+reported as a measurement-capability limit of the deployment, and never as support for the
+negative.} We report it as that. The generalisable form is a property of the architecture rather
+than of the hypothesis: \textbf{a one-session-per-repository fleet cannot furnish a within-domain
+control arm for any claim about accumulated context}, because the only session with the history is
+the only session there is.
+
+\subsection{RQ5 --- Baseline: reported, not claimed}
+We pre-registered and ran one matched task both ways: a fresh memoryless session against the peer
+with the most lived history in the target file, both from an identical repo copy, graded on six
+behaviours by a black-box acceptance test, with the directional prediction committed before either
+arm ran and the instrument first proven satisfiable against an unmodified baseline.
+
+\textbf{The design stands; the target did not.} Review established that the file chosen as ``the
+peer's most lived history'' was roughly one day old at baseline. Whatever the arms differed in, it
+was not accumulated context --- it was authorship recency, which is a different variable with a
+different meaning. We therefore report the experiment and not its outcome.
+
+We keep it here for two reasons. The apparatus is reusable and is pinned in the replication package
+--- a later study with a correctly aged target can run it unchanged. And the failure is itself a
+member of \S V-B's taxonomy: a pre-registered experiment, correctly executed, measuring a quantity
+other than the one its variable was named for. Pre-registration constrains \emph{analysis}; it does
+not verify that the independent variable is the construct.
 
 \subsection{The paper as an instrument (an operational finding, not a controlled result)}
 Asking sessions to substantiate claims \emph{to an external audience} forced verification of
@@ -749,9 +665,11 @@ constraint. Effort that preserves session memory buys speed, not correctness, \e
 that kind}. When the two compete for budget, the
 carrier wins.
 
-\textbf{2. Use lived context where efficiency and routing pay --- and audit it.} Persistent
-sessions finished the matched task 2.6$\times$ faster with 36\% fewer steps, and let the lead
-route work on a peer's demonstrated history rather than a declared role. But context also
+\textbf{2. Route on demonstrated history --- and audit the sessions you route to.} A lead can route
+work by what a peer has actually done rather than by a declared role, and that is what the record
+supports. \emph{We no longer quote an efficiency figure for it:} our matched-task numbers came from
+the baseline whose target proved a day old (\S V-E), so they measure authorship recency, not
+accumulated context. But context also
 produced the one failure class unique to it: the \emph{thoroughness regression}, in which a
 context-carrying session pattern-matched a staged answer and stopped short of the second defect
 a blind arm caught (\S V-D). Long-lived sessions therefore need a periodic fresh-eyes pass ---
@@ -800,7 +718,7 @@ the fleet.
 \item $N{=}1$, one operator, one workstation, one model family.
 \item Self-authorship, including \emph{this reframe} --- written by an interested lead who is
   also the author of the substrate under evaluation (\S V-C addendum),
-  corrected by peers; we prefer machine evidence throughout and mark recollection RECALLED.
+  corrected by peers. We prefer machine evidence throughout; the \textsc{recalled} tier is defined in Table~\ref{tab:prov} and \emph{is applied nowhere in this paper}, which is the honest report --- an earlier draft promised the tag and used it once, on a claim now withdrawn. A provenance tier that is never applied is a tier the reader should not be asked to trust in.
 \item The bystander-catch corpus contracted under audit. While preparing this paper, two
   claimed cross-session catches did not survive record-checking --- a ``\texttt{api-svc} tag-flip
   caught by a peer'' was in fact self-caught, and ``slam-A caught four independent errors'' had no
@@ -842,13 +760,20 @@ deployment, however rich, establishes a \emph{method worth replicating}, not a l
 \section{Conclusion}
 Conductor is an experience report on a nameable composition --- one model, durable per-session
 memory, a shared bus, a human gating only irreversibility --- that co-designed and hardened its
-own coordination substrate in vivo. Its headline intuition, compounding competence, was put to
-six A/B ablations and a pre-registered baseline, and \textbf{the naive form did not hold up: what
-carries capability is the committed carrier, and lived context buys efficiency and recognition,
-not capability} --- most on open searches a fresh agent cannot cheaply bisect, least on crisp
-symptoms with an objective oracle (the floor measured, the ceiling a reasoned gap). That bounded negative is the paper's most solid evaluated
-result, and the process that produced it --- peers refuting the lead on the bus, an ablation
-refuting its own author's case --- is the mechanism under study.
+own coordination substrate in vivo. Its headline intuition --- that accumulated context makes a session more capable --- we could not
+test. An earlier version reported that it does not hold; we withdraw that, because the ablation
+behind it never varied the construct it named and its falsifier could never fire. The corrected
+experiment is pre-registered and witnessed and \emph{cannot be run on this deployment at all}: a
+fleet with one session per repository has no second session carrying the same history.
+
+What the deployment does establish is smaller and sturdier. Silent coordination defects fall into a
+small number of classes with distinct remedies, and we name them. Peers with different vantages catch
+what an author and an operator miss --- including, repeatedly, in this paper: three of the claims
+above were withdrawn on defects found by other sessions and an outside reviewer after we thought the
+work was finished, and every one of those defects ran in the direction that flattered us. The process
+that produced those corrections --- peers refuting the lead on the record, an ablation refuting its
+own author --- is the mechanism under study, and it is the part we would carry to another
+deployment.
 
 The reusable contribution is the method: in-vivo adversarial co-design by persistent,
 context-divergent peers under a reversibility-gating human, offered as an existence proof with
