@@ -1,6 +1,6 @@
 # RQ3 — cross-session defect catches, classified (supporting artifact)
 
-The independence bound in the paper (§V-D) rests on classifying every **record-attested
+The independence bound in the paper (§V-C) rests on classifying every **record-attested
 cross-session catch** — one session catching a defect in *another* session's shipped work (not a
 self-catch, not a human catch) — as **A = factual/local** (a discrete fact the catcher held
 differently) or **B = reasoning-shaped** (the catcher reasoned to a different conclusion). Mined
@@ -14,7 +14,7 @@ from `cases_*.md`, the bus archive, and git, 2026-07-27.
 | 4 | bench-A → net-emu | deeper-RX-ring "fix" does nothing (0.6 s of 65; 0 ring-full drops) | **B** | plausible hypothesis refuted by a controlled probe; net-emu reverted | commit `cb3b04d8fe` |
 | 5 | emu-B → emu-C | gated LPCG TPM counter resets to 0, but silicon HOLDS the flip-flop | **B** (borderline A) | off-state semantics reasoned from the gate-OFF path 91's gate-ON tests never ran | fix `a11d421a31` |
 | 6 | emu-B → emu-C | audio gate stops the clock but not the bytes (guards on ENABLE bits not clock) | **B** (borderline A) | reasoned from the data-fallback path | fix `7a322e875f` |
-| 7 | ablation_perf-A blind arm → sizer | Case 1 severity overstated (129 cells "user-visible" — actually gated to Mid/High UI ⇒ latent) | **B** | control-flow/reachability miss, caught reading `app.py` | `ablation_perf-A.md`; `cases_perf-A.md:149` |
+| ~~7~~ | **EXCLUDED BY RULE** (ablation-arm outcome; §2 of the pre-registration bars these). Retained here for the record, NOT counted. ablation_perf-A blind arm → sizer | Case 1 severity overstated (129 cells "user-visible" — actually gated to Mid/High UI ⇒ latent) | **B** | control-flow/reachability miss, caught reading `app.py` | `ablation_perf-A.md`; `cases_perf-A.md:149` |
 | 8 | perf-B → api-svc | live v2.0.0 shipped a "Prototype" header/footer 2 d 14 h post-go-live | **A** | stale UI string (naming) | `cases_perf-B.md` C3; commit `e0c3d08` |
 | 9 | media-npu → socdev-A | "verified" Neutron YOLOv8 INT8 quantized w/o calibration (wrong scale) → cls_corr 0.10 | **A** | wrong published quant parameter; reproduced socdev-A's numbers to 5 dp | `cases_media-npu.md` C2 |
 | 10 | docs → slam-A | "fixed-K Amdahl overhead" bandwidth model — impossible (K doubles when W doubles) | **B** | wrong analytical model; refuted by diffing derivations on shared data | `cases_docs.md` C3 |

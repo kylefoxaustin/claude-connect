@@ -55,3 +55,8 @@ per-active-project as a proxy for per-delivered-project) — a trend, not a cont
 
 Reproduce: bin `history.jsonl` records by ISO week of `timestamp`, count prompts and distinct
 `project` values per bin.
+
+> **Reconciliation note (June).** This series reports June as 1,936 human prompts; `evidence.md`
+> reports 1,949 for the same closed month. The difference is the genuine-prompt filter (harness
+> injections and bare slash-commands excluded here, not there). The paper uses this series. Neither
+> figure is load-bearing for any claim the paper still makes.

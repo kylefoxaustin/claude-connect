@@ -29,10 +29,11 @@ per-session context, a shared append-only bus, and a human gating only irreversi
 months-long live deployment the sessions co-designed and hardened their own coordination substrate in
 vivo under adversarial peer review, closing roughly twenty named failure modes, and caught one
 another's defects from divergent empirical vantages. We report two things the deployment supports. The
-first is a reusable taxonomy of \emph{silent} coordination defects --- failures that return a
-plausible answer rather than an error, and so survive every gate that checks for errors --- with a
-a named place to point a verification per class, one of them specific to agents
-carrying accumulated context. The second is
+first is a set of recurring shapes of \emph{silent} failure in agent self-evaluation --- failures
+that return a plausible answer rather than an error, and so survive every gate that checks for
+errors. Each names a place a verification must go; one is specific to agents carrying accumulated
+context, and we believe it is new. We do not claim the set is reusable beyond this deployment, and
+we report a merge a reader should try first. The second is
 that peer sessions catch defects their author and the human miss, evidenced from the timestamped
 record rather than recalled. We also report, at length, what the deployment could \emph{not}
 establish. We set out to test whether accumulated context makes a session more capable on task
@@ -304,7 +305,10 @@ actuator, and the drill is what detects the drift.
 A note on names: throughout the evaluation, a codename in parentheses (e.g.\ \texttt{net-emu},
 \texttt{perf-A}) identifies an \emph{individual Claude Code session} --- the participant that
 produced, or is the subject of, the adjacent claim. These codenames are role-hinting pseudonyms for
-publication, and the artifact package preserves the real$\leftrightarrow$pseudonym mapping. Every quantitative
+publication. We state the limit of that layer plainly rather than implying more: the
+artifact files carry the deployment's own session names, so the pseudonymisation is a readability
+device in the prose and not a confidentiality measure, and the correspondence is recoverable from
+the filenames cited beside each claim. Every quantitative
 claim below carries an explicit \emph{provenance tier}; the fleet adopted these as
 a discipline and we define them once here (Table~\ref{tab:prov}). The rule the deployment enforces on
 itself: a derived or recalled number may never be reported bare, and a claim a reviewer cannot resolve
@@ -460,7 +464,7 @@ biased instrument reproduces the bias.
 tier caveat)}
 \label{sec:rq3}
 We split two claims review conflated. (i) A measurement vantage exists (supporting,
-not the RQ3 claim): MEASURED (build-A), a 38-Bash-call build had 17 measurement calls (1 \texttt{tracemalloc}, 12
+not the RQ3 claim): MEASURED (\texttt{cases\_jaws.md}), a 38-Bash-call build had 17 measurement calls (1 \texttt{tracemalloc}, 12
 \texttt{/proc} probes, 4 runs) --- a vantage a browser assistant could not occupy, proven from
 the event log. (ii) A peer caught what the author shipped (the actual RQ3 claim, and
 it needs the \emph{same} timestamp rigor --- A ships at t0, B refutes at t1, both from the

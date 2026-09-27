@@ -1,6 +1,6 @@
 \relax 
 \@writefile{toc}{\contentsline {section}{\numberline {I}Introduction and Contributions}{1}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {I-A}}What we set out to show, and what survived}{1}{}\protected@file@percent }
+\newlabel{sec:intro}{{I}{1}}
 \citation{autogen}
 \citation{metagpt}
 \citation{chatdev}
@@ -20,32 +20,49 @@
 \citation{floyd1984,davis1992}
 \citation{boehm1988}
 \citation{basiri2016}
-\citation{gmemory}
-\citation{rcrrouter}
-\@writefile{lot}{\contentsline {table}{\numberline {I}{\ignorespaces Human touch per active project (\texttt  {history.jsonl}). Jan/Mar (1 and 7 prompts) are omitted; April, the substrate's build-out month, is shown but excluded from the shape claim as bootstrap-heavy. Three buckets cannot establish a trend and June\nobreakspace  {}$\approx $\nobreakspace  {}May, so we report the shape, corroborated by a 14-week breakdown (replication package, as-of 2026-07-27 --- four days behind this table's 2026-07-31 stamp, so its July row reads 1{,}219/34/35.9; the difference is four days of July). Analyzed in \S  V-A.}}{2}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {I-A}}What each contribution rests on, and what would falsify it}{2}{}\protected@file@percent }
+\newlabel{sec:falsify}{{\mbox  {I-A}}{2}}
+\@writefile{lot}{\contentsline {table}{\numberline {I}{\ignorespaces Human touch per active project (\texttt  {history.jsonl}). Jan/Mar (1 and 7 prompts) are omitted; April, the substrate's build-out month, is shown but excluded from the shape claim as bootstrap-heavy. Three buckets cannot establish a trend and June\nobreakspace  {}$\approx $\nobreakspace  {}May, so we \emph  {reported} the shape. We no longer claim it: this table is retained as the class-2 specimen of \S  \mbox  {V-A}\hbox {}, because its instrument under-counts at a rate that rises with concurrency --- the same direction as the effect --- and the table is internally consistent anyway, which is what makes the defect invisible from inside the data. The withdrawn argument, and a 14-week breakdown (replication package, as-of 2026-07-27 --- four days behind this table's 2026-07-31 stamp, so its July row reads 1{,}219/34/35.9; the difference is four days of July). Analyzed in \S  \mbox  {V-B}\hbox {}.}}{2}{}\protected@file@percent }
 \newlabel{tab:touch}{{I}{2}}
 \@writefile{toc}{\contentsline {section}{\numberline {II}Related Work}{2}{}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces The composition: persistent \emph  {sessions} post to and read an append-only \textbf  {Bus}; a lead fans work as \textbf  {Verified orders} (\texttt  {deliver} reads the artifact back before acknowledging); the \emph  {human} gates only irreversible acts (\textbf  {Governance}: the SHA-pinned push gate); \emph  {Conductor} observes read-only and never drives the agents. The through-line: \emph  {verify the outcome, not the intention.}}}{2}{}\protected@file@percent }
-\newlabel{fig:arch}{{1}{2}}
-\@writefile{toc}{\contentsline {section}{\numberline {III}The Architecture}{2}{}\protected@file@percent }
+\newlabel{sec:related}{{II}{2}}
+\citation{gmemory}
+\citation{rcrrouter}
 \citation{floyd1984,davis1992}
 \citation{boehm1988}
 \citation{basiri2016}
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces The composition: persistent \emph  {sessions} post to and read an append-only \textbf  {Bus}; a lead fans work as \textbf  {Verified orders} (\texttt  {deliver} reads the artifact back before acknowledging); the \emph  {human} gates only irreversible acts (\textbf  {Governance}: the SHA-pinned push gate); \emph  {Conductor} observes read-only and never drives the agents. The through-line: \emph  {verify the outcome, not the intention.}}}{3}{}\protected@file@percent }
+\newlabel{fig:arch}{{1}{3}}
+\@writefile{toc}{\contentsline {section}{\numberline {III}The Architecture}{3}{}\protected@file@percent }
+\newlabel{sec:arch}{{III}{3}}
 \@writefile{toc}{\contentsline {section}{\numberline {IV}The Method: In-Vivo Adversarial Co-Design}{3}{}\protected@file@percent }
+\newlabel{sec:method}{{IV}{3}}
 \@writefile{toc}{\contentsline {section}{\numberline {V}Evaluation}{3}{}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {II}{\ignorespaces Provenance tiers used throughout the evaluation.}}{3}{}\protected@file@percent }
-\newlabel{tab:prov}{{II}{3}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-A}}RQ1 --- Courier elimination (proxy, with a latency tradeoff)}{4}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-B}}RQ2 --- Failure modes closed, with real ablations (+ the defect taxonomy)}{4}{}\protected@file@percent }
+\newlabel{sec:eval}{{V}{3}}
 \citation{rubin1976}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-C}}RQ3 --- Defect discovery by vantage (machine-evidenced)}{5}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-D}}RQ4 --- Compounding competence: claim, confound, and the ablation test}{6}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-E}}RQ5 --- Baseline: cold orchestrator vs.\ peer substrate (pre-registered)}{8}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-F}}The paper as an instrument (an operational finding, not a controlled result)}{8}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {VI}Implications for Practitioners}{8}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {VII}Threats to Validity}{9}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {VIII}Future Work: A Pre-Registered Replication}{9}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {IX}Conclusion}{10}{}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {II}{\ignorespaces Provenance tiers used throughout the evaluation.}}{4}{}\protected@file@percent }
+\newlabel{tab:prov}{{II}{4}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-A}}Failure modes closed, and the taxonomy they surfaced (RQ2)}{4}{}\protected@file@percent }
+\newlabel{sec:taxonomy}{{\mbox  {V-A}}{4}}
+\citation{rubin1976}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-B}}Specimen 1 --- courier elimination: a withdrawn claim (RQ1)}{5}{}\protected@file@percent }
+\newlabel{sec:rq1}{{\mbox  {V-B}}{5}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-C}}RQ3 --- Defect discovery by vantage (attested from the record; see the tier caveat)}{5}{}\protected@file@percent }
+\newlabel{sec:rq3}{{\mbox  {V-C}}{5}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-D}}Specimen 2 --- compounding capability: withdrawn, and why it could not be retested here (RQ4)}{6}{}\protected@file@percent }
+\newlabel{sec:rq4}{{\mbox  {V-D}}{6}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-E}}Specimen 3 --- the baseline: reported, not claimed (RQ5)}{7}{}\protected@file@percent }
+\newlabel{sec:rq5}{{\mbox  {V-E}}{7}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-F}}The paper as an instrument (an operational finding, not a controlled result)}{7}{}\protected@file@percent }
+\newlabel{sec:instrument}{{\mbox  {V-F}}{7}}
+\@writefile{toc}{\contentsline {section}{\numberline {VI}Implications for Practitioners}{7}{}\protected@file@percent }
+\newlabel{sec:implications}{{VI}{7}}
+\@writefile{toc}{\contentsline {section}{\numberline {VII}Threats to Validity}{7}{}\protected@file@percent }
+\newlabel{sec:threats}{{VII}{7}}
+\@writefile{toc}{\contentsline {section}{\numberline {VIII}Future Work: A Pre-Registered Replication}{8}{}\protected@file@percent }
+\newlabel{sec:future}{{VIII}{8}}
+\@writefile{toc}{\contentsline {section}{\numberline {IX}Conclusion}{8}{}\protected@file@percent }
+\newlabel{sec:concl}{{IX}{8}}
 \bibstyle{IEEEtran}
 \bibdata{references}
 \bibcite{autogen}{1}
@@ -55,6 +72,7 @@
 \bibcite{captainagent}{5}
 \bibcite{autoagents}{6}
 \bibcite{masrouter}{7}
+\@writefile{toc}{\contentsline {section}{References}{9}{}\protected@file@percent }
 \bibcite{routellm}{8}
 \bibcite{frugalgpt}{9}
 \bibcite{moa}{10}
@@ -71,5 +89,4 @@
 \bibcite{gmemory}{21}
 \bibcite{rcrrouter}{22}
 \bibcite{rubin1976}{23}
-\@writefile{toc}{\contentsline {section}{References}{11}{}\protected@file@percent }
-\gdef \@abspage@last{11}
+\gdef \@abspage@last{10}
