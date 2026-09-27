@@ -14,8 +14,7 @@
 
 \begin{document}
 
-\title{Silent Defects in a Self-Coordinating Agent Fleet:\\
-       A Taxonomy, a Peer-Review Record, and Three Withdrawn Claims}
+\title{Silent Defects in a Self-Coordinating Agent Fleet}
 
 \author{\IEEEauthorblockN{Kyle Fox}
 \IEEEauthorblockA{Independent Researcher\\
@@ -37,12 +36,12 @@ we report a merge a reader should try first. The second is
 that peer sessions catch defects their author and the human miss, evidenced from the timestamped
 record rather than recalled. We also report, at length, what the deployment could \emph{not}
 establish. We set out to test whether accumulated context makes a session more capable on task
-$N{+}1$; an earlier version of this paper reported that it does not, and we withdraw that negative.
+$N{+}1$; an earlier version of this paper reported that it does not, and we no longer claim it.
 The ablation behind it never manipulated the construct it named, and no arm of any \emph{executable} task ever failed,
 so its falsifier was unreachable. The pre-registered replacement cannot be fielded here at all: a
 fleet running one session per repository has no second session with the same history, so it cannot
 furnish a within-domain control arm for any claim about accumulated context --- a property of the
-architecture, not of the hypothesis. Two further claims are withdrawn on defects found by outside
+architecture, not of the hypothesis. Two further claims were dropped on defects found by outside
 review after we considered the paper ready, both in the direction that flattered it, and we report
 them as specimens of our own taxonomy: a longitudinal human-attention trend whose instrument drops
 records at a rate that rises with fleet size --- the same direction as the claimed effect --- and a
@@ -160,7 +159,7 @@ establish a trend and June~$\approx$~May, so we \emph{reported} the shape. We no
 retained as the class-2 specimen of \S\ref{sec:taxonomy}, because its instrument under-counts at a
 rate that rises with concurrency --- the same direction as the effect --- and the table is
 internally consistent anyway, which is what makes the defect invisible from inside the data.
-The withdrawn argument, and a 14-week
+The dropped argument, and a 14-week
 breakdown, are preserved in the replication package (as-of 2026-07-27 --- four days behind this table's
 2026-07-31 stamp, so its July row reads 1{,}219/34/35.9; the difference is four days of July).
 Analyzed in \S\ref{sec:rq1}.}
@@ -421,7 +420,7 @@ perf-A$\leftrightarrow$perf-B --- cheaper than a designed one, and record-visibl
 agreement on different fixes is derived-not-copied). \emph{Shipping only the tag documents the
 bug rather than fixing it.}
 
-\subsection{Specimen 1 --- courier elimination: a withdrawn claim (RQ1)}
+\subsection{Specimen 1 --- courier elimination: a claim we do not make (RQ1)}
 \label{sec:rq1}
 \textbf{We do not claim this result.} We report it because the way it failed is a specimen of
 class~2 in \S\ref{sec:taxonomy}, caught in this paper's own headline measurement. The argument as we
@@ -452,7 +451,7 @@ paper, and it was negative.
 courier-elimination mechanism is \emph{unreliable}, and we report a production instance rather than
 only the aggregate: a directed job failed to auto-wake its peer on a stale watermark, and the human
 relayed it by hand --- an actual delivery below the ceiling the claim assumed. This stands
-independently of the withdrawn trend, which is why it survives the withdrawal: it is an observed
+independently of the dropped trend, which is why it survives the cut: it is an observed
 event, not an inference from \texttt{history.jsonl}. The companion delivery paper analyses this
 failure mode in depth from the other side.
 
@@ -462,7 +461,7 @@ Categorizing every bus sender (MEASURED, \texttt{human\_fleet\_decomposition.md}
 directed messages. That figure rests on the bus log, which has a different writer and no
 contention-correlated loss, and we retain it. It speaks to who originates coordination --- the
 sharpest objection to the method claim, that the human is the real router --- and it stands
-independently of the withdrawn trend.
+independently of the dropped trend.
 
 \textbf{What we would need to claim it.} An independent record of human prompts, written by a
 different mechanism than the one under test, and a completeness check against it --- which is a
@@ -538,11 +537,11 @@ nothing here supports a claim beyond that. Two consequences we hold to: before c
 results as corroboration, check whether they share a generative mechanism and discount if they do;
 and a peer with the same vantage as the author is not a second instrument.
 
-\subsection{Specimen 2 --- compounding capability: withdrawn, and why it could not be retested here (RQ4)}
+\subsection{Specimen 2 --- compounding capability: not claimed, and why it could not be retested here (RQ4)}
 \label{sec:rq4}
 We set out to show that a session carrying lived context solves what a fresh one cannot. An earlier
 draft reported the negative --- that it does not --- and called it the paper's most solid evaluated
-result. \textbf{We withdraw both the claim and the negative.} The study could not detect the effect
+result. \textbf{We claim neither the result nor the negative.} The study could not detect the effect
 whose absence it reported, for two independent reasons, each verified against our own artifacts after
 an adversarial review raised them.
 
@@ -688,7 +687,7 @@ the fleet.
 \item $N{=}1$, one operator, one workstation, one model family.
 \item Self-authorship, including \emph{this reframe} --- written by an interested lead who is
   also the author of the substrate under evaluation (\S\ref{sec:rq3} addendum),
-  corrected by peers. We prefer machine evidence throughout; the \textsc{recalled} tier is defined in Table~\ref{tab:prov} and \emph{is applied nowhere in this paper}, which is the honest report --- an earlier draft promised the tag and used it once, on a claim now withdrawn. A provenance tier that is never applied is a tier the reader should not be asked to trust in.
+  corrected by peers. We prefer machine evidence throughout; the \textsc{recalled} tier is defined in Table~\ref{tab:prov} and \emph{is applied nowhere in this paper}, which is the honest report --- an earlier draft promised the tag and used it once, on a claim we have since dropped. A provenance tier that is never applied is a tier the reader should not be asked to trust in.
 \item The bystander-catch corpus contracted under audit. While preparing this paper, two
   claimed cross-session catches did not survive record-checking --- a ``\texttt{api-svc} tag-flip
   caught by a peer'' was in fact self-caught, and ``slam-A caught four independent errors'' had no
@@ -734,7 +733,7 @@ deployment, however rich, establishes a \emph{method worth replicating}, not a l
 Conductor is an experience report on a nameable composition --- one model, durable per-session
 memory, a shared bus, a human gating only irreversibility --- that co-designed and hardened its
 own coordination substrate in vivo. Its headline intuition --- that accumulated context makes a session more capable --- we could not
-test. An earlier version reported that it does not hold; we withdraw that, because the ablation
+test. An earlier version reported that it does not hold; we drop that, because the ablation
 behind it never varied the construct it named and its falsifier could never fire. The corrected
 experiment is pre-registered and witnessed and \emph{cannot be run on this deployment at all}: a
 fleet with one session per repository has no second session carrying the same history.
@@ -742,7 +741,7 @@ fleet with one session per repository has no second session carrying the same hi
 What the deployment does establish is smaller and sturdier. Silent coordination defects fall into a
 small number of recurring shapes, and each names a place a verification must go. Peers with different vantages catch
 what an author and an operator miss --- including, repeatedly, in this paper: three of the claims
-above were withdrawn on defects found by other sessions and an outside reviewer after we thought the
+above were dropped on defects found by other sessions and an outside reviewer after we thought the
 work was finished, and every one of those defects ran in the direction that flattered us. The process
 that produced those corrections --- peers refuting the lead on the record, an ablation refuting its
 own author --- is the mechanism under study, and it is the part we would carry to another

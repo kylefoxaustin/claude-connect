@@ -1,6 +1,6 @@
 # Human-touch series (supporting artifact for RQ1 / §V-B, specimen 1)
 
-> ⚠️ **THE CLAIM THIS ARTIFACT SUPPORTED IS WITHDRAWN.** The paper no longer reports a
+> ⚠️ **THE PAPER NO LONGER MAKES THE CLAIM THIS ARTIFACT SUPPORTED.** It no longer reports a
 > human-touch trend. The instrument below (`history.jsonl`) truncates its own append under
 > contention, so it drops records at a rate that RISES WITH FLEET SIZE — the same direction as the
 > claimed decline, meaning a decline would appear here whether or not one occurred. The series is
