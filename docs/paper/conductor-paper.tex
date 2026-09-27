@@ -361,47 +361,7 @@ forces are \emph{local} --- one attractor per domain --- not because anyone bala
 identity is an emergent property of continuity-plus-routing, not an org chart --- which is why it is the
 foundation the later findings rest on rather than a policy that could be tuned away.
 
-\subsection{RQ1 --- Courier elimination: specimen 1, a withdrawn claim}
-\label{sec:rq1}
-\textbf{We do not claim this result.} We report it because the way it failed is a specimen of
-class~2 in \S\ref{sec:taxonomy}, caught in this paper's own headline measurement. The argument as we
-originally made it --- a monthly per-project human-touch decline, a weekly series read for
-direction, and a leverage computation over concurrent projects --- is preserved in the replication
-package; we do not restate it here, because every figure in it derives from the instrument the next
-paragraph invalidates. Table~\ref{tab:touch} is retained as the exhibit.
-
-\textbf{The defect, and why it is fatal rather than a caveat.} The instrument is
-\texttt{history.jsonl}, and it loses records. The writer truncates its own append under
-contention, so the loss is \emph{concentrated rather than random, and it scales with fleet size}.
-That is the whole problem: the claimed effect is a decline in per-project human touch as concurrent
-projects rise, and the instrument drops more records exactly as concurrency rises. A decline would
-therefore appear in this measurement whether or not one occurred. The direction of the artifact and
-the direction of the claim are the same, so no amount of internal consistency in the table can
-separate them --- and the table \emph{is} internally consistent, which is precisely what made the
-defect invisible from inside the data.
-
-\textbf{It is class-2 in \S\ref{sec:taxonomy}'s terms: informative missingness}
-(MNAR~\cite{rubin1976}). The failures of a monitoring mechanism concentrate on the very condition
-the mechanism exists to attest, so the census is \emph{biased}, not merely thinned. We wrote that
-class from the acknowledgment-routine defect (\S\ref{sec:rq3} addendum) and did not apply it to the
-measurement three subsections earlier. \textbf{Knowing the class did not protect the author who
-wrote it} --- which we report as the only field trial of the taxonomy's prospective value in this
-paper, and it was negative.
-
-\textbf{What survives, explicitly.} The sender decomposition does \emph{not} ride this instrument.
-Categorizing every bus sender (MEASURED, \texttt{human\_fleet\_decomposition.md}) as human
-(\texttt{[operator]}) or fleet gives the human 0.9\% of all coordination messages and 1.9\% of
-directed messages. That figure rests on the bus log, which has a different writer and no
-contention-correlated loss, and we retain it. It speaks to who originates coordination --- the
-sharpest objection to the method claim, that the human is the real router --- and it stands
-independently of the withdrawn trend.
-
-\textbf{What we would need to claim it.} An independent record of human prompts, written by a
-different mechanism than the one under test, and a completeness check against it --- which is a
-second enumeration, not a replication of the first. We did not have one, and a replication of a
-biased instrument reproduces the bias.
-
-\subsection{RQ2 --- Failure modes closed, with real ablations (+ the defect taxonomy)}
+\subsection{Failure modes closed, and the taxonomy they surfaced (RQ2)}
 \label{sec:taxonomy}
 \textbf{MEASURED}: of the 38 \texttt{fix} commits (as-of the corpus stamp), $\sim$20 close \emph{named coordination failure modes}.
 Several are ablation-structured --- disable the mechanism, the failure returns --- and
@@ -455,6 +415,46 @@ HARVEST (a parallel peer at the same boundary building the same artifact is a
 perf-A$\leftrightarrow$perf-B --- cheaper than a designed one, and record-visible: cross-tree
 agreement on different fixes is derived-not-copied). \emph{Shipping only the tag documents the
 bug rather than fixing it.}
+
+\subsection{Specimen 1 --- courier elimination: a withdrawn claim (RQ1)}
+\label{sec:rq1}
+\textbf{We do not claim this result.} We report it because the way it failed is a specimen of
+class~2 in \S\ref{sec:taxonomy}, caught in this paper's own headline measurement. The argument as we
+originally made it --- a monthly per-project human-touch decline, a weekly series read for
+direction, and a leverage computation over concurrent projects --- is preserved in the replication
+package; we do not restate it here, because every figure in it derives from the instrument the next
+paragraph invalidates. Table~\ref{tab:touch} is retained as the exhibit.
+
+\textbf{The defect, and why it is fatal rather than a caveat.} The instrument is
+\texttt{history.jsonl}, and it loses records. The writer truncates its own append under
+contention, so the loss is \emph{concentrated rather than random, and it scales with fleet size}.
+That is the whole problem: the claimed effect is a decline in per-project human touch as concurrent
+projects rise, and the instrument drops more records exactly as concurrency rises. A decline would
+therefore appear in this measurement whether or not one occurred. The direction of the artifact and
+the direction of the claim are the same, so no amount of internal consistency in the table can
+separate them --- and the table \emph{is} internally consistent, which is precisely what made the
+defect invisible from inside the data.
+
+\textbf{It is class-2 in \S\ref{sec:taxonomy}'s terms: informative missingness}
+(MNAR~\cite{rubin1976}). The failures of a monitoring mechanism concentrate on the very condition
+the mechanism exists to attest, so the census is \emph{biased}, not merely thinned. We wrote that
+class from the acknowledgment-routine defect (\S\ref{sec:rq3} addendum) and did not apply it to the
+measurement three subsections earlier. \textbf{Knowing the class did not protect the author who
+wrote it} --- which we report as the only field trial of the taxonomy's prospective value in this
+paper, and it was negative.
+
+\textbf{What survives, explicitly.} The sender decomposition does \emph{not} ride this instrument.
+Categorizing every bus sender (MEASURED, \texttt{human\_fleet\_decomposition.md}) as human
+(\texttt{[operator]}) or fleet gives the human 0.9\% of all coordination messages and 1.9\% of
+directed messages. That figure rests on the bus log, which has a different writer and no
+contention-correlated loss, and we retain it. It speaks to who originates coordination --- the
+sharpest objection to the method claim, that the human is the real router --- and it stands
+independently of the withdrawn trend.
+
+\textbf{What we would need to claim it.} An independent record of human prompts, written by a
+different mechanism than the one under test, and a completeness check against it --- which is a
+second enumeration, not a replication of the first. We did not have one, and a replication of a
+biased instrument reproduces the bias.
 
 \subsection{RQ3 --- Defect discovery by vantage (attested from the record; see the
 tier caveat)}
@@ -524,7 +524,7 @@ nothing here supports a claim beyond that. Two consequences we hold to: before c
 results as corroboration, check whether they share a generative mechanism and discount if they do;
 and a peer with the same vantage as the author is not a second instrument.
 
-\subsection{RQ4 --- Compounding capability: withdrawn, and why it could not be retested here}
+\subsection{Specimen 2 --- compounding capability: withdrawn, and why it could not be retested here (RQ4)}
 \label{sec:rq4}
 We set out to show that a session carrying lived context solves what a fresh one cannot. An earlier
 draft reported the negative --- that it does not --- and called it the paper's most solid evaluated
@@ -566,7 +566,7 @@ than of the hypothesis: \textbf{a one-session-per-repository fleet cannot furnis
 control arm for any claim about accumulated context}, because the only session with the history is
 the only session there is.
 
-\subsection{RQ5 --- Baseline: reported, not claimed}
+\subsection{Specimen 3 --- the baseline: reported, not claimed (RQ5)}
 \label{sec:rq5}
 We pre-registered and ran one matched task both ways: a fresh memoryless session against the peer
 with the most lived history in the target file, both from an identical repo copy, graded on six
