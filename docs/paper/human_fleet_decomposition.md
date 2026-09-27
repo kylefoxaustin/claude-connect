@@ -1,4 +1,4 @@
-# Human-vs-fleet coordination decomposition (supporting artifact for §V-A)
+# Human-vs-fleet coordination decomposition (supporting artifact for §V-B, specimen 1)
 
 Answers the reviewer's anticipated attack — *"the human architect is doing most of the work"* — by
 decomposing **who originates coordination** on the shared bus. MEASURED from
@@ -35,14 +35,14 @@ line (before the em-dash); 0 = broadcast, ≤4 = directed, >4 = announcement. Sa
 - **The fleet's coordination is load-shared, not funneled through a lead.** Among the 52 fleet
   senders: the busiest single session is 9.8% of fleet mail, the top three are 26.6%, and it takes 7
   sessions to reach half. There is no dominant orchestrator and no human-proxy "lead" node routing
-  the traffic (consistent with the Gini 0.698 / top-3 25.4% concentration reported in §V-A).
+  the traffic (consistent with the Gini 0.698 / top-3 25.4% concentration reported in §V-B).
 
 ## The honest limit (why this is one channel, not the whole story)
 
 The bus is the Claude↔Claude channel **by construction** — the human is not *expected* to post there
 much, so "0.9%" alone does not prove the human isn't steering. The human's real coordination channel
 is **direct prompts** (`history.jsonl`: 6,355 human prompts across 47 projects). That channel is not
-silent — but it is measured, and per **active project** it **declines** over the deployment (the §V-A
+silent — but it is measured, and per **active project** it **declines** over the deployment (the §V-B
 human-touch series: ~70 prompts/project across May–June → 36 in July as concurrent projects grew).
 
 So the two observable channels agree and point the same way:

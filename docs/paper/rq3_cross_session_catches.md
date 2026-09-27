@@ -23,13 +23,13 @@ from `cases_*.md`, the bus archive, and git, 2026-07-27.
 | 13 | slam-A → ratchet | i.MX93 A55 clock shipped 2.0 GHz; live `clk_summary` = 1.7 GHz | **A** | wrong clock number, measured live (ratchet had flagged it provisional) | bus `messages-2026-06.md:15645` |
 | 14 | socdev-A model → emu-A (incidental) | 95's Neutron emulator never honoured the mailbox RESET (165 → 41 ms after fix) | **A** (borderline) | missing op, exposed by running a peer model | `cases_media-npu.md` C1 |
 
-**Split:** 13 solid + 1 incidental = 14. By type: **~6–7 A / 7 B ≈ 1:1** — *not* overwhelmingly
+**Split:** 13 counted (12 classifiable + 1 incidental); row 7 excluded by rule, not counted. By type: **~6–7 A / 6 B ≈ 1:1** — *not* overwhelmingly
 factual.
 
 **The bound (why 1:1 does not upgrade the independence claim):** every **type-B** (reasoning-shaped)
 catch was made by a peer at a **different empirical vantage** — a measurement relocated into the
 subject (rows 3–4), different physical silicon or a physical floor the catcher held (1, 9, 13), or
-the **ship-vs-implement test-direction asymmetry** (rows 5–7, where the catcher's default test path
+the **ship-vs-implement test-direction asymmetry** (rows 5–6, where the catcher's default test path
 was the author's untested one) — **not** by an independent reasoner spotting a co-located reasoning
 flaw from identical inputs. There is **no record of a same-input reasoning-error catch**. So the
 type-B catches are reasoning-*shaped* but **input/vantage-*driven***, which is exactly the divergence

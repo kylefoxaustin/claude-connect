@@ -115,7 +115,8 @@ deployment} and never as evidence for the negative.
 The two contributions are not epistemically equal, and neither is a controlled result.
 
 \textbf{The taxonomy (contribution~1)} rests on failure modes we closed and can point at: the fix
-commits exist and several are ablation-structured. We do not claim the classes were
+commits exist and several are ablation-structured; the classification itself, however,
+came from writing and ablating the cases, not from those commits. We do not claim the classes were
 derived rather than imposed: the same fleet, over an overlapping corpus, produced a different and
 non-isomorphic classification of its own silent failures, which is evidence that a classification
 here is author-contingent. \emph{Falsifier:} the taxonomy weakens if its classes collapse into one another
@@ -160,7 +161,7 @@ retained as the class-2 specimen of \S\ref{sec:taxonomy}, because its instrument
 rate that rises with concurrency --- the same direction as the effect --- and the table is
 internally consistent anyway, which is what makes the defect invisible from inside the data.
 The withdrawn argument, and a 14-week
-breakdown (replication package, as-of 2026-07-27 --- four days behind this table's
+breakdown, are preserved in the replication package (as-of 2026-07-27 --- four days behind this table's
 2026-07-31 stamp, so its July row reads 1{,}219/34/35.9; the difference is four days of July).
 Analyzed in \S\ref{sec:rq1}.}
 \label{tab:touch}
@@ -365,7 +366,7 @@ forces are \emph{local} --- one attractor per domain --- not because anyone bala
 identity is an emergent property of continuity-plus-routing, not an org chart --- which is why it is the
 foundation the later findings rest on rather than a policy that could be tuned away.
 
-\subsection{Failure modes closed, and the taxonomy they surfaced (RQ2)}
+\subsection{Failure modes closed, and the taxonomy the case corpus surfaced (RQ2)}
 \label{sec:taxonomy}
 \textbf{MEASURED}: of the 38 \texttt{fix} commits (as-of the corpus stamp), $\sim$20 close \emph{named coordination failure modes}.
 Several are ablation-structured --- disable the mechanism, the failure returns --- and
@@ -374,7 +375,7 @@ an approval for commit A push commit B; the gate refused a stale approval live d
 this project. The two-phase-commit and member-cursor ablations are specified and pending.
 
 A defect taxonomy the fleet converged on (a secondary contribution). Writing and
-ablating the cases surfaced a small, reusable classification of the \emph{silent} defects the
+ablating the cases surfaced a small classification of the \emph{silent} defects the
 method exists to catch. Each names a place a verification must go; the verifications
 themselves are variations on executing the thing you currently believe unexecuted:
 
@@ -442,8 +443,8 @@ defect invisible from inside the data.
 \textbf{It is class-2 in \S\ref{sec:taxonomy}'s terms: informative missingness}
 (MNAR~\cite{rubin1976}). The failures of a monitoring mechanism concentrate on the very condition
 the mechanism exists to attest, so the census is \emph{biased}, not merely thinned. We wrote that
-class from the acknowledgment-routine defect (\S\ref{sec:rq3} addendum) and did not apply it to the
-measurement three subsections earlier. \textbf{Knowing the class did not protect the author who
+class from the acknowledgment-routine defect (\S\ref{sec:rq3} addendum) and did not apply it to this
+section's own measurement. \textbf{Knowing the class did not protect the author who
 wrote it} --- which we report as the only field trial of the taxonomy's prospective value in this
 paper, and it was negative.
 
@@ -493,7 +494,7 @@ reachable via the engine API but \emph{not} the shipped UI) in nine tool calls. 
 timestamps, tool-call logs) are the evidence.}
 
 \textbf{Post-corpus addendum} (2026-08-05, outside the as-of stamp; \emph{not} counted in the
-14/13 above). The catches above are peers refuting a peer's technical \emph{result}; this one
+13/12 above). The catches above are peers refuting a peer's technical \emph{result}; this one
 differs in kind --- the defective artifact was the \textbf{coordination substrate itself} and the
 catching vantage was \emph{being subject to it}, so it supports the \S\ref{sec:rq3} bound rather than
 incrementing it. \emph{Disclosure, load-bearing here:} \texttt{substrate-dev} below authored the
@@ -518,8 +519,9 @@ bound on the substrate, not only a credit to the peer.} The episode is a class-3
 exit status, not a same-input reasoning disagreement --- it leaves the bound below
 \textbf{unaffected}.
 
-\textbf{The bound on what these catches show.} Every catch in the corpus is
-\emph{empirical-vantage}: the catcher held a different measurement position --- it owned the
+\textbf{The bound on what these catches show.} Every catch we count is
+\emph{empirical}, and the load-bearing ones are \emph{vantage}: the catcher held a different
+measurement position --- it owned the
 contending tenant, held the silicon, ran the opposite test direction --- and that position, not
 superior reasoning, produced the catch. \textbf{There is no record of a peer catching an author's
 reasoning error from the same inputs.} The sessions are therefore not independent estimators in any
@@ -544,7 +546,9 @@ weaker proposition. No arm of any ablation ever ran a live context-carrying sess
 one.
 
 \textbf{And the falsifier was unreachable.} Across six ablations and the baseline, \emph{no arm of
-any task ever failed}. A design whose falsifier requires the fresh arm to fail cannot fire on tasks
+any executable task ever failed} --- and the one exception cuts the same way, since
+\texttt{emu-B}'s disposition-only runs saw \emph{every} arm ship the wrong value, separating no arms
+either. A design whose falsifier requires the fresh arm to fail cannot fire on tasks
 nobody fails; the uniform success is a ceiling effect, not a null.
 
 \subsubsection*{The replacement, and the limit that stopped it}
@@ -613,13 +617,11 @@ result.
 The measured results reduce to four working rules; each carries the bounds of \S\ref{sec:threats}.
 
 \textbf{1. Fund the carrier, not the session.} Effort that moves knowledge into the committed,
-executable carrier --- code, asserts, invariants, checked-in operating docs --- carries the work: every fresh arm in the ablation record reached the fix, measured where
-capability was never the binding constraint, so this is evidence the carrier suffices and
-\emph{not} evidence about capability either way (\S\ref{sec:rq4}) --- though
-note that \emph{every} arm succeeded, so this is measured where capability was never the binding
-constraint. What effort spent preserving session memory buys instead is a question this deployment
-could not answer, \emph{on tasks of
-that kind}. When the two compete for budget, the
+executable carrier --- code, asserts, invariants, checked-in operating docs --- carries the work: every fresh arm in the executable-task ablations reached the fix,
+\emph{on tasks of that kind}. Because every such arm succeeded, this is measured where capability
+was never the binding constraint --- so it is evidence the carrier suffices, and \emph{not} evidence
+about capability either way (\S\ref{sec:rq4}). What effort spent preserving session memory buys
+instead is a question this deployment could not answer. When the two compete for budget, the
 carrier wins.
 
 \textbf{2. Route on demonstrated history --- and audit the sessions you route to.} A lead can route
@@ -703,10 +705,10 @@ a discipline the fleet itself enforces):
 \item Hold the \emph{method} constant, vary the \emph{content}. The claim under test is
   not ``the tool runs on another codebase'' but that \emph{the composition} --- persistent
   context-heavy peers + a shared bus + verified orders + a human gating irreversibility ---
-  tests for the signatures this deployment could not establish: compounding competence (a
-  downward per-task-cost
-  trajectory via the same ablation protocol), peer review catching the lead's blind
-  spot, and the self-designed substrate --- and whether
+  reproduces the signatures this deployment did establish --- peer review catching the
+  lead's blind spot, and a substrate the fleet designed itself --- and \emph{tests for the first
+  time} the ones it could not: compounding competence (a downward per-task-cost trajectory, via a
+  protocol that manipulates session context rather than a prompt paragraph), and whether
   accumulated context confers an advantage in task origination, the step our ablations held fixed.
 \item Prediction (falsifiable): if the principles are real and not artifacts of this
   domain/operator, the \emph{same} signatures appear on the new ``thing''; if they are artifacts,
@@ -730,7 +732,7 @@ experiment is pre-registered and witnessed and \emph{cannot be run on this deplo
 fleet with one session per repository has no second session carrying the same history.
 
 What the deployment does establish is smaller and sturdier. Silent coordination defects fall into a
-small number of classes with distinct remedies, and we name them. Peers with different vantages catch
+small number of recurring shapes, and each names a place a verification must go. Peers with different vantages catch
 what an author and an operator miss --- including, repeatedly, in this paper: three of the claims
 above were withdrawn on defects found by other sessions and an outside reviewer after we thought the
 work was finished, and every one of those defects ran in the direction that flattered us. The process
@@ -747,7 +749,7 @@ caught what the panel structurally could not --- cross-section consistency, arit
 venue compliance. Which vantage caught which defect class is checkable in the archived draft
 series and the paper's own git history: the vantage bound of \S\ref{sec:rq3}, one level up.
 
-Three secondary observations travel beyond this deployment: the silent-defect taxonomy and its
+Three secondary observations we offer for trial beyond this deployment: the silent-defect taxonomy and its
 TAG$\rightarrow$ABLATE$\rightarrow$HARVEST remedy split (\S\ref{sec:taxonomy}); the non-independence
 discipline --- before crediting two results as corroboration, check for a shared generative
 mechanism, and discount if found (\S\ref{sec:rq3}); and the durability ladder --- untracked

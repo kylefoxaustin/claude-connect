@@ -1,4 +1,11 @@
-# Human-touch series (supporting artifact for RQ1 / §V-A)
+# Human-touch series (supporting artifact for RQ1 / §V-B, specimen 1)
+
+> ⚠️ **THE CLAIM THIS ARTIFACT SUPPORTED IS WITHDRAWN.** The paper no longer reports a
+> human-touch trend. The instrument below (`history.jsonl`) truncates its own append under
+> contention, so it drops records at a rate that RISES WITH FLEET SIZE — the same direction as the
+> claimed decline, meaning a decline would appear here whether or not one occurred. The series is
+> retained as the class-2 (informative-missingness) specimen, not as evidence. Do not cite these
+> figures as a result.
 
 Human prompts per **active project**, from `~/.claude/history.jsonl` (human prompts only, un-swept
 back to 2026-01-14). Normalized by projects active in the bucket. **As-of 2026-07-27.**
@@ -9,7 +16,7 @@ back to 2026-01-14). Normalized by projects active in the bucket. **As-of 2026-0
 > four days of July. Either re-run this artifact at 2026-07-31 before submission, or cite this
 > file's stamp explicitly in the caption. Do not quietly average them.
 
-## Monthly (Table 2 in the paper)
+## Monthly (Table 1 in the paper)
 | month | human prompts | active projects | prompts / project |
 |---|---:|---:|---:|
 | 2026-01 | 1 | 1 | 1.0 | *(pre-ramp startup, omitted)* |

@@ -12,7 +12,7 @@ naming/categorisation; logic-shaped catches slightly outnumbered them. Reported 
 pre-registration's own instruction ("I will record my prediction as refuted… and say so, as
 prominently").
 
-Scored over the **same 13 classifiable catches** the paper's factual/reasoning split uses (§V-D): the
+Scored over the **same 13 classifiable catches** the paper's factual/reasoning split uses (§V-C): the
 14th, an *incidental exposure* (row 14 below, socdev-A→emu-A), is excluded from both instruments
 for consistency. Including it would make it L=8/N=6/n=14 — same verdict, but the 13-set is the paper's
 convention.
@@ -76,3 +76,21 @@ make peer catches *predominantly* naming.
   could shift the margin (not, on this evidence, the direction).
 - Rows are not fully independent (some share authoring sessions); since the verdict is REFUTED and
   robust, per-author subsetting cannot rescue the prediction (it could only weaken N further).
+
+
+---
+
+## ADDENDUM (2026-09-26) — row 7 excluded downstream; original tally preserved
+
+This file's tally is **left exactly as scored and is not restated**, because it was pre-registered
+and scored before the exclusion below; rewriting its numbers would misrepresent what was committed.
+
+After scoring, review found that **row 7 violates the corpus's own pre-registered exclusion rule**
+(§2 of `rq3_categorisation_test-PREREGISTERED.md` bars ablation-arm outcomes; row 7 is an
+`ablation_perf-A` blind-arm outcome). The paper therefore now counts **13 attested / 12
+classifiable**, not 14/13.
+
+Effect on this test, stated rather than applied: row 7 was scored **L**, so over the 12 classifiable
+catches the tally becomes **N = 6, L = 6, A = 0** instead of N = 6, L = 7, A = 0. The test's
+conclusion is unchanged in direction — logic-shaped catches do not dominate — and the margin
+narrows from 7:6 to 6:6, which we report because it moves against the reading we had drawn.
