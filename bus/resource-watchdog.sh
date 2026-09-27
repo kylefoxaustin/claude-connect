@@ -39,7 +39,7 @@ _field() { grep -E "^$1=" "$LEASE" 2>/dev/null | head -1 | cut -d= -f2- ; }
 _set() { if grep -qE "^$1=" "$LEASE" 2>/dev/null; then sed -i "s|^$1=.*|$1=$2|" "$LEASE"; else printf '%s=%s\n' "$1" "$2" >> "$LEASE"; fi; }
 _gpu_util() { "$NVIDIA_SMI" --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -dc '0-9'; }
 _human() { local s=$1 h m; [ "$s" -lt 0 ] && s=0; h=$((s/3600)); m=$(((s%3600)/60)); if [ "$h" -gt 0 ]; then echo "${h}h ${m}m"; elif [ "$m" -gt 0 ]; then echo "${m}m"; else echo "${s}s"; fi; }
-_notify() { local ts; ts="$(date '+%Y-%m-%d %H:%M')"; { echo ""; echo "## $ts [resource-watchdog]"; echo ""; echo "$1"; } >> "$BUS_FILE"; }
+_notify() { local ts; ts="$(date '+%Y-%m-%d %H:%M:%S')"; { echo ""; echo "## $ts [resource-watchdog]"; echo ""; echo "$1"; } >> "$BUS_FILE"; }
 _promote() { "$BUS_SH" res promote "$1" "$2" 2>/dev/null || true; }   # race-safe; echoes freed|offered:<tag>|skip…
 
 # Normalize a bus tag for comparison: [other:x] == other:x == x (lowercased).

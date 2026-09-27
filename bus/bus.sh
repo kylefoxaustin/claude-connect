@@ -2174,7 +2174,7 @@ if os.environ.get("WL") == "1":
     mem = os.environ.get("MY_MEMBER") or ""
     if mem and mem != me:
         keys.append(mem)
-    ts = shown[-1]["ts"]      # only as far as we SHOWED — never past an undisplayed message
+    ts = sel[-1]["ts"]      # only as far as we SHOWED — never past an undisplayed message
     try:
         os.makedirs(sd, exist_ok=True)
         if os.environ.get("TWO_PHASE") == "1":

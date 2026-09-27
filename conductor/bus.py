@@ -679,7 +679,11 @@ def append_message(messages_path: Path, sender_tag: str, body: str) -> str:
     MarkdownBusAdapter tails and emits it like any other message.
     """
     tag = sender_tag.strip().strip("[]") or "operator"
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+    # Seconds are REQUIRED, not cosmetic. A reader's cursor is set from the header it last
+    # saw and compared as a STRING: with a secondless cursor ("... 15:01"), every message
+    # later in that same minute sorts AFTER it and is re-counted as unread indefinitely.
+    # Fails safe (re-shows, never loses) but re-wakes the session for mail it already read.
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     messages_path.parent.mkdir(parents=True, exist_ok=True)
     with messages_path.open("a", encoding="utf-8") as f:
         f.write(f"\n## {ts} [{tag}]\n\n{body.rstrip()}\n")

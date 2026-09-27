@@ -100,7 +100,13 @@ grep -q "caught up: 30 message" <<<"$out" && ok "digests all 30 in ONE call (no 
 grep -qi "Already current" <<<"$(run)" && ok "a second catchup is a no-op" || bad "not idempotent when current"
 rm -rf "$SB"
 
-# ── the cap is a DISCLOSED omission (oldest undisplayed), NOT a silent skip ───
+# ── the cap is LOSSLESS: oldest-first, partial advance, run again ─────────────
+# These five assertions were REWRITTEN 2026-09-26. They previously encoded the
+# pre-d29302c behaviour (newest-first, cursor advanced fully, older messages
+# "marked read without display"), which that commit deliberately removed: the
+# invariant is now THE CURSOR MAY NEVER ADVANCE PAST SOMETHING NOT DISPLAYED.
+# The old assertions kept failing and were left red -- a known-red test is a
+# trained habit of ignoring a failure, so they are corrected rather than skipped.
 setup
 : > "$BUS"
 for i in $(seq -w 1 10); do
@@ -108,11 +114,19 @@ for i in $(seq -w 1 10); do
 done
 echo "2026-07-14 10:00" > "$SD/other:mytag.last-seen"
 out="$(run -n 3)"
-grep -q "msg 10" <<<"$out" && ok "cap shows the NEWEST (msg 10)" || bad "cap didn't show newest"
-grep -q "msg 01" <<<"$out" && bad "cap showed the oldest (should be omitted)" || ok "cap omits the oldest"
-grep -q "7 OLDER marked read without display" <<<"$out" && ok "DISCLOSES the omission" || bad "silent omission: $out"
-[ "$(watermark)" = "2026-07-14 10:10" ] && ok "cap STILL advances fully (one call = current)" || bad "cap cursor: $(watermark)"
-grep -qi "Already current" <<<"$(run)" && ok "follow-up is current (omission disclosed, not lost)" || bad "not current after cap"
+grep -q "msg 01" <<<"$out" && ok "cap shows the OLDEST first (msg 01) -- nothing is skipped" || bad "cap did not show the oldest"
+grep -q "msg 10" <<<"$out" && bad "cap showed the newest (msg 10) -- it should not be reached yet" || ok "cap stops before the newest"
+grep -qiE "REMAIN|NOT CURRENT|again" <<<"$out" && ok "DISCLOSES that a remainder is left" || bad "remainder undisclosed: $out"
+[ "$(watermark)" = "2026-07-14 10:03" ] && ok "cursor advances ONLY to the last message displayed" || bad "cap cursor: $(watermark)"
+grep -qi "Already current" <<<"$(run)" && bad "claims current while 7 remain undelivered" || ok "follow-up is NOT current -- the remainder is still reachable"
+# and the invariant that matters: every message arrives across repeated calls.
+# Reset the cursor first -- the assertions above already consumed the backlog, and
+# counting deliveries after it is drained measures nothing (it read 0/10 and looked
+# like message loss).
+echo "2026-07-14 10:00" > "$SD/other:mytag.last-seen"
+seen=0
+for _ in 1 2 3 4 5; do seen=$(( seen + $(run -n 3 | grep -c 'msg [0-9]') )); done
+[ "$seen" -ge 10 ] && ok "all 10 delivered across repeated calls (no loss)" || bad "only $seen of 10 delivered"
 rm -rf "$SB"
 
 # ── a non-whitelisted tag digests but must NOT advance (matches check's guard) ─
