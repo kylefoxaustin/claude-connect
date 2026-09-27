@@ -15,6 +15,27 @@ Local browser dashboard for monitoring active Claude Code sessions on a single w
 - `scripts/claude-tracked` — wrapper that opens each Claude session in its own Tilix window with a unique X11 title; required for reliable tile→focus
 - `docs/claude-storage.md` — empirically documented `~/.claude/` format
 
+## Identity & absence — three rules, earned the hard way
+
+Five failures in one session (2026-09-14) shared one shape: **something was looked up by a PROXY for
+its identity, and the proxy had drifted from the thing.** `comm` vs the exe path; a bus tag vs its
+directory; file mtime vs "was produced". **Every one returned a confident, plausible answer and none
+errored** — and each wrong answer looked like a finding about the fleet ("that session is dead", "104
+new results") rather than a fault in the instrument.
+
+1. **An absence is a claim about your instrument until a positive control passes.** Before believing
+   *not running* / *no results* / *nothing advanced*, show the SAME instrument finding a case you know
+   is present. (lostchild: *"an absence claim needs an instrument that could not have produced the
+   absence."*)
+2. **Identify by stable identity, never by name.** Process → `/proc/<pid>/exe` + cwd, never `comm`
+   (it is the exe basename and truncates at 15 bytes). Session → cwd + session_id, never the bus tag
+   (`keyhole` posts as `backend`). "New results" → content, never mtime. ⚠️ Rule 1 does not cover
+   this case: a positive control passes while the KEY is still wrong.
+3. **When you fix an identity bug, grep the whole tree for the same predicate.** `comm == "claude"`
+   was fixed in `conductor/scanner.py` on 2026-08-31 and left standing in `bus/pid-join.sh`, where it
+   silently froze a session's read cursor for two weeks. A lesson recorded in a commit message and
+   not swept for only ever fixes one site.
+
 ## Conventions
 - Single-host only, listens on 127.0.0.1.
 - No persistence; in-memory state, restart-clean.
