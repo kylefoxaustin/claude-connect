@@ -95,7 +95,14 @@ def test_floor_exempt_holder_is_woken_exactly_once_per_batch(monkeypatch):
     f.unread("[other:qualcomm]")
     f.hard_block_on("[other:qualcomm]")            # exempt from the floor
     asyncio.run(f.app._wake_unread_recipients())
-    assert f.injects == [("[other:qualcomm]", "1 unread addressed to it")]
+    # The reason must NAME THE SENDER, not just count. A bare count gave a woken
+    # session nothing to check the wake against -- 95emulator suspected it had been
+    # woken for its own posts and could not tell, because the only sender-bearing
+    # nudge lived on a different path (bus.sh's MINE_FROM) from the wake it received.
+    assert f.injects == [("[other:qualcomm]", "1 unread addressed to it, from alice")]
+    # and the property, stated independently of the exact wording:
+    tag, reason = f.injects[0]
+    assert "alice" in reason, "a wake reason that names no sender cannot be audited"
 
 
 def test_repeated_scans_do_not_re_wake_a_floor_exempt_holder(monkeypatch):

@@ -1087,7 +1087,15 @@ class AppState:
             changed = True
             if retry_reason:
                 log.info("re-waking [%s]: %s", r.tag, retry_reason)
-            await self._inject_msg_check(r, f"{info['count']} unread addressed to it")
+            # NAME THE SENDERS, never just the count (95emulator, 2026-09-26). This reason
+            # string is what the provenance line shows the woken session, and it was a bare
+            # count -- so a session that suspected it had been woken for its OWN posts had
+            # nothing to check the wake against. bus.sh's own nudge already names senders
+            # (MINE_FROM); the auditable discriminator existed on one path while the wake
+            # arrived on the other. A wake reason that cannot be checked is not evidence.
+            senders = ", ".join(info.get("senders") or []) or "sender unresolved"
+            await self._inject_msg_check(
+                r, f"{info['count']} unread addressed to it, from {senders}")
         if changed:
             await asyncio.to_thread(write_wake_state, self.coord_root, self._wake_outstanding)
 
