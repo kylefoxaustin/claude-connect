@@ -11,8 +11,17 @@
 # So every assertion here is on the CURSOR, not on stdout. The test also carries a
 # NEGATIVE CONTROL: it reconstructs the bug and requires the harness to catch it,
 # because a test that cannot fail is not evidence that the code is right.
+#
+# BUS_SH overrides which copy is tested, so this can verify an INSTALL:
+#     BUS_SH=~/.claude/bin/bus.sh bash tests/test_bus_check_cursor_advances.sh
+# It runs against a scratch HOME and a scratch bus, so it never reads, advances, or
+# consumes any real session's mail. Verifying an install by running `bus.sh check`
+# against the live bus does not work and is not safe: the tag comes from the CWD, so
+# from a home directory it resolves to a tag with no mail and no cursor moves no matter
+# what is installed -- and from a real project directory it would consume that session's
+# mail to satisfy a test.
 set -u
-BUS="$(cd "$(dirname "$0")/.." && pwd)/bus/bus.sh"
+BUS="${BUS_SH:-$(cd "$(dirname "$0")/.." && pwd)/bus/bus.sh}"
 PASS=0; FAIL=0
 ok(){ printf '  ok   %s\n' "$1"; PASS=$((PASS+1)); }
 no(){ printf '  FAIL %s\n' "$1"; FAIL=$((FAIL+1)); }
