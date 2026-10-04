@@ -41,6 +41,25 @@ def test_the_shell_suites_are_actually_discovered():
     assert len(SUITES) >= 25, f"only {len(SUITES)} shell suites discovered — the glob is wrong"
 
 
+def test_no_shell_suite_is_orphaned_by_its_name():
+    """A shell test named test_*.sh is never collected, so it never runs.
+
+    The glob above is `test-*.sh` (hyphen). Two suites written on 2026-09-29 used an
+    UNDERSCORE and were therefore invisible to it: they passed only when run by hand, and
+    the suite totals reported alongside them — "735 passed", "741 passed" — did not
+    include them. A test that does not run is indistinguishable from a test that passes.
+
+    This asserts the naming instead of relying on anyone noticing, which is the same move
+    as the emptiness check above: make the wiring fail loudly rather than quietly cover
+    less than it claims.
+    """
+    orphans = sorted(p.name for p in HERE.glob("test_*.sh"))
+    assert not orphans, (
+        f"shell suites invisible to the test-*.sh glob: {orphans}. "
+        "Rename with hyphens (test-foo-bar.sh) so pytest collects them."
+    )
+
+
 @pytest.mark.parametrize("suite", SUITES)
 def test_shell_suite(suite: str):
     r = subprocess.run(["bash", str(HERE / suite)], capture_output=True, text=True,

@@ -17,6 +17,12 @@ COORD="${COORD_STATE_DIR:-$HOME/.claude/bus-state/coord}"
 TOKENS="$COORD/push-tokens"
 REQUESTS="$COORD/push-requests"
 CLAIMS="$COORD/push-claims"   # short-lived hand-off to the pre-push enforcer (see below)
+# A token this gate consumed, kept briefly so a push that NEVER REACHED THE REMOTE can
+# give the approval back (push-restore.sh). The record carries its own KEY and PUSHDIR so
+# the restorer re-derives nothing: a second copy of this file's repo-resolution logic is
+# exactly how two sites drift apart and one of them starts being wrong silently.
+SPENT="$COORD/push-spent"
+SPENT_WINDOW=600             # a push either fails or lands well inside this
 
 # ---- WHICH PYTHON, AND HOW WE DARE TO ANSWER THAT --------------------------------
 # ⚠️ BOTH GATES USED A BARE `python3` AND SWALLOWED ITS FAILURE. When python3 could not
@@ -342,6 +348,20 @@ if [ -f "$TOK" ]; then
         exit 0                                   # provable no-op → ALLOW, token PRESERVED
       fi
     fi
+    # ⭐ RECORD THE SPENT TOKEN BEFORE DELETING IT, so an approval is not lost to a push
+    # that never left the machine. v2.41 established this for a REMOTE rejection ("the
+    # rejection is predictable: refuse WITHOUT consuming") and wired it only to the
+    # remote-sha path. A LOCAL pre-push veto — a corpus gate, a lint gate, any
+    # core.hooksPath hook — is the same event and burned Kyle's tap twice in two days
+    # (qualcomm, 2026-10-02 and 10-03). The consume-point does NOT move: the token is
+    # still gone the instant we allow, so nothing concurrent can reuse it. push-restore.sh
+    # gives it back only after confirming, from git itself, that the commit never landed.
+    mkdir -p "$SPENT" 2>/dev/null || true
+    { cat "$TOK" 2>/dev/null || true
+      echo "spent_epoch=$now"
+      echo "spent_key=$KEY"
+      echo "spent_sha=$HEAD_SHA"
+      echo "spent_pushdir=$PUSHDIR"; } > "$SPENT/$KEY" 2>/dev/null || true
     rm -f "$TOK"                                 # consume a VALID token — one push per approval
     rm -f "$REQUESTS/$KEY" 2>/dev/null || true   # clear the (now-satisfied) request
     # Hand a short-lived CLAIM to the pre-push hook (the real enforcer, which fires next on the
