@@ -135,3 +135,66 @@ def test_key_order_does_not_defeat_the_digest():
     thin_unchanged_keys({"members": {"a": 1, "b": 2}}, d, KEYS)
     out = thin_unchanged_keys({"members": {"b": 2, "a": 1}}, d, KEYS)
     assert "members" not in out, "same content, different order -> still unchanged"
+
+
+# ── the push payload's gate (qualcomm, 2026-10-02) ───────────────────────────
+# The gate compared `requests` and `grants` while the payload also carried
+# `proposals` and `persist`. A change to either alone never reached a client, so
+# two things a human is meant to TAP went quiet: a session's `push propose`, and
+# the persistence gate's request queue — the second hard control.
+#
+# A gate keyed on a ticking value never holds; a gate that OMITS a field never
+# fires. Neither raises. Both just stop updating. These tests pin both halves.
+
+from conductor.main import _push_gate_key
+
+
+def _g(expires_in=42, expires_epoch=1000):
+    """A grant as the reader emits it: `expires_in` ticks down every single scan."""
+    return [{"key": "repo_a", "expires_epoch": expires_epoch, "expires_in": expires_in}]
+
+
+def test_gate_fires_on_a_new_proposal():
+    """`push propose` is how a session asks 'should I push NOW?' — it must surface."""
+    before = _push_gate_key([], _g(), [], [])
+    after = _push_gate_key([], _g(), [{"key": "k", "why": "ready"}], [])
+    assert before != after
+
+
+def test_gate_fires_on_a_new_persist_request():
+    """The persistence gate is the SECOND HARD CONTROL. A blocked session's request
+    must reach the board; this is the one whose silence costs the most."""
+    before = _push_gate_key([], _g(), [], [])
+    after = _push_gate_key([], _g(), [], [{"key": "k", "kind": "hook",
+                                           "target": "settings.json"}])
+    assert before != after
+
+
+def test_gate_fires_on_a_refiled_request():
+    """qualcomm's case: tapped, push failed a downstream gate, request re-filed."""
+    first = _push_gate_key([{"key": "r", "epoch": 100}], [], [], [])
+    gone = _push_gate_key([], [], [], [])
+    refiled = _push_gate_key([{"key": "r", "epoch": 200}], [], [], [])
+    assert first != gone and gone != refiled and first != refiled
+
+
+def test_gate_ignores_the_ticking_countdown():
+    """`expires_in` falls every scan. Including it would rebroadcast the inbox
+    forever — the exact defect the rest of this file exists for, so widening the
+    gate must not reintroduce it."""
+    assert _push_gate_key([], _g(expires_in=42), [], []) == \
+           _push_gate_key([], _g(expires_in=9), [], [])
+
+
+def test_gate_still_sees_a_genuinely_different_grant():
+    """Ignoring the countdown must not blind it to a new or re-armed grant."""
+    assert _push_gate_key([], _g(expires_epoch=1000), [], []) != \
+           _push_gate_key([], _g(expires_epoch=2000), [], [])
+    assert _push_gate_key([], [], [], []) != _push_gate_key([], _g(), [], [])
+
+
+def test_gate_is_order_stable():
+    """Same content, different dict ordering -> same key, or it never gates."""
+    a = _push_gate_key([{"key": "r", "cmd": "git push"}], [], [], [])
+    b = _push_gate_key([{"cmd": "git push", "key": "r"}], [], [], [])
+    assert a == b and isinstance(a, str)

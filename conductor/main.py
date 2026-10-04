@@ -262,6 +262,37 @@ def _projects_gate_key(projs: list[dict[str, Any]]) -> str:
         stripped.append(p2)
     return json.dumps(stripped, sort_keys=True, default=str)
 
+
+def _push_gate_key(requests: list[dict[str, Any]], grants: list[dict[str, Any]],
+                   proposals: list[dict[str, Any]],
+                   persist: list[dict[str, Any]]) -> str:
+    """A stable digest of EVERYTHING the `push` broadcast carries.
+
+    Pure, so the gate is pinned by a test rather than trusted — same reason as
+    ``_projects_gate_key``, and for the same reason twice over.
+
+    ⚠️ The gate used to compare only ``requests`` and ``grants`` while the payload also
+    carried ``proposals`` and ``persist``. A change to either of those alone therefore
+    never reached a client: the scan loaded them into state and then declined to send
+    them, so they moved only when some unrelated field happened to change, or on connect.
+    Two things a human is meant to tap went quiet that way — a session's ``push propose``
+    ("should I push now, or keep digging?"), and the PERSISTENCE GATE's request queue,
+    which is the second hard control. Reported by qualcomm, 2026-10-02.
+
+    ``grants`` is projected onto (key, expires_epoch) because ``expires_in`` ticks every
+    scan and comparing it would rebroadcast forever — the failure this file's other tests
+    exist for. The remaining three carry no clock-derived field and so compare whole.
+
+    The rule, stated once: a gate keyed on a ticking value never holds; a gate that omits
+    a field never fires. Neither raises. Both just stop updating.
+    """
+    return json.dumps(
+        {"requests": requests,
+         "grants": [(g.get("key"), g.get("expires_epoch")) for g in grants],
+         "proposals": proposals,
+         "persist": persist},
+        sort_keys=True, default=str)
+
 # A /msg-check the recipient hasn't run yet makes a second one pointless — one
 # check drains the whole backlog. Re-arm after this long anyway, so a session
 # that never writes a last-seen watermark isn't muted forever.
@@ -487,6 +518,11 @@ class AppState:
         # settings.json is the RCE — a hook there is arbitrary code on every tool
         # call in every session, and it looks like editing a config file.
         self._persist_requests: list[dict[str, Any]] = []
+        # The digest of what the push broadcast last actually SENT. Kept separately from
+        # the fields above because those are refreshed every scan whether or not they
+        # travel, so they cannot double as the gate's memory — comparing a field against
+        # itself is a gate that never fires, which is how proposals and persist went silent.
+        self._push_gate_sent: str | None = None
         # THE MEMBER REGISTRY (v4 §3.4): Conductor is the registrar. It binds each live session's
         # unforgeable session_id -> a durable member ONCE (never re-derived from a drifting tag),
         # and the referee (persist-gate via member-registry.sh) reads the same file to enforce roles.
@@ -728,11 +764,13 @@ class AppState:
         self._persist_requests = await asyncio.to_thread(read_persist_requests, self.coord_root)
         # Compare grants on identity, not the live countdown — `expires_in` ticks down every
         # scan, so including it would rebroadcast (and re-render) the inbox forever.
-        gid = [(g["key"], g["expires_epoch"]) for g in grants]
-        if push_reqs != self._push_requests or gid != [
-                (g["key"], g["expires_epoch"]) for g in self._push_grants]:
+        # EVERY field the payload carries is in this key — see _push_gate_key.
+        gkey = _push_gate_key(push_reqs, grants, self._push_proposals,
+                              self._persist_requests)
+        if gkey != self._push_gate_sent:
             self._push_requests = push_reqs
             self._push_grants = grants
+            self._push_gate_sent = gkey
             await self.hub.broadcast("push", {"requests": push_reqs, "grants": grants,
                                              "proposals": self._push_proposals,
                                              "persist": self._persist_requests})
