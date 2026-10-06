@@ -1895,17 +1895,60 @@ function alertsCollapsed() {
 function setAlertsCollapsed(v) {
   try { localStorage.setItem(LS_ALERTS_COLLAPSED, v ? "1" : "0"); } catch {}
 }
+// ⚠️ DISMISS USED TO KEY ON THE COUNT, AND SO IT NEVER STUCK (Kyle, 2026-10-06:
+// "i don't think the dismiss x actually works to get rid of a msg"). The key was
+// `stale:<tag>:<unread>`, so dismissing "these 20" produced a key that ONE further
+// message invalidated — the row returned within seconds and the button looked broken.
+//
+// The old intent was right: a dismissal must not silently mute a condition that gets
+// worse. The THRESHOLD was wrong. One more message is a new fact but not a new
+// DECISION, and a control that re-fires on every increment is one you stop using —
+// the same habituation this panel exists to avoid.
+//
+// So: key on IDENTITY, and re-show only on a material change — the count at least
+// DOUBLES, or a week passes. Both are states a human would want re-raised; a 21st
+// message is not.
+const ALERT_REDISPLAY_MS = 7 * 24 * 3600 * 1000;
+// Which folded groups the operator has opened. Per class, so opening "not reading mail"
+// does not also unfold every other class.
+const LS_ALERT_GROUPS = "conductor.fleetAlerts.groupsOpen.v1";
+function groupExpanded(cls) {
+  try { return (JSON.parse(localStorage.getItem(LS_ALERT_GROUPS) || "{}") || {})[cls] === true; }
+  catch { return false; }
+}
+function setGroupExpanded(cls, v) {
+  try {
+    const m = JSON.parse(localStorage.getItem(LS_ALERT_GROUPS) || "{}") || {};
+    m[cls] = !!v;
+    localStorage.setItem(LS_ALERT_GROUPS, JSON.stringify(m));
+  } catch {}
+}
 function dismissedAlerts() {
-  try { return new Set(JSON.parse(localStorage.getItem(LS_ALERTS_DISMISSED) || "[]")); }
-  catch { return new Set(); }
+  try {
+    const raw = JSON.parse(localStorage.getItem(LS_ALERTS_DISMISSED) || "{}");
+    // v1 stored a bare array of count-bearing keys. Those keys can never match the new
+    // identity-only form, so migrating them would resurrect nothing — drop them.
+    return (raw && !Array.isArray(raw) && typeof raw === "object") ? raw : {};
+  } catch { return {}; }
+}
+// Is `key` currently dismissed, given the live magnitude `n`?
+function alertIsDismissed(d, key, n) {
+  const rec = d[key];
+  if (!rec) return false;
+  if (Date.now() - (rec.at || 0) > ALERT_REDISPLAY_MS) return false;   // stale silence
+  const was = Number(rec.n);
+  if (Number.isFinite(was) && Number.isFinite(n) && was > 0 && n >= was * 2) return false;
+  return true;
 }
 let _lastAlertState = {};
-function dismissAlert(key) {
+function dismissAlert(key, n) {
   const d = dismissedAlerts();
-  d.add(key);
-  // Bound it. An unbounded dismissal list would accumulate keys for states that can never recur,
-  // and the newest are the only ones that can still match anything.
-  try { localStorage.setItem(LS_ALERTS_DISMISSED, JSON.stringify([...d].slice(-200))); } catch {}
+  d[key] = { at: Date.now(), n: Number.isFinite(n) ? n : 0 };
+  // Bound it, newest-first — an unbounded map accumulates keys for states that can
+  // never recur, and only the newest can still match anything.
+  const trimmed = Object.fromEntries(
+    Object.entries(d).sort((a, b) => (b[1].at || 0) - (a[1].at || 0)).slice(0, 200));
+  try { localStorage.setItem(LS_ALERTS_DISMISSED, JSON.stringify(trimmed)); } catch {}
   renderFleetAlerts(_lastAlertState);
 }
 window.dismissAlert = dismissAlert;
@@ -1923,13 +1966,16 @@ function bucket(n) {
   return Math.pow(2, Math.floor(Math.log2(n)));
 }
 
-function withDismiss(row, key) {
+// `key` is the condition's IDENTITY (never its magnitude — see dismissedAlerts).
+// `n` is the live magnitude, stored so the row can come back if it doubles.
+function withDismiss(row, key, n) {
   row.dataset.alertKey = key;
+  row.dataset.alertN = String(Number.isFinite(n) ? n : 0);
   const b = document.createElement("button");
   b.className = "alert-dismiss";
   b.textContent = "✕";
-  b.title = "Dismiss until this changes";
-  b.onclick = () => dismissAlert(key);
+  b.title = "Dismiss — returns if it doubles, or after a week";
+  b.onclick = (e) => { e.stopPropagation(); dismissAlert(key, n); };
   row.appendChild(b);
   return row;
 }
@@ -2004,7 +2050,7 @@ function renderFleetAlerts(state) {
       + `<code>[${escapeHtml(c.member)}]</code> — a reply can reach the wrong one.`
       + recent
       + `<div class="alert-sub" style="margin-top:4px">Both are live. Keep the one doing the work you want, close the other — or coordinate explicitly if the split is deliberate. In a shared repo a <code>git add -A</code> can also sweep the other session's work into your commit.</div>`;
-    rows.push(withDismiss(row, `collision:${c.member}:${c.count}`));
+    rows.push(withDismiss(row, `collision:${c.member}`, c.count));
   }
   for (const r0 of lostRc) {
     const row = document.createElement("div");
@@ -2017,7 +2063,7 @@ function renderFleetAlerts(state) {
       + `<div class="alert-sub" style="margin-top:4px">Reconnect it (<code>/rc</code>) — do NOT relaunch, or you'll put a second session in the same repo.`
       + (r0.preview ? ` Last: ${escapeHtml((r0.preview || "").slice(0, 110))}` : "")
       + `</div>`;
-    rows.push(withDismiss(row, `lostrc:${r0.member}`));
+    rows.push(withDismiss(row, `lostrc:${r0.member}`, 1));
   }
   for (const s of dead) {
     const row = document.createElement("div");
@@ -2027,7 +2073,7 @@ function renderFleetAlerts(state) {
       `<strong>💀 ${escapeHtml(s.tag)} isn't running</strong> — ${escapeHtml(who)} has `
       + `${s.open_ask_count} open question${s.open_ask_count === 1 ? "" : "s"} waiting on it `
       + `(${fmtSilence(s.silent_for)}). <span class="alert-sub">Relaunch it or it stays stuck.</span>`;
-    rows.push(withDismiss(row, `dead:${s.tag}:${s.open_ask_count}`));
+    rows.push(withDismiss(row, `dead:${s.tag}`, s.open_ask_count));
   }
   for (const s of quiet) {
     const row = document.createElement("div");
@@ -2036,7 +2082,7 @@ function renderFleetAlerts(state) {
     row.innerHTML =
       `<strong>🕰 ${escapeHtml(s.tag)}</strong> is being addressed by ${escapeHtml(who)} but has `
       + `${fmtSilence(s.silent_for)}. <span class="alert-sub">Its process is alive — maybe deep in a task, maybe not reading its mail.</span>`;
-    rows.push(withDismiss(row, `quiet:${s.tag}:${bucket(s.silent_for)}`));
+    rows.push(withDismiss(row, `quiet:${s.tag}`, bucket(s.silent_for)));
   }
   for (const c of staleReaders) {
     const row = document.createElement("div");
@@ -2054,10 +2100,11 @@ function renderFleetAlerts(state) {
       + `<code>${escapeHtml(c.cursor_ts)}</code>. Nudge it (📬) or run <code>/msg-check</code>.</div>`;
     // Keyed on the message COUNT: dismissing means "yes, I know about these 20" — and the row
     // returns the moment a 21st arrives, because that is a new fact.
-    rows.push(withDismiss(row, `stale:${c.tag}:${c.directed_unread}`));
+    rows.push(withDismiss(row, `stale:${c.tag}`, c.directed_unread));
   }
   const dismissed = dismissedAlerts();
-  const kept = rows.filter((r) => !dismissed.has(r.dataset.alertKey || ""));
+  const kept = rows.filter((r) => !alertIsDismissed(
+    dismissed, r.dataset.alertKey || "", Number(r.dataset.alertN || 0)));
 
   const title = document.createElement("div");
   title.className = "fleet-alerts-title";
@@ -2106,6 +2153,63 @@ function renderFleetAlerts(state) {
       + "say — which is how a cursor sat three weeks behind unnoticed.";
     title.appendChild(why);
   }
+  // ⭐ FOLD A REPEATED CLASS INTO ONE LINE. Nine rows of the identical shape
+  // ("<tag> isn't reading its mail") filled half the board and buried the one row that
+  // was different — a dead reader with an open question waiting on it. The count stays
+  // in the headline above (never hidden, deliberately); only the repetition folds.
+  const GROUP_MIN = 4;
+  const GROUP_LABEL = {
+    stale: ["📪", "aren't reading their mail"],
+    quiet: ["🕰", "are addressed but silent"],
+    dead: ["💀", "aren't running"],
+    lostrc: ["📵", "lost their /RC"],
+    collision: ["⚠️", "identity collisions"],
+  };
+  const byClass = new Map();
+  for (const r of kept) {
+    const cls = (String(r.className).match(/alert-(collision|lostrc|dead|quiet|stale)\b/) || [])[1];
+    if (!byClass.has(cls)) byClass.set(cls, []);
+    byClass.get(cls).push(r);
+  }
+  const body = [];
+  for (const [cls, group] of byClass) {
+    const lab = GROUP_LABEL[cls];
+    if (!lab || group.length < GROUP_MIN) { body.push(...group); continue; }
+    const open = groupExpanded(cls);
+    const names = group.map((r) => (r.dataset.alertKey || "").split(":").slice(1).join(":"))
+                       .filter(Boolean);
+    const shown = names.slice(0, 3).join(", ");
+    const more = names.length > 3 ? ` +${names.length - 3} more` : "";
+    const head2 = document.createElement("button");
+    head2.className = "alert-row alert-group";
+    head2.setAttribute("aria-expanded", open ? "true" : "false");
+    head2.innerHTML =
+      `<span class="alert-caret">${open ? "▾" : "▸"}</span> `
+      + `<strong>${lab[0]} ${group.length} sessions ${lab[1]}</strong> `
+      + `<span class="alert-sub">${escapeHtml(shown)}${escapeHtml(more)}</span>`;
+    head2.onclick = () => { setGroupExpanded(cls, !open); renderFleetAlerts(state); };
+    // Dismissing the GROUP dismisses each member at its own live magnitude, so a single
+    // session that later doubles still comes back on its own.
+    const bulk = document.createElement("button");
+    bulk.className = "alert-dismiss";
+    bulk.textContent = "✕";
+    bulk.title = `Dismiss all ${group.length} — each returns if it doubles, or after a week`;
+    bulk.onclick = (e) => {
+      e.stopPropagation();
+      const d = dismissedAlerts();
+      for (const r of group) {
+        d[r.dataset.alertKey] = { at: Date.now(), n: Number(r.dataset.alertN || 0) };
+      }
+      const trimmed = Object.fromEntries(
+        Object.entries(d).sort((a, b) => (b[1].at || 0) - (a[1].at || 0)).slice(0, 200));
+      try { localStorage.setItem(LS_ALERTS_DISMISSED, JSON.stringify(trimmed)); } catch {}
+      renderFleetAlerts(_lastAlertState);
+    };
+    head2.appendChild(bulk);
+    body.push(head2);
+    if (open) body.push(...group);
+  }
+
   const tail = [];
   if (gone) {
     const restore = document.createElement("button");
@@ -2117,7 +2221,7 @@ function renderFleetAlerts(state) {
     };
     tail.push(restore);
   }
-  box.replaceChildren(title, ...kept, ...tail);
+  box.replaceChildren(title, ...body, ...tail);
 }
 window.renderFleetAlerts = renderFleetAlerts;
 

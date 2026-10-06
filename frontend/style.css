@@ -509,6 +509,24 @@ body.link-mode .tile-actions { display: none; }
 .alert-row code { background: rgba(255,255,255,0.08); padding: 0 4px; border-radius: 3px; }
 .alert-row .alert-sub { color: var(--text-dim); font-weight: 400; }
 .alert-sess { margin: 4px 0 0 12px; font-size: 11px; }
+
+/* A folded group of same-shaped alerts (9 "isn't reading its mail" rows -> one line).
+   Every var carries a FALLBACK: an undefined CSS var is not an error, it silently
+   yields no colour and no background, which is how a block can render as bare floating
+   text and look like a layout bug rather than a typo. */
+.alert-group {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: var(--bg-panel2, rgba(255,255,255,0.03));
+  border: 1px solid var(--border, #333);
+  border-radius: 4px;
+  padding: 4px 26px 4px 8px; margin: 2px 0;
+  font: inherit; font-size: 12px; color: var(--text, #e6e6e6);
+}
+.alert-group:hover { border-color: var(--text-dim, #8b93a1); }
+.alert-group:focus-visible { outline: 1px solid #e5c07b; outline-offset: 1px; }
+.alert-group .alert-sub { color: var(--text-dim, #8b93a1); font-weight: 400; }
+/* Folded members sit indented under their group head so the nesting is visible. */
+.alert-group + .alert-row { margin-left: 14px; }
 .alert-sess-tag { color: #e5c07b; font-weight: 600; }
 .alert-collision strong { color: #e06c75; }   /* collision = red, it can misroute replies */
 .alert-dead strong { color: #e06c75; }
