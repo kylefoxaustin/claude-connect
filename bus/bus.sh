@@ -1583,11 +1583,24 @@ _asset_check() {  # <card-file> — is this card TRUSTWORTHY? Prints warnings; r
     echo "      mid-write. Treat every claim here as UNVERIFIED until someone re-reads it."
     bad=1
   fi
-  grep -q '^class:[[:space:]]*\(interrogable\|opaque\)[[:space:]]*$' "$f" || {
-    echo "  ⚠️  NO \`class:\` — this asset has never been declared interrogable or opaque."
-    echo "      Until it is, a dead owner means QUARANTINE. That is the honest default."
-    bad=1
-  }
+  # ⚠️ THE ANCHORED `$` REJECTED EVERY CARD THAT DOCUMENTED ITS OWN CHOICE.
+  # 95emulator, 2026-10-06: the old pattern required the line to END at the keyword, so
+  # `class: opaque  # ssh board (sealed Yocto)` did not match. FOUR of the five declared
+  # cards were reported as never declared — including orin-agx, whose own text calls it
+  # claude-connect's canonical opaque example. The banner then told the reader that card
+  # was untrustworthy, so the trustworthiness warning was itself the untrustworthy thing.
+  # It failed toward ALARM, which reads as normal and gets ignored — a false warning on
+  # four of six cards looks like the fleet, not like a bug, which is why it survived.
+  # Take the first word after `class:` and ignore the rest: a trailing comment is
+  # documentation, not a different declaration.
+  _cardclass="$(sed -n 's/^class:[[:space:]]*\([A-Za-z]\{1,\}\).*/\1/p' "$f" 2>/dev/null | head -1)"
+  case "$_cardclass" in
+    interrogable|opaque) ;;
+    *)
+      echo "  ⚠️  NO \`class:\` — this asset has never been declared interrogable or opaque."
+      echo "      Until it is, a dead owner means QUARANTINE. That is the honest default."
+      bad=1 ;;
+  esac
   grep -qi '^## open questions' "$f" || {
     echo "  ⚠️  No \`## open questions\` section. A card with no stated gaps looks IDENTICAL to"
     echo "      a card whose gaps nobody wrote down. Add what you know you do NOT know."

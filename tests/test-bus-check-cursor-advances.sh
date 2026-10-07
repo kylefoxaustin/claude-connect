@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regression test for bus.sh:2177 — `check` crashed with NameError after printing its
+# Regression test: `check` crashed with NameError after printing its
 # success footer, so the cursor never advanced and a backlog was UNWALKABLE.
 #
 # WHY THIS TEST EXISTS, AND WHY THE OLD ONES MISSED IT (95emulator's finding):
@@ -52,14 +52,22 @@ check | grep -q 'No new messages' && ok "second check reports nothing new (progr
 
 # 3. NEGATIVE CONTROL — rebuild the defect; the harness MUST catch it
 setup 5
-BUGGY="$T/buggy.sh"; sed '2177s/sel\[-1\]/shown[-1]/' "$BUS" > "$BUGGY"
+# Find the line by CONTENT, not by number. This said `sed '2177s/...'` and broke the
+# moment an unrelated edit higher in bus.sh shifted it by 13 lines — the test then
+# "passed" its own build step and silently stopped reconstructing the bug. A literal
+# positional pointer into another file cannot fail loudly; it just starts aiming at
+# whatever now sits there. Same defect class the paper's \label conversion fixed, in the
+# test guarding against it.
+BUGGY="$T/buggy.sh"
+_ln="$(grep -n 'ts = sel\[-1\]' "$BUS" | head -1 | cut -d: -f1)"
+if [ -n "$_ln" ]; then sed "${_ln}s/sel\[-1\]/shown[-1]/" "$BUS" > "$BUGGY"; else cp "$BUS" "$BUGGY"; fi
 if ! cmp -s "$BUS" "$BUGGY"; then
   check "$BUGGY" >/dev/null 2>&1
   [ "$(cat "$CUR")" = "2026-09-26 09:00:00" ] \
     && ok "negative control: reconstructed bug leaves the cursor stuck (harness can detect it)" \
     || no "negative control FAILED TO FAIL -- this test cannot detect the bug it guards"
 else
-  no "negative control could not be built (line 2177 moved; update this test)"
+  no "negative control could not be built (the sel[-1] line is gone; update this test)"
 fi
 
 # 4. the capped path never advances past an undisplayed message
