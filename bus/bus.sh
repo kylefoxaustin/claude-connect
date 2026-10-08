@@ -250,6 +250,120 @@ _cursor_fwd_only() {   # <file> <ts>
   fi
 }
 
+# ─── THE BUS CLOCK: a header timestamp that never goes backwards ────────────────────────
+#
+# Delivery is decided by STRING-comparing these stamps (see _cursor_fwd_only above, and the
+# `ts > last` filters in check/catchup/prompt-check and in conductor/bus.py). That is only a
+# valid time comparison while the wall clock increases monotonically. It does not:
+#
+#   • DST FALL-BACK. 2026-11-01, America/Chicago: 02:00 CDT -> 01:00 CST, so the 01:00 hour
+#     REPEATS. MEASURED against this very script: of 4 messages sent after a cursor was set
+#     at 01:45, 2 were skipped permanently — they are stamped below the cursor while being an
+#     hour LATER in real time. No command can reach them afterwards: `--all` reads only the
+#     live log, and the rotation-gap recovery applies the same strict-greater filter.
+#   • RTC REGRESSION. This host dual-boots Windows and has a documented history of the clock
+#     scrambling across boots. A backwards jump puts EVERY new stamp below EVERY cursor: the
+#     whole fleet reports "No new messages" indefinitely, with no error anywhere, and the
+#     recovery path structurally cannot fire (it triggers on `last < cur_oldest`; here `last`
+#     is ahead). That is the unbounded case, and it is what justifies this code.
+#
+# ⚠️ FOUR WAYS THE OBVIOUS IMPLEMENTATION LOSES MAIL — all demonstrated before shipping:
+#
+#  1. `date -d "$ts +1 second"` DOES NOT ADD A SECOND. GNU date parses `+1` as a UTC OFFSET,
+#     so it returns a stamp ~6h in the PAST, rc=0. The clamp's only firing path would have
+#     emitted a timestamp below every cursor in the fleet — turning "late" into "lost", with
+#     a green exit code. `TZ=UTC date -d "$ts +1 second"` is wrong too (measured).
+#  2. Even CORRECT tz-aware arithmetic is non-monotonic at the fold: 01:59:59 CDT + 1 real
+#     second FORMATS as 01:00:00 CST. Any clamp routed through `date -d` of a local string
+#     re-imports the bug it is fixing. The increment must be NAIVE CALENDAR arithmetic.
+#  3. READING THE NEWEST STAMP OUT OF THE LOG IS CONTENT-POISONABLE. Bodies contain numbered
+#     markdown headings — `^## [0-9]` matches 1540 lines of this log where only 1529 are real
+#     headers. A body that QUOTES a future header (an agent pasting a log excerpt — or this
+#     comment) would be read as "newest", ratcheting the clock into the future and silently
+#     losing every real message until wall-clock caught up. So the clock is WRITER-OWNED
+#     state, never derived from the log.
+#  4. A log-derived clock also forgets at rotation (fresh file, no headers), re-exposing the
+#     failure at exactly the moment a rotation coincides with skew.
+#
+# Degrades to the status quo if only some writers use it: an unclamped writer's messages
+# behave exactly as they do today. It is identity in normal operation.
+_BUS_CLOCK="$_CURSOR_SD/.bus-clock"
+_BUS_CLOCK_MAX_AHEAD=7200        # never ratchet more than 2h ahead of wall clock
+_bus_ts() {
+  local LC_ALL=C                 # readers compare bytewise; the writer must agree
+  local now stored
+  now="$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null)" || now=""
+  # Fail-safe: if we cannot even read the clock, emit real time. An empty stamp would write
+  # `## [tag]`, which matches no header regex and silently merges the message into the
+  # previous one's body.
+  [ -n "$now" ] || { date '+%Y-%m-%d %H:%M:%S'; return 0; }
+  stored=""
+  [ -f "$_BUS_CLOCK" ] && IFS= read -r stored < "$_BUS_CLOCK" 2>/dev/null || true
+  # FAST PATH (the only path in normal operation): the clock moved forward. No arithmetic.
+  if [ -z "$stored" ] || [ "${#stored}" != 19 ] || [[ "$now" > "$stored" ]]; then
+    printf '%s\n' "$now" > "$_BUS_CLOCK.tmp" 2>/dev/null && mv -f "$_BUS_CLOCK.tmp" "$_BUS_CLOCK" 2>/dev/null || true
+    printf '%s' "$now"; return 0
+  fi
+  # SLOW PATH: wall clock is at or behind the last stamp we emitted.
+  # Sanity bound FIRST — an absurd stored clock must never ratchet. If it is implausibly far
+  # ahead, something corrupted it; emit real time and be loud rather than compound the error.
+  local s_ep n_ep
+  s_ep="$(_bus_naive_epoch "$stored")"; n_ep="$(_bus_naive_epoch "$now")"
+  if [ -n "$s_ep" ] && [ -n "$n_ep" ] && [ $(( s_ep - n_ep )) -gt "$_BUS_CLOCK_MAX_AHEAD" ]; then
+    printf '⚠ bus clock is %sh ahead of wall time (stored %s, now %s) — NOT clamping.\n' \
+      "$(( (s_ep - n_ep) / 3600 ))" "$stored" "$now" >&2
+    printf '  Someone may have stamped a message from the future, or the clock jumped back.\n' >&2
+    printf '%s' "$now"; return 0
+  fi
+  local bumped
+  bumped="$(_bus_ts_plus1 "$stored")"
+  if [ -z "$bumped" ]; then printf '%s' "$now"; return 0; fi    # fail-safe
+  # ⚠️ TWO DIFFERENT EVENTS REACH THIS POINT, AND ONLY ONE IS ALARMING.
+  #   now == stored  -> two messages in the SAME SECOND. Routine under load, and the bump is
+  #                     doing real work: identical stamps would collide on the readers'
+  #                     STRICT-greater filter and under-deliver by one. Silent.
+  #   now <  stored  -> the wall clock actually moved BACKWARDS (DST fold, RTC scramble).
+  #                     That is the condition this whole mechanism exists for. Loud.
+  # Shouting for the routine case would train everyone to ignore the line that matters —
+  # the same habituation the fleet-health panel exists to avoid.
+  if [[ "$now" < "$stored" ]]; then
+    printf '⚠ CLOCK WENT BACKWARDS: wall time %s is behind the last bus stamp %s.\n' "$now" "$stored" >&2
+    printf '  Stamping %s so the log stays ordered — readers compare these as strings, and an\n' "$bumped" >&2
+    printf '  out-of-order stamp is silently undeliverable. Check the system clock (DST fold or RTC skew).\n' >&2
+  fi
+  printf '%s\n' "$bumped" > "$_BUS_CLOCK.tmp" 2>/dev/null && mv -f "$_BUS_CLOCK.tmp" "$_BUS_CLOCK" 2>/dev/null || true
+  printf '%s' "$bumped"
+}
+
+# NAIVE calendar arithmetic — no timezone anywhere in the path (defect 2 above). Treats the
+# stamp as a bare calendar reading, which is exactly what the readers' string compare treats
+# it as. Prints nothing on bad input so every caller can fail safe.
+_bus_ts_plus1() { python3 -c '
+import sys
+from datetime import datetime, timedelta
+s = sys.argv[1] if len(sys.argv) > 1 else ""
+for f in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+    try:
+        print((datetime.strptime(s, f) + timedelta(seconds=1)).strftime("%Y-%m-%d %H:%M:%S"))
+        break
+    except ValueError:
+        pass
+' "$1" 2>/dev/null || true; }
+
+# Seconds since an arbitrary fixed point, computed naively (no tz). Used only for the sanity
+# bound, where we need a magnitude rather than a real instant.
+_bus_naive_epoch() { python3 -c '
+import sys
+from datetime import datetime
+s = sys.argv[1] if len(sys.argv) > 1 else ""
+for f in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+    try:
+        print(int((datetime.strptime(s, f) - datetime(2000, 1, 1)).total_seconds()))
+        break
+    except ValueError:
+        pass
+' "$1" 2>/dev/null || true; }
+
 _cursor_commit_delivered() {   # <member> <current_marker> -> prints the OUTCOME (for the debug log)
   local m="$1" cur="$2" df line ts mk
   df="$_CURSOR_SD/$m.delivered"
@@ -407,7 +521,7 @@ _res_write() {  # mode secs job
 }
 
 _broker_notify() {  # post a hand-off message from a neutral [resource-broker] tag
-  local ts; ts="$(date '+%Y-%m-%d %H:%M:%S')"
+  local ts; ts="$(_bus_ts)"
   { echo ""; echo "## $ts [resource-broker]"; echo ""; echo "$1"; } >> "$BUS_FILE"
 }
 
@@ -601,7 +715,7 @@ _coord_retract() {  # kind to-tag text...
     echo "usage: bus.sh $( [ "$kind" = CORRECTION ] && echo supersede || echo retract ) <to-tag> \"<what was wrong / do instead>\"" >&2
     return 2
   fi
-  local plain now ts label; plain="$(_coord_plain "$to")"; now="$(date +%s)"; ts="$(date '+%Y-%m-%d %H:%M:%S')"
+  local plain now ts label; plain="$(_coord_plain "$to")"; now="$(date +%s)"; ts="$(_bus_ts)"
   case "$kind" in CORRECTION) label="🛑 CORRECTION" ;; *) label="🛑 RETRACTION" ;; esac
   { echo ""; echo "## $ts [$TAG]"; echo ""
     echo "to:$plain — [$TAG] $label — $text  (Do NOT act on my earlier instruction.)"; } >> "$BUS_FILE"
@@ -689,7 +803,7 @@ _winddown_begin() {
     echo "   ('begin' would reset everyone's progress; refused. 'shutdown clear' cancels it; 'begin --force' re-broadcasts on purpose.)" >&2
     return 1
   fi
-  now="$(date +%s)"; ts="$(date '+%Y-%m-%d %H:%M:%S')"; initiator="$TAG"
+  now="$(date +%s)"; ts="$(_bus_ts)"; initiator="$TAG"
   mkdir -p "$WINDDOWN_DIR"
   rm -f "$WINDDOWN_DIR"/*.done 2>/dev/null || true   # fresh wind-down: prior acks must not count
   { echo "initiator=$initiator"; echo "created=$ts"; echo "epoch=$now"; } > "$WINDDOWN_DIR/active"
@@ -775,7 +889,7 @@ _unpushed_count() {
 
 _winddown_ack() {
   local summary="$*" now ts plain root porcelain nfiles unpushed leases problems=""
-  now="$(date +%s)"; ts="$(date '+%Y-%m-%d %H:%M:%S')"
+  now="$(date +%s)"; ts="$(_bus_ts)"
   [ -n "$summary" ] || { echo "usage: bus.sh shutdown ack \"<one-line state>\"" >&2; return 2; }
   plain="$(_coord_plain "$(_cursor_name 2>/dev/null || echo "$TAG")")"
 
@@ -864,7 +978,7 @@ _winddown_status() {
 }
 
 _winddown_clear() {
-  local ts; ts="$(date '+%Y-%m-%d %H:%M:%S')"
+  local ts; ts="$(_bus_ts)"
   rm -f "$WINDDOWN_DIR/active" 2>/dev/null || true
   { echo ""; echo "## $ts [$TAG]"; echo ""; echo "to:all — 🟢 WIND-DOWN CANCELLED by [$TAG] — resume normal work."; } >> "$BUS_FILE"
   echo "Wind-down cleared; cancellation broadcast to the fleet."
@@ -1417,7 +1531,7 @@ _svc_request() {  # <name> <text…>
   ) 9>"$SVC_LOCK"
   pos="$(grep -c . "$SVC_QUEUE" 2>/dev/null || echo 1)"
   # Tell the service. Directed mail => auto-delivery wakes it if it's parked.
-  { echo ""; echo "## $(date '+%Y-%m-%d %H:%M:%S') [$TAG]"; echo ""
+  { echo ""; echo "## $(_bus_ts) [$TAG]"; echo ""
     echo "to:$SVC_NAME — [$TAG] 🧾 JOB REQUEST (queue position $pos): $text"
     echo "(Run \`/svc-next $SVC_NAME\` when you're free. Reply with \`/svc-done $SVC_NAME <result>\` and I'll be woken automatically — I'm NOT waiting on you.)"
     echo "🤖 AUTONOMY: this job is pre-authorized by me, the requester. Complete it and deliver the result back to ME directly (\`/svc-done\`) — you do NOT need to check with Kyle before proceeding on a queued service job; that is the whole point of the queue. Use your judgment on the method. The only hard stop is irreversibility: a \`git push\` (or anything that outlives the session) is still gated as always, and THAT is where a human belongs — not on the work itself."
@@ -1459,7 +1573,7 @@ _svc_done() {  # <name> [result…]
   text="$(_svc_field text "$SVC_SERVING")"
   : > "$SVC_SERVING"
   # Return the result. Directed => the requester is auto-woken. Fire-and-forget, closed.
-  { echo ""; echo "## $(date '+%Y-%m-%d %H:%M:%S') [$TAG]"; echo ""
+  { echo ""; echo "## $(_bus_ts) [$TAG]"; echo ""
     echo "to:$(_coord_plain "$req") — [$TAG] ✅ JOB DONE — re: $text"
     echo "${result:-(no note)}"
   } >> "$BUS_FILE"
@@ -1502,7 +1616,7 @@ _svc_hold() {  # <name> [why…]
   _svc_setup "$1" || return 2; shift
   echo "${*:-Kyle wants the next slot}" > "$SVC_HOLD"
   echo "🙋 You have the NEXT opening on [$SVC_NAME]. It will finish its current job, then wait for you."
-  { echo ""; echo "## $(date '+%Y-%m-%d %H:%M:%S') [operator]"; echo ""
+  { echo ""; echo "## $(_bus_ts) [operator]"; echo ""
     echo "to:$SVC_NAME — [operator] 🙋 Kyle has claimed your NEXT opening. Finish what you're on, then STOP and wait for him — do not pull the next queued job. He'll release you with /svc-resume."
   } >> "$BUS_FILE"
 }
@@ -1511,7 +1625,7 @@ _svc_resume() {  # <name>
   _svc_setup "$1" || return 2
   rm -f "$SVC_HOLD"
   echo "▶ [$SVC_NAME] released — it may take queued jobs again."
-  { echo ""; echo "## $(date '+%Y-%m-%d %H:%M:%S') [operator]"; echo ""
+  { echo ""; echo "## $(_bus_ts) [operator]"; echo ""
     echo "to:$SVC_NAME — [operator] ▶ Released. Carry on with the queue: run /svc-next $SVC_NAME."
   } >> "$BUS_FILE"
 }
@@ -1965,7 +2079,7 @@ SENDERR
       echo "ERROR: bus.sh send received an empty message on stdin." >&2
       exit 2
     fi
-    TS="$(date '+%Y-%m-%d %H:%M:%S')"
+    TS="$(_bus_ts)"
     { echo ""; echo "## $TS [$TAG]"; echo ""; printf '%s\n' "$MSG_BODY"; } >> "$BUS_FILE"
     # READ IT BACK. Do not just assert the write succeeded.
     #
@@ -3156,7 +3270,7 @@ Usage (from any session):
 
 ---
 
-## $(date '+%Y-%m-%d %H:%M:%S') [system]
+## $(_bus_ts) [system]
 
 Bus rotated. Previous log archived to \`$(basename "$ARCHIVE_FILE")\`.
 
