@@ -45,6 +45,17 @@ class Fleet:
         self.app.waiting = {"edges": []}
         self.app._autonomy = []
         self.app._last_seen = {}
+        # ⚠️ ISOLATE THE BUS STATE DIR. The wake path now reads `<member>.delivered` to avoid
+        # waking a session for mail it is mid-reply to (55b6250), and `load_settings()` points
+        # at the REAL ~/.claude/bus-state. This harness uses live tags like
+        # `[other:qualcomm]`, so a running session with a staged record made 15 tests fail —
+        # correctly suppressing a wake, inside a unit test, because of what another process
+        # was doing at that second.
+        #
+        # The suite had been "passing" only because no `.delivered` happened to exist when it
+        # ran. That is not a passing test, it is an untested condition that has not come up
+        # yet, and it would have failed for whoever ran the suite next with no idea why.
+        self.app.settings.bus.state_dir = "/nonexistent-so-live-state-cannot-leak-in"
         # deterministic clock + no disk
         monkeypatch.setattr("conductor.main.time", types.SimpleNamespace(time=lambda: NOW))
         monkeypatch.setattr("conductor.main.write_wake_state", lambda *a, **k: None)

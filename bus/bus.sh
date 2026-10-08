@@ -555,11 +555,25 @@ _owner_pid() {
   printf '%s' ''   # not running under a Claude session — record nothing rather than guess
 }
 
-_res_write() {  # mode secs job
-  local now exp q; now="$(_res_now)"; exp=$(( now + $2 )); q="$(_res_queue)"
+_res_write() {  # mode secs job [job_updated_epoch]
+  local now exp q ju; now="$(_res_now)"; exp=$(( now + $2 )); q="$(_res_queue)"
+  # ⚠️ `job=` IS WRITTEN ONCE AT ACQUIRE AND THEN ADVERTISES THE PLAN, NOT WHAT IS RUNNING.
+  # 2026-10-07: rt1180renode needed 32 cores, read splat-vla's job string, and correctly
+  # declined to add load — the string said "resource profile", which contention destroys.
+  # The profile had finished an HOUR earlier; what was actually running was a temp-0 pass
+  # that contention cannot affect. It asked the right question about the wrong state of the
+  # world, and nothing in the lease could have told it otherwise.
+  #
+  # So stamp WHEN the job string was last set, separately from the lease.
+  # ⚠️ IT CANNOT BE DERIVED FROM acquired_epoch: `/keep` calls this function to extend a
+  # lease, which REWRITES acquired_epoch to now. Lease age would therefore report an
+  # hours-stale job as freshly set — the proxy is wrong in the flattering direction, which
+  # is the one nobody checks.
+  ju="${4:-$now}"
   { echo "owner=$TAG"; echo "owner_pid=$(_owner_pid)"; echo "mode=$1"
     echo "acquired_epoch=$now"; echo "expires_epoch=$exp"
-    echo "last_active_epoch=$now"; echo "job=$3"; echo "queue=$q"; } > "$RES_LEASE"
+    echo "last_active_epoch=$now"; echo "job=$3"
+    echo "job_updated_epoch=$ju"; echo "queue=$q"; } > "$RES_LEASE"
 }
 
 _broker_notify() {  # post a hand-off message from a neutral [resource-broker] tag
@@ -585,6 +599,19 @@ _res_held_line() {  # assumes a lease exists (held / offered)
   owner="$(_res_field owner)"; mode="$(_res_field mode)"; job="$(_res_field job)"
   rem="$(_res_human "$(_res_remaining)")"; lbl="$(_res_label "$RES_NAME")"; qc="$(_res_q_count)"
   q="$(_res_queue)"; qhead="${q%%,*}"
+  # ⭐ HOW OLD IS THE JOB STRING? A peer reads `job=` to decide whether it may add load,
+  # and an unstamped string is a claim with no freshness contract — it looks equally
+  # authoritative at one minute and at six hours. rt1180renode spent a round trip on one
+  # that was an hour stale. Rendering the age does not make the string true; it tells the
+  # reader how much to trust it, which is the decision they actually have to make.
+  # Absent stamp (a lease written before this field existed) renders nothing rather than
+  # claiming freshness it cannot know.
+  local ju jobage jobagetxt=""
+  ju="$(_res_field job_updated_epoch)"
+  if [ -n "$job" ] && [ -n "$ju" ]; then
+    jobage=$(( $(_res_now) - ju ))
+    [ "$jobage" -ge 900 ] && jobagetxt=" ⏱ set $(_res_human "$jobage") ago"
+  fi
   idle_since="$(_res_field idle_since_epoch)"; idletxt=""
   if [ -n "$idle_since" ]; then local idle=$(( $(_res_now) - idle_since )); [ "$idle" -ge 300 ] && idletxt=" · idle $(_res_human "$idle")"; fi
   local qtxt=""; [ "$qc" -gt 0 ] && qtxt=" · queue: $qc (${qhead}…)"
@@ -603,7 +630,7 @@ _res_held_line() {  # assumes a lease exists (held / offered)
     [ -n "$idletxt" ] && [ "$qc" -eq 0 ] && msg="$msg  ⚠ idle — watchdog may nudge/reclaim; /release $RES_NAME if done."
     echo "$msg"
   else
-    echo "$lbl: held by [$owner] ($mode · ~$rem left${job:+ · $job}$idletxt)$qtxt."
+    echo "$lbl: held by [$owner] ($mode · ~$rem left${job:+ · $job}${jobagetxt}$idletxt)$qtxt."
   fi
 }
 
@@ -675,8 +702,31 @@ res_keep() {  # name dur
   [ "$secs" -gt 0 ] || { echo "usage: /keep <resource> <duration>"; return 2; }
   mkdir -p "$RES_DIR"
   ( flock 9
-    if _res_active && [ "$(_res_field owner)" = "$TAG" ] && ! _res_is_offer; then _res_write "$(_res_field mode)" "$secs" "$(_res_field job)"; echo "Extended your $(_res_label "$1") lease: $(_res_human "$secs") from now."
+    if _res_active && [ "$(_res_field owner)" = "$TAG" ] && ! _res_is_offer; then _res_write "$(_res_field mode)" "$secs" "$(_res_field job)" "$(_res_field job_updated_epoch)"; echo "Extended your $(_res_label "$1") lease: $(_res_human "$secs") from now."
     else echo "You don't hold $(_res_label "$1") — nothing to extend."; return 1; fi
+  ) 9>"$RES_LOCK"
+}
+
+res_job() {  # name <new job text> — say what is running NOW, not what the plan was
+  # Capture the NAME before shifting: after the shift `$1` is the first word of the job
+  # text, so `_res_label "$1"` would label the resource with the job description. The test
+  # caught it printing "Updated the temp-0 accuracy pass … job string."
+  local _rname="$1"
+  _res_setup "$1"; shift || true; local job="${*:-}"
+  [ -n "$job" ] || { echo "usage: /res-job <resource> <what is running NOW>"; return 2; }
+  mkdir -p "$RES_DIR"
+  ( flock 9
+    if _res_active && [ "$(_res_field owner)" = "$TAG" ] && ! _res_is_offer; then
+      # Rewrite the lease preserving its clock, stamping the job as updated NOW. The
+      # remaining duration is recomputed from expires_epoch so updating the job neither
+      # extends nor shortens the lease — this is a description change, not a renewal.
+      local rem; rem="$(_res_remaining)"
+      [ "$rem" -gt 0 ] || rem=60
+      _res_write "$(_res_field mode)" "$rem" "$job" "$(_res_now)"
+      echo "Updated the $(_res_label "$_rname") job string. Peers now see it as current."
+    else
+      echo "You don't hold $(_res_label "$_rname") — nothing to update."; return 1
+    fi
   ) 9>"$RES_LOCK"
 }
 
@@ -731,6 +781,7 @@ res_dispatch() {
   case "$action" in
     reserve) res_reserve "$@" ;;  release) res_release "$@" ;;
     keep)    res_keep "$@" ;;      request) res_request "$@" ;;
+    job)     res_job "$@" ;;
     pass)    res_pass "$@" ;;      promote) res_promote "$@" ;;
     status)  res_status "$@" ;;    lines)   res_hook_lines ;;
     *) echo "usage: bus.sh res {reserve|release|keep|request|pass|status [name]}"; return 2 ;;
