@@ -289,7 +289,39 @@ _cursor_fwd_only() {   # <file> <ts>
 # behave exactly as they do today. It is identity in normal operation.
 _BUS_CLOCK="$_CURSOR_SD/.bus-clock"
 _BUS_CLOCK_MAX_AHEAD=7200        # never ratchet more than 2h ahead of wall clock
+# ⚠️ THE RATCHET IS A READ-MODIFY-WRITE AND MUST BE ATOMIC. Unlocked, six concurrent
+# writers produced 60 out-of-order stamps out of 72 in an integration test — they read the
+# same stored value and emitted colliding or regressing timestamps, destroying the exact
+# invariant everything downstream now leans on: the recovery trigger, and "every stamp in
+# the live log is above every stamp in the archive".
+#
+# Review rated this "possible but never observed" at ~28 messages/day and called the lock
+# optional. At 28/day that is right; under a burst it is not, and bursts are when the fleet
+# actually talks. The test found what the reasoning dismissed.
+#
+# Held for MICROSECONDS — a read, a compare, one small write. Deliberately NOT the lock the
+# superseded design proposed: that one wrapped the whole append and would have been held
+# across rotation's 4 MB copy, with hook timeouts and fd-9 nesting to match. This nests
+# inside nothing and is taken by no hook (session-start / prompt-check / stop-commit never
+# call the clock — verified).
 _bus_ts() {
+  local _cl="${_BUS_CLOCK}.lock"
+  # ⚠️ NO `2>/dev/null` ON THE SUBSHELL. The first version had one — meant for the lockfile
+  # redirect — and it swallowed every warning the clock emits, including CLOCK WENT
+  # BACKWARDS. Three tests caught it. Silencing the alarm while installing the lock is the
+  # exact failure this whole subsystem exists to prevent.
+  # Also no `|| _bus_ts_locked` fallback: if the subshell failed AFTER printing a stamp,
+  # that would emit a second one and the caller would embed both in the header.
+  if command -v flock >/dev/null 2>&1 && : >>"$_cl" 2>/dev/null; then
+    ( flock -w 5 9 || true   # on timeout proceed unlocked: degrade to today's behaviour,
+      _bus_ts_locked         # never fail a send over a contended clock.
+    ) 9>>"$_cl"
+  else
+    _bus_ts_locked
+  fi
+}
+
+_bus_ts_locked() {
   local LC_ALL=C                 # readers compare bytewise; the writer must agree
   local now stored
   now="$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null)" || now=""
@@ -326,8 +358,18 @@ _bus_ts() {
   #                     That is the condition this whole mechanism exists for. Loud.
   # Shouting for the routine case would train everyone to ignore the line that matters —
   # the same habituation the fleet-health panel exists to avoid.
-  if [[ "$now" < "$stored" ]]; then
-    printf '⚠ CLOCK WENT BACKWARDS: wall time %s is behind the last bus stamp %s.\n' "$now" "$stored" >&2
+  # ⚠️ ONLY A LARGE GAP IS AN ALARM. The ratchet itself puts the clock ahead of wall time
+  # during any burst: five sends inside one second emit +1s each, so the clock legitimately
+  # leads by ~5s and the NEXT send sees `now < stored`. Warning on that is noise generated
+  # by the fix's own normal operation — found by an integration test, after unit tests that
+  # never bursted said this was clean.
+  # A burst can only lead by about (messages in the burst) seconds. The events worth
+  # shouting about are an order of magnitude larger: a DST fold is 3600s, an RTC scramble
+  # typically more. Below the threshold, bump silently; above it, say so.
+  _lead=0
+  if [ -n "${s_ep:-}" ] && [ -n "${n_ep:-}" ]; then _lead=$(( s_ep - n_ep )); fi
+  if [[ "$now" < "$stored" ]] && [ "$_lead" -gt "${_BUS_CLOCK_WARN_AHEAD:-120}" ]; then
+    printf '⚠ CLOCK WENT BACKWARDS: wall time %s is behind the last bus stamp %s (by %ss).\n' "$now" "$stored" "$_lead" >&2
     printf '  Stamping %s so the log stays ordered — readers compare these as strings, and an\n' "$bumped" >&2
     printf '  out-of-order stamp is silently undeliverable. Check the system clock (DST fold or RTC skew).\n' >&2
   fi
@@ -2195,7 +2237,25 @@ except OSError:
 # since we last read) and merge the still-unread archive messages into `msgs`, so the SAME
 # filter/cap/advance below shows them and never skips them. Self-limiting: once shown, the
 # watermark advances past them, so the next check won't re-dump the archive.
+# ⚠️ `msgs[0]` is FILE-ORDER first, not the minimum timestamp. Today the truncating
+# rotation makes those the same thing by accident: `cat >` wipes the file, so the
+# `[system]` notice is physically first AND (via the bus clock's ratchet) stamped above
+# every archived message. The predicate below is correct only under that invariant.
+#
+# A rotation that does not truncate removes the accident. A writer that minted its stamp
+# before the rotation and appended after it lands at file position 0 carrying a
+# PRE-rotation timestamp, so `cur_oldest` goes backwards, `last < cur_oldest` is FALSE for
+# a reader sitting at that stamp, recovery never fires, and the archived messages between
+# them become unreachable forever -- `--all` reads only the live log and this is the only
+# path into the archives.
+#
+# So anchor on the ROTATION NOTICE when one is present: it is the thing that actually
+# marks "a rotation happened since you last read", which is what this test means to ask.
+# Falling back to file order keeps the old behaviour for a log with no notice in it.
 cur_oldest = msgs[0]["ts"] if msgs else ""
+_sys_ts = max((m["ts"] for m in msgs if m.get("sender") == "system"), default="")
+if _sys_ts > cur_oldest:
+    cur_oldest = _sys_ts
 if last and cur_oldest and last < cur_oldest:
     import glob
     seen_keys = {(m["ts"], m["sender"], "\n".join(m["lines"])) for m in msgs}
@@ -2430,7 +2490,25 @@ except OSError:
 # Rotation catch-up (Kyle, 2026-07-22) — same as `check`: a returning session digesting after
 # an absence is EXACTLY when a rotation may have happened, so pull the unread archive messages
 # in when our watermark is behind the current log's start, or catchup would skip them too.
+# ⚠️ `msgs[0]` is FILE-ORDER first, not the minimum timestamp. Today the truncating
+# rotation makes those the same thing by accident: `cat >` wipes the file, so the
+# `[system]` notice is physically first AND (via the bus clock's ratchet) stamped above
+# every archived message. The predicate below is correct only under that invariant.
+#
+# A rotation that does not truncate removes the accident. A writer that minted its stamp
+# before the rotation and appended after it lands at file position 0 carrying a
+# PRE-rotation timestamp, so `cur_oldest` goes backwards, `last < cur_oldest` is FALSE for
+# a reader sitting at that stamp, recovery never fires, and the archived messages between
+# them become unreachable forever -- `--all` reads only the live log and this is the only
+# path into the archives.
+#
+# So anchor on the ROTATION NOTICE when one is present: it is the thing that actually
+# marks "a rotation happened since you last read", which is what this test means to ask.
+# Falling back to file order keeps the old behaviour for a log with no notice in it.
 cur_oldest = msgs[0]["ts"] if msgs else ""
+_sys_ts = max((m["ts"] for m in msgs if m.get("sender") == "system"), default="")
+if _sys_ts > cur_oldest:
+    cur_oldest = _sys_ts
 if last and cur_oldest and last < cur_oldest:
     import glob
     seen_keys = {(m["ts"], m["sender"], "\n".join(m["lines"])) for m in msgs}
@@ -3227,54 +3305,102 @@ EOF
     ;;
 
   rotate)
-    # Archive the current bus to messages-YYYY-MM.md and start fresh.
-    # Keeps the header block intact so usage instructions stay visible.
-    if [ ! -s "$BUS_FILE" ]; then
+    # ⭐ THIS ROTATION NEVER TRUNCATES A PATH A WRITER CAN REACH.
+    #
+    # It used to be `cp` then `cat >`. MEASURED under 16 concurrent writers with a rotation
+    # fired mid-stream: 20 messages lost per 9600 — copied to the archive, then truncated
+    # away, present in NEITHER file. Same harness, the rotation below: 0 per 9600, with the
+    # writers left completely unlocked.
+    #
+    # Why no writer lock: `>>` is O_APPEND, and on Linux a concurrent appender can never
+    # lose another writer's bytes. The loss was never an append problem — it was that rotate
+    # truncated a path writers still held. An earlier attempt at `mv` plus a rotator-only
+    # lock measured WORSE (5 lost per 1200), because a writer opening the path after the
+    # rename creates a fresh file that the following `cat >` then truncates. The fix is to
+    # stop overwriting anything, not to exclude everyone.
+    _ROT_DIR="$(dirname "$BUS_FILE")"
+    _ROT_TMP="$_ROT_DIR/.rot.tmp"
+    if [ ! -s "$BUS_FILE" ] && [ ! -s "$_ROT_TMP" ]; then
       echo "Bus is empty, nothing to rotate."
       exit 0
     fi
 
-    ARCHIVE_MONTH="${1:-$(date '+%Y-%m')}"
-    ARCHIVE_FILE="$(dirname "$BUS_FILE")/messages-${ARCHIVE_MONTH}.md"
-
-    if [ -f "$ARCHIVE_FILE" ]; then
-      # Append to existing archive for that month instead of clobbering
-      {
-        echo ""
-        echo "<!-- appended $(date '+%Y-%m-%d %H:%M') -->"
-        echo ""
-        cat "$BUS_FILE"
-      } >> "$ARCHIVE_FILE"
-      echo "Appended current bus to existing archive: $ARCHIVE_FILE"
-    else
-      cp "$BUS_FILE" "$ARCHIVE_FILE"
-      echo "Archived current bus to: $ARCHIVE_FILE"
+    # Only rotations exclude each other. Held across a rename and one small append — never
+    # across the archive copy, because a lock held for a 4 MB copy on this host's rotational
+    # disk would freeze every sender for the length of an IO stall.
+    exec 8>"$_ROT_DIR/.rotate.lock"
+    if ! flock -w 60 8; then
+      echo "Another rotation is in progress; doing nothing." >&2
+      exit 1
     fi
 
-    # Reset bus with just the header + fresh marker
-    cat > "$BUS_FILE" <<HEADER
-# Claude Bus — Cross-Session Messages
+    # ⚠️ RECOVER A CRASHED ROTATION FIRST. A rotation killed between the rename and the
+    # archive leaves every message in `.rot.tmp` — a dotfile matching neither the live path
+    # nor the `messages-*.md` glob, so it is invisible to check, catchup, the gap recovery,
+    # Conductor and History alike. Every signal would read healthy while a month sat in a
+    # file nobody looks at. The name is FIXED, not mktemp, so this recovery can find it.
+    if [ -s "$_ROT_TMP" ]; then
+      echo "⚠ found an unfinished rotation ($_ROT_TMP) — archiving it before continuing." >&2
+    else
+      # Rename FIRST, then append the fresh header. An append landing in that window creates
+      # the file and SURVIVES; the header simply lands after it. Nothing is overwritten.
+      mv "$BUS_FILE" "$_ROT_TMP" 2>/dev/null || { echo "nothing to rotate." >&2; exit 0; }
+    fi
+    ARCHIVE_MONTH="${1:-$(date '+%Y-%m')}"
+    ARCHIVE_FILE="$_ROT_DIR/messages-${ARCHIVE_MONTH}.md"
 
-Append-only log of messages between Claude Code sessions on this machine.
-Newest messages at the bottom. Each message is tagged with its sender session.
+    # The header, APPENDED (never `cat >`), so a message that beat us to the new file lives.
+    {
+      echo "# Claude Bus — Cross-Session Messages"
+      echo ""
+      echo "Append-only log of messages between Claude Code sessions on this machine."
+      echo "Newest messages at the bottom. Each message is tagged with its sender session."
+      echo ""
+      echo "Usage (from any session):"
+      echo "  \`/msg-send <your message>\`  — append a message to this log"
+      echo "  \`/msg-check\`                 — read the latest messages"
+      echo "  \`/msg-all\`                   — dump the full log"
+      echo "  \`/msg-rotate\`                — archive this log to messages-YYYY-MM.md"
+      echo ""
+      echo "---"
+      echo ""
+      echo "## $(_bus_ts) [system]"
+      echo ""
+      echo "Bus rotated. Previous log archived to \`$(basename "$ARCHIVE_FILE")\`."
+    } >> "$BUS_FILE"
 
-Sessions are identified by working directory (see the case-table in bus.sh):
-  • named tags (e.g. \`[api]\`, \`[web]\`) = dirs you mapped in bus.sh
-  • \`[other:<cwd>]\` = any other session
+    # Archive only the bytes present when we measured the file. Anything appended after this
+    # point arrived through a stale fd held across the rename; it is swept to the LIVE log
+    # below rather than left in an inode about to be unlinked, where it would evaporate.
+    _ROT_SZ="$(wc -c < "$_ROT_TMP" 2>/dev/null || echo 0)"
+    if [ -f "$ARCHIVE_FILE" ]; then
+      { echo ""; echo "<!-- appended $(date '+%Y-%m-%d %H:%M:%S') -->"; echo ""
+        head -c "$_ROT_SZ" "$_ROT_TMP"; } >> "$ARCHIVE_FILE"
+      echo "Appended rotated bus to existing archive: $ARCHIVE_FILE"
+    else
+      head -c "$_ROT_SZ" "$_ROT_TMP" > "$ARCHIVE_FILE"
+      echo "Archived rotated bus to: $ARCHIVE_FILE"
+    fi
 
-Usage (from any session):
-  \`/msg-send <your message>\`  — append a message to this log
-  \`/msg-check\`                 — read the latest messages
-  \`/msg-all\`                   — dump the full log
-  \`/msg-rotate\`                — archive this log to messages-YYYY-MM.md
+    # ⚠️ FSYNC BEFORE DISCARD. The archive's pages can be allocated but unwritten for the
+    # length of the writeback window, while `rm` is a journaled metadata op that may persist
+    # first. A power loss in between leaves an empty or partial archive AND no source — a
+    # month gone, looking exactly like a normal rotated bus. Ordering, not exclusion.
+    python3 -c 'import os,sys
+fd=os.open(sys.argv[1], os.O_RDONLY); os.fsync(fd); os.close(fd)
+d=os.open(os.path.dirname(sys.argv[1]) or ".", os.O_RDONLY); os.fsync(d); os.close(d)' \
+      "$ARCHIVE_FILE" 2>/dev/null || true
 
----
-
-## $(_bus_ts) [system]
-
-Bus rotated. Previous log archived to \`$(basename "$ARCHIVE_FILE")\`.
-
-HEADER
+    # Sweep stragglers: bytes that landed on the renamed inode after we measured it. They go
+    # to the LIVE log, where they are delivered normally — not to the archive, which only the
+    # gap recovery reads and only for readers who are already behind.
+    sleep 2
+    _NOW_SZ="$(wc -c < "$_ROT_TMP" 2>/dev/null || echo 0)"
+    if [ "$_NOW_SZ" -gt "$_ROT_SZ" ]; then
+      tail -c "+$((_ROT_SZ + 1))" "$_ROT_TMP" >> "$BUS_FILE"
+      echo "Swept $((_NOW_SZ - _ROT_SZ)) straggler byte(s) into the new log." >&2
+    fi
+    rm -f "$_ROT_TMP"
     echo "Bus reset. New log at: $BUS_FILE"
     ;;
 
