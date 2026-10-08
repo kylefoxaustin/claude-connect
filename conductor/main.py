@@ -56,6 +56,7 @@ from .bus import (
     build_mention_history,
     compute_pending,
     directed_unread_all,
+    read_delivered,
     list_known_tags,
     list_sender_tags,
     read_active_tags,
@@ -1020,6 +1021,24 @@ class AppState:
             # fleet still shows in the badge (the human should see it) but is not an
             # interruption — see _WAKE_MAX_RECIPIENTS.
             if not info.get("wakeable", info.get("count", 0)):
+                continue
+            # ⏳ ALREADY READ, NOT YET COMMITTED — do not wake someone to read what they are
+            # answering right now. `check` stages its advance into `<member>.delivered` and
+            # only the turn's own Stop hook promotes it to `.last-seen`, so for the whole
+            # length of a turn the mail is read in every sense that matters while this test
+            # still says unread. The gap is WIDEST for the turns that did the most work.
+            #
+            # splat-vla measured three of these in one day; the 19:02 instance read: posted
+            # 18:58:43, reply sent 19:02:13, cursor committed 19:02:25, and Conductor's
+            # attestation landed at ~19:02 — mid-turn, 187s before the keystroke arrived.
+            #
+            # This can only ever SUPPRESS a wake, never create one, which is why it sits
+            # here rather than inside the counter: the badge stays honest (the human should
+            # still see the mail), and a bug in this check costs a missed nudge, not a storm.
+            # A missed nudge is recoverable — the next scan re-evaluates once Stop commits.
+            staged = read_delivered(self.settings.bus.state_dir_resolved, r.tag)
+            latest = info.get("latest_ts") or ""
+            if staged and latest and staged >= latest:
                 continue
             # THE FLOOR, AND IT IS CONDITIONAL — because a rate limit is a CONSTANT and the
             # situation is DYNAMIC. Kyle found this: with seven Claudes on one problem the load

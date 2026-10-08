@@ -407,6 +407,68 @@ def _read_last_seen(state_dir: Path, tag: str) -> str | None:
     return None
 
 
+def read_delivered(state_dir: Path, tag: str) -> str | None:
+    """The timestamp a session has READ but not yet COMMITTED, or None.
+
+    `bus.sh check` stages its cursor advance into ``<member>.delivered`` as
+    ``<ts>\\t<promptId>``; only that turn's own Stop hook promotes it to
+    ``.last-seen``. So between a session reading its mail and its turn ending, the
+    mail is read in every sense that matters while ``.last-seen`` still says unread.
+
+    MEASURED by splat-vla, 2026-10-07, three occurrences in one day:
+
+        18:58:43  docs posts
+        19:02:13  splat-vla finishes reading it and replies
+        19:02:25  Stop hook commits the cursor
+        ~19:05    Conductor injects /msg-check, "attested 187s before it arrived"
+
+    The attestation landed inside that window, so a session was woken to read a
+    message it had already answered. The gap is as wide as the turn, and it is
+    WIDEST for the turns that did the most work — the longer the reply, the longer
+    the message stays "unread" by this test.
+
+    The cost is not the wasted turn; it is that an injected ``/msg-check`` which
+    finds an empty queue is indistinguishable from a real one, which trains sessions
+    to treat the wake channel as noise. That is the failure you least want on a
+    channel whose whole job is interrupting someone.
+
+    Mirrors ``_read_last_seen``'s member-then-tag lookup deliberately: the record is
+    written under whichever name ``check`` resolved, and a second naming convention
+    here is how the two halves would drift apart.
+    """
+    bare = tag.strip("[]")
+    for name in (f"{tag}.delivered", f"{bare}.delivered"):
+        try:
+            raw = (state_dir / name).read_text(encoding="utf-8").strip()
+        except (FileNotFoundError, OSError):
+            continue
+        if not raw:
+            continue
+        # `<ts>\t<promptId>` — take the ts only; a malformed record yields None rather
+        # than a half-parsed timestamp that could suppress a wake it should not.
+        ts = raw.split("\t", 1)[0].strip()
+        return ts if _is_header_ts(ts) else None
+    return None
+
+
+def _is_header_ts(ts: str) -> bool:
+    """True only for a timestamp that is both well-SHAPED and a real calendar date.
+
+    ⚠️ Shape alone is not enough, and the difference is a silent wake outage. A regex
+    accepts ``2026-13-99 99:99:99`` — month 13, day 99 — and as a staged value that
+    compares GREATER than every real timestamp, so it would suppress that member's wakes
+    FOREVER. Caught by this module's own test. Anything that cannot be parsed as a date
+    must fail toward waking.
+    """
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            datetime.strptime(ts, fmt)
+            return True
+        except ValueError:
+            continue
+    return False
+
+
 def compute_pending(messages_path: Path, state_dir: Path, tag: str) -> int:
     """Compute pending message count for a tag without waiting for the destination
     session's ``bus.sh prompt-check`` to run.
