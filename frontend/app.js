@@ -2180,14 +2180,27 @@ function renderFleetAlerts(state) {
                        .filter(Boolean);
     const shown = names.slice(0, 3).join(", ");
     const more = names.length > 3 ? ` +${names.length - 3} more` : "";
-    const head2 = document.createElement("button");
+    // ⚠️ NOT a <button>. The dismiss control is itself a <button>, and a button nested
+    // inside a button is invalid interactive content — the outer one swallows the click,
+    // so the group's ✕ was simply dead (Kyle: "i still cannot click 'x' and dismiss").
+    // A div with an explicit role/tabindex is clickable, keyboard-reachable, and can
+    // legally contain the ✕.
+    const head2 = document.createElement("div");
+    head2.setAttribute("role", "button");
+    head2.tabIndex = 0;
     head2.className = "alert-row alert-group";
     head2.setAttribute("aria-expanded", open ? "true" : "false");
     head2.innerHTML =
       `<span class="alert-caret">${open ? "▾" : "▸"}</span> `
       + `<strong>${lab[0]} ${group.length} sessions ${lab[1]}</strong> `
       + `<span class="alert-sub">${escapeHtml(shown)}${escapeHtml(more)}</span>`;
-    head2.onclick = () => { setGroupExpanded(cls, !open); renderFleetAlerts(state); };
+    const toggle = () => { setGroupExpanded(cls, !open); renderFleetAlerts(state); };
+    head2.onclick = (e) => { if (e.target.closest(".alert-dismiss")) return; toggle(); };
+    // A div with role=button is not keyboard-activated for free — wire Enter/Space, or the
+    // fold becomes mouse-only.
+    head2.onkeydown = (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+    };
     // Dismissing the GROUP dismisses each member at its own live magnitude, so a single
     // session that later doubles still comes back on its own.
     const bulk = document.createElement("button");

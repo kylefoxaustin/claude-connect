@@ -74,5 +74,34 @@ else
   no "the stale dismiss key carries a magnitude again — dismissal will stop sticking"
 fi
 
+# ⚠️ A DISMISS BUTTON MUST NEVER BE NESTED INSIDE ANOTHER BUTTON.
+# The folded-group header was built as a <button> and the ✕ appended INSIDE it. A button
+# inside a button is invalid interactive content: the outer element swallows the click, so
+# the group's ✕ was simply dead while looking entirely normal. Kyle found it by trying to
+# use it — "i still cannot click 'x' and dismiss those" — after the dismiss LOGIC had
+# already been fixed and tested. Logic tests cannot see this; it is a DOM-shape defect.
+if node -e '
+const fs = require("fs");
+const src = fs.readFileSync("frontend/app.js", "utf8");
+// every variable created as a <button>
+const btns = new Set([...src.matchAll(/const (\w+) = document\.createElement\("button"\)/g)].map(m => m[1]));
+const bad = [];
+for (const parent of btns) for (const child of btns) {
+  if (parent !== child && src.includes(`${parent}.appendChild(${child})`)) bad.push(`${parent} <- ${child}`);
+}
+if (bad.length) { console.error("nested: " + bad.join(", ")); process.exit(1); }
+' 2>/dev/null; then
+  ok "no <button> is appended inside another <button> (the dead-✕ shape)"
+else
+  no "a dismiss button is nested inside a button — its click will be swallowed"
+fi
+
+# and the group header must stay keyboard-reachable now that it is not a real button
+if grep -q 'head2.onkeydown' frontend/app.js && grep -q 'role", "button"' frontend/app.js; then
+  ok "the div-based group header keeps role=button and Enter/Space activation"
+else
+  no "group header is a bare div — not keyboard reachable"
+fi
+
 printf '\n  %d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

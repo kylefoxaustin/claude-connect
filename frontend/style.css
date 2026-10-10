@@ -57,13 +57,25 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  /* ⚠️ WRAP, don't overlap. The bar has two flex children — the title/stats group and a
+     row of 12+ buttons — and a flex item defaults to `min-width: auto`, meaning it will
+     NOT shrink below its content. With `white-space: nowrap` on the stats text, a narrow
+     (windowed) Conductor had nothing able to give, so the groups overflowed INTO each
+     other and the top-left rendered as overprinted text. Allowing a second row is the
+     fix; the wide/maximised layout is unchanged because it never needs to wrap. */
+  flex-wrap: wrap;
+  row-gap: 8px;
+  column-gap: 12px;
   padding: 12px 20px;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border);
 }
-.topbar-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.topbar-left { display: flex; align-items: center; gap: 14px; min-width: 0; flex: 1 1 auto; }
 .token-total {
   font-size: 11px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--text-dim);
   white-space: nowrap;
   cursor: help;
@@ -89,6 +101,12 @@ html, body {
 .topbar-meta {
   display: flex;
   align-items: center;
+  /* The button row is what overflows first. Let it wrap and sit right-aligned, and let it
+     shrink — without `min-width: 0` a flex child refuses to go below its content width and
+     pushes into its sibling instead. */
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
   gap: 12px;
   font-size: 13px;
   color: var(--text-dim);
@@ -452,6 +470,9 @@ body.link-mode .tile-actions { display: none; }
 .pending-badge.directed:hover { background: rgba(229, 192, 123, 0.34); }
 .waiting-total {
   font-size: 11px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: #e5c07b;
   white-space: nowrap;
   cursor: help;
