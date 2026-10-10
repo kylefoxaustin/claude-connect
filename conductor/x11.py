@@ -620,6 +620,7 @@ def _focus_session_input(
     terminal_pid: int | None,
     title: str | None,
     window_title: str | None,
+    human_initiated: bool = False,
 ) -> bool:
     """Place keyboard focus on a session's terminal INPUT — correctly, for BOTH the text sender
     and the AskUserQuestion picker. Returns True if focus was placed; False if it could not be
@@ -640,7 +641,17 @@ def _focus_session_input(
     # window. No window-level check can see that (panes share one X11 window), so we refuse UP FRONT:
     # don't type while a person is active; the caller retries once they go idle (same as the busy
     # guard). This is the only guard that catches pane-level mis-delivery, because it never competes.
-    if human_recently_active():
+    # ⚠️ AN EXPLICIT CLICK IS NOT A FOCUS RACE — IT IS THE INSTRUCTION.
+    # This guard is correct for an AUTONOMOUS wake: Conductor deciding on its own to type
+    # while Kyle is mid-keystroke can split a notice across two Tilix panes. But clicking
+    # the 📬 bubble IS human activity within the 4 s window, by construction — so the
+    # manual ping could NEVER succeed. It failed every single time, reported "Couldn't
+    # reach the session's window (not found)", and the real reason was never that the
+    # window was missing. Measured 2026-10-10: mutter idle 280 ms against a 4000 ms
+    # threshold, while Kyle was clicking the button that asks for exactly this.
+    # The residual risk differs too: after clicking in Conductor his focus is on
+    # Conductor, not on a Tilix pane, and we activate the target tile before typing.
+    if human_recently_active() and not human_initiated:
         log.debug("a human is active at the machine — deferring injection to avoid a focus race")
         return False
     tilix_id = tilix_id_for_pid(pid)
@@ -709,6 +720,7 @@ TYPE_ACTION = "\x00type:"
 
 def send_key_sequence(
     *,
+        human_initiated: bool = False,
     keys: list[str],
     pid: int | None = None,
     terminal_pid: int | None,
@@ -736,6 +748,7 @@ def send_key_sequence(
     # logged as sent and never landed in the picker.
     if not _focus_session_input(
         pid=pid, terminal_pid=terminal_pid, title=title, window_title=window_title,
+        human_initiated=human_initiated,
     ):
         return False
     try:
@@ -763,6 +776,7 @@ def send_key_sequence(
 def send_keys_to_session(
     *,
     text: str,
+    human_initiated: bool = False,
     pid: int | None = None,
     terminal_pid: int | None,
     title: str | None = None,
@@ -783,6 +797,7 @@ def send_keys_to_session(
         return False
     if not _focus_session_input(
         pid=pid, terminal_pid=terminal_pid, title=title, window_title=window_title,
+        human_initiated=human_initiated,
     ):
         return False
     return _type_into_focused_window(text, title=title, window_title=window_title)
@@ -790,6 +805,7 @@ def send_keys_to_session(
 
 def send_key_to_session(
     *,
+        human_initiated: bool = False,
     key: str,
     pid: int | None = None,
     terminal_pid: int | None,
@@ -809,6 +825,7 @@ def send_key_to_session(
         return False
     if not _focus_session_input(
         pid=pid, terminal_pid=terminal_pid, title=title, window_title=window_title,
+        human_initiated=human_initiated,
     ):
         return False
     try:

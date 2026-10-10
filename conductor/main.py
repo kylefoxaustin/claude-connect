@@ -1697,7 +1697,8 @@ class AppState:
         return rec.last_activity_at <= m["started_epoch"] + 1
 
     async def _inject_text(self, rec: SessionRecord, text: str, why: str,
-                           *, actor: str = "conductor") -> bool:
+                           *, actor: str = "conductor",
+                           human_initiated: bool = False) -> bool:
         """Type ``text`` into a live session's terminal (raises its window).
 
         THE CHOKE POINT. Attestation lives here, not at the call sites — a new injection path
@@ -1729,7 +1730,7 @@ class AppState:
         )
         try:
             ok = await asyncio.to_thread(
-                send_keys_to_session, text=text, pid=rec.pid,
+                send_keys_to_session, text=text, human_initiated=human_initiated, pid=rec.pid,
                 terminal_pid=rec.terminal_pid, title=rec.title, window_title=rec.window_title,
             )
             # ⚠️ THIS LOGGED "woke" WHETHER OR NOT THE SEND SUCCEEDED, so a run of failures read
@@ -2801,7 +2802,11 @@ async def check_bus(session_id: str, request: Request) -> dict[str, Any]:
     # button honours the picker / tool-in-flight guards and attests, exactly like every
     # autonomous wake. This path used to bypass both, and it was one of the ways a keystroke
     # could land in a permission prompt.
-    injected = await state._inject_text(rec, "/msg-check", "manual ping (check bus)")
+    # human_initiated: Kyle clicked the 📬 bubble. The focus-race guard exists to stop
+    # Conductor typing over someone mid-keystroke — but a click IS a keystroke, so the
+    # guard refused this path 100% of the time and reported it as "window not found".
+    injected = await state._inject_text(rec, "/msg-check", "manual ping (check bus)",
+                                        human_initiated=True)
     resp: dict[str, Any] = {
         "injected": injected,
         "tag": rec.tag,

@@ -405,7 +405,11 @@ def focus_session(*, pid: int | None = None, terminal_pid: int | None,
 
 
 def send_keys_to_session(*, text: str, pid: int | None = None, terminal_pid: int | None,
-                         title: str | None = None, window_title: str | None = None) -> bool:
+                         title: str | None = None, window_title: str | None = None,
+                         human_initiated: bool = False) -> bool:
+    # Accepted and ignored: the focus-race guard it controls is X11/mutter-specific (see
+    # x11.py). Declared anyway so the two backends keep ONE signature — a caller that
+    # works on Linux must not TypeError on Windows.
     """Activate a session's window and type ``text`` followed by Enter. Steals focus by design."""
     events: list[_INPUT] = []
     for ch in text:
@@ -416,7 +420,8 @@ def send_keys_to_session(*, text: str, pid: int | None = None, terminal_pid: int
 
 
 def send_key_to_session(*, key: str, pid: int | None = None, terminal_pid: int | None,
-                        title: str | None = None, window_title: str | None = None) -> bool:
+                        title: str | None = None, window_title: str | None = None,
+                        human_initiated: bool = False) -> bool:
     """Press ONE named key — no text, no Return. Exists so a modal can be dismissed with Escape.
 
     An unknown key name returns False instead of typing something approximate. The caller that
@@ -432,7 +437,8 @@ def send_key_to_session(*, key: str, pid: int | None = None, terminal_pid: int |
 
 
 def send_key_sequence(*, keys: list[str], pid: int | None = None, terminal_pid: int | None,
-                      title: str | None = None, window_title: str | None = None) -> bool:
+                      title: str | None = None, window_title: str | None = None,
+                        human_initiated: bool = False) -> bool:
     """Send raw key NAMES to drive the AskUserQuestion picker (digits, Right, Return).
 
     Deliberately no leading ctrl+u, matching the X11 backend: there is no input line in a picker,
