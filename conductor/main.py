@@ -2707,6 +2707,7 @@ async def alerts_dismissed(request: Request) -> dict[str, Any]:
     board is mostly used from. Also makes a dismissal survive a restart and agree across the
     browser, the phone and the native app.
     """
+    state: AppState = request.app.state.cond
     return {"dismissed": await asyncio.to_thread(read_alert_dismissals, state.coord_root)}
 
 
@@ -2717,6 +2718,7 @@ async def alerts_dismiss(request: Request) -> dict[str, Any]:
     Stores the MAGNITUDE alongside the timestamp so the row can come back if the condition
     materially worsens -- a dismissal means "I have seen these 20", not "never tell me again".
     """
+    state: AppState = request.app.state.cond
     body: dict[str, Any] = {}
     try:
         body = await request.json()

@@ -41,3 +41,21 @@ def test_survives_a_restart_which_is_the_whole_point(tmp_path: Path):
     """localStorage cannot do this in the native app; the file can."""
     write_alert_dismissals(tmp_path, {"quiet:a": {"at": 5.0, "n": 3.0}})
     assert read_alert_dismissals(tmp_path) == {"quiet:a": {"at": 5.0, "n": 3.0}}
+
+
+# ⚠️ THE TESTS ABOVE ALL PASSED WHILE THE ENDPOINT RETURNED HTTP 500.
+# They exercised the coord functions directly and never went through FastAPI, so a
+# `NameError: name 'state' is not defined` in the handler — a module-global I assumed
+# existed, where every other endpoint does `request.app.state.cond` — shipped green.
+# Testing the store is not testing the route that reaches it.
+def test_the_handlers_resolve_state_the_way_every_other_endpoint_does():
+    import re
+    from pathlib import Path
+    src = Path(__file__).resolve().parents[1].joinpath("conductor/main.py").read_text(encoding="utf-8")
+    for name in ("alerts_dismissed", "alerts_dismiss"):
+        i = src.index(f"async def {name}(")
+        body = src[i:src.index("\n@app.", i + 10)]
+        assert "request.app.state.cond" in body, (
+            f"{name} must take state from request.app.state.cond; a bare `state` is a "
+            f"NameError at request time and returns 500 with every unit test green"
+        )
