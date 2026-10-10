@@ -365,3 +365,47 @@ def read_push_grants(coord_root: Path, *, now: float | None = None) -> list[dict
         })
     out.sort(key=lambda r: r["expires_epoch"])
     return out
+
+
+# ── Fleet-health alert dismissals ───────────────────────────────────────────────────────
+# ⚠️ WHY THESE LIVE ON THE SERVER AND NOT IN localStorage. The dismiss ✕ stored its state
+# in localStorage, which works in a browser and CANNOT work in the native desktop app:
+# pywebview runs in private mode and wipes localStorage (app.py:99 says so, and the auth
+# token already works around it by seeding a variable instead). So on the machine Kyle
+# actually uses the board from, a dismissal could never survive — no matter how correct the
+# logic was. It was "fixed" twice without that being noticed, because the logic tests all
+# passed against a store that is simply absent in that build.
+#
+# Server-side is also strictly better than the localStorage it replaces: a dismissal now
+# survives a restart and is the same on the phone, the browser and the native app, which is
+# what an operator means by "I have seen this one".
+
+def read_alert_dismissals(coord_root: Path) -> dict[str, dict]:
+    """``{key: {"at": epoch_ms, "n": magnitude}}``. Never raises."""
+    f = coord_root / "alert-dismissals.json"
+    try:
+        d = json.loads(f.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, ValueError):
+        return {}
+    if not isinstance(d, dict):
+        return {}
+    out: dict[str, dict] = {}
+    for k, v in d.items():
+        if isinstance(v, dict) and isinstance(v.get("at"), (int, float)):
+            out[str(k)] = {"at": float(v["at"]), "n": float(v.get("n") or 0)}
+    return out
+
+
+def write_alert_dismissals(coord_root: Path, d: dict[str, dict]) -> None:
+    """Best-effort persist, newest 200 only. Never raises — losing a dismissal must
+    never break a scan, and an unbounded map accumulates keys for conditions that can
+    no longer recur."""
+    try:
+        coord_root.mkdir(parents=True, exist_ok=True)
+        trimmed = dict(sorted(d.items(), key=lambda kv: -(kv[1].get("at") or 0))[:200])
+        f = coord_root / "alert-dismissals.json"
+        tmp = f.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(trimmed), encoding="utf-8")
+        tmp.replace(f)
+    except (OSError, TypeError, ValueError):
+        pass

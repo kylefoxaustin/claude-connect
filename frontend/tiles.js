@@ -337,8 +337,21 @@ function tileKeyForSession(s) { return `proj:${s.project_dir}`; }
 const BUS_KEY = "bus:bus";
 
 export function resetLayout() {
+  // ⚠️ RESET MEANS RESET. This used to clear only `positions`, leaving minimized tiles in
+  // the dock and collapsed groups folded. With the grid wiped and re-cascaded, everything
+  // still minimized stayed below — so the board came back looking like every session had
+  // dropped into the dormant line (Kyle, 2026-10-10). The button says "Reset layout"; a
+  // user pressing it after the board gets messy means ALL of it, not the subset that
+  // happens to live in one of the three stores.
   positions = {};
   savePositions(positions);
+  minimized = {};
+  saveMinimized();
+  let anyCollapsed = false;
+  for (const g of Object.values(groups)) {
+    if (g.collapsed) { g.collapsed = false; anyCollapsed = true; }
+  }
+  if (anyCollapsed) saveGroups();
   // Hard rebuild: drop the reused nodes so every tile re-cascades from a clean
   // slate (in-place reuse would otherwise keep each node's old inline left/top).
   for (const node of tileNodes.values()) tileResizeObserver.unobserve(node);

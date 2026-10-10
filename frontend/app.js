@@ -1923,7 +1923,28 @@ function setGroupExpanded(cls, v) {
     localStorage.setItem(LS_ALERT_GROUPS, JSON.stringify(m));
   } catch {}
 }
+// ⚠️ THE SERVER IS THE STORE, NOT localStorage. The native desktop app runs pywebview in
+// private mode, which WIPES localStorage (app.py:99; the auth token already works around it
+// the same way). So on the machine the board is mostly used from, a dismissal could never
+// persist — and the logic was "fixed" twice without that being noticed, because every test
+// exercised a store that build does not have. localStorage is now only a mirror, used while
+// the fetch is in flight and if the server is unreachable.
+let _serverDismissed = null;           // null = not loaded yet; {} = loaded and empty
+async function loadDismissedFromServer() {
+  try {
+    const r = await fetch("/api/alerts/dismissed");
+    if (!r.ok) return;
+    const d = (await r.json()).dismissed;
+    if (d && typeof d === "object") {
+      _serverDismissed = d;
+      try { localStorage.setItem(LS_ALERTS_DISMISSED, JSON.stringify(d)); } catch {}
+      renderFleetAlerts(_lastAlertState);
+    }
+  } catch { /* offline: the localStorage mirror below carries us */ }
+}
+
 function dismissedAlerts() {
+  if (_serverDismissed) return _serverDismissed;
   try {
     const raw = JSON.parse(localStorage.getItem(LS_ALERTS_DISMISSED) || "{}");
     // v1 stored a bare array of count-bearing keys. Those keys can never match the new
@@ -1942,8 +1963,13 @@ function alertIsDismissed(d, key, n) {
 }
 let _lastAlertState = {};
 function dismissAlert(key, n) {
-  const d = dismissedAlerts();
+  const d = { ...dismissedAlerts() };
   d[key] = { at: Date.now(), n: Number.isFinite(n) ? n : 0 };
+  _serverDismissed = d;                                  // optimistic: the row goes NOW
+  fetch("/api/alerts/dismiss", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key, n: Number.isFinite(n) ? n : 0 }),
+  }).catch(() => { /* the localStorage mirror below still carries it for this session */ });
   // Bound it, newest-first — an unbounded map accumulates keys for states that can
   // never recur, and only the newest can still match anything.
   const trimmed = Object.fromEntries(
@@ -2216,6 +2242,13 @@ function renderFleetAlerts(state) {
       const trimmed = Object.fromEntries(
         Object.entries(d).sort((a, b) => (b[1].at || 0) - (a[1].at || 0)).slice(0, 200));
       try { localStorage.setItem(LS_ALERTS_DISMISSED, JSON.stringify(trimmed)); } catch {}
+      _serverDismissed = trimmed;
+      for (const r of group) {                       // one POST per member, same as a single ✕
+        fetch("/api/alerts/dismiss", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: r.dataset.alertKey, n: Number(r.dataset.alertN || 0) }),
+        }).catch(() => {});
+      }
       renderFleetAlerts(_lastAlertState);
     };
     head2.appendChild(bulk);
@@ -2230,6 +2263,11 @@ function renderFleetAlerts(state) {
     restore.textContent = `↺ show ${gone} dismissed`;
     restore.onclick = () => {
       try { localStorage.removeItem(LS_ALERTS_DISMISSED); } catch {}
+      _serverDismissed = {};
+      fetch("/api/alerts/dismiss", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clear: true }),
+      }).catch(() => {});
       renderFleetAlerts(state);
     };
     tail.push(restore);
@@ -2237,6 +2275,7 @@ function renderFleetAlerts(state) {
   box.replaceChildren(title, ...body, ...tail);
 }
 window.renderFleetAlerts = renderFleetAlerts;
+loadDismissedFromServer();   // seed from the server; the native app has no localStorage
 
 window.decidePush = async function decidePush(key, action, btn) {
   if (btn) { btn.disabled = true; btn.textContent = action === "approve" ? "approving…" : "…"; }

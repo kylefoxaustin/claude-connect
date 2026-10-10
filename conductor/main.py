@@ -72,6 +72,8 @@ from .coord import (
     read_persist_requests,
     read_push_proposals,
     read_push_requests,
+    read_alert_dismissals,
+    write_alert_dismissals,
     read_retractions,
     read_wake_state,
     read_winddown,
@@ -2694,6 +2696,46 @@ async def auth_check() -> dict[str, Any]:
 async def get_sessions(request: Request) -> dict[str, Any]:
     state: AppState = request.app.state.cond
     return state._sessions_payload()
+
+
+@app.get("/api/alerts/dismissed")
+async def alerts_dismissed(request: Request) -> dict[str, Any]:
+    """Which fleet-health alerts the operator has already seen.
+
+    Server-side because the native desktop app runs pywebview in private mode, which wipes
+    localStorage -- so the dismiss button could never persist there, on the very machine the
+    board is mostly used from. Also makes a dismissal survive a restart and agree across the
+    browser, the phone and the native app.
+    """
+    return {"dismissed": await asyncio.to_thread(read_alert_dismissals, state.coord_root)}
+
+
+@app.post("/api/alerts/dismiss")
+async def alerts_dismiss(request: Request) -> dict[str, Any]:
+    """Record one dismissal, or clear them all with ``{"clear": true}``.
+
+    Stores the MAGNITUDE alongside the timestamp so the row can come back if the condition
+    materially worsens -- a dismissal means "I have seen these 20", not "never tell me again".
+    """
+    body: dict[str, Any] = {}
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    cur = await asyncio.to_thread(read_alert_dismissals, state.coord_root)
+    if body.get("clear"):
+        cur = {}
+    else:
+        key = str(body.get("key") or "").strip()
+        if not key:
+            raise HTTPException(status_code=400, detail="key is required")
+        try:
+            n = float(body.get("n") or 0)
+        except (TypeError, ValueError):
+            n = 0.0
+        cur[key] = {"at": time.time() * 1000.0, "n": n}
+    await asyncio.to_thread(write_alert_dismissals, state.coord_root, cur)
+    return {"ok": True, "dismissed": cur}
 
 
 @app.post("/api/rescan")
