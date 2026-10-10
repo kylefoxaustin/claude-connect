@@ -2164,21 +2164,26 @@ function renderFleetAlerts(state) {
     const hid = document.createElement("span");
     hid.className = "alert-hidden-count";
     hid.textContent = `${gone} dismissed`;
+    hid.title = "Show them again";
+    hid.onclick = (e) => {
+      e.stopPropagation();                       // don't also collapse the panel
+      try { localStorage.removeItem(LS_ALERTS_DISMISSED); } catch {}
+      _serverDismissed = {};
+      fetch("/api/alerts/dismiss", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clear: true }),
+      }).catch(() => {});
+      renderFleetAlerts(state);
+    };
     head.appendChild(hid);
   }
   title.appendChild(head);
 
   if (collapsed) { box.replaceChildren(title); return; }
 
-  if (staleReaders.length) {
-    // Said once for the group: why "not reading" is worth a row at all.
-    const why = document.createElement("div");
-    why.className = "alert-sub";
-    why.style.marginTop = "2px";
-    why.textContent = "A session that never reads is indistinguishable from one with nothing to "
-      + "say — which is how a cursor sat three weeks behind unnoticed.";
-    title.appendChild(why);
-  }
+  // (The rationale paragraph that used to sit here is gone — Kyle, 2026-10-10: "mainly this
+  // is a fleet health status bar". A standing explainer on a status line is read once and
+  // then costs a row forever; the reasoning lives in the code and the commit history.)
   // ⭐ FOLD A REPEATED CLASS INTO ONE LINE. Nine rows of the identical shape
   // ("<tag> isn't reading its mail") filled half the board and buried the one row that
   // was different — a dead reader with an open question waiting on it. The count stays
@@ -2261,6 +2266,10 @@ function renderFleetAlerts(state) {
     const restore = document.createElement("button");
     restore.className = "alert-restore";
     restore.textContent = `↺ show ${gone} dismissed`;
+    // Transient: it reports what just happened, then gets out of the way. The permanent
+    // way back is the "N dismissed" count in the header, which stays clickable — fading
+    // BOTH would leave no route to un-dismiss, which is a worse bar than a noisy one.
+    setTimeout(() => restore.classList.add("alert-fading"), 30000);
     restore.onclick = () => {
       try { localStorage.removeItem(LS_ALERTS_DISMISSED); } catch {}
       _serverDismissed = {};

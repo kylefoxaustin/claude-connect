@@ -521,6 +521,17 @@ body.link-mode .tile-actions { display: none; }
   color: var(--text-dim, #8b93a1); font-size: 11px; cursor: pointer;
 }
 .alert-restore:hover { color: #e5c07b; text-decoration: underline; }
+/* The restore row is a STATUS message: it reports what just happened, then leaves. Fades
+   out 30 s after render and stops taking clicks, so a fleet-health bar does not carry a
+   permanent "9 dismissed" line. Honours prefers-reduced-motion by just going. */
+.alert-restore { transition: opacity .6s ease; }
+.alert-fading { opacity: 0; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) {
+  .alert-restore { transition: none; }
+}
+/* The header count is the PERMANENT way back once the status line has gone. */
+.alert-hidden-count { cursor: pointer; }
+.alert-hidden-count:hover { color: var(--text, #e6e6e6); text-decoration: underline; }
 /* padding-right RESERVES the ✕ gutter (v2.6.1's lesson from the dock, where an overlay
    scrollbar landed on exactly the dismiss buttons). It lives in this shorthand and not in
    a rule of its own ABOVE it — an equal-specificity `padding:` further down the sheet wins
