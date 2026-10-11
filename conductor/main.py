@@ -3717,11 +3717,27 @@ async def answer_proposal(key: str, payload: ProposalAnswer,
             # session ever tries to push), so mint the grant directly from the proposal.
             await asyncio.to_thread(_mint_grant, state.coord_root, key, prop["repo_name"],
                                     prop.get("repo", ""))
-        msg = (f"✅ Kyle says PUSH — the approval is already armed for {prop['repo_name']}, "
-               "so just run your push. It covers exactly one push.")
+        # ⭐ A DOORBELL, NOT A MESSAGE — the same fix v2.41 made for the gate-approval path,
+        # which was never carried one branch to the left. Kyle (2026-10-10): "For some reason
+        # pai keeps getting the long form push msg."
+        #
+        # This sentence asserted "the approval is already armed", composed HERE and typed
+        # minutes later once the session goes quiet. By then it may be false — the grant is
+        # one-shot, so a push in between consumes it, and the session is told it has a
+        # permission it does not have. That is exactly how 95emulator received four notices
+        # about a repo with nothing pending.
+        #
+        # Leaving `text` unset makes _deliver_push_notices fall back to `push approved:
+        # <repo>` (16 ASCII chars), which bus.sh's hook expands FROM THE GRANT FILE at read
+        # time — ground truth, cannot go stale, and able to say "there is NO ARMED GRANT for
+        # it now", which no sentence composed at this moment could.
+        msg = ""
     else:
-        msg = (f"🛑 Kyle says NOT YET. Instead: {choice}\n"
-               "Do not push. Carry on with that, and propose again when you're ready.")
+        # A decline keeps its prose, and the asymmetry is the point: Kyle's chosen alternative
+        # exists in NO file for a hook to expand, and unlike "a grant is armed" a decision he
+        # made does not go stale. Kept to one line — a newline in injected text commits the
+        # line early, and every extra character is another chance for xdotool to drop one.
+        msg = f"🛑 Kyle says NOT YET. Do this instead, and propose again after: {choice}"
 
     await asyncio.to_thread(clear_push_proposal, state.coord_root, key)
     state._push_proposals = await asyncio.to_thread(read_push_proposals, state.coord_root)
@@ -3731,10 +3747,10 @@ async def answer_proposal(key: str, payload: ProposalAnswer,
     # session is quiet. A session waiting on an answer is often mid-work, and a busy Claude
     # Code session QUEUES injected keystrokes rather than dropping them — which is how we got
     # 16 stacked /msg-checks. Never type at a busy one.
-    state._push_notices[f"proposal:{key}"] = {
-        "cwd": prop.get("cwd", ""), "repo": prop["repo_name"],
-        "queued": time.time(), "text": msg,
-    }
+    note = {"cwd": prop.get("cwd", ""), "repo": prop["repo_name"], "queued": time.time()}
+    if msg:
+        note["text"] = msg          # decline only; an approval rides the doorbell
+    state._push_notices[f"proposal:{key}"] = note
     await state.hub.broadcast("push", {"requests": state._push_requests,
                                        "grants": state._push_grants,
                                        "proposals": state._push_proposals})
