@@ -1456,6 +1456,18 @@ PUSH_PROPOSALS="$COORD_ROOT/push-proposals"
 # `why:` is your case for pushing NOW. Each `else:` is a real alternative you are
 # weighing — Kyle can pick one instead, and you'll be told which. Commits are
 # attached automatically; do not paste them.
+#
+# ⚠️ FORMAT, AND WHY IT IS ENFORCED AS A WARNING (docs, 2026-10-10, via Kyle).
+# ONLY lines beginning `why:` or `else:` are read. Everything else is DISCARDED, and
+# until today it was discarded SILENTLY while the tool printed "📤 Proposed a push" —
+# so a session carrying an old verbose template had most of its body deleted and was
+# told it succeeded. docs emitted a long multi-line block for ~a dozen pushes before
+# Kyle caught it BY EYE; nothing in the tool could have told it.
+#
+# `why:` wants ONE SHORT LINE — a few words. It is read on a phone, next to the commit
+# list, and a 400-character paragraph is unreadable exactly where the decision is made.
+# Over-length warns; it never refuses. Refusing would block a push over formatting,
+# which is worse than a verbose proposal.
 push_propose() {
   local body key repo name commits why="" alts=() line
   repo="$(git rev-parse --show-toplevel 2>/dev/null || printf '%s' "$PWD")"
@@ -1466,18 +1478,45 @@ push_propose() {
   # the caller's shell, which command-substitutes backticks, and the words vanish.
   case "${1:-}" in
     ''|-) : ;;
-    *) echo "usage: bus.sh push propose - <<'EOF' ... EOF   (reads stdin)" >&2; return 2 ;;
+    *) echo "usage: bus.sh push propose - <<'EOF' ... EOF   (reads stdin)" >&2
+       echo "  why: one short line - your case for pushing NOW   (required)" >&2
+       echo "  else: an alternative you are weighing             (repeatable)" >&2
+       echo "  Only these two prefixes are read; other lines are NOT included." >&2
+       return 2 ;;
   esac
   body="$(cat)"
   [ -n "$body" ] || { echo "propose: nothing on stdin" >&2; return 2; }
 
+  local -a dropped=()
   while IFS= read -r line; do
     case "$line" in
       why:*)  why="${line#why:}";  why="${why# }" ;;
       else:*) alts+=("$(printf '%s' "${line#else:}" | sed 's/^ //')") ;;
+      "")     : ;;                       # blank lines are formatting, not content
+      *)      dropped+=("$line") ;;      # ⚠️ content we are about to silently delete
     esac
   done <<< "$body"
   [ -n "$why" ] || { echo "propose: needs a 'why:' line — your case for pushing NOW" >&2; return 2; }
+
+  # ⚠️ A DISCARDED LINE MUST NOT BE DISCARDED QUIETLY. Only why:/else: are parsed, so any
+  # other line vanished — and the tool still printed success. That is the whole defect docs
+  # reported: no signal existed, so the convention could not be discovered or self-corrected.
+  if [ "${#dropped[@]}" -gt 0 ]; then
+    echo "⚠️  propose: ${#dropped[@]} line(s) were NOT included — only 'why:' and 'else:' are read." >&2
+    for line in "${dropped[@]}"; do
+      printf '      dropped: %s\n' "$(printf '%s' "$line" | cut -c1-72)" >&2
+    done
+    echo "      Kyle will NOT see those. Fold what matters into the 'why:' line, or make" >&2
+    echo "      each alternative its own 'else:' line, then re-propose." >&2
+  fi
+
+  # Soft brevity check. Kyle reads this on a phone beside the commit list; the convention is
+  # a few words. Warn, never refuse — a refusal would block a push over formatting.
+  if [ "${#why}" -gt 200 ]; then
+    echo "⚠️  propose: your 'why:' is ${#why} characters. The convention is ONE SHORT LINE" >&2
+    echo "      (a few words). It still went through — but it is read on a phone, so the" >&2
+    echo "      long form is where the decision gets harder, not better-informed." >&2
+  fi
 
   # EXACTLY what would go up — no more, and never a stand-in.
   #
@@ -3264,7 +3303,24 @@ if hit is not None:
               f"(reason: {why}; attested {age}s before it arrived). Triage quietly and act only "
               f"on what is addressed to you. Do NOT compose a human-facing summary or ask him "
               f"questions — he is not waiting.")
-elif prompt.startswith("push approved:"):
+elif injectable:
+    print(f"❓ PROVENANCE: '{prompt}' has NO attestation. It may be Kyle, or an injector that "
+          f"did not record itself — this cannot tell the difference, and does not guess. Treat "
+          f"the request as genuine, but do not assume a human is waiting on your answer.")
+
+# ⭐ INDEPENDENT OF ATTESTATION, AND THAT IS THE WHOLE POINT (2026-10-10).
+# This was an `elif` on the chain above, so an ATTESTED doorbell printed provenance and
+# NEVER READ THE GRANT FILE. Observed live on the very push that shipped the doorbell: the
+# session was told "this carries KYLE'S OWN DECISION" and nothing about whether a grant was
+# actually armed -- which is the one fact it needs before re-running the push.
+#
+# The two lines answer DIFFERENT questions and neither substitutes for the other:
+#     provenance      -> WHO typed this (ledger)
+#     this block      -> IS A GRANT ARMED RIGHT NOW (grant file, read at this instant)
+#
+# Chaining them meant the better-informed case got LESS information: the stale-proof
+# expansion fired only when the ledger MISSED. So they compose now.
+if prompt.startswith("push approved:"):
     # ⭐ THE DOORBELL, EXPANDED FROM GROUND TRUTH. Conductor types a short token instead of a
     # sentence: fewer characters to mangle under a contended display, and — the bigger win — the
     # explanation is derived HERE, at read time, from the grant file itself. The old prose was
@@ -3300,10 +3356,6 @@ elif prompt.startswith("push approved:"):
               f"it now — it was most likely already used, or revoked. Do not re-push on the "
               f"strength of this line; check `bus.sh push list` and only push if you have "
               f"something to push.")
-elif injectable:
-    print(f"❓ PROVENANCE: '{prompt}' has NO attestation. It may be Kyle, or an injector that "
-          f"did not record itself — this cannot tell the difference, and does not guess. Treat "
-          f"the request as genuine, but do not assume a human is waiting on your answer.")
 PROVPY
 )"
 

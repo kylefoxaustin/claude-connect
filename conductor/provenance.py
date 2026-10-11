@@ -70,6 +70,33 @@ _LEDGER = "injections.jsonl"
 # attaching itself to an unrelated prompt hours later.
 STALE_AFTER_S = 6 * 3600
 
+# ⭐ HOW LONG A *DELIVERED* RECORD IS KEPT — and why this constant had to exist.
+#
+# `prune()` used to retain exactly what `read_ledger()` returns, and read_ledger EXCLUDES
+# consumed entries. Since prune runs on every scan tick (~3s), that meant:
+#
+#     attest            -> 1 line, consumed=False
+#     hook consumes it  -> 1 line, consumed=True     (delivery is now PROVEN)
+#     one prune tick    -> 0 lines                   (the proof is DELETED)
+#
+# So `consumed=False` was the only state the file could ever show, and the question "was this
+# injection ever delivered?" was permanently unanswerable.
+#
+# ⚠️ THAT IS NOT A LEAK, IT IS THE STATED THREAT MODEL INVERTED. The tamper-evidence note below
+# says the attack on a ledger is OMISSION, not forgery — and the implementation deleted records
+# on success, making omission the routine designed behaviour. It was a delivery queue wearing
+# the word "ledger".
+#
+# Found the way such a thing has to be found: agentic-skills-imx tried to AUDIT it, saw 13 of 13
+# entries unconsumed, and withdrew its own fleet-wide alarm because it could not find a single
+# `consumed=True` anywhere to establish what the field meant. It was right to withdraw — but the
+# reason it could not find one is that this function deleted them all.
+#
+# Keeping delivered entries for a day is what makes two things possible at all: answering that
+# question after the fact, and the detector agentic-skills-imx asked for (an approved grant with
+# no matching delivery). Neither needs new information — only for the evidence to still be here.
+DELIVERED_RETAIN_S = 24 * 3600
+
 # ---- TAMPER-EVIDENCE, AND WHAT IT IS HONESTLY FOR ------------------------------------
 # Kyle asked whether the ledger itself can be spoofed, and whether it wants encryption. It can,
 # and it does not.
@@ -241,10 +268,59 @@ def read_ledger(state_dir: Path, *, now: float | None = None) -> list[dict[str, 
     return out
 
 
-def prune(state_dir: Path, *, now: float | None = None) -> int:
-    """Drop consumed and stale entries. Returns how many were kept."""
+def delivered(state_dir: Path, *, now: float | None = None,
+              within_s: float | None = None) -> list[dict[str, Any]]:
+    """Entries a hook has CONSUMED — i.e. provably delivered — newest first.
+
+    The counterpart to ``read_ledger``, which deliberately returns only what is still
+    outstanding. This exists so "was it delivered?" is an answerable question; before
+    ``DELIVERED_RETAIN_S`` there was no way to ask it.
+    """
     now = time.time() if now is None else now
-    keep = read_ledger(state_dir, now=now)
+    horizon = DELIVERED_RETAIN_S if within_s is None else within_s
+    out: list[dict[str, Any]] = []
+    for e in _all_entries(state_dir):
+        if not e.get("consumed"):
+            continue
+        if now - float(e.get("ts") or 0) > horizon:
+            continue
+        out.append(e)
+    out.sort(key=lambda e: float(e.get("ts") or 0), reverse=True)
+    return out
+
+
+def _all_entries(state_dir: Path) -> list[dict[str, Any]]:
+    """Every parseable entry, consumed or not. Malformed lines are skipped, never fatal."""
+    out: list[dict[str, Any]] = []
+    try:
+        text = ledger_path(state_dir).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return out
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(e, dict):
+            out.append(e)
+    return out
+
+
+def prune(state_dir: Path, *, now: float | None = None) -> int:
+    """Drop wreckage. Returns how many were kept.
+
+    ⚠️ KEEPS DELIVERED ENTRIES for ``DELIVERED_RETAIN_S``. This used to retain exactly
+    ``read_ledger()``'s output, which excludes consumed entries — so proof of delivery was
+    deleted within one tick of being established. See DELIVERED_RETAIN_S.
+    """
+    now = time.time() if now is None else now
+    keep = read_ledger(state_dir, now=now)          # still-outstanding
+    keep += delivered(state_dir, now=now)           # provably delivered, kept for audit
+    # Stable order so the file does not churn: oldest first, as it was written.
+    keep.sort(key=lambda e: float(e.get("ts") or 0))
     p = ledger_path(state_dir)
     if not p.exists():
         return 0

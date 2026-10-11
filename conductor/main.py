@@ -1466,8 +1466,23 @@ class AppState:
             if now - note["queued"] > self._NOTICE_TTL_S:
                 del self._push_notices[key]        # it'll find out by pushing
                 continue
-            rec = self._session_for_cwd(note["cwd"])
-            if rec is None or rec.status in _BUSY_STATUSES:
+            rec, why_not = self._session_for_push(note)
+            if rec is None:
+                # UNROUTABLE: an approval Kyle granted that can reach nobody. Say so ONCE per
+                # notice (never per tick — that is the log storm v2.26.1/v2.39 exist to end) and
+                # leave it queued, because a session may yet appear in that directory.
+                if not note.get("warned_unroutable"):
+                    note["warned_unroutable"] = True
+                    log.warning(
+                        "push verdict for %s is UNROUTABLE — no live session matches %s. Kyle "
+                        "approved this and nobody can be told; the grant is durable so the push "
+                        "still works, but he will see a tap that did nothing.",
+                        note.get("repo", "?"),
+                        f"session_id={note['session_id']}" if note.get("session_id")
+                        else f"cwd={note.get('cwd') or '(empty)'}",
+                    )
+                continue
+            if why_not:
                 continue                           # busy -> keep it, retry once quiet
             # CLAIM the notice before the await, restore it only if the inject fails. Deleting
             # after the await (as this did) let a concurrent pass re-send it — that is how "Kyle
@@ -1759,6 +1774,37 @@ class AppState:
              if s.status != Status.ENDED and os.path.realpath(s.project_dir) == target),
             None,
         )
+
+    def _session_for_push(self, note: dict[str, Any]) -> tuple[SessionRecord | None, str]:
+        """Resolve a push verdict's recipient, and say WHY when it cannot.
+
+        Returns ``(record, reason)`` where reason is ``""`` on success, ``"unroutable"`` when
+        no live session can be identified at all, or ``"busy"`` when one was found but must
+        not be typed at yet.
+
+        ⚠️ THE TWO OUTCOMES USED TO BE ONE `continue`. "I cannot find anyone to tell" and "the
+        session is working, try again shortly" took the identical branch, so an undeliverable
+        verdict was indistinguishable from patience: nothing logged, nothing surfaced, and the
+        notice was dropped an hour later with the comment "it'll find out by pushing". It did
+        not. Kyle tapped six times.
+
+        An absence must never be reported by the same silence as a success — that is this
+        project's own first rule, and this path broke it.
+        """
+        sid = (note.get("session_id") or "").strip()
+        if sid:
+            rec = next((x for x in self.sessions.values()
+                        if x.session_id == sid and x.status != Status.ENDED), None)
+            # A session_id that matches nothing is NOT a reason to fall back to the cwd: the id is
+            # the stronger key, and guessing by directory is how a verdict reaches the wrong twin
+            # when two sessions share a repo (a measured condition here — see detect_collisions).
+            if rec is not None:
+                return rec, "" if rec.status not in _BUSY_STATUSES else "busy"
+            return None, "unroutable"
+        rec = self._session_for_cwd(note.get("cwd", ""))
+        if rec is None:
+            return None, "unroutable"
+        return rec, "" if rec.status not in _BUSY_STATUSES else "busy"
 
     def _session_for_decision(self, d: dict[str, Any]) -> SessionRecord | None:
         """Map a captured AskUserQuestion back to its live session — for surfacing it AND for
@@ -3003,6 +3049,9 @@ async def decide_push(key: str, action: str, request: Request) -> dict[str, Any]
         # and Conductor delivered is exactly the distinction this mechanism exists to draw.
         state._push_notices[key] = {
             "cwd": req.get("cwd", ""),
+            # Route by stable identity when the gate recorded it; cwd remains the fallback for
+            # requests filed by an older gate. See _session_for_push.
+            "session_id": req.get("session_id", ""),
             "repo": req.get("repo_name", key),
             "queued": time.time(),
             "actor": f"human:{request.client.host if request.client else '?'}",
@@ -3747,7 +3796,8 @@ async def answer_proposal(key: str, payload: ProposalAnswer,
     # session is quiet. A session waiting on an answer is often mid-work, and a busy Claude
     # Code session QUEUES injected keystrokes rather than dropping them — which is how we got
     # 16 stacked /msg-checks. Never type at a busy one.
-    note = {"cwd": prop.get("cwd", ""), "repo": prop["repo_name"], "queued": time.time()}
+    note = {"cwd": prop.get("cwd", ""), "session_id": prop.get("session_id", ""),
+            "repo": prop["repo_name"], "queued": time.time()}
     if msg:
         note["text"] = msg          # decline only; an approval rides the doorbell
     state._push_notices[f"proposal:{key}"] = note

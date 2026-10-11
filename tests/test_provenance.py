@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import time
 
-from conductor.provenance import STALE_AFTER_S, attest, ledger_path, prune, read_ledger
+from conductor.provenance import delivered, STALE_AFTER_S, attest, ledger_path, prune, read_ledger
 
 
 def test_an_injection_is_recorded_before_it_happens(tmp_path):
@@ -85,12 +85,23 @@ def test_garbage_lines_are_skipped_never_fatal(tmp_path):
     assert read_ledger(tmp_path) == []
 
 
-def test_prune_keeps_only_the_live_ones(tmp_path):
+def test_prune_keeps_the_live_ones_AND_the_delivered_ones(tmp_path):
+    """⚠️ CONTRACT CHANGED 2026-10-10, deliberately — this test asserted the defect.
+
+    It previously expected ``prune() == 1``: the outstanding entry kept, the CONSUMED one
+    dropped. That is exactly what made the ledger unauditable. Since prune runs every ~3s,
+    proof of delivery was deleted within one tick of being established, so ``consumed=False``
+    was the only state the file could ever show and "was this delivered?" had no answer.
+
+    Keeping both is the fix. ``read_ledger`` still excludes consumed entries, so nothing can
+    be matched twice — only the EVIDENCE is retained, for DELIVERED_RETAIN_S.
+    """
     attest(tmp_path, target_pid=1, target_tag="[a]", text="x", why="", source="s")
     ledger_path(tmp_path).open("a").write(
         json.dumps({"ts": time.time(), "consumed": True, "text": "done"}) + "\n")
-    assert prune(tmp_path) == 1
-    assert len(read_ledger(tmp_path)) == 1
+    assert prune(tmp_path) == 2                     # one outstanding + one delivered
+    assert len(read_ledger(tmp_path)) == 1          # but only the outstanding one can MATCH
+    assert len(delivered(tmp_path)) == 1            # and the delivery is now answerable
 
 
 def test_a_write_failure_never_stops_a_wake(tmp_path):

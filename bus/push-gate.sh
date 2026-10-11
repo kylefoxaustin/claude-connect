@@ -399,7 +399,16 @@ PUSHCMD="$(printf '%s' "$CMD" \
 # request carries the SHA of the commit being pushed (HEAD), so `push approve` can pin the
 # token to THIS commit — an approval authorizes one specific commit, not the next arbitrary push.
 mkdir -p "$REQUESTS" 2>/dev/null || true
+# ⭐ RECORD WHO ASKED, BY STABLE IDENTITY. `cwd` was the only routing key, and the TWO gates
+# disagree about what it holds: this one writes the SESSION's dir, the pre-push hook writes
+# $PWD, which git sets to the REPO TOPLEVEL. A session pushing a repo other than its own
+# project filed a cwd no session lives in, so Kyle's approval reached nobody, silently --
+# he tapped SIX times for two repos (agentic-skills-imx, 2026-10-10).
+# CLAUDE_CODE_SESSION_ID is present in a Bash tool call and is inherited by git-spawned
+# hooks (both VERIFIED on this box), and it is byte-identical to the session_id Conductor
+# derives from the transcript -- so it is a real join key, not a proxy for one.
 { echo "repo=$REPO"; echo "repo_name=$NAME"; echo "cwd=$CWD"
+  echo "session_id=${CLAUDE_CODE_SESSION_ID:-}"
   echo "cmd=$PUSHCMD"; echo "sha=$HEAD_SHA"; echo "epoch=$now"; echo "created=$(date '+%Y-%m-%d %H:%M')"; } > "$REQUESTS/$KEY" 2>/dev/null || true
 # 95emulator (2026-07-24): the gate denies the WHOLE Bash call, so a compound
 # `git add … && git commit … && git push` blocks the COMMIT too — but it's natural to assume the
@@ -425,7 +434,12 @@ else
   echo "     1. FINISH COMMITTING FIRST, then ATTEMPT. Being denied IS how the request reaches" >&2
   echo "        Kyle — you are here. A commit made AFTER the request invalidates the approval," >&2
   echo "        correctly: he approved a tip, and the tip moved. Re-attempt to re-file." >&2
-  echo "     2. TELL HIM ONCE, then wait: \"$NAME is filed and waiting for your tap.\"" >&2
+  echo "     2. TELL HIM ONCE, then VERIFY -- do not wait on a notification." >&2
+  echo "        Say \"$NAME is filed and waiting for your tap\", then poll for the grant:" >&2
+  echo "          ls ~/.claude/bus-state/coord/push-tokens/   (match repo_name, check sha)" >&2
+  echo "        The GRANT is the truth and it is durable. The approval keystroke is only an" >&2
+  echo "        ACCELERATOR and it CAN be lost -- when it is, you wait forever on a tap that" >&2
+  echo "        already happened, and he taps again because nothing seems to change." >&2
   echo "        Do NOT ask permission first. Asking before filing is what creates the loop:" >&2
   echo "        he says yes, there is nothing to tap, you push, you get denied, he taps anyway." >&2
   echo "     3. RE-RUN, then VERIFY it landed and say the sha. Approved is not pushed." >&2

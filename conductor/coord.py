@@ -163,6 +163,23 @@ def read_push_requests(coord_root: Path) -> list[dict[str, Any]]:
             # back — "didn't see any new ones to tap" (2026-08-31). Older gates do not write the
             # field; "" renders as the plain repo name, exactly as before.
             "refs": d.get("refs", ""),
+            # ⭐ THE SESSION THAT ASKED, BY STABLE IDENTITY — not by the directory it was in.
+            # The verdict could only ever be routed by `cwd`, and TWO WRITERS DISAGREE about what
+            # that field holds: the tool-layer gate records the SESSION's dir, while the pre-push
+            # hook records `$PWD`, which git sets to the REPO TOPLEVEL. So a session that pushes a
+            # repo other than its own project filed a cwd no session lives in, the verdict resolved
+            # to nobody, and it was dropped in silence. agentic-skills-imx lived it: Kyle tapped SIX
+            # times for two repos because each tap appeared to do nothing.
+            #
+            # Its own evidence states the defect better than the cwd framing does — in ONE session,
+            # minutes apart, a SPURIOUS request filed by the tool layer delivered perfectly while
+            # both GENUINE pushes resolved to None. Deliverability tracked which code path filed the
+            # request, not whether the request was real.
+            #
+            # CLAUDE.md rule 2: identify by stable identity, never by a proxy. `cwd` is a proxy for
+            # "which session", and it drifted. Older gates omit this; "" falls back to the cwd match,
+            # so nothing regresses before the gate patch is installed.
+            "session_id": d.get("session_id", ""),
             "created": d.get("created", ""),
             "epoch": int(d["epoch"]) if d.get("epoch", "").isdigit() else 0,
         })
@@ -212,6 +229,10 @@ def read_push_proposals(coord_root: Path) -> list[dict[str, Any]]:
             "key": f.name,
             "repo_name": d.get("repo_name", f.name),
             "cwd": d.get("cwd", ""),
+            # Same stable-identity routing as a gate request — see read_push_requests. A
+            # proposal is filed by the session itself, so its cwd is usually right; recording
+            # the id anyway means the verdict does not depend on that staying true.
+            "session_id": d.get("session_id", ""),
             "why": d["why"],
             "alts": alts,
             "commits": [c for c in (d.get("commits", "").split("|")) if c],
