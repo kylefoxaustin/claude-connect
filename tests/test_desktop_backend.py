@@ -42,7 +42,9 @@ def test_main_names_the_seam_not_the_platform():
 
 
 def test_the_contract_is_exactly_six_functions():
-    assert set(desktop.__all__) == set(CONTRACT) | {"backend_name"}
+    # spawn_env is OPTIONAL for a backend (the selector falls back to os.environ), so it is
+    # exported but deliberately not part of the contract a Windows backend must implement.
+    assert set(desktop.__all__) == set(CONTRACT) | {"backend_name", "spawn_env"}
     for name in CONTRACT:
         assert callable(getattr(desktop, name)), f"{name} is not callable on the selector"
         assert getattr(main, name) is getattr(desktop, name), \
@@ -123,3 +125,17 @@ def test_every_contract_function_is_documented_for_an_implementer(name):
     fn = getattr(x11, name)
     assert (fn.__doc__ or "").strip(), \
         f"x11.{name} has no docstring — it is now a spec another platform must implement"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="X11 display resolution is Linux-only")
+def test_relaunch_spawns_with_a_resolved_display(monkeypatch):
+    """2026-10-12: the service started before the display existed, so os.environ had no DISPLAY,
+    and relaunch's Popen inherited that — tilix could not open a window, the API said
+    "launched", and nothing appeared. The spawn env must carry the call-time-resolved DISPLAY."""
+    assert desktop.spawn_env is x11.spawn_env
+    assert main.spawn_env is desktop.spawn_env
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.setattr(x11, "_x11_env_cache", (0.0, None))
+    monkeypatch.setattr(x11, "_discover_display_env", lambda: {"DISPLAY": ":7", "XAUTHORITY": "/x"})
+    env = desktop.spawn_env()
+    assert env["DISPLAY"] == ":7" and env["XAUTHORITY"] == "/x"

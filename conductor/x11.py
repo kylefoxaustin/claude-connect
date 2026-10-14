@@ -160,6 +160,14 @@ def x11_env(*, force: bool = False) -> dict[str, str]:
     return dict(env)
 
 
+
+def spawn_env() -> dict[str, str]:
+    """The environment for a process that opens a WINDOW (a relaunched session's terminal).
+    Same call-time DISPLAY resolution as every xdotool call: a Popen that inherits os.environ
+    from a service started before the display came up launches a tilix that cannot open one —
+    and the relaunch reports "launched" while nothing appears (2026-10-12)."""
+    return x11_env()
+
 def _display_failed(r: subprocess.CompletedProcess) -> bool:
     """Did this X11 call fail to reach a display? Read from STDERR — the exit code lies."""
     err = r.stderr

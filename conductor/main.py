@@ -119,6 +119,7 @@ from .desktop import (
     send_key_sequence,
     send_key_to_session,
     send_keys_to_session,
+    spawn_env,
     wmctrl_available,
     x11_health,
 )
@@ -2084,7 +2085,7 @@ class AppState:
             # Detached: its own session/pgid so it outlives the request and isn't
             # killed when Conductor exits. No pipes — it owns a terminal window.
             subprocess.Popen(
-                cmd, stdin=subprocess.DEVNULL,
+                cmd, env=spawn_env(), stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 start_new_session=True,
             )

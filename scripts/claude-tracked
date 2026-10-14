@@ -38,9 +38,34 @@ done
 
 TITLE="claude:${NAME}"
 
+# Run the terminal in its OWN transient systemd scope. Without this, a launch from
+# Conductor's relaunch inherits conductor.service's cgroup — and when it is the first
+# tilix of a desktop session, the tilix SERVER (and every terminal it later hosts)
+# lives there too. On 2026-10-11 a session's eval job hit 90 GB, the kernel OOM-killed
+# it as a conductor.service process, and systemd's OOMPolicy=stop then took down the
+# whole unit: Conductor, the tilix server, and all ten relaunched sessions with it.
+# A scope is the same process (env, DISPLAY intact), just accounted separately.
+# Skipped when there is no user bus to ask (e.g. a bare tty).
+SCOPE=()
+if command -v systemd-run >/dev/null 2>&1 \
+   && [ -S "${XDG_RUNTIME_DIR:-/nonexistent}/bus" ]; then
+  SCOPE=(systemd-run --user --scope --collect --quiet
+         --description="claude-tracked ${NAME}")
+fi
+
 # Build the in-terminal command: optionally cd first (quoted), then claude, then
 # drop to an interactive shell so the window stays open after claude exits.
-CMD="claude ${ARGS[*]:-}"
+#
+# claude ITSELF also starts in its own scope. The terminal-level scope above is not enough:
+# tilix moves each new SHELL into a vte-spawn scope, but `bash -c` forks claude before that
+# move lands, so claude (and every job it runs) stayed in the tilix SERVER's cgroup —
+# conductor.service on 2026-10-11, dbus.service on 2026-10-12 (MEASURED, both with
+# OOMPolicy=stop). Hand-started sessions never hit this: you type `claude` after the move.
+CLAUDE_CMD="claude ${ARGS[*]:-}"
+if [ ${#SCOPE[@]} -gt 0 ]; then
+  CLAUDE_CMD="$(printf '%q ' "${SCOPE[@]}")-- ${CLAUDE_CMD}"
+fi
+CMD="${CLAUDE_CMD}"
 [ -n "$DIR" ] && CMD="cd $(printf %q "$DIR") && ${CMD}"
 CMD="${CMD}; exec bash"
 
@@ -49,13 +74,13 @@ if command -v tilix >/dev/null 2>&1; then
   # common case — you have other tilix windows open), the single-instance
   # invocation SILENTLY IGNORES a `--`-style command and just opens a bare
   # shell. `-e` is honored by the running server, so claude actually launches.
-  exec tilix --title "${TITLE}" -e bash -c "${CMD}"
+  exec "${SCOPE[@]}" tilix --title "${TITLE}" -e bash -c "${CMD}"
 elif command -v gnome-terminal >/dev/null 2>&1; then
   # gnome-terminal sets the title via -t; some versions ignore it once a shell
   # rewrites PS1. Best-effort.
-  exec gnome-terminal --title="${TITLE}" -- bash -c "${CMD}"
+  exec "${SCOPE[@]}" gnome-terminal --title="${TITLE}" -- bash -c "${CMD}"
 elif command -v xterm >/dev/null 2>&1; then
-  exec xterm -T "${TITLE}" -e bash -c "${CMD}"
+  exec "${SCOPE[@]}" xterm -T "${TITLE}" -e bash -c "${CMD}"
 else
   echo "claude-tracked: no supported terminal emulator found (tilix, gnome-terminal, xterm)" >&2
   exit 127

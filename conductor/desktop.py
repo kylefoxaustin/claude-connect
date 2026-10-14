@@ -36,6 +36,7 @@ SHOULD show it — "Conductor cannot type at any session" is a true statement th
 """
 from __future__ import annotations
 
+import os
 import sys
 
 # The Linux backend is the reference implementation and, right now, the only one. It imports
@@ -66,6 +67,9 @@ send_key_to_session = _backend.send_key_to_session
 send_keys_to_session = _backend.send_keys_to_session
 wmctrl_available = _backend.wmctrl_available
 x11_health = _backend.x11_health
+# The environment a spawned TERMINAL needs (relaunch). Optional for a backend: one without it
+# spawns with our own environment, which is what a Windows desktop session already is.
+spawn_env = getattr(_backend, "spawn_env", None) or (lambda: dict(os.environ))
 
 __all__ = [
     "backend_name",
@@ -73,6 +77,7 @@ __all__ = [
     "send_key_sequence",
     "send_key_to_session",
     "send_keys_to_session",
+    "spawn_env",
     "wmctrl_available",
     "x11_health",
 ]
