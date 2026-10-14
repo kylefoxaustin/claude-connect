@@ -5,6 +5,7 @@
 // cascade into the next free slot in a virtual row-major grid.
 
 import { redrawLines } from "/static/lines.js";
+import { openLauncher, dormantCount, launcherOnUpdate } from "/static/launcher.js";
 
 // v2: tiles are keyed by project dir (stable across reboots) instead of the
 // session's ephemeral UUID — so layout/groups survive even fresh sessions. The
@@ -31,11 +32,12 @@ function setMinimized(key, on) {
   requestAnimationFrame(() => redrawLines(window.conductorState));
 }
 
-// --- Dormant dock (parked sessions) -----------------------------------------
-// Offline sessions Kyle has dismissed from the dormant dock, keyed by their real
-// cwd (project_dir). "Auto + dismiss": every parked session shows by default; an
-// X hides it. A dismissal is auto-cleared once a live session runs in that folder
-// again, so a session you actually return to reappears when it next parks.
+// --- Dormant sessions: hidden list ------------------------------------------
+// Offline sessions Kyle has hidden from the launcher's browse view, keyed by their
+// real cwd (project_dir). A hidden one still turns up when searched for by name, and
+// the hide auto-clears once a live session runs in that folder again, so a session
+// you actually return to reappears when it next parks. (Storage key predates the
+// launcher: these were "dismissed" chips in the old dormant strip.)
 const PARKED_DISMISS_KEY = "conductor.parkedDismissed.v1";
 function loadDismissed() {
   try { return JSON.parse(localStorage.getItem(PARKED_DISMISS_KEY) || "{}"); }
@@ -46,8 +48,9 @@ function saveDismissed() {
 }
 let dismissedParked = loadDismissed();
 
-function dismissParked(projectDir) {
-  dismissedParked[projectDir] = true;
+export function isParkedDismissed(projectDir) { return !!dismissedParked[projectDir]; }
+export function setParkedDismissed(projectDir, on) {
+  if (on) dismissedParked[projectDir] = true; else delete dismissedParked[projectDir];
   saveDismissed();
   renderGrid(window.conductorState);
 }
@@ -570,39 +573,44 @@ export function renderGrid(state) {
     }
   }
 
-  // Parked (offline, relaunchable) sessions for the dormant dock. The backend
-  // already excludes cwds with a live session; we also auto-clear a dismissal
-  // once its folder is live again (so a session you return to reappears later),
-  // then hide anything still dismissed.
+  // A hide auto-clears once its folder is live again (so a session you return to
+  // reappears in the launcher the next time it parks).
   const liveDirs = new Set(state.sessions.map((s) => s.project_dir));
   let dismissChanged = false;
   for (const dir of Object.keys(dismissedParked)) {
     if (liveDirs.has(dir)) { delete dismissedParked[dir]; dismissChanged = true; }
   }
   if (dismissChanged) saveDismissed();
-  const parked = (state.parked || []).filter(
-    (p) => !dismissedParked[p.project_dir] && !liveDirs.has(p.project_dir),
-  );
+  const nDormant = dormantCount();
 
   // Bottom dock: collapsed groups (one chip each) + individually minimized tiles
-  // + parked sessions (with a divider before them).
+  // + ONE button for the dormant sessions. They used to be a chip each here — 39
+  // of them in an 11px strip you could only reach by scrolling sideways; the
+  // launcher it opens has search, readable rows and pins instead.
   const dock = document.getElementById("dock");
   if (dock) {
     dock.innerHTML = "";
-    for (const g of collapsedGroups) dock.appendChild(groupChip(g, sessionByKey, state));
-    for (const d of dockSessions) dock.appendChild(dockChip(d.s, d.key, state));
-    if (parked.length) {
+    if (nDormant) {
+      dock.appendChild(el("button", {
+        class: "dock-dormant",
+        title: "Find and relaunch a closed session (Ctrl+K or /)",
+        onclick: () => openLauncher(),
+      },
+        el("span", { class: "dock-dormant-label" }, `💤 ${nDormant} dormant`),
+        el("kbd", {}, "Ctrl+K"),
+      ));
       if (collapsedGroups.length || dockSessions.length) {
         dock.appendChild(el("span", { class: "dock-divider" }));
       }
-      dock.appendChild(el("span", { class: "dock-label", title: "Closed sessions with saved history — click to relaunch (claude --continue + /rc)" }, "💤 Dormant"));
-      for (const p of parked) dock.appendChild(parkedChip(p));
     }
+    for (const g of collapsedGroups) dock.appendChild(groupChip(g, sessionByKey, state));
+    for (const d of dockSessions) dock.appendChild(dockChip(d.s, d.key, state));
     document.body.classList.toggle(
       "has-dock",
-      collapsedGroups.length > 0 || dockSessions.length > 0 || parked.length > 0,
+      collapsedGroups.length > 0 || dockSessions.length > 0 || nDormant > 0,
     );
   }
+  launcherOnUpdate();
   updateGridExtent();
 
   // fillSessionTile rewrites tile.className wholesale, which wipes the link-mode /
@@ -647,35 +655,6 @@ function dockChip(s, key, state) {
     el("span", { class: "dock-chip-name" }, s.title || "(untitled)"),
     pending ? el("span", { class: "dock-chip-badge" }, `📬${pending}`) : null,
   );
-}
-
-// A parked (offline) session as a dormant-dock chip: 💤 + name + tag + "last
-// seen" age, click to relaunch (claude --continue in its folder, then /rc), with
-// a trailing ✕ to dismiss. Once relaunched, the new live session removes it from
-// the parked list on the next scan, so the chip disappears on its own.
-function parkedChip(p) {
-  const chip = el("div", {
-    class: "dock-chip parked-chip",
-    title: `${p.title || p.tag} · ${p.tag}\nlast active ${ago(p.last_activity_at)}`
-      + `\n${p.project_dir}\nClick to relaunch (claude --continue + /rc)`,
-    onclick: (ev) => {
-      // Ignore clicks on the ✕ (handled by its own onclick + stopPropagation).
-      if (chip.classList.contains("launching")) return;
-      chip.classList.add("launching");
-      chip.querySelector(".parked-name").textContent = "launching…";
-      window.requestRelaunch(p.project, p.project_dir);
-    },
-  },
-    el("span", { class: "parked-icon" }, "💤"),
-    el("span", { class: "dock-chip-name parked-name" }, p.title || p.tag || "(untitled)"),
-    el("span", { class: "parked-tag" }, p.tag || ""),
-    el("button", {
-      class: "parked-dismiss",
-      title: "Dismiss (hide from dormant dock)",
-      onclick: (ev) => { ev.stopPropagation(); dismissParked(p.project_dir); },
-    }, "✕"),
-  );
-  return chip;
 }
 
 function statusLabel(status) {
@@ -748,7 +727,9 @@ function el(tag, props = {}, ...children) {
     else if (k === "html") e.innerHTML = v;
     else if (v !== undefined && v !== null) e.setAttribute(k, v);
   }
-  for (const c of children) {
+  // Flatten: some builders pass their children as one array (fillServiceTile does), and an
+  // array handed to appendChild throws — which aborted renderGrid mid-board on every pass.
+  for (const c of children.flat(Infinity)) {
     if (c == null) continue;
     e.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
   }

@@ -777,31 +777,136 @@ body.has-dock .dock { display: flex; }
   cursor: default;
   user-select: none;
 }
-.parked-chip { border-style: dashed; }
-.parked-chip:hover { border-style: solid; }
-.parked-icon { opacity: 0.8; }
-.parked-tag { color: var(--text-dim); opacity: 0.7; font-size: 10px; }
-.parked-dismiss {
-  border: none;
-  background: none;
-  color: var(--text-dim);
-  opacity: 0.5;
-  cursor: pointer;
-  font-size: 12px;
-  line-height: 1;
-  /* Bigger, taller hit area so the ✕ is easy to land even near the dock edge. */
-  padding: 4px 4px 4px 6px;
-  margin: -4px -2px -4px 0;
-  border-radius: 4px;
-}
-.parked-dismiss:hover { opacity: 1; color: var(--accent); background: var(--inset-bg); }
-.parked-chip.launching {
-  cursor: default;
-  border-color: var(--accent);
+/* The dormant sessions' one dock button — a real target, not a strip of 11px chips. */
+.dock-dormant {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--inset-bg);
   color: var(--text);
-  opacity: 0.85;
+  font-size: 13px;
+  cursor: pointer;
 }
-.parked-chip.launching .parked-dismiss { display: none; }
+.dock-dormant:hover { border-style: solid; border-color: var(--accent); }
+.dock-dormant kbd, .ln-hint kbd {
+  font: 10px ui-monospace, monospace;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* --- Session launcher (launcher.js) --- */
+.ln-overlay { align-items: flex-start; padding-top: 10vh; }
+.ln-card { width: min(760px, calc(100vw - 32px)); max-height: 76vh; }
+.ln-top {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.ln-search {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--inset-bg);
+  color: var(--text);
+  outline: none;
+}
+.ln-search:focus { border-color: var(--accent); }
+.ln-sort {
+  font-size: 12px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--inset-bg);
+  color: var(--text);
+}
+.modal-card .ln-close { font-size: 22px; padding: 0 4px; }
+.ln-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 6px 8px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 120px;
+}
+.ln-section {
+  padding: 12px 8px 4px;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  user-select: none;
+}
+.ln-section.collapsible { cursor: pointer; }
+.ln-section.collapsible:hover { color: var(--text); }
+.ln-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text);
+}
+.ln-row:hover { background: var(--inset-bg); }
+.ln-row.cursor { background: var(--inset-bg); box-shadow: inset 3px 0 0 var(--accent); }
+.ln-row.launching { opacity: 0.6; cursor: default; }
+.ln-row.is-hidden .ln-name { color: var(--text-dim); }
+.ln-check { width: 16px; height: 16px; flex: none; cursor: pointer; }
+.ln-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.ln-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ln-title, .ln-path {
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ln-age, .ln-tok { flex: none; font-size: 12px; color: var(--text-dim); white-space: nowrap; }
+.ln-age { width: 64px; text-align: right; }
+.ln-tok { width: 52px; text-align: right; font-variant-numeric: tabular-nums; }
+.modal-card .ln-pin, .modal-card .ln-hide {
+  flex: none;
+  font-size: 15px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 4px;
+  color: var(--text-dim);
+  opacity: 0.45;
+}
+.modal-card .ln-pin.on { opacity: 1; color: #d4a72c; }
+.ln-row:hover .ln-pin, .ln-row:hover .ln-hide { opacity: 0.9; }
+.modal-card .ln-pin:hover, .modal-card .ln-hide:hover { opacity: 1; color: var(--accent); background: var(--bg-panel); }
+.ln-live .status-dot { flex: none; margin: 0 5px; }
+.ln-empty { padding: 24px 8px; text-align: center; color: var(--text-dim); font-size: 13px; }
+.ln-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+}
+.ln-hint { font-size: 11px; color: var(--text-dim); flex: 1; min-width: 0; }
+.ln-status { font-size: 12px; color: var(--text-dim); }
+/* `.modal-card button` (transparent, 22px) outranks plain `.relaunch-go`; restate it here. */
+.modal-card .ln-go { background: #7d5bed; color: #fff; font-size: 13px; }
+.modal-card .ln-go:hover:not([disabled]) { background: #6c4ad8; }
+@media (max-width: 640px) {
+  .ln-overlay { padding-top: 16px; }
+  .ln-card { max-height: calc(100vh - 32px); }
+  .ln-hint, .ln-tok { display: none; }
+}
 
 /* --- Groups --- */
 .tile.grouped { border-top: 3px solid var(--group-color); }
@@ -1703,12 +1808,12 @@ body.packed .lines-overlay { opacity: 0.5; }
   .dock::-webkit-scrollbar-thumb { background: var(--border); border-radius: 7px; }
 
   /* Chips and their ✕ become real thumb targets. */
-  .dock-chip, .parked-chip { padding: 9px 12px; font-size: 13px; }
-  .parked-dismiss {
-    min-width: 34px; min-height: 34px;
-    font-size: 15px; display: inline-flex;
-    align-items: center; justify-content: center;
-  }
+  .dock-chip { padding: 9px 12px; font-size: 13px; }
+  .dock-dormant { padding: 10px 16px; font-size: 14px; }
+  .dock-dormant kbd { display: none; }
+  .ln-row { padding: 12px 8px; }
+  .ln-check { width: 20px; height: 20px; }
+  .modal-card .ln-pin, .modal-card .ln-hide { min-width: 34px; min-height: 34px; opacity: 0.8; }
 
   /* General thumb-sized controls. */
   .topbar-meta button { min-height: 40px; padding: 8px 12px; }

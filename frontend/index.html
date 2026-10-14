@@ -257,45 +257,6 @@
       </div>
     </div>
 
-    <div id="relaunch-modal" class="modal hidden">
-      <div class="modal-card">
-        <header>
-          <h2>⟳ Relaunch dormant sessions</h2>
-          <button id="relaunch-modal-close">×</button>
-        </header>
-        <div class="relaunch-body">
-          <p class="settings-hint">
-            Each resumes with <code>claude --continue</code> in its own folder — same conversation,
-            no “new vs restart” prompt. Launches are <strong>staggered</strong> (one at a time) so
-            20 Claudes don’t stampede the box. Heavy sessions may auto-compact on resume — sort by
-            tokens to see which those are.
-          </p>
-          <div class="relaunch-controls">
-            <label class="relaunch-all-label">
-              <input type="checkbox" id="relaunch-all" />
-              <strong>Launch everything</strong>
-            </label>
-            <label class="relaunch-sort-label">
-              Sort
-              <select id="relaunch-sort">
-                <option value="recent">Most recently active</option>
-                <option value="oldest">Least recently active</option>
-                <option value="az">Name A → Z</option>
-                <option value="za">Name Z → A</option>
-                <option value="tokens">Tokens used — most first</option>
-                <option value="tokens-asc">Tokens used — least first</option>
-              </select>
-            </label>
-          </div>
-          <ul id="relaunch-list" class="relaunch-list"></ul>
-          <div class="relaunch-actions">
-            <span class="relaunch-status" id="relaunch-status"></span>
-            <button id="relaunch-go" class="relaunch-go">Relaunch selected</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- Reconstitute: rebuild the fleet from the DR roster on a new machine. -->
     <div id="reconstitute-modal" class="modal hidden">
       <div class="modal-card">
