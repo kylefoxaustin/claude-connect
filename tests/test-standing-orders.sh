@@ -60,5 +60,17 @@ c="$(BUS_FILE="$BUS" bash "$BUSSH" session-start 2>&1 | ctx)" \
 grep -q 'Claude Bus' <<<"$c" && ok "no-SO-file: bus digest still delivered" || bad "no-SO-file: lost the bus digest"
 rm -rf "$SB"
 
+
+# Z) the published mirror in rules-of-engagement must be byte-identical (Kyle, 2026-10-13).
+#    Skipped, not passed, when there is no clone to compare against.
+ROE="${ROE:-$(dirname "$(dirname "$(dirname "$SO_SRC")")")/rules-of-engagement}"
+if [ -f "$ROE/FLEET-STANDING-ORDERS.md" ]; then
+  cmp -s "$SO_SRC" "$ROE/FLEET-STANDING-ORDERS.md" \
+    && ok "rules-of-engagement mirror is byte-identical" \
+    || bad "rules-of-engagement mirror DIFFERS — run scripts/publish-standing-orders.sh"
+else
+  echo "  skip rules-of-engagement mirror (no clone at $ROE)"
+fi
+
 echo "── standing-orders: $pass passed, $fail failed"
 [ "$fail" = 0 ]
