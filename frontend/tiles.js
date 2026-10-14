@@ -32,29 +32,6 @@ function setMinimized(key, on) {
   requestAnimationFrame(() => redrawLines(window.conductorState));
 }
 
-// --- Dormant sessions: hidden list ------------------------------------------
-// Offline sessions Kyle has hidden from the launcher's browse view, keyed by their
-// real cwd (project_dir). A hidden one still turns up when searched for by name, and
-// the hide auto-clears once a live session runs in that folder again, so a session
-// you actually return to reappears when it next parks. (Storage key predates the
-// launcher: these were "dismissed" chips in the old dormant strip.)
-const PARKED_DISMISS_KEY = "conductor.parkedDismissed.v1";
-function loadDismissed() {
-  try { return JSON.parse(localStorage.getItem(PARKED_DISMISS_KEY) || "{}"); }
-  catch { return {}; }
-}
-function saveDismissed() {
-  try { localStorage.setItem(PARKED_DISMISS_KEY, JSON.stringify(dismissedParked)); } catch {}
-}
-let dismissedParked = loadDismissed();
-
-export function isParkedDismissed(projectDir) { return !!dismissedParked[projectDir]; }
-export function setParkedDismissed(projectDir, on) {
-  if (on) dismissedParked[projectDir] = true; else delete dismissedParked[projectDir];
-  saveDismissed();
-  renderGrid(window.conductorState);
-}
-
 // --- Groups (per-tile assignment; logical/color-only) -----------------------
 // A group is a named, colored set of tile keys. Membership is assigned one tile
 // at a time via each tile's ▦ menu (no canvas multi-select). A tile is in at
@@ -573,14 +550,6 @@ export function renderGrid(state) {
     }
   }
 
-  // A hide auto-clears once its folder is live again (so a session you return to
-  // reappears in the launcher the next time it parks).
-  const liveDirs = new Set(state.sessions.map((s) => s.project_dir));
-  let dismissChanged = false;
-  for (const dir of Object.keys(dismissedParked)) {
-    if (liveDirs.has(dir)) { delete dismissedParked[dir]; dismissChanged = true; }
-  }
-  if (dismissChanged) saveDismissed();
   const nDormant = dormantCount();
 
   // Bottom dock: collapsed groups (one chip each) + individually minimized tiles

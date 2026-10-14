@@ -5,7 +5,7 @@ import {
   getGroups, renameGroup, recolorGroup, deleteGroup, setGroupCollapsed, GROUP_COLORS,
 } from "/static/tiles.js";
 import { redrawLines, animateLineFor } from "/static/lines.js";
-import { openLauncher } from "/static/launcher.js";
+import { openLauncher, applyLauncherPrefs, loadLauncherPrefs } from "/static/launcher.js";
 
 // --- Auth token (for remote/phone access over Tailscale) --------------------
 // Stored per-browser. When the server has no token configured (the localhost
@@ -244,6 +244,9 @@ function connect() {
   ws.addEventListener("open", () => {
     setConnState(true);
     reconnectDelay = 500;
+    // (Re)load shared pins/hides on every connect: a change made on another device while this
+    // socket was down arrived as a frame nobody was listening for.
+    loadLauncherPrefs();
   });
   ws.addEventListener("close", (ev) => {
     setConnState(false);
@@ -345,6 +348,9 @@ function handleMessage({ kind, payload }) {
       requestAnimationFrame(() => redrawLines(state));
       break;
     }
+    case "launcher_prefs":
+      applyLauncherPrefs(payload);   // another device pinned / hid a session
+      break;
     case "decisions": {
       state.decisions = (payload && payload.decisions) || [];
       renderAskInbox(state);

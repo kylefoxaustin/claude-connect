@@ -8,9 +8,8 @@
 // You almost always know the NAME of the session you want, so the box takes focus on open and
 // Enter acts on the top match.
 
-import { isParkedDismissed, setParkedDismissed } from "/static/tiles.js";
+import { renderGrid } from "/static/tiles.js";
 
-const PINS_KEY = "conductor.launcherPins.v1";      // project_dir -> true
 const SORT_KEY = "conductor.relaunchSort.v1";      // shared with the old modal: keeps his choice
 const OLDER_OPEN_KEY = "conductor.launcherOlderOpen.v1";
 
@@ -33,7 +32,50 @@ function loadJSON(key, dflt) {
 function saveJSON(key, v) {
   try { localStorage.setItem(key, JSON.stringify(v)); } catch {}
 }
-let pins = loadJSON(PINS_KEY, {});
+// ★ pins and hidden sessions are SHARED — stored by Conductor (/api/launcher-prefs) so the
+// desktop, the native app and the phone agree. Keyed by folder. A change is applied here at once
+// (optimistic) and then replaced by the server's answer, which every other open launcher also
+// receives as a "launcher_prefs" frame.
+let pins = {};      // project_dir -> true
+let hiddenDirs = {}; // project_dir -> true
+const isHidden = (dir) => !!hiddenDirs[dir];
+
+export function applyLauncherPrefs(view) {
+  if (!view) return;
+  pins = Object.fromEntries((view.pins || []).map((d) => [d, true]));
+  hiddenDirs = Object.fromEntries((view.hidden || []).map((d) => [d, true]));
+  if (window.conductorState) renderGrid(window.conductorState);   // the dock's count
+  render();
+}
+
+async function postPrefs(body) {
+  try {
+    const r = await fetch("/api/launcher-prefs", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    if (r.ok) applyLauncherPrefs(await r.json());
+  } catch { /* the next load / frame resyncs */ }
+}
+
+// Before this was shared, each device kept its own: the old dormant strip's dismissals and
+// the first launcher's pins. Fold them in once (a merge only ever adds), then drop them.
+const LEGACY = { hidden: "conductor.parkedDismissed.v1", pins: "conductor.launcherPins.v1" };
+export async function loadLauncherPrefs() {
+  const merge = {};
+  for (const [kind, key] of Object.entries(LEGACY)) {
+    const dirs = Object.keys(loadJSON(key, {}) || {});
+    if (dirs.length) merge[kind] = dirs;
+  }
+  if (Object.keys(merge).length) {
+    await postPrefs({ merge });
+    for (const key of Object.values(LEGACY)) { try { localStorage.removeItem(key); } catch {} }
+    return;
+  }
+  try {
+    const r = await fetch("/api/launcher-prefs");
+    if (r.ok) applyLauncherPrefs(await r.json());
+  } catch {}
+}
 
 const st = () => window.conductorState || { sessions: [], parked: [] };
 // A bus tag reads "[backend]" or "[other:week]"; show the bare word.
@@ -100,7 +142,7 @@ function parkedList() {
 
 // The dock button's count: what the launcher would offer, minus the ones you've hidden.
 export function dormantCount() {
-  return parkedList().filter((p) => !isParkedDismissed(p.project_dir)).length;
+  return parkedList().filter((p) => !isHidden(p.project_dir)).length;
 }
 
 function el(tag, props = {}, ...kids) {
@@ -161,21 +203,24 @@ async function relaunchChecked() {
 }
 
 function togglePin(p) {
-  if (pins[p.project_dir]) delete pins[p.project_dir]; else pins[p.project_dir] = true;
-  saveJSON(PINS_KEY, pins);
+  const on = !pins[p.project_dir];
+  if (on) pins[p.project_dir] = true; else delete pins[p.project_dir];
   render();
+  postPrefs({ dir: p.project_dir, pin: on });
 }
 
 function setHidden(p, on) {
-  setParkedDismissed(p.project_dir, on);
+  if (on) hiddenDirs[p.project_dir] = true; else delete hiddenDirs[p.project_dir];
   render();
+  if (window.conductorState) renderGrid(window.conductorState);
+  postPrefs({ dir: p.project_dir, hidden: on });
 }
 
 // --- rendering -------------------------------------------------------------------------------
 
 function parkedRow(p) {
   const isLaunching = launching.has(p.project_dir);
-  const hidden = isParkedDismissed(p.project_dir);
+  const hidden = isHidden(p.project_dir);
   const name = nameOf(p);
   const tag = tagOf(p) !== name ? tagOf(p) : "";
   const row = el("li", {
@@ -282,8 +327,8 @@ function render() {
     }
     for (const h of hits) blocks.push({ it: h.item, rowFn: h.kind === "live" ? liveRow : parkedRow });
   } else {
-    const visible = sortParked(parked.filter((p) => !isParkedDismissed(p.project_dir)));
-    const hidden = sortParked(parked.filter((p) => isParkedDismissed(p.project_dir)));
+    const visible = sortParked(parked.filter((p) => !isHidden(p.project_dir)));
+    const hidden = sortParked(parked.filter((p) => isHidden(p.project_dir)));
     const pinned = visible.filter((p) => pins[p.project_dir]);
     const rest = visible.filter((p) => !pins[p.project_dir]);
     const groups = [section("★ Pinned", pinned, parkedRow)];

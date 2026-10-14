@@ -430,3 +430,44 @@ def write_alert_dismissals(coord_root: Path, d: dict[str, dict]) -> None:
         tmp.replace(f)
     except (OSError, TypeError, ValueError):
         pass
+
+
+# --- Launcher prefs: pinned / hidden dormant sessions ---------------------------------------
+# The session launcher (desktop launcher.js, phone /m) lets Kyle ★ pin and hide dormant
+# sessions. Those lived in each device's localStorage, so a pin on the phone never reached the
+# desktop; he asked for them to sync (2026-10-13). Keyed by the session's real folder, the same
+# key the launcher already used. Each entry stores WHEN it was set, which is what bounds it.
+_LAUNCHER_PREFS = "launcher-prefs.json"
+LAUNCHER_PREFS_CAP = 500
+
+
+def read_launcher_prefs(coord_root: Path) -> dict[str, dict[str, float]]:
+    """``{"pins": {dir: epoch_s}, "hidden": {dir: epoch_s}}``. Never raises; junk is dropped."""
+    out: dict[str, dict[str, float]] = {"pins": {}, "hidden": {}}
+    try:
+        d = json.loads((coord_root / _LAUNCHER_PREFS).read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, ValueError):
+        return out
+    if not isinstance(d, dict):
+        return out
+    for kind in out:
+        v = d.get(kind)
+        if isinstance(v, dict):
+            out[kind] = {str(k): float(t) for k, t in v.items()
+                         if isinstance(k, str) and k.startswith("/") and isinstance(t, (int, float))}
+    return out
+
+
+def write_launcher_prefs(coord_root: Path, prefs: dict[str, dict[str, float]]) -> None:
+    """Best-effort atomic persist, newest LAUNCHER_PREFS_CAP per kind. Never raises."""
+    try:
+        coord_root.mkdir(parents=True, exist_ok=True)
+        trimmed = {kind: dict(sorted((prefs.get(kind) or {}).items(), key=lambda kv: -kv[1])
+                              [:LAUNCHER_PREFS_CAP])
+                   for kind in ("pins", "hidden")}
+        f = coord_root / _LAUNCHER_PREFS
+        tmp = f.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(trimmed), encoding="utf-8")
+        tmp.replace(f)
+    except (OSError, TypeError, ValueError):
+        pass

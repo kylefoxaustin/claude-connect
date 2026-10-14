@@ -74,6 +74,8 @@ from .coord import (
     read_push_requests,
     read_alert_dismissals,
     write_alert_dismissals,
+    read_launcher_prefs,
+    write_launcher_prefs,
     read_retractions,
     read_wake_state,
     read_winddown,
@@ -2788,6 +2790,76 @@ async def alerts_dismiss(request: Request) -> dict[str, Any]:
     return {"ok": True, "dismissed": cur}
 
 
+def _launcher_prefs_view(state: AppState) -> dict[str, list[str]]:
+    """Pinned / hidden folders as the launcher consumes them: plain lists.
+
+    A HIDE clears itself once a live session runs in that folder again — the rule the desktop
+    applied client-side before this was shared — so a session you came back to reappears the
+    next time it parks. Applied here, on read, so every device sees the same answer.
+    """
+    prefs = read_launcher_prefs(state.coord_root)
+    live = {os.path.realpath(r.project_dir) for r in state.sessions.values()
+            if r.status != Status.ENDED and r.project_dir}
+    stale = [d for d in prefs["hidden"] if os.path.realpath(d) in live]
+    if stale:
+        for d in stale:
+            prefs["hidden"].pop(d, None)
+        write_launcher_prefs(state.coord_root, prefs)
+    return {"pins": sorted(prefs["pins"]), "hidden": sorted(prefs["hidden"])}
+
+
+@app.get("/api/launcher-prefs")
+async def launcher_prefs_get(request: Request) -> dict[str, Any]:
+    """The launcher's ★ pins and hidden sessions — shared by the desktop, the phone and the
+    native app, which each kept their own copy in localStorage until 2026-10-13."""
+    state: AppState = request.app.state.cond
+    return await asyncio.to_thread(_launcher_prefs_view, state)
+
+
+@app.post("/api/launcher-prefs")
+async def launcher_prefs_set(request: Request) -> dict[str, Any]:
+    """Set one folder's pin and/or hide: ``{"dir": "/abs/path", "pin": bool, "hidden": bool}``
+    (either flag may be omitted). Or ``{"merge": {"pins": [...], "hidden": [...]}}`` — a
+    device's old localStorage choices, folded in once so the upgrade loses nothing; a merge
+    only ever ADDS. Broadcasts the result so every open launcher updates."""
+    state: AppState = request.app.state.cond
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="expected a JSON object")
+
+    def _dir_ok(d: Any) -> bool:
+        return isinstance(d, str) and d.startswith("/") and len(d) <= 4096
+
+    def apply() -> dict[str, list[str]]:
+        prefs = read_launcher_prefs(state.coord_root)
+        now = time.time()
+        merge = body.get("merge")
+        if isinstance(merge, dict):
+            for kind in ("pins", "hidden"):
+                for d in merge.get(kind) or []:
+                    if _dir_ok(d):
+                        prefs[kind].setdefault(d, now)
+        else:
+            d = body.get("dir")
+            if not _dir_ok(d):
+                raise HTTPException(status_code=400, detail="dir must be an absolute path")
+            for flag, kind in (("pin", "pins"), ("hidden", "hidden")):
+                if flag in body:
+                    if body[flag]:
+                        prefs[kind][d] = now
+                    else:
+                        prefs[kind].pop(d, None)
+        write_launcher_prefs(state.coord_root, prefs)
+        return _launcher_prefs_view(state)
+
+    view = await asyncio.to_thread(apply)
+    await state.hub.broadcast("launcher_prefs", view)
+    return view
+
+
 @app.post("/api/rescan")
 async def rescan(request: Request) -> dict[str, Any]:
     """Force a fresh scan NOW — what the Refresh button actually needs.
@@ -3885,6 +3957,7 @@ async def get_ops(request: Request) -> dict[str, Any]:
     state: AppState = request.app.state.cond
     live = [s for s in state.sessions.values() if s.status != Status.ENDED]
     busy = [s for s in live if s.status in _BUSY_STATUSES]
+    launcher_prefs = await asyncio.to_thread(_launcher_prefs_view, state)
     return {
         "decisions": state.decisions,
         "push": state._push_requests,
@@ -3968,6 +4041,9 @@ async def get_ops(request: Request) -> dict[str, Any]:
              "project_dir": p.project_dir}
             for p in sorted(state.parked, key=lambda p: -p.last_activity_at)
         ],
+        # The phone polls this endpoint rather than holding a socket, so the shared pins/hides
+        # ride along here; the desktop gets them from /api/launcher-prefs + a WS frame.
+        "launcher_prefs": launcher_prefs,
     }
 
 

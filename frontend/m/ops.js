@@ -902,19 +902,40 @@ function renderFleet() {
 
 // --- Launcher: search + relaunch a dormant session ----------------------------------------
 // The phone half of the desktop's launcher.js (deliberately not shared code — see the header).
-// Pins and hides live in THIS device's storage, keyed on the folder: what you pin on the phone
-// is about what you reach for from the phone.
-const LS_LN_PINS = "conductor.ops.launcherPins";
-const LS_LN_HIDDEN = "conductor.ops.launcherHidden";
-const lnLoad = (k) => { try { return JSON.parse(localStorage.getItem(k) || "{}") || {}; } catch { return {}; } };
-const lnSave = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private */ } };
-let lnPins = lnLoad(LS_LN_PINS);
-let lnHidden = lnLoad(LS_LN_HIDDEN);
+// ★ pins and hidden sessions are shared with the desktop: Conductor stores them, /api/ops
+// carries them on every refresh, and a change here POSTs to /api/launcher-prefs. Keyed by folder.
+const LS_LN_LEGACY = ["conductor.ops.launcherPins", "conductor.ops.launcherHidden"];
+let lnPins = {};
+let lnHidden = {};
+function lnApplyPrefs(view) {
+  if (!view) return;
+  lnPins = Object.fromEntries((view.pins || []).map((d) => [d, true]));
+  lnHidden = Object.fromEntries((view.hidden || []).map((d) => [d, true]));
+}
+async function lnSet(body) {
+  try { lnApplyPrefs(await api("/api/launcher-prefs", { method: "POST", body: JSON.stringify(body) })); }
+  catch { /* the next refresh resyncs */ }
+  renderLauncherM(); renderFleet();
+}
+// This device's pins/hides from before they were shared: fold in once (a merge only adds).
+(function lnMigrate() {
+  const merge = {};
+  LS_LN_LEGACY.forEach((key, i) => {
+    let dirs = [];
+    try { dirs = Object.keys(JSON.parse(localStorage.getItem(key) || "{}") || {}); } catch {}
+    dirs = dirs.filter((d) => d.startsWith("/"));
+    if (dirs.length) merge[i ? "hidden" : "pins"] = dirs;
+  });
+  if (!Object.keys(merge).length) return;
+  api("/api/launcher-prefs", { method: "POST", body: JSON.stringify({ merge }) })
+    .then(() => LS_LN_LEGACY.forEach((k) => { try { localStorage.removeItem(k); } catch {} }))
+    .catch(() => { /* keep them; retried next load */ });
+})();
 let lnQuery = "";
 let lnOpen = { older: false, hidden: false };
 const lnLaunching = new Map();             // project -> started ms; cleared when it goes live
 const LN_GIVEUP_MS = 3 * 60 * 1000;
-const lnKey = (p) => p.project_dir || p.project;
+const lnKey = (p) => p.project_dir || "";
 const lnTag = (p) => String(p.tag || "").replace(/^\[(?:other:)?(.*)\]$/, "$1");
 const lnName = (p) => p.title || lnTag(p) || p.name || "(untitled)";
 const lnPath = (p) => String(p.project_dir || "").replace(/^\/home\/[^/]+/, "~");
@@ -950,7 +971,8 @@ let lnSig = "";
 function renderLauncherM(force = true) {
   const host = $("ln-list");
   if (!host || $("ln-overlay").hidden) return;
-  const sig = JSON.stringify([((ops && ops.parked) || []).map((p) => p.project), [...lnLaunching.keys()]]);
+  const sig = JSON.stringify([((ops && ops.parked) || []).map((p) => p.project), [...lnLaunching.keys()],
+    Object.keys(lnPins), Object.keys(lnHidden)]);
   if (!force && sig === lnSig) return;
   lnSig = sig;
   const parked = (ops && ops.parked) || [];
@@ -1005,8 +1027,10 @@ function lnRow(p) {
   pin.textContent = lnPins[k] ? "★" : "☆";
   pin.setAttribute("aria-label", lnPins[k] ? "Unpin" : "Pin to the top");
   pin.addEventListener("click", () => {
-    if (lnPins[k]) delete lnPins[k]; else lnPins[k] = true;
-    lnSave(LS_LN_PINS, lnPins); renderLauncherM();
+    const on = !lnPins[k];
+    if (on) lnPins[k] = true; else delete lnPins[k];
+    renderLauncherM();
+    lnSet({ dir: k, pin: on });
   });
   const body = document.createElement("div");
   body.className = "row-body";
@@ -1019,8 +1043,10 @@ function lnRow(p) {
   const acts = document.createElement("div");
   acts.className = "row-acts";
   acts.appendChild(mkBtn(lnHidden[k] ? "Unhide" : "Hide", "btn btn-sm ln-hide", () => {
-    if (lnHidden[k]) delete lnHidden[k]; else lnHidden[k] = true;
-    lnSave(LS_LN_HIDDEN, lnHidden); renderLauncherM(); renderFleet();
+    const on = !lnHidden[k];
+    if (on) lnHidden[k] = true; else delete lnHidden[k];
+    renderLauncherM(); renderFleet();
+    lnSet({ dir: k, hidden: on });
   }));
   const go = mkBtn("Relaunch", "btn btn-sm btn-primary", (b) => {
     lnLaunching.set(p.project, Date.now());
@@ -1951,6 +1977,7 @@ navigator.serviceWorker?.addEventListener("message", (e) => {
 async function refresh() {
   try {
     ops = await api("/api/ops");
+    lnApplyPrefs(ops.launcher_prefs);
     $("conn-dot").classList.add("up");
     render();
   } catch {
