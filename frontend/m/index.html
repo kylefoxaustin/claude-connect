@@ -202,6 +202,17 @@
         </div>
       </div>
 
+      <!-- Launcher: search + relaunch a dormant session (opened from the Fleet tab's 💤 row). -->
+      <div id="ln-overlay" class="recon-overlay" hidden>
+        <div class="recon-top">
+          <strong>💤 Relaunch a session</strong>
+          <button id="ln-close" class="recon-x" aria-label="Close">×</button>
+        </div>
+        <input id="ln-search" class="ln-search" type="search" placeholder="Search by name or folder…"
+               autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" />
+        <div id="ln-list" class="ln-list"></div>
+      </div>
+
       <!-- Reconstitute overlay: rebuild the fleet from the DR backup, from your phone. -->
       <div id="recon-overlay" class="recon-overlay" hidden>
         <div class="recon-top">

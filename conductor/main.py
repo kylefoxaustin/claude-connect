@@ -3963,7 +3963,9 @@ async def get_ops(request: Request) -> dict[str, Any]:
         # revived session comes back remote-controlled in one tap.
         "parked": [
             {"project": p.project, "name": Path(p.project_dir).name, "tag": p.tag,
-             "title": p.title, "last_activity_at": p.last_activity_at}
+             "title": p.title, "last_activity_at": p.last_activity_at,
+             # The launcher searches and shows the folder, and keys pins/hides on it.
+             "project_dir": p.project_dir}
             for p in sorted(state.parked, key=lambda p: -p.last_activity_at)
         ],
     }

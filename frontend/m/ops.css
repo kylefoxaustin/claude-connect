@@ -275,6 +275,10 @@ body {
 .pane-bar {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   margin-bottom: 10px;
+  /* Wrap. Fleet's bar (title + 3 buttons + Sort) is ~575px; unwrapped on a 390px phone it
+     widened the whole layout viewport, so every tab rendered zoomed-out and the overlays'
+     close buttons sat off-screen (2026-10-13). */
+  flex-wrap: wrap;
 }
 .pane-bar .pane-h { margin: 0 2px; }
 .sort-label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dim); }
@@ -432,3 +436,22 @@ body {
     color:var(--text, #e6e6e6);font-size:.95rem;font-family:inherit}
 .ft::placeholder{color:var(--dim, #8a8a8a)}
 .ft:focus{outline:2px solid var(--accent, #7c5cff);outline-offset:1px}
+
+/* Launcher (search + relaunch a dormant session). */
+.ln-open { width: 100%; text-align: left; font: inherit; color: var(--text); cursor: pointer;
+  border-style: dashed; margin-bottom: 10px; }
+.ln-open-i { font-size: 22px; }
+.ln-open-go { color: var(--dim); font-size: 26px; line-height: 1; }
+.ln-search { margin: 10px 0 4px; padding: 12px 14px; font-size: 16px; /* ≥16px: iOS won't zoom */
+  border: 1px solid var(--line); border-radius: 10px; background: var(--row); color: var(--text); }
+.ln-search:focus { outline: none; border-color: var(--accent); }
+.ln-list { flex: 1; overflow-y: auto; padding-bottom: calc(16px + env(safe-area-inset-bottom,0)); }
+.ln-fold { cursor: pointer; }
+.ln-row { flex-wrap: wrap; }
+.ln-row .row-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ln-search, .ln-list { min-width: 0; }
+.ln-is-hidden .row-title { color: var(--dim); }
+.ln-pin { background: none; border: 0; color: var(--dim); font-size: 22px; line-height: 1;
+  min-width: 36px; min-height: 36px; padding: 0; }
+.ln-pin.on { color: #e3b341; }
+.ln-hide { background: transparent; color: var(--dim); }

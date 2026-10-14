@@ -881,13 +881,155 @@ function renderFleet() {
   // place would quietly reorder it under them.
   const rows = [...live].sort(FLEET_SORTS[fleetSort] || FLEET_SORTS.attention);
   const nodes = rows.map(fleetRow);
+  // The dormant sessions are ONE row that opens the launcher, at the top where a thumb finds
+  // it — not 39 rows appended under the live ones (2026-10-13), which you had to scroll past
+  // everything to reach and then scan by eye.
+  const nDormant = parked.filter((p) => !lnHidden[lnKey(p)]).length;
   if (parked.length) {
-    const sep = document.createElement("div");
-    sep.className = "fleet-sep";
-    sep.textContent = `💤 Dormant · ${parked.length}`;
-    nodes.push(sep, ...parked.map(parkedRow));
+    const open = document.createElement("button");
+    open.className = "row ln-open";
+    open.innerHTML =
+      `<span class="ln-open-i">💤</span>` +
+      `<div class="row-body"><div class="row-title">${nDormant} dormant</div>` +
+      `<div class="row-sub">Search and relaunch a closed session</div></div>` +
+      `<span class="ln-open-go">›</span>`;
+    open.addEventListener("click", openLauncherM);
+    nodes.unshift(open);
   }
   host.replaceChildren(...nodes);
+  renderLauncherM(false);
+}
+
+// --- Launcher: search + relaunch a dormant session ----------------------------------------
+// The phone half of the desktop's launcher.js (deliberately not shared code — see the header).
+// Pins and hides live in THIS device's storage, keyed on the folder: what you pin on the phone
+// is about what you reach for from the phone.
+const LS_LN_PINS = "conductor.ops.launcherPins";
+const LS_LN_HIDDEN = "conductor.ops.launcherHidden";
+const lnLoad = (k) => { try { return JSON.parse(localStorage.getItem(k) || "{}") || {}; } catch { return {}; } };
+const lnSave = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private */ } };
+let lnPins = lnLoad(LS_LN_PINS);
+let lnHidden = lnLoad(LS_LN_HIDDEN);
+let lnQuery = "";
+let lnOpen = { older: false, hidden: false };
+const lnLaunching = new Map();             // project -> started ms; cleared when it goes live
+const LN_GIVEUP_MS = 3 * 60 * 1000;
+const lnKey = (p) => p.project_dir || p.project;
+const lnTag = (p) => String(p.tag || "").replace(/^\[(?:other:)?(.*)\]$/, "$1");
+const lnName = (p) => p.title || lnTag(p) || p.name || "(untitled)";
+const lnPath = (p) => String(p.project_dir || "").replace(/^\/home\/[^/]+/, "~");
+
+function lnScore(p, q) {
+  if (!q) return 0;
+  const name = lnName(p).toLowerCase();
+  const i = name.indexOf(q);
+  if (i === 0) return 0;
+  if (i > 0) return 1;
+  if (lnTag(p).toLowerCase().includes(q)) return 2;
+  if (String(p.project_dir || "").toLowerCase().includes(q)) return 3;
+  let j = 0;
+  for (const c of name) if (c === q[j]) j++;
+  return j === q.length ? 4 : null;
+}
+
+function openLauncherM() {
+  lnQuery = "";
+  $("ln-search").value = "";
+  $("ln-overlay").hidden = false;
+  renderLauncherM();
+  $("ln-list").scrollTop = 0;
+  // No autofocus: on a phone that throws the keyboard over half the list, and most opens are
+  // "relaunch the one I was just using", which is the first row.
+}
+$("ln-close")?.addEventListener("click", () => { $("ln-overlay").hidden = true; });
+$("ln-search")?.addEventListener("input", (e) => { lnQuery = e.target.value; renderLauncherM(); });
+
+// Rebuild only when something it shows changed. The scan refresh calls this every few seconds,
+// and replacing the rows under a thumb mid-tap swallows the tap.
+let lnSig = "";
+function renderLauncherM(force = true) {
+  const host = $("ln-list");
+  if (!host || $("ln-overlay").hidden) return;
+  const sig = JSON.stringify([((ops && ops.parked) || []).map((p) => p.project), [...lnLaunching.keys()]]);
+  if (!force && sig === lnSig) return;
+  lnSig = sig;
+  const parked = (ops && ops.parked) || [];
+  const now = Date.now();
+  const live = new Set(parked.map((p) => p.project));
+  for (const [k, t] of [...lnLaunching]) if (!live.has(k) || now - t > LN_GIVEUP_MS) lnLaunching.delete(k);
+
+  const nodes = [];
+  const q = lnQuery.trim().toLowerCase();
+  const head = (label, n, key) => {
+    const h = document.createElement("div");
+    h.className = "fleet-sep" + (key ? " ln-fold" : "");
+    h.textContent = (key ? (lnOpen[key] ? "▾ " : "▸ ") : "") + `${label} · ${n}`;
+    if (key) h.addEventListener("click", () => { lnOpen[key] = !lnOpen[key]; renderLauncherM(); });
+    return h;
+  };
+  const group = (label, list, key) => {
+    if (!list.length) return;
+    nodes.push(head(label, list.length, key));
+    if (!key || lnOpen[key]) nodes.push(...list.map(lnRow));
+  };
+
+  if (q) {
+    // A search covers the hidden ones too: asking for it by name outranks having hidden it.
+    const hits = parked.map((p) => ({ p, s: lnScore(p, q) })).filter((h) => h.s !== null)
+      .sort((a, b) => a.s - b.s || b.p.last_activity_at - a.p.last_activity_at);
+    if (!hits.length) nodes.push(Object.assign(document.createElement("div"),
+      { className: "empty", textContent: `Nothing matches “${lnQuery.trim()}”.` }));
+    nodes.push(...hits.map((h) => lnRow(h.p)));
+  } else {
+    const age = (p) => now / 1000 - (p.last_activity_at || 0);
+    const vis = parked.filter((p) => !lnHidden[lnKey(p)]);
+    const rest = vis.filter((p) => !lnPins[lnKey(p)]);
+    group("★ Pinned", vis.filter((p) => lnPins[lnKey(p)]));
+    group("Today", rest.filter((p) => age(p) < 86400));
+    group("This week", rest.filter((p) => age(p) >= 86400 && age(p) < 7 * 86400));
+    group("Older", rest.filter((p) => age(p) >= 7 * 86400), "older");
+    group("Hidden", parked.filter((p) => lnHidden[lnKey(p)]), "hidden");
+    if (!parked.length) nodes.push(Object.assign(document.createElement("div"),
+      { className: "empty", textContent: "No dormant sessions — the whole fleet is running. 🎉" }));
+  }
+  host.replaceChildren(...nodes);
+}
+
+function lnRow(p) {
+  const k = lnKey(p);
+  const el = document.createElement("div");
+  el.className = "row ln-row" + (lnHidden[k] ? " ln-is-hidden" : "");
+  const tag = lnTag(p) !== lnName(p) ? lnTag(p) : "";
+  const pin = document.createElement("button");
+  pin.className = "ln-pin" + (lnPins[k] ? " on" : "");
+  pin.textContent = lnPins[k] ? "★" : "☆";
+  pin.setAttribute("aria-label", lnPins[k] ? "Unpin" : "Pin to the top");
+  pin.addEventListener("click", () => {
+    if (lnPins[k]) delete lnPins[k]; else lnPins[k] = true;
+    lnSave(LS_LN_PINS, lnPins); renderLauncherM();
+  });
+  const body = document.createElement("div");
+  body.className = "row-body";
+  body.innerHTML =
+    `<div class="row-title">${esc(lnName(p))}</div>` +
+    `<div class="row-sub">${tag ? esc(tag) + " · " : ""}${esc(lnPath(p))}</div>`;
+  const age = document.createElement("span");
+  age.className = "row-age";
+  age.textContent = ago(Date.now() / 1000 - (p.last_activity_at || 0));
+  const acts = document.createElement("div");
+  acts.className = "row-acts";
+  acts.appendChild(mkBtn(lnHidden[k] ? "Unhide" : "Hide", "btn btn-sm ln-hide", () => {
+    if (lnHidden[k]) delete lnHidden[k]; else lnHidden[k] = true;
+    lnSave(LS_LN_HIDDEN, lnHidden); renderLauncherM(); renderFleet();
+  }));
+  const go = mkBtn("Relaunch", "btn btn-sm btn-primary", (b) => {
+    lnLaunching.set(p.project, Date.now());
+    relaunchParked(p, b);
+  });
+  if (lnLaunching.has(p.project)) { go.textContent = "Launching…"; go.disabled = true; }
+  acts.appendChild(go);
+  el.append(pin, body, age, acts);
+  return el;
 }
 
 function fleetRow(s) {
@@ -922,21 +1064,6 @@ function fleetRow(s) {
   if (acts.children.length) el.appendChild(acts);
   const sel = el.querySelector(".mrole");
   if (sel) sel.addEventListener("change", (e) => { e.stopPropagation(); setMemberRole(s.member, e.target.value); });
-  return el;
-}
-
-function parkedRow(p) {
-  const el = document.createElement("div");
-  el.className = "row row-parked";
-  const age = (Date.now() / 1000) - (p.last_activity_at || 0);
-  el.innerHTML =
-    `<span class="st st-ended"></span>` +
-    `<div class="row-body">` +
-    `<div class="row-title">💤 ${esc(p.name)}</div>` +
-    `<div class="row-sub">closed · ${esc(p.title || p.tag || "")}</div>` +
-    `</div>` +
-    `<span class="row-age">${ago(age)}</span>`;
-  el.appendChild(mkBtn("Relaunch", "btn btn-sm", (b) => relaunchParked(p, b)));
   return el;
 }
 
