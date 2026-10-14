@@ -81,7 +81,7 @@ These are *process* patterns, reusable independent of this codebase.
 
 ## 3. Milestones (blank page → here)
 
-Chronology of the arcs (per-version detail in CLAUDE.md; this is the shape of the climb):
+Chronology of the arcs (per-version detail in docs/CHANGELOG.md; this is the shape of the climb):
 
 1. **The bus** — an append-only shared log; sessions `/msg-send` each other across projects. The
    substrate. Everything else is coordination *on top of* message-passing.
