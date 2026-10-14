@@ -5,7 +5,7 @@
 # a nomination that isn't theirs (qualcomm), and an ops cwd standing in for the operator (Kyle acts
 # through Conductor, which bus.sh does not identity-gate — only the LEAD-side actions are gated).
 set -u
-BUS=/home/kyle/Documents/GitHub/claude-connect/bus/bus.sh
+BUS="$(cd "$(dirname "$0")/.." && pwd)/bus/bus.sh"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 export HOME="$TMP"
 SD="$HOME/.claude/bus-state"; mkdir -p "$SD/coord" "$HOME/Documents/claude-bus"

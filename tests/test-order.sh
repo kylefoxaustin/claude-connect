@@ -4,7 +4,7 @@
 # that they are DIFFERENT actors: a service cannot grade its own delivery. Proves the state machine,
 # the actor permissions, and the load-bearing invariant: `deliver` refuses until the files LANDED.
 set -u
-BUS=/home/kyle/Documents/GitHub/claude-connect/bus/bus.sh
+BUS="$(cd "$(dirname "$0")/.." && pwd)/bus/bus.sh"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 export HOME="$TMP"
 SD="$HOME/.claude/bus-state"; mkdir -p "$SD/coord" "$HOME/Documents/claude-bus"

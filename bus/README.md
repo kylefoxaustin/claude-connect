@@ -1,8 +1,8 @@
 # Claude Bus — reference implementation
 
 This is the cross-session message bus that Conductor's 📬 features talk to. It's
-a tiny, dependency-free shell script plus four Claude Code slash commands and two
-hooks. Wiring it up is **optional** — Conductor monitors every session with or
+a dependency-free shell script plus a set of Claude Code slash commands (`bus/commands/`)
+and hooks. Wiring it up is **optional** — Conductor monitors every session with or
 without it (see ["What if a session isn't wired up?"](#what-if-a-session-isnt-wired-up)).
 
 How it works: each Claude Code session is auto-tagged by its working directory

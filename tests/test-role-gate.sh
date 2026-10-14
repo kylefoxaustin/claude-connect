@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tests for the role enforcement pre-check (v4 §3.3/§3.4). Pure function, no state.
 set -u
-. ~/Documents/GitHub/claude-connect/bus/role-gate.sh
+. "$(cd "$(dirname "$0")/.." && pwd)/bus/role-gate.sh"
 pass=0; fail=0
 # verdict <role> <tool> <is_write> -> "DENY" or "ALLOW"
 verdict() { if role_verdict "$1" "$2" "${3:-0}" >/dev/null; then echo DENY; else echo ALLOW; fi; }

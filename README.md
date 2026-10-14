@@ -2,55 +2,67 @@
 
 # Conductor
 
-**A local dashboard for watching all your Claude Code sessions at once — in your browser or as a standalone desktop app — plus an optional _message bus_ (a shared log your sessions post to) that lets them talk to each other.**
+**Conductor is a local web dashboard — and optional desktop app — that shows every Claude Code session on your Linux machine as a live tile, plus an optional message bus that lets those sessions talk to each other.**
 
-[![version: 2.41](https://img.shields.io/badge/version-2.41-blue)](https://github.com/kylefoxaustin/claude-connect/releases)
+[![version: 2.41](https://img.shields.io/badge/version-2.41-blue)](docs/CHANGELOG.md)
 [![platform: linux](https://img.shields.io/badge/platform-linux-orange)](#requirements)
-[![safety: read--only](https://img.shields.io/badge/safety-read--only-green)](#how-it-works)
+[![safety: read--only](https://img.shields.io/badge/safety-read--only-green)](#privacy-and-safety)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 <p align="center">
-  <img src="assets/hero.png" alt="Conductor — a glowing violet bus core wired to six session panels, one cable carrying a message pulse; title reads Conductor: watch every Claude Code session at once, and let them talk" width="900" />
+  <img src="assets/hero.png" alt="Conductor — a glowing violet bus core wired to six session panels, one cable carrying a message pulse" width="900" />
 </p>
 
-```
-┌─ ●  api-server ────────────────┐  ┌─ ●  web-app ───────────────────┐
-│ ~/code/api                 📬3 │  │ ~/code/web                     │
-│ ┌──────────────────────────┐   │  │ ┌──────────────────────────┐   │
-│ │ ...running test suite    │   │  │ │ ...waiting on user input │   │
-│ └──────────────────────────┘   │  │ └──────────────────────────┘   │
-│  msgs: 47   ⏱ 2s ago           │  │  msgs: 12   ⏱ 1m ago           │
-└────────────────────────────────┘  └────────────────────────────────┘
-```
+**For** anyone running several Claude Code sessions at once who keeps losing track of which terminal is doing what, misses the moment one goes quiet, or wants them to coordinate. Runs on `127.0.0.1`, reads Claude's own logs, and never edits your files or conversations.
 
-> 💡 **Heads up on names:** the project — and its Python package — is **Conductor**. The GitHub repo keeps its original name `claude-connect` (so existing clone URLs, links, and tooling keep working), so you'll still see that slug in the URL and a few paths. Same project.
-
-## Why?
-
-If you're like us, you're running 3, 4, or 8 Claude Code sessions at once across different projects. You forget which terminal is doing what. You miss when one finishes and goes quiet. You wish they could *coordinate* — "hey, the API change is in, you can start on the frontend."
-
-**Conductor solves both problems:**
-
-- **See everything at a glance.** One tile per live Claude session — status dot, live preview of what it's saying, time since last activity. Click a tile to jump to that terminal.
-- **Let your Claudes talk.** Wire up the optional message bus and your sessions can `/msg-send` each other across projects. The dashboard shows the traffic with animated connection lines.
-
-It's **local by default, and read-only toward Claude** — it watches Claude's `~/.claude/projects/*.jsonl` logs and process state, and never edits your files or conversations. The server binds only to `127.0.0.1`, with **no telemetry, no analytics, and no uploads of your data.**
-
-The only things that ever leave the box are ones you explicitly opt into: the 3D view fetches Three.js from a CDN; **phone notifications** (Web Push) send a signed alert through your browser's push service (Google/Mozilla/Apple); and **phone/remote access** rides *your own* [Tailscale](https://tailscale.com) tailnet (WireGuard, device-to-device — never exposed on the LAN). And the few *actions* Conductor can take are all **external and user-triggered** — raise a terminal window, type `/msg-check` into a session (the nudge that makes it read its waiting bus messages), answer a Claude's on-screen question from your phone, append to the separate bus log, or relaunch a closed session — never a silent write to Claude's own state.
-
-> 🚀 **Just want to try it?** Jump straight to [Quick Start](#quick-start) — you'll have a tile on screen in under a minute. The tours below are optional.
+- [Quick start](#quick-start) · [What it does](#what-it-does) · [Session launcher](#-session-launcher) · [Wire up the bus](#wire-up-the-bus-optional) · [Phone](#phone-access) · [Configuration](#configuration) · [Troubleshooting](#troubleshooting)
+- Deeper docs: [Using the dashboard](docs/USING.md) · [Native app & phone setup](docs/INSTALL.md) · [Bus](bus/README.md) · [Changelog](docs/CHANGELOG.md)
 
 ---
 
-## What it looks like
+## Quick start
+
+Tested on **Ubuntu 22.04** with Python 3.10. You need [Claude Code](https://docs.claude.com/en/docs/claude-code/overview) installed.
+
+```bash
+sudo apt install git python3-venv python3-pip wmctrl xdotool   # wmctrl/xdotool: click-to-focus + 📬 (optional)
+git clone https://github.com/kylefoxaustin/claude-connect
+cd claude-connect
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e .                                                # ".[dev]" adds the test tooling
+make dev                                                        # → http://127.0.0.1:8765
+```
+
+Open **http://127.0.0.1:8765**, then start a Claude Code session in another terminal. Its tile appears a few seconds after the session's first reply. No registration, no config — `settings.toml` is optional (copy `settings.example.toml` when you want to change something).
+
+- `make run` — the same without auto-reload · `PORT=9000 make dev` — another port
+- `make test` — the test suite (needs `pip install -e ".[dev]"`)
+- Prefer a desktop window to a browser tab? See the [native app](docs/INSTALL.md#native-app-edition-ubuntu).
+
+---
+
+## What it does
 
 ![The 2D dashboard — one tile per Claude session, a central Bus tile, and animated wires showing cross-session traffic (solid = active, dashed = passive).](assets/screenshot-2d.png)
 
-<sub>The classic 2D board: live tiles, status dots, the orange **backend** group, the central **Bus** tile, and connection wires (solid = active, dashed = passive). *Sample data shown.*</sub>
+<sub>One tile per live session, a central **Bus** tile, and wires showing cross-session traffic (solid = active, dashed = passive). *Sample data.*</sub>
+
+| | |
+|---|---|
+| 🪟 **Live tiles** | Every running Claude session, auto-discovered: status, live preview, time since last activity, tokens used. Drag, resize, group, minimize. |
+| 🎯 **Click to focus** | Click a tile to raise that session's terminal — the exact tab on [Tilix](https://gnunn1.github.io/tilix-web/). |
+| 🚀 **[Session launcher](#-session-launcher)** | Search every closed session and relaunch it where it left off — on the desktop or your phone. |
+| 📬 **[Message bus](#wire-up-the-bus-optional)** | Sessions `/msg-send` each other across projects; idle sessions are woken for mail addressed to them. |
+| 🔐 **Push & persistence gates** | Hold every `git push`, and every write that outlives a session (hooks, systemd units, `~/.claude/bin`), until you approve it with one tap. [Details](docs/USING.md#-the-two-hard-controls--push-gate--persistence-gate). |
+| 📱 **[Phone console](#phone-access)** | A purpose-built mobile view over your own Tailscale tailnet: answer a Claude's question, approve a push, relaunch a session, get paged when one is blocked. |
+| 🎛 **Shared resources** | Sessions reserve a GPU or a dev board over the bus, with a queue and an idle watchdog. [Details](docs/USING.md#-shared-resource-coordination). |
+| 🩺 **Fleet health** | Flags two sessions colliding in one repo, a reader that went silent, a session that lost its remote control. [Details](docs/USING.md#-fleet-health-signals). |
+| 🧊 **3D & 🕸 History** | Flip the board into WebGL, or replay your whole cross-session history as an animated graph. [Details](docs/USING.md#-3d-view). |
+| 🧯 **Disaster recovery** | Optional off-box backup of the coordination layer and a one-screen rebuild. [Details](docs/USING.md#disaster-recovery). |
 
 ### …or flip to 3D
 
-New in **2.2**: a **🧊 3D** button swaps the board into a WebGL scene where your sessions float around a glowing bus core, grouped sessions cluster together, and you orbit/zoom the whole thing. Three layouts — pick by feel:
+A **🧊 3D** button swaps the board into a WebGL scene where your sessions float around a glowing bus core, grouped sessions cluster together, and you orbit/zoom the whole thing. Three layouts — pick by feel:
 
 | Carousel *(default)* | Orbital | Gallery |
 | :---: | :---: | :---: |
@@ -59,563 +71,73 @@ New in **2.2**: a **🧊 3D** button swaps the board into a WebGL scene where yo
 
 <sub>Cards always face the camera, so text stays readable at any angle. 2D stays the default — 3D is one click away. *Sample data shown.*</sub>
 
-### …or replay the whole story
-
-New in **2.3–2.5**: a **🕸 History** button replays your entire cross-session history as an animated, scrubbable graph — sessions light up as they first speak, mention-lines thicken with traffic, and a live force layout drifts frequent collaborators together. Toggle **👤 Human turns** to weave in *your* prompts and each Claude's replies (a node for **you** at the hub), then **🔬 click a session** to watch its whole working relationship with you replay — each prompt fires in and the session *explodes outward* into the files it touched, the commands it ran, and the sub-agents it spawned.
-
-**New in 2.8: 🧊 rotate the graph in 3D.** Drag to orbit the whole web (it idles with a gentle spin) — the *Ring* tilts and spins, *Orbit* lifts into a dome, *Clusters* spreads into a 3D cloud — so you can read a tangle of links from any angle. Still pure SVG (a hand-rolled projection, no WebGL).
-
-![The 🕸 History graph rotated in 3D — the Ring layout tilted into space, with colored mention-lines webbing between every session node.](assets/screenshot-3d-history.png)
-
-<sub>The Ring layout tilted in **🧊 3D**: each dot is a session, each line a mention, thickness = how often that pair talks. Real cross-session traffic — node names only, no message content.</sub>
-
-```
-   you ──prompt──▶ ( 95emulator ) ──▶ ◍ ◍ ◍ files (read/edited)
-        ──prompt──▶              ──▶ ⚙ Explore  ⚙ Plan   (agents)
-                                 ──▶ Bash ×119 · Grep ×4  (tools)
-   scrub the whole relationship · 0.25×–5× · 🔍 focus one exchange
-```
-
-<sub>Pure SVG, lazily loaded, read-only — it just visualizes the bus log + transcripts you already have. Works even without the message bus. (`95emulator`, `Explore`, etc. are just sample session/agent names.)</sub>
-
-### …or answer your fleet from your phone
-
-New in **2.22–2.27**: reach the fleet from anywhere over *your own* Tailscale tailnet — the server still binds `127.0.0.1`, it's just proxied onto the tailnet by `tailscale serve` (never the LAN). This isn't the desktop board shrunk down; the phone gets its **own** UI built for the 30-second "something needs me" glance:
-
-- **📱 Ops console (`/m`)** — a scannable list of sessions (not a wall of tiles), sorted by what needs you, with an approvals inbox and a decision queue.
-- **❓ Answer a Claude from your phone _or the board_.** When a session asks an `AskUserQuestion` (pick 1-of-N, or multi-select), it lands in the **decision queue** — tap the answer and Conductor injects it into the live session, unblocking work you'd otherwise have to walk to the PC for. (Captured by a `PreToolUse` hook the instant the question is asked — so the queue shows the questions that *still need answering*, not the ones already gone.) Since **2.40** you are not limited to the options it offered: **answer in your own words** (typed into the picker's own free-text *Other* field) or **decline** — and declining is a real answer, not a dismissal, because `Escape` tells the session *"User declined to answer questions"* so it can proceed or re-ask instead of waiting forever. The queue now renders on the **desktop board** too, above the approvals inbox.
-- **🔔 Web Push notifications — the app that finds you.** It *pages* your phone on exactly two things: a Claude **blocked on a question**, and a **gated `git push`** waiting for your approval. Deliberately not idle chatter (unread mail, queue depth, mutual stalls never page) — *an alarm that fires on a healthy fleet is one you learn to swipe away.*
-- **🔐 Approve a `git push` from the couch.** The push-gate inbox (see Features) is on the phone too — one tap arms the approval; the session pushes when it's ready.
-- **⟳ Fleet recovery** — after a reboot, relaunch your whole fleet from one picker (staggered, so 20 sessions don't stampede the box) instead of hand-restarting each terminal.
-
-Access is over `tailscale serve --https` (HTTPS is required for Web Push + the service worker), gated by an optional `[server].auth_token`. Setup is a couple of lines — see [Phone access & notifications](#phone-access--notifications).
-
 ---
 
-## Features
+## 🚀 Session launcher
 
-- 🪟 **Live tiles** for every running Claude session — auto-discovered, no config
-- 🎯 **Click-to-focus** — clicking a tile raises the actual terminal window
-- 📬 **Cross-session messaging** with an animated bus tile showing live traffic
-- 📨 **Auto-delivery** *(new in 2.19)* — when an idle session has an unread message *addressed to it* (`to:<tag>`), Conductor wakes it to go read it, so you never prod a session to check the bus. Tiles show a "📨 N for you" badge; the topbar shows how many sessions are waiting
-- 🛑 **Retraction** *(new in 2.20)* — a session that told another "do X" and realized it's wrong can `/retract` (or `/supersede`) it; the recipient is woken **immediately, even mid-task**, and sees a loud warning before it acts. For the "A said do X, B is about to act destructively" race
-- 🕵️ **Input provenance** *(2.30 wrote it, 2.41 reads it)* — Conductor types into terminals, and those keystrokes arrive as a **user turn**, indistinguishable from you. Every injection is attested to a ledger *before* it happens, and the receiving session is now **told**: *"this was INJECTED BY CONDUCTOR, not typed by Kyle"*, with the reason. An unattested injectable prompt reads as **unknown**, never as you — so suppressing the ledger buys nothing. Advisory, never authority
-- 🔐 **Push gate** *(new in 2.21)* — an optional Claude Code hook holds every `git push` until you approve it from a Conductor inbox (one click). Nothing hits a repo without your say-so; commits stay free. Enforced at the tool level, and an instant no-op for any non-push command. A session can also **propose** a push (`/push-propose` — *"ready to push, or keep digging?"*, v2.27), so you approve it *with* the commits and its reasoning in front of you, in a single tap
-- 🔒 **Persistence gate** *(new in 2.31)* — your **second** hard control, for acts whose consequences **outlive the session**: writes to `~/.claude/bin`, `settings.json` (a hook there is fleet-wide code on every tool call), systemd units, crontabs. A Claude Code hook gates them the way the push gate holds a push — and the grant is bound to the **action**, not conveyed in prose, so *"Kyle approved this"* is never enough on its own. Ships **disarmed**, with a plain-terminal escape hatch so a hook can never lock you out. See [`docs/PERSISTENCE_GATE.md`](docs/PERSISTENCE_GATE.md)
-- 🩺 **Fleet-health signals** *(new in 2.35–2.36)* — four failure shapes an unread-message *count* can't distinguish: an **identity collision** (two Claudes in one repo posting under one bus tag — the card shows what each is doing, not just the clashing name), a **dead-reader alarm** (a tag others keep addressing that has itself gone silent for hours — mail rotting behind a reader that no longer exists), a **lost-`/RC` alarm** *(2.36)* — a session that's **alive but dropped its remote-control bridge**, so it's invisible in the phone's Claude app and *looks* crashed; Conductor watches the process, so it says "reconnect, don't relaunch" instead of letting you spawn a duplicate into the same repo — and a **phantom-stall fix** so the mutual-stall detector only draws an edge when *A asked B a question B hasn't answered*, never merely because *B has unread mail* — a session that's only cc'd is no longer threaded into a stall it has no part in
-- 🔗 **Autonomy windows** *(new in 2.23)* — *"I'm away from these keyboards for a few hours — let them wake each other."* Grant a chosen set of sessions a **time-boxed** permission to auto-deliver directed mail among themselves without your click. It lifts the *attended* guard, never the *working* one (a busy Claude is still never interrupted), only **directed** mail wakes anyone, and it **expires** — the time-box is the safety property. Draw the window by clicking tiles on the board, or pick members from the phone
-- 📱 **Phone access + notifications** *(new in 2.22–2.27)* — reach the fleet from your phone over your Tailscale tailnet: a purpose-built **mobile console** (`/m`), a **decision queue** to *answer a Claude's `AskUserQuestion` from your phone*, a push-approval inbox, and **Web Push** that pages you on exactly two things — a session blocked on a question, or a gated `git push`. See [Phone access & notifications](#phone-access--notifications)
-- 🧯 **Disaster recovery** *(new in 2.37–2.38)* — an **optional** setup that answers *"what if this machine dies?"*: a private `fleet-backup` repo backs up the whole `~/.claude` coordination layer **hourly** and your session transcripts **daily**, off-box. On a new machine, one `bootstrap.sh` restores it and starts Conductor, and a **🧯 Reconstitute** screen (on the desktop *and* your phone) rebuilds the fleet — cloning each repo and resuming each session you pick with `claude --continue`. See [Disaster recovery](#-disaster-recovery)
-- 🎛️ **Shared-resource coordination** *(new in 2.9–2.23)* — sessions self-reserve scarce resources over the bus — a **GPU** *or* a dev **board** (IQ9 EVK, Orin, …) — with soft/hard holds, a **FIFO queue** (get pinged the moment it's your turn, no polling), an idle 🐕 watchdog that nudges/reclaims quiet leases, **abandoned-lease detection** (a hold whose session died is flagged, and reaped outright after a reboot), and a live tile per resource. It also covers **service Claudes** (a single-holder *service* — say a local image generator — takes jobs off a queue and returns each result as mail, v2.23) and a **fleet registry** where every asset carries an onboarding **card** that travels with it to whoever reserves it. No more arbitrating who gets what. See [Shared-resource coordination](#-shared-resource-coordination)
-- 📦 **Agentic request-delivery** *(new in 2.36)* — a durable **order** with a verified-landing lifecycle (`PLACED → CLAIMED → DELIVERED → CONFIRMED`, with a `REJECTED → COOKING` revise loop), for when one Claude asks another to *produce* something — a rendered sprite, a report, a code change. Unlike a fire-and-forget job, an order is a persistent object: **"delivered" is a verified fact, not a claim** — the service reads the files back from the delivery address before it can ack, so it literally cannot say DELIVERED for a drop that isn't on disk. The **requester owns the address *and* the acceptance test**, so a producer can't grade its own work; a reject bumps a revision and keeps its reason on the order (a crash-relaunched service won't repeat a rejected attempt). `bus.sh order …` / `/order`; resource-agnostic by construction (the delivery address type is the only thing that changes)
-- ✉️ **Compose from the dashboard** — send your own bus message to all sessions or a chosen few, with an optional "ping" that makes them read it now
-- 🟢 **Status indicators** — `active` / `warm` / `idle` / `dormant` / `waiting` / `ended`
-- 🪙 **Token usage** *(new in 2.12)* — each tile shows its tokens used (`tokens: 617K out · 103M total`, from the transcript), a **global sum** sits by the title, and a `scripts/token-usage.py` CLI reports any session/project. See [Token usage](#-token-usage)
-- 💾 **Persistent layout** — drag tiles to rearrange and **resize** them (corner grip); both stick
-- 🗕 **Minimize to dock** — tuck rarely-touched sessions into a bottom dock (still live), restore with a click
-- 💤 **Dormant dock — relaunch a closed session** *(new in 2.6)* — sessions you've closed don't disappear; they wait as chips in a **💤 Dormant** shelf. **Click one to relaunch it** — reopens `claude --continue` in its original folder, a clean resume in a single click (✕ to dismiss). Optional opt-ins can also auto-run `/rc` (Claude Code's `/remote-control`) or `/rename` afterwards
-- ▦ **Groups** — color-code sessions into named groups; minimize a whole group to one dock chip with a rollup badge
-- 🖥️ **Install as a desktop app** *(new in 2.7)* — `make install-app` stages a self-contained install into `~/.local/share/conductor/` with an app-menu launcher, so it runs like a normal installed app and the cloned repo becomes disposable
-- 🧊 **3D view** *(new in 2.2)* — flip the whole board into a WebGL scene (Carousel / Orbital / Gallery); grouped sessions cluster in space, cards stay readable, 2D remains the default
-- 🕸 **History time-lapse** *(new in 2.3)* — replay your **entire** bus history (live log + every archive) as an animated graph: sessions appear as they first speak, mention-lines thicken with traffic, pulse size shows each message's length, and a live **force layout** drifts frequent partners together. Play/pause, scrub, 0.25×–5× speeds. **2.4** adds a **👤 Human turns** layer — weave in *your* prompts + each Claude's replies (read from the transcripts) onto the same timeline, with a node for **you** at the hub. **2.5** adds a **🔬 drill-down** — click a session and watch its *whole working relationship with you* replay: each prompt fires in, and the session **explodes outward** into the files it touched, the commands it ran, and the sub-agents it spawned (or focus a single exchange at a time)
-- 🔀 **Active/Passive bus control** — click a tile's tag chip to toggle whether it's auto-notified of bus traffic
-- 🎨 **Themeable** — dark/light, animations, connection-line styling
-- 🔒 **Local only** — `127.0.0.1`, in-memory, restart-clean
+Closed sessions don't disappear. The dock at the bottom of the board shows one button, **💤 N dormant `Ctrl+K`**; press it (or **Ctrl+K**, or **/**) and a search box opens over every session Conductor has seen. Type a few letters, press **Enter**, and that session reopens with `claude --continue` in its original folder — right where you left off.
+
+![The session launcher — search box, pinned sessions, then Today and This week groups, each row with its folder, age and tokens](assets/screenshot-launcher.png)
+
+- **Search finds running sessions too** — Enter on one of those brings its terminal to the front instead.
+- **★ Pin** the projects you return to; **✕ Hide** the ones you won't (recoverable, and a search still finds them).
+- **Tick several and relaunch them together** after a reboot — staggered, so the box isn't stampeded.
+- **The same launcher is on your phone**, and pins and hides **sync** between the desktop, the native app and the phone.
+
+| Search finds dormant *and* live sessions | On the phone (`/m` → Fleet) |
+| :---: | :---: |
+| ![Typing "fw" finds a dormant session to relaunch and a live one to focus](assets/screenshot-launcher-search.png) | ![The phone launcher — pinned sessions, each with Hide and Relaunch buttons](assets/screenshot-phone-launcher.png) |
+
+<sub>*Sample data.* More — the relaunch keystrokes, the `[relaunch]` settings — in [docs/USING.md](docs/USING.md#-session-launcher--find-and-relaunch-a-closed-session).</sub>
 
 ---
 
 ## Requirements
 
-- **Linux with X11** (Wayland is best-effort)
-- **Python 3.10+**
-- **`wmctrl` and `xdotool`** for terminal focus and `/msg-check` injection
-  - Both optional — without them, the focus and 📬 buttons just no-op
-  - **[Tilix](https://gnunn1.github.io/tilix-web/) users** (Tilix is a tiling terminal emulator) also get exact-tile focus via `gdbus` (ships with GLib, already present on any GTK desktop) — see [Reliable Terminal Focus](#reliable-terminal-focus)
-- **Native App Edition only:** system WebKitGTK (`python3-gi`, `gir1.2-webkit2-4.0`, `libwebkit2gtk-4.0-37`) — see [Native App Edition](#native-app-edition-ubuntu). The Web Browser Edition needs none of this.
-- **GPU features only** (optional): an **NVIDIA GPU with `nvidia-smi`** on `PATH` — for the GPU tile's live utilization and the idle watchdog. Everything else works without a GPU; the 🎮 GPU tile simply doesn't appear when `nvidia-smi` is absent.
+- **Linux with X11** (Wayland is best-effort) and **Python 3.10+** with `venv` (`python3-venv` on Ubuntu)
+- **Claude Code** — the bus hooks use `SessionStart`, `UserPromptSubmit` and `PreToolUse`
+- *Optional:* **`wmctrl` + `xdotool`** for click-to-focus and typing `/msg-check` · **[Tilix](https://gnunn1.github.io/tilix-web/)** for exact-tab focus (`gdbus`, from `libglib2.0-bin`) · **`nvidia-smi`** for the GPU tile · **[Tailscale](https://tailscale.com)** for phone access
+- *Native app only:* system WebKitGTK — see [docs/INSTALL.md](docs/INSTALL.md#native-app-edition-ubuntu)
 
 ---
 
-## Quick Start
+## Wire up the bus (optional)
 
-```bash
-# 1. Clone and install (a venv keeps it off system Python — required on PEP-668 distros)
-git clone https://github.com/kylefoxaustin/claude-connect
-cd claude-connect
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"          # drop [dev] if you don't want the test tooling
-
-# 2. Install the OS helpers (recommended)
-sudo apt install wmctrl xdotool
-
-# 3. Copy the example settings
-cp settings.example.toml settings.toml
-
-# 4. Run it
-make dev    # http://127.0.0.1:8765, auto-reload
-```
-
-Open the URL in a browser. Start a Claude Code session in another terminal — a tile appears within seconds. **No per-session registration. No config to get started.**
-
-Other targets:
-
-```bash
-make run     # production-style, no reload
-make test    # run the pytest suite
-```
-
----
-
-## Editions
-
-Conductor ships in two editions from the same codebase:
-
-| Edition | What it is | Run |
-|---|---|---|
-| **Web Browser** | The dashboard served at `http://127.0.0.1:8765`, opened in any browser. | `make dev` / `make run` |
-| **Native App** | The *same* dashboard wrapped in a native desktop window (pywebview → WebKitGTK), with its own app-menu launcher and dock icon. | `make native` |
-
-Both editions ship in a **single release per version** (`vX.Y.Z`) — it's one
-codebase at one commit, the edition is just how you run it. New features land
-once and both editions get them.
-
-### Native App Edition (Ubuntu)
-
-The native edition runs the identical FastAPI + JS app inside a WebKitGTK window.
-The uvicorn server runs in a background thread; **closing the window stops the
-server** (nothing is left running). If a Conductor is already serving the port
-(e.g. a `make dev` instance, or a second launch), the app *attaches* to it
-instead of starting a duplicate.
-
-```bash
-# 1. System WebKitGTK (not pip-installable — provides PyGObject + the WebKit2 typelib)
-sudo apt install python3-gi gir1.2-webkit2-4.0 libwebkit2gtk-4.0-37
-
-# 2. Build the native venv (--system-site-packages, so it can see system gi/WebKit) + pywebview
-make install-native
-
-# 3. Launch the native window
-make native
-
-# 4. (Optional) Add a launcher to your app menu / dock, with this checkout's paths baked in
-make install-desktop
-```
-
-`make install-native` creates a **separate** `.venv-native` so the Web edition's
-`.venv` stays untouched. `make install-desktop` writes
-`~/.local/share/applications/conductor.desktop` (icon: `assets/conductor.svg`,
-`StartupWMClass=conductor` for dock grouping) — re-run it if you move the repo.
-
-> Tested against WebKit2 **4.0** (Ubuntu 22.04). The SVG connection-line overlays
-> and tile drag render correctly under WebKitGTK.
-
-#### Two ways to “install” it
-
-`make native` and `make install-desktop` both run the app **out of this cloned
-repo** — keep the clone around. If you'd rather treat Conductor like a normal
-installed app you can delete the clone afterward, use the staged install:
-
-| Goal | Command | Where the code lives |
-|---|---|---|
-| Run from the clone (dev) | `make native` | this repo (foreground; closing the terminal stops it) |
-| App-menu launcher, code in the clone | `make install-desktop` | this repo (don't delete it) |
-| **Installed app, clone disposable** | **`make install-app`** | `~/.local/share/conductor/` (clone can be deleted) |
-
-```bash
-# One-time, self-contained install (after the apt deps above):
-make install-app      # copies the app + builds its venv into ~/.local/share/conductor,
-                      # then adds the app-menu launcher pointing there
-# → launch "Conductor" from your app menu / dock; it runs detached (no terminal).
-# → the cloned repo is now disposable. Re-run to update; `make uninstall-app` to remove.
-```
-
-`make install-app` stages the app (code, served frontend, icon, and the
-`claude-tracked` relaunch helper) into `~/.local/share/conductor/`, builds the
-WebKitGTK venv **there**, and points the `.desktop` launcher at that copy — so it
-keeps full host access (it still spawns terminals, focuses windows, and reads
-`~/.claude`) and survives deleting the clone. It is **not** a sandboxed package
-(Flatpak/Snap would hide the host's processes from `psutil` and break session
-discovery) nor a single-file binary — it's a self-contained local install that
-behaves like an installed app.
-
----
-
-## Phone access & notifications
-
-Reach Conductor from your phone — the desktop board **and** the mobile ops console (`/m`) — and let it page you when something needs you. The server never leaves `127.0.0.1`; [Tailscale](https://tailscale.com)'s `serve` proxies it onto *your own* private tailnet (WireGuard), so it's reachable from your devices and nowhere else — never the LAN, never the public internet.
-
-**1. Put Conductor on your tailnet** (HTTPS is required for Web Push and the service worker):
-
-```bash
-# one-time, if serve isn't permitted for your user yet:
-sudo tailscale set --operator=$USER
-
-# proxy Conductor onto the tailnet over HTTPS (Let's Encrypt cert, managed by Tailscale)
-tailscale serve --bg --https=443 http://127.0.0.1:8765
-```
-
-Now `https://<host>.<tailnet>.ts.net/` (the board) and `.../m` (the mobile console) load on any device signed into your tailnet.
-
-**2. Gate it with a token** (recommended once it's remotely reachable). Set `[server].auth_token` in `settings.toml` (or `$CONDUCTOR_AUTH_TOKEN`, which wins and never touches disk). With a token set, every `/api/*` call and the `/ws` handshake require it; leave it empty and localhost stays frictionless. The native desktop app auto-unlocks; the phone remembers it after first entry.
-
-**3. Enable notifications** (optional). Open `/m` on the phone over HTTPS, allow notifications when asked, and Conductor registers a Web Push subscription. From then on it **pages you on exactly two things** — a Claude blocked on a question, and a gated `git push`. A **Test** button lets you tell "the pipe is dead" from "the fleet is just quiet," and the UI is honest about the limits (a PWA can't break Do-Not-Disturb, so it won't wake you at 3am — a push approval simply waits).
-
-> Installed to the home screen it's a PWA (offline-tolerant shell, home-screen icon). The mobile console shares **nothing** with the desktop board but the API — it's a purpose-built *console*, not the workbench shrunk down.
-
----
-
-## Using the Dashboard
-
-### Tiles
-
-Each tile is one live Claude session. It shows:
-
-- **Status dot** — `active` (writing now), `warm` (recent), `idle`, `dormant`, `waiting` (on user input), `ended`
-- **Squashed live preview** of the latest message
-- **Message count + time since last activity**
-- **📬 bubble** — appears when this session has unread bus messages (only if the [bus](#cross-session-bus) is wired up)
-- **Tag chip** (e.g. `[backend]`) — its bus identity, and a click-toggle for [Active/Passive](#active--passive) membership
-- **Token line** (`tokens: 617K out · 103M total`) — this session's usage from its transcript; hover for the breakdown (see [Token usage](#-token-usage))
-
-**Drag** a tile to move it; **drag the bottom-right corner** to resize it; the **`–`** button minimizes it to the bottom dock. Hover a truncated title to see it in full. Position, size, and minimized state persist across restarts.
-
-### Minimize / dock
-
-Click a tile's **`–`** to tuck it into a thin **dock** along the bottom — a tiny chip with its status dot, name, and 📬 badge. It's still monitored (the dot keeps updating; a new message still lights the badge), just out of the way. Hover for the full name; **click the chip to restore** it to its previous position and size. Minimized tiles' bus wires are hidden to keep the board clean.
-
-### 🪙 Token usage
-
-Every session tile shows its token usage, read straight from that session's transcript (the same numbers Claude Code shows per command):
-
-```
-tokens: 617K out · 103M total
-```
-
-- **`out`** = tokens the model *generated* (the real "work done").
-- **`total`** = everything *processed* = `out` + all input. The gap is almost entirely **cache reads** — the whole conversation is re-read as input every turn (cheap: cached input bills at ~10% of fresh), which is why `total` dwarfs `out`.
-- **Hover** the line for the full breakdown (output / new input / cache creation / cache reads / turn count).
-- A **global sum sits next to the "Conductor" title** in the top bar — every session added up (`tokens: 41.7M out · 12.5B total`).
-
-Prefer the terminal? [`scripts/token-usage.py`](scripts/token-usage.py) reports the same, for any scope:
-
-```bash
-python scripts/token-usage.py                    # every project under ~/.claude/projects
-python scripts/token-usage.py <project-dir>      # one project's sessions
-python scripts/token-usage.py <session.jsonl>    # a single session
-python scripts/token-usage.py --json             # machine-readable
-```
-
-### 💤 Dormant dock
-
-Closing a Claude session doesn't erase it from the board. Any project folder Conductor has seen — one with transcript history but **no live process right now** — waits as a chip in a **💤 Dormant** group at the end of the bottom dock. Think of it as the *recently-closed-sessions shelf*: the work you'll come back to. *(Distinct from the `dormant` **status dot**, which marks a session that's still running but has been quiet a while — the shelf is for sessions that have fully closed.)*
-
-```
- ─ minimized ─┊─ 💤 DORMANT ──────────────────────────────────────────
-   ● web-app  ┊  💤 orb_slam  [other:orb_slam] ✕   💤 reshirt  ✕   …
-              ┊      └─ click ▸ claude --continue in its folder
-```
-
-**Click a dormant chip to relaunch that session.** Conductor opens **`claude --continue` in the session's original folder** (in a tracked terminal window) — a clean resume that picks up right where you left off. The chip shows "launching…", then disappears as the now-live session takes its place as a normal tile.
-
-- **Auto-discovered** — no list to maintain. It's every folder with history that isn't currently live (a session already running there is never offered), capped at the 40 most-recently-active. The **✕** on a chip dismisses it; a dismissed folder reappears on its own the next time you actually run a session there.
-- **Resumes, doesn't restart.** `claude --continue` picks up that folder's most recent conversation, so you land back where you left off — not a blank session.
-- **Keystrokes after relaunch** (in the `[relaunch]` block of `settings.toml`): `rc` auto-runs **`/rc`** — Claude Code's `/remote-control`, which makes the resumed session drivable from a browser/phone (needs a qualifying plan + `/login`) — and is **on by default**, so a relaunched session comes back remote-controllable and visible in the phone app instead of looking crashed. `rename` re-issues `/rename` and is **off by default** (its injection is timing-flaky and it overwrites a session's own title with the derived tag; `--continue` keeps the prior name anyway). `/rc` opens a **Remote Control menu** that blocks the session until answered, so Conductor presses **Esc** to dismiss it *(2.39)* — never Return, which would *select* an option, one of which is "Disconnect this session". Injection also **retries while you're at the keyboard** (Conductor won't type into a session while a human is active, and a relaunch is started by your click). Timing knobs: `settle_seconds` (wait for the TUI before typing), `appear_timeout_seconds`, `between_seconds`.
-
-> When `rc`/`rename` are enabled, keystroke injection is **best on tilix** (like [click-to-focus](#reliable-terminal-focus)) and needs `xdotool` — it briefly **steals focus** while typing. Relaunch itself (the spawn) works anywhere: it goes through `scripts/claude-tracked` — found on your `PATH` or used straight from the repo — which uses `tilix -e` so the command runs even when a tilix server is already open.
-
-### Groups
-
-For a crowded board, organize sessions into **named, color-coded groups**. Each tile has a **▦** button that opens a small menu:
-
-- **▦ → New group from this** (prompts for a name) — or **Add to ▸ {group}** to join an existing one. A tile belongs to one group; members get a colored top accent.
-- On a grouped tile: **Rename group**, **Move to ▸ {other}**, **Remove from group**, or **Minimize group** — which folds the *whole* group into a single dock chip (swatch + name + member count + active dot + total 📬). Click the chip to expand it back.
-- The **▦ Groups** panel (top bar) lists every group to rename, recolor, minimize/restore, or ungroup.
-
-Groups are *logical* (members keep their own positions — they aren't auto-arranged) and persist across restarts.
-
-### 🧊 3D view
-
-Click **🧊 3D** in the top bar to lift the board into a 3D scene; click **🗔 2D** to come back. **2D is the default** and stays untouched — 3D is an optional view, and your choice (plus the last layout) is remembered.
-
-- **Navigate** — *drag* to orbit the camera, *scroll* to zoom. Click a card's **▶** to focus its terminal, or its tag chip to toggle Active/Passive, just like 2D.
-- **Cards always face you.** No matter how you orbit, every card is billboarded toward the camera so the text stays readable — depth and motion live in the *space between* sessions, never in the angle of the content.
-- **Groups become places.** Cards carry their group color (border + glow), and group members physically **cluster together** in the scene. The glowing **bus core** sits at the center with wires fanning out (solid = active, dashed = passive), pulsing on each message.
-- **Three layouts** (switcher floats at the bottom):
-  - **Carousel** *(default)* — sessions on a ring you spin through; the front card is enlarged and in focus.
-  - **Orbital** — sessions orbit the bus core on a sphere; each group shares an arc.
-  - **Gallery** — your saved 2D positions lifted into depth (active sessions float forward, idle recede), with groups pulled into tight clumps.
-
-> The 3D view loads Three.js from a CDN the first time you open it (no build step). Offline or CDN blocked? It cleanly falls back to 2D with a notice — the 2D board never depends on it. Assign/rename/recolor groups from the 2D **▦** menu; 3D visualizes whatever's set.
-
-### 🕸 History (time-lapse)
-
-Click **🕸 History** in the top bar to replay your whole cross-session bus as an animated graph — *who talked to whom, and when*. It sweeps the live log **and every monthly archive**, so it's the full story, not just what's on screen now.
-
-- **Sessions are nodes** that fade in the moment each one first speaks, and stay (dimmed) once they go quiet — so you watch the network *populate* over weeks.
-- **Lines are mentions.** The bus is broadcast-only, so an edge means *one session named another* in its message — the real "who's addressing whom" signal. Line thickness = how *often* that pair talks; a **pulse-dot** flies the wire on each message, sized by the message's **length** (a fat packet for a multi-KB status report, a speck for a quick "hi").
-- **Three layouts** (switcher at the bottom-left):
-  - **Clusters** *(default)* — a live force layout. Mention-edges act like springs, so **frequent partners drift together** and clusters tighten as traffic accumulates during playback.
-  - **Ring** — every session on a circle in arrival order; stable and fully labeled.
-  - **Orbit** — radial by volume: the loudest sessions pulled to the center, quiet ones on the rim.
-- **👤 Human turns** *(2.4)* — toggle this to weave in the **human↔Claude** layer: a **you** node (labeled with your username) plus *your* prompts and each session's replies, read turn-by-turn from the `~/.claude/projects` transcripts and merged onto the same timeline. Human edges are **gold/dashed** to set them apart from the inter-Claude mention lines, so you can watch a day of work flow — *a prompt fires to a session, it posts to the bus, another replies*. In **Clusters** layout the sessions you talk to most drift in toward you. (Turn-level: each exchange is one prompt + one reply, not every streaming chunk. Only *genuine* typed prompts count — harness injections like system-reminders, slash-commands, and auto-compact summaries are filtered out.)
-- **🔬 Drill-down** *(2.5)* — with Human turns on, **click a session node** and watch the whole **you↔session working relationship** replay: a **you** node fires each of your prompts into the central session node, which **explodes outward** into the work it did — the **files** it touched (a deduped halo, read = blue / edited = orange, growing with each touch), the **sub-agents** it spawned (Agent/Task, labeled by type), and every **tool call** firing a pulse + ticking a live counter (`Bash ×N · Grep ×N · …`). `tool_result` failures tint red. Hit **🔍 Focus prompt** to isolate a single exchange at a time (the `● focused ✕` chip returns you to the whole relationship). Its own play/scrub/speed controls; **← Back** to the timeline.
-- **🧊 3D** *(2.8)* — toggle to **rotate the whole graph in space**: drag to orbit, and it idles with a gentle spin. Each layout gains real depth — **ring** tilts and spins, **orbit** lifts into a **dome** (loud sessions centered/high), **clusters** spreads into a 3D cloud — so you can see a tangle of links from any angle. Still pure SVG (a hand-rolled projection, no WebGL); 2D stays the default.
-- **Drive it** — play/pause, drag the **scrubber** anywhere, and pick a speed (**0.25× / 0.5× / 1× / 2× / 5×**). A live clock shows the date as history unspools.
-
-> Pure SVG, no dependencies — `heatmap.js` (and `drilldown.js`) are lazily loaded on first open, so (like 3D) they can never affect the 2D board. Read-only: it just visualizes the bus log + transcripts you already have. The human layer reads the same `*.jsonl` Conductor already tails for live previews; older turns past a cap are trimmed (the count is shown, never silently dropped).
-
-### Click a tile
-
-Raises that session's terminal window. See [Reliable terminal focus](#reliable-terminal-focus) for the trick that makes this work cleanly when you have many sessions in one terminal app.
-
-### Click the 📬 bubble
-
-Runs `/msg-check` *inside that live Claude* — it raises the window and types the command for you. Behavior is configurable so you don't clobber a Claude mid-task (see below).
-
-### Bus tile
-
-A central tile shows recent cross-session traffic. SVG lines fan out to every session that's on the bus and animate on each message. The line style tells you *how* a session is on the bus (see the legend, bottom-left):
-
-- **Active** (solid) — wired to the bus hooks, so it's **auto-notified** of new messages and receives broadcasts.
-- **Passive** (dashed, dim) — has used the bus manually (`/msg-send` / `/msg-check`) but isn't auto-notified, so it **won't see broadcasts** unless you Ping it. (These are sessions outside `bus.sh`'s hook whitelist — a deliberate scoping so the bus doesn't pester unrelated sessions.)
-
-### Active / Passive
-
-Click a tile's **tag chip** to toggle that session between **Active** (auto-notified) and **Passive** (manual only) right from the dashboard. Conductor writes the membership to `~/.claude/bus-state/active-tags`, and `bus.sh` reads it — so the change takes effect on that session's **next prompt** (promote a throwaway session into the team, or stop pestering one). The list seeds from your existing active set on first toggle, so nothing changes until you click.
-
-> Requires the data-file-aware `bus.sh` (the shipped [`bus/bus.sh`](bus/bus.sh) reads `active-tags`, falling back to its built-in `BUS_WHITELIST` when the file is absent). If you wired up the bus before this, re-copy `bus/bus.sh`.
-
-### 🎛️ Shared-resource coordination
-
-If several of your Claudes share a scarce resource — one GPU, a dev board (an
-IQ9 EVK, …), any single-holder rig — the bus can arbitrate it so they
-**coordinate themselves and you never have to be the middleman.** Each resource
-is a named cooperative *lease* (state in `~/.claude/bus-state/resources/<name>/`,
-atomic via `flock`), and it has four parts:
-
-1. **Reserve / release, from any session** — slash-commands the Claudes run, with
-   the resource named: `/reserve <name> <dur> <soft|hard> ["job"]`, `/res-status`
-   (read-only — all resources at once), `/release <name>`, `/keep <name> <dur>`,
-   `/res-request <name>`, `/res-pass <name>`. (`/gpu-*` still works as an alias for
-   the `gpu` resource.) Nobody has to ask anyone: the current holder of every
-   resource is **injected into each session's per-prompt context** automatically.
-2. **Two honest hold modes** — the signal that makes it work:
-   - **soft** — *"I've got it + code/board set up, but I'll drop it if you need it."* Preemptible; `/res-request` nudges the holder.
-   - **hard** — *"mine until my job's done or you stop me."* Not preemptible; requesters queue. Leases carry a duration and **auto-expire**, so a forgotten hold frees itself.
-3. **A queue with a grace-hold hand-off** *(new in 2.15)* — can't have it now? `/res-request` puts you in a **FIFO queue** instead of polling. When the holder releases (or the lease expires, or an idle soft lease is reclaimed), the **next in line is automatically offered** the resource — it's *held for them* for a grace window (~15m) to `/reserve` (claim) or `/res-pass` (skip → next); if they don't respond it auto-passes. And the moment it's offered, **Conductor injects `/msg-check` into that session** so it wakes and sees "🎉 you're up" in real time (a bus message is always posted too, so an untracked session still learns on its next prompt). No polling, no you-in-the-middle.
-4. **An idle watchdog** — a small headless daemon ([`bus/resource-watchdog.sh`](bus/resource-watchdog.sh), run via `systemd --user`) watches every held lease. It judges *idle* by **`nvidia-smi` utilization** for the GPU, and by the **`/keep` heartbeat** for other resources (run `/keep` while you're actively using a board). Past a threshold it **auto-nudges the owner** (naming who's next in the queue) and **auto-reclaims an idle `soft` lease** — handing it to the next in line — while a `hard` lease is only ever checked in on, never force-released. And because a bus message only reaches a session through its *per-prompt hook*, an
-idle holder would never actually read the nudge aimed at it — so Conductor **wakes
-the holder** (injects `/msg-check`) when the watchdog nudges it, once per idle spell
-and never mid-task. The watchdog is also what fires the grace-hold auto-pass and expiry hand-offs above, and it **reaps orphaned leases after a reboot** — a lease is a file, so it outlives the session that took it; one acquired before the kernel's boot time has a provably dead owner, so it's handed to the next in queue (or freed) instead of blocking the resource until it expires.
-
-Conductor also **spots abandoned leases** *(new in 2.16)*: it knows which sessions
-are live, so a lease held by a session that's no longer running gets flagged on its
-tile (`⚠ owner offline 12m`) with a **reclaim** button that hands the resource to
-the next in queue (or frees it). It never reclaims on its own — a session can be
-closed and relaunched, so the call is yours. (After a *reboot* the watchdog doesn't
-need to guess: a lease older than the boot is provably orphaned, and it's reaped
-automatically.)
-
-Conductor **visualizes** each shared resource as a live tile on the board: the
-holder (soft = amber / hard = red dot, offered = blue pulse), a ticking countdown,
-the watchdog's idle warning, the **queue** (`⏳ N queued`), and the job note. The **🎮 GPU tile** additionally
-shows the GPU name + `nvidia-smi` utilization bar + memory (it appears whenever
-`nvidia-smi` is present); board tiles appear once the resource has been reserved.
-
-> Full command reference + install (the daemon, the slash-commands, thresholds)
-> is in the bus docs: [**Resource reservation**](bus/README.md#resource-reservation-shared-gpu-boards-any-single-holder-rig).
-
-### 🔗 Autonomy windows ("let them talk")
-
-Auto-delivery (the 📨 wake) only fires when *you're not the one at the keyboard* —
-by default a quiet session parked at its prompt is treated as **attended** (you
-might be typing there), so it's left alone. That's the right call when you're
-present and exactly what forces hand-clicking when you're not. An **autonomy
-window** is a scoped, time-boxed way to say *"I'm away from these keyboards — let
-them wake each other"*:
-
-- Click **🔗 Let them talk** in the top bar, click the tiles to include (a pulsing
-  ring → a green ✓), pick a duration, and go. On the phone, tick the members from a
-  list. Green connectors show the live window on the board.
-- **What it lifts, and what it never lifts:** it lifts only the *attended* guard —
-  a **busy** Claude mid-task is still never interrupted. Only **directed** mail
-  (`to:<tag>`) wakes anyone, so even a 30-member window can't storm itself; a
-  non-member can never wake you; and the window **expires** on its own. The
-  time-box is the safety property.
-
-### 🩺 Fleet-health signals
-
-Five fleet-health signals a plain dashboard glance misses. Three are states an
-unread-message **count** cannot tell apart — *"deliberating"*, *"has nothing to say"*,
-and *"isn't running"* are all the same number going up — plus one for a session that's
-**alive but unreachable**. Conductor surfaces each directly (found by *running* a real
-fleet, v2.35–2.36):
-
-- **🪪 Identity collision** — the bus tag is derived from a session's directory, so
-  **two** Claudes in one repo post under **one** name and become indistinguishable.
-  Conductor counts live `claude` **processes** per directory (not deduped records —
-  the dedup is exactly what hid it) and, on a clash, shows a card with **what each
-  session is doing** (last activity + a preview), because *"one active 9m ago
-  building X, one 31m ago on Y"* is a decision and a bare repeated name isn't.
-- **💀 Dead-reader alarm** — a tag **others are actively addressing** that has
-  **itself posted nothing for hours** is a reader that may no longer exist, with
-  mail piling up behind it. Conductor annotates it live/dead (no process + an open
-  ask ⇒ a human must relaunch it) and surfaces it on the desktop and phone. *A
-  watcher whose absence is silent is not a watcher.*
-- **🕸 Phantom-stall fix** — the mutual-stall detector now draws a wait-for edge
-  **only** when *A asked B a question B hasn't answered* (a real open ask), never
-  merely because *B has unread mail*. On a fleet where a message often names 5–10
-  recipients, a session that's just **cc'd** is no longer threaded into a stall it
-  has no part in.
-- **📵 Lost-`/RC` alarm** *(2.36)* — a session that's **alive but dropped its
-  remote-control bridge** vanishes from the phone's Claude app and *looks* crashed —
-  which is how you end up launching a replacement and putting **two** sessions in one
-  repo. Conductor watches the *process*, so it says *"alive, lost `/RC` Nm ago —
-  reconnect, don't relaunch."* Fires only on lost-it (was bridged, aged past a
-  threshold), so it isn't noise; the relaunch guard's refusal also names the live one.
-
-- **📪 Not reading its mail** *(2.41)* — a **live** session sitting on mail addressed to
-  it that it hasn't read in hours. The obvious version of this alarm is a firehose, and
-  that was **measured before shipping it**: raw cursor age fires on **36 of 36** cursors
-  here and **17 of 17** live sessions — a lagging cursor is the *normal* state of a
-  session nobody is talking to. So the trigger is **harm, not housekeeping**: mail
-  *addressed to you*, unread past a threshold. On the same snapshot that fires on **7**.
-  A mass-cc doesn't count — being cc'd is not a debt.
-
-Conductor pages your phone (Web Push) on exactly **two** things — a session blocked
-on a *question*, and a *gated push*. Dead-reader is a surfaced signal, not a page,
-by default (a third alarm is an opt-in — `[bus].page_dead_readers`).
-
-### 🔒 The two hard controls — push gate & persistence gate
-
-Everything else Conductor does toward Claude is a nudge; these two are enforced
-**gates**, and they guard the same property: **an act whose consequences outlive
-the session that committed it.**
-
-- **🔐 Push gate** — nothing reaches a repo without your tap. A Claude Code
-  `PreToolUse` hook denies a `git push` unless a valid one-per-push approval token
-  exists; the denial files a request into Conductor's inbox (desktop + phone), you
-  approve in one click, and the token is consumed on use. Commits stay free — only
-  pushes are gated — and it's an instant no-op for any non-push command. A session
-  can also `/push-propose` (*"ready, or keep digging?"*) so you decide **with** the
-  commits and its reasoning in front of you.
-
-  **The three steps** *(2.41)* — printed by the gate itself at the moment it stops a
-  session, so nobody has to be told and nobody improvises:
-
-  1. **Finish committing, then attempt.** Being denied *is* how the request reaches you.
-     A commit made *after* the request invalidates the approval — correctly: you approved
-     a tip, and the tip moved.
-  2. **Tell you once, then wait.** *Never* ask permission first — that is the whole loop:
-     you say yes, there is nothing to tap because nothing is filed, the push is denied,
-     and you tap anyway. Two of your interactions where one would do.
-  3. **Re-run, verify it landed, report the sha.** Approved is not pushed.
-
-  Two accounting bugs that used to eat taps went with it: a push the remote **rejects**
-  no longer spends the approval (the hook predicts a non-fast-forward from the remote sha
-  and refuses *without consuming*), and a **clean rebase keeps** it — the grant is pinned
-  to `git patch-id`, invariant across a rebase exactly when the diff is unchanged. A
-  rebase whose conflict resolution *altered* a diff still asks again.
-- **🔒 Persistence gate** — the same shape for a *capability* that outlives the
-  session: writes to `~/.claude/bin`, `settings.json` (a hook there is fleet-wide
-  code on every tool call), systemd units, crontabs. The grant is bound to the
-  **action**, not conveyed in prose — *"Kyle approved this"* in a message is still a
-  deny. It ships **disarmed**, and there's a **plain-terminal escape hatch** so a
-  hook can never lock you out of your own machine. Full detail:
-  [`docs/PERSISTENCE_GATE.md`](docs/PERSISTENCE_GATE.md).
-
-A related lighter-weight control is **🛑 retraction** — a session that told another
-*"do X"* and realized it's wrong runs `/retract` (or `/supersede`); the recipient is
-woken **immediately, even mid-task**, and sees a loud warning before it acts.
-
-### ✉ Compose
-
-Click **Compose** in the top bar to send your own message on the bus — like email for your sessions. You're a first-class sender (tagged `[operator]` by default; set `bus.sender_tag` in `settings.toml` to your name).
-
-- **All sessions** (default) — a broadcast everyone sees.
-- **Specific sessions** — uncheck "All" and pick recipients. The message is soft-addressed with a leading `@to [tag] …` line, so receivers (and the dashboard's connection-line animation) know who it's for. It's still on the shared log; addressing is advisory, not private.
-- **Ping recipients** — also injects `/msg-check` into the chosen sessions so they read it immediately (specific recipients only — broadcast-ping would steal focus across every window). `Ctrl/⌘+Enter` sends.
-
-> Sending makes Conductor a *writer* on the bus (it still never touches Claude's own state). Requires the markdown bus adapter.
-
-### ⚙ Settings
-
-Theme, connection lines (incl. **Lines behind tiles** to drop the wires behind the tiles for a cleaner board — each wire still stays anchored to its own tile via a plug + stub drawn on top), animations, rescan cadence, and the **bus-bubble click policy**:
-
-| Policy                                      | Behavior                                                                                      |
-| ------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| **Confirm if busy, inject if idle** *(default)* | Inject silently when idle; confirm first if the session looks busy (writing in the last 30s). |
-| **Always inject**                           | Type `/msg-check` immediately, regardless of state.                                           |
-| **Block while busy**                        | Badge is dimmed/non-clickable while busy; injects only when idle.                             |
-| **Always confirm**                          | Ask before every injection.                                                                   |
-
-> ⚠️ "Busy" is inferred from `jsonl` activity + CPU. A Claude blocked on a long, quiet tool call can still look idle, so this guard *shrinks* the risk of clobbering rather than eliminating it. Use *Always confirm* if you want a prompt every time.
-
----
-
-## Cross-Session Bus
-
-> *Optional, but the killer feature.*
-
-The 📬 features ride on a **shared markdown message log**. Claude sessions append to it with `/msg-send` and read it with `/msg-check`; hooks make each session aware of new messages. Conductor tails the same log to drive the bus tile.
-
-### Setup
+Conductor works fully without it — tiles, focus, the launcher. The bus adds messaging between sessions: a shared markdown log that sessions append to with `/msg-send` and read with `/msg-check`, made visible by hooks. Run this **from a plain terminal**, not from inside a Claude session (the persistence gate blocks these writes from a session, by design):
 
 ```bash
 install -Dm755 bus/bus.sh ~/.claude/bin/bus.sh
-cp bus/commands/*.md ~/.claude/commands/
-
-# Then merge bus/settings.hooks.example.json into ~/.claude/settings.json
+mkdir -p ~/.claude/commands && cp bus/commands/*.md ~/.claude/commands/   # the slash commands
+sed "s|/home/YOU|$HOME|g" bus/settings.hooks.example.json                 # merge the output into ~/.claude/settings.json
 ```
 
-Point Conductor at the log in the `[bus]` section of `settings.toml`. Full setup docs and format spec:
+- If your repos don't live under `~/Documents/GitHub` (the default), `export BUS_PROJECTS_ROOT=~/code` (or wherever) so each session gets a clean tag.
+- Restart open Claude sessions so they load the hooks, then check: `~/.claude/bin/bus.sh send "hello" && ~/.claude/bin/bus.sh check`.
 
-- 📖 [`bus/README.md`](bus/README.md) — install + slash commands + **🎛️ resource reservation** and **📦 agentic orders**
-- 📖 [`docs/claude-bus.md`](docs/claude-bus.md) — message format spec
-
-Beyond messaging, the bus can also **arbitrate a shared GPU** so sessions
-self-coordinate access (reserve/release with soft/hard holds, auto-expiry, and
-per-prompt awareness of who holds it) — see the [GPU reservation](bus/README.md#resource-reservation-shared-gpu-boards-any-single-holder-rig) docs.
-
-It also carries **📦 agentic orders** — one session asks another to *produce*
-something (a rendered image, a report, a code change) as a durable order with a
-**verified-landing** lifecycle: the service reads the artifact back before it can
-say *delivered*, and the requester owns the acceptance test. `bus.sh order` /
-`/order` — see the [orders](bus/README.md#agentic-request-delivery-orders) docs.
-
-### What if a session isn't on the bus?
-
-Conductor works fully without it. Session discovery comes from OS process state, not from the bus, so:
-
-- ✅ An un-wired Claude still appears as a normal tile — status, preview, message count, click-to-focus all work
-- ❌ It just won't show a 📬 badge or a connection line to the Bus tile
-
-This is actually useful — if you wire up some sessions and leave others out, the dashboard shows at a glance which ones are on the bus and which are silent.
+Full guide — tags, resource reservation, agentic orders, the message format: [`bus/README.md`](bus/README.md) · [`docs/claude-bus.md`](docs/claude-bus.md). A session that isn't on the bus still gets a normal tile; it just has no 📬 badge or wire.
 
 ---
 
-## Reliable Terminal Focus
+## Phone access
 
-A single terminal server (Tilix, `gnome-terminal-server`) owns all its windows, so they share one PID — and a tiled window shows only the *active* tile's title at a time. So matching purely on **window title** is ambiguous: a backgrounded tile has no title of its own on the window, and a stray same-named terminal (e.g. a shell `cd`'d into the project dir) can win the match.
-
-**Tilix gets an exact path.** Each tilix tile stamps its shell with a `TILIX_ID` env var, so Conductor reads that UUID from the Claude process and tells tilix (over its `com.gexperts.Tilix` D-Bus interface) to focus that precise tile — **raising the window *and* switching to the exact tile**, even inside a combined/tiled window where several Claudes share one window. No wrapper, no setup; it just works if you run Claude inside tilix.
-
-> Scope: this exact-tile path is **tilix-only** and only tested on tilix. Other terminals fall through to the title-matching path below — no regression, just less precise.
-
-For non-tilix terminals, focus falls back to **window-title matching**, and the optional `claude-tracked` wrapper in [`scripts/`](scripts/) gives each Claude its own window with a unique X11 title so focus and 📬 injection target precisely:
+The server never leaves `127.0.0.1`; [Tailscale](https://tailscale.com)'s `serve` proxies it onto *your own* tailnet, so only your devices can reach it.
 
 ```bash
-sudo install -m755 scripts/claude-tracked /usr/local/bin/
-claude-tracked api-server --resume
+sudo tailscale set --operator=$USER                      # one-time
+tailscale serve --bg --https=443 http://127.0.0.1:8765
 ```
 
-Without either the tilix path or the wrapper, focus is best-effort: Conductor raises the terminal window owning the Claude PID, but can't switch between tabs packed into one window.
+Then open `https://<host>.<tailnet>.ts.net/m` on your phone (needs MagicDNS and HTTPS certificates enabled in the Tailscale admin console). Set `[server].auth_token` in `settings.toml` once it's reachable. Notifications, the token, and the PWA: [docs/INSTALL.md](docs/INSTALL.md#phone-access--notifications).
+
+| The phone console | |
+| :---: | :--- |
+| <img src="assets/screenshot-phone-fleet.png" width="300" alt="The phone Fleet tab — a dormant-sessions row at the top, then live sessions sorted by what needs you" /> | **Not the board shrunk down** — a console built for the 30-second "does anything need me?" glance: sessions sorted by what needs you, a decision queue to answer a Claude's question, a push-approval inbox, and the launcher. It pages you on exactly two things — a session blocked on a question, and a `git push` waiting for you. *Sample data.* |
 
 ---
 
 ## Configuration
 
-Edit `settings.toml` (copied from `settings.example.toml`). Key knobs:
+`settings.toml` (copy from `settings.example.toml`; every key has a default). `make dev`/`make run` take the port from `PORT=`; the native app and the `conductor` command read `[server].port`.
 
 | Setting                       | What it does                                                  | Default |
 | ----------------------------- | ------------------------------------------------------------- | ------- |
@@ -627,77 +149,15 @@ Edit `settings.toml` (copied from `settings.example.toml`). Key knobs:
 | `bus.sender_tag`              | Your tag when you **Compose** a message (e.g. your name)      | `operator` |
 | `[bus.tags]`                  | Map a project dir → bus tag, mirroring your `bus.sh` (labels tiles **and** keys the 🕸 History human layer to the right node) | — |
 | `ui.end_fadeout_seconds`      | How long ended-session tiles linger after exit                | `30`    |
-| `[relaunch]`                  | 💤 Dormant-dock relaunch: `rc` (auto-run `/rc` remote-control, **default on**), `rename` (auto-`/rename`, **default off**), `settle_seconds` (wait before typing), `appear_timeout_seconds`, `between_seconds` | `rc=true` · `rename=false` · `2.5` |
+| `[relaunch]`                  | After a relaunch: `rc` auto-runs `/rc` (remote control, **on**), `rename` re-issues `/rename` (**off**), plus timing knobs | `rc=true` · `rename=false` |
 
 ---
 
-## What's stored, and where
+## Privacy and safety
 
-Conductor keeps **no central database** — state lives in two clearly separated places:
+It's **local by default, and read-only toward Claude** — it watches Claude's `~/.claude/projects/*.jsonl` logs and process state, and never edits your files or conversations. The server binds only to `127.0.0.1`, with **no telemetry, no analytics, and no uploads of your data.**
 
-**Your browser (localStorage, per-origin `127.0.0.1:8765`)** — all the visual/layout customization. Written to disk by the browser, so it survives closing the tab, restarting the browser, restarting the server, and rebooting:
-
-| Key | Holds |
-| --- | --- |
-| `conductor.prefs.v1` | theme, connection-line visibility, lines-behind, flow animation, bus-bubble click policy |
-| `conductor.positions.v2` | tile positions **and sizes** |
-| `conductor.minimized.v2` | which tiles are minimized to the dock |
-| `conductor.parkedDismissed.v1` | dormant-dock chips you've dismissed (auto-cleared when that folder runs live again) |
-| `conductor.groups.v2` | your groups (names, colors, members, collapsed state) |
-| `conductor.heatmapLayout` | 🕸 History layout (clusters / ring / orbit) |
-| `conductor.heatmapHuman` | 🕸 History — whether the 👤 Human layer is on |
-
-Layout/minimize/group state is keyed by **project directory**, so a session re-attaches to its saved spot, size, and group whenever it runs in the same directory — across reboots and even fresh (non-resumed) sessions. Conductor doesn't prune offline tiles' layout, so it waits for them to return. Clear it with **Reset layout**, **Ungroup**, or your browser's site-data tools.
-
-**On your machine (the bus), not the browser:** the cross-session bus log (`~/Documents/claude-bus/messages.md`), unread state (`~/.claude/bus-state/`), and the active/passive whitelist (`~/.claude/bus-state/active-tags`). The Conductor server itself is **in-memory and restart-clean** — it holds no persistent state of its own.
-
----
-
-## 🧯 Disaster recovery
-
-*Optional.* The Conductor **server** is restart-clean, but the fleet you've built up — the bus tooling, coordination state, per-session memory, and each session's conversation — lives in `~/.claude` and would be lost if the machine died. Disaster recovery backs that up off-box and gives you a one-screen rebuild on a new machine.
-
-**What's backed up, and how often:**
-
-| What | Where | Cadence |
-| --- | --- | --- |
-| The `~/.claude` **coordination layer** — bus tooling, `bus-state/` (tags, members, leases, watermarks), per-session memory, hooks, systemd units | a **private `fleet-backup` GitHub repo** | **hourly** |
-| Your session **transcripts** (the `claude --continue` fuel, ~1 GB) | a compressed **release asset** on that repo | **daily** |
-| A **roster** (`fleet-roster.json`) — every session's cwd, git remote/branch, tokens, transcript | the same repo | with each snapshot |
-
-Backups run as `systemd --user` timers, so they're automatic and survive reboots. Big model files are captured as a re-download **manifest**, not blobs.
-
-**Restoring on a new machine** (same home path, e.g. `/home/kyle`):
-
-1. `git clone` the `fleet-backup` repo and run **`./bootstrap.sh`** — it restores `~/.claude`, extracts the transcripts, sets up Conductor, and starts it, then stops at the two things it can't automate (`claude /login`, `tailscale up`).
-2. Open Conductor and use the **🧯 Reconstitute** screen (on the desktop *or* your phone at `/m`) to pick which sessions to bring back. For each, it clones the repo (if needed) and resumes the conversation with `claude --continue`.
-
-The manual, step-by-step equivalent lives as `RESTORE.md` inside the (private) backup repo. Note DR backs up the **bus/coordination state and transcripts** — not the in-memory Conductor server (which needs no backup; it rebuilds itself from what it observes).
-
----
-
-## How It Works
-
-For the curious:
-
-1. **SessionScanner** enumerates Claude Code processes via `psutil`, resolves `/proc/<pid>/cwd`, and walks `~/.claude/projects/<encoded>/` to find each session's `*.jsonl`.
-2. **ActivityWatcher** uses `watchdog` (inotify on Linux) to react to jsonl writes without polling.
-3. A **WebSocket hub** at `/ws` fans updates out to the browser: a session + bus update every `scanner.interval_seconds` (3 s by default), plus an immediate per-session push whenever a jsonl write fires (inotify), and a bus event as each message arrives. Each client gets a **full snapshot on connect**; after that the periodic frame carries only what moved — sub-keys that hadn't changed (`parked`, `members`, the fleet-health rows) are omitted, and **absent means "unchanged, keep yours"**, never "empty". A full frame is re-sent every 60 s so a client can never diverge for long, and asset-card bodies — 99% of the resources payload, and static — are fetched on demand from `GET /api/resources/{name}/card` when you open a card rather than riding every tick *(2.39)*.
-4. The **frontend** renders one tile per session — plain JS, no build step.
-5. **BusAdapter** tails the message-bus log; the Bus tile shows recent traffic and SVG lines fan out to sessions on the bus.
-6. **WindowMapper** raises the right terminal window on click and types `/msg-check` into a session when you click its 📬 — focusing the exact tilix tile via `gdbus` + `TILIX_ID` when available, else falling back to `wmctrl`/`xdotool` title matching.
-7. **Relaunch** (💤 dormant dock) discovers closed-but-known folders (`discover_parked_projects` — history on disk, no live process), and `POST /api/relaunch` spawns `claude --continue` there via `claude-tracked`, then polls the scanner for the new session — and, **when `[relaunch].rc` is on** (the default), types `/rc` into it once its terminal is up so it comes back remote-controllable, then presses **Esc** to close the Remote Control menu `/rc` opens *(2.39 — without that the resumed session sits blocked on a modal until a human answers it)*. Both keystrokes **retry until you stop typing**: Conductor refuses to inject while a human is active at the machine (tilix panes share one X11 window, so a racing focus splits keystrokes across tiles), and a relaunch is triggered *by* you clicking a button — so the first attempt lands inside that refusal window almost every time. (`rename` injection is off by default — it's timing-flaky and clobbers a session's own title.)
-8. **🕸 History** is served on demand: `GET /api/bus/heatmap` parses the bus log + archives into a time-ordered mention graph; `?human=1` merges in turn-level prompt/reply events from the transcripts; `GET /api/exchange` extracts one prompt's tool/file/agent fan-out for the 🔬 drill-down. All read-only, parsed off-thread.
-
-Full design doc: [`CONDUCTOR_SPEC.md`](CONDUCTOR_SPEC.md)
-
----
-
-## Design Notes
-
-- **Single-host only.** Binds to `127.0.0.1`.
-- **No persistence.** State is in-memory and restart-clean.
-- **No build step on the frontend.** Edit `frontend/*.js` and reload.
+The only things that ever leave the box are ones you explicitly opt into: the 3D view fetches Three.js from a CDN; **phone notifications** (Web Push) send a signed alert through your browser's push service (Google/Mozilla/Apple); and **phone/remote access** rides *your own* [Tailscale](https://tailscale.com) tailnet (WireGuard, device-to-device — never exposed on the LAN). And the few *actions* Conductor can take are all **external and user-triggered** — raise a terminal window, type `/msg-check` into a session (the nudge that makes it read its waiting bus messages), answer a Claude's on-screen question from your phone, append to the separate bus log, or relaunch a closed session — never a silent write to Claude's own state.
 
 ---
 
@@ -707,10 +167,10 @@ Full design doc: [`CONDUCTOR_SPEC.md`](CONDUCTOR_SPEC.md)
 Check that `claude` is actually running and that `~/.claude/projects/` has recent jsonl files. Drop `scanner.interval_seconds` to `1` temporarily to confirm discovery is happening.
 
 **Clicking a tile doesn't focus the terminal.**
-On **Tilix**, focus is exact out of the box (via `gdbus` + `TILIX_ID`) — make sure `gdbus` is on PATH (it ships with GLib). On other terminals, make sure `wmctrl` is installed; for tabbed/tiled non-tilix terminals, install the `claude-tracked` wrapper so each session gets a unique window title. See [Reliable Terminal Focus](#reliable-terminal-focus).
+On **Tilix**, focus is exact out of the box (via `gdbus` + `TILIX_ID`) — make sure `gdbus` is on PATH (it ships with GLib). On other terminals, make sure `wmctrl` is installed; for tabbed/tiled non-tilix terminals, install the `claude-tracked` wrapper so each session gets a unique window title. See [Reliable terminal focus](docs/USING.md#reliable-terminal-focus).
 
 **📬 bubbles never appear.**
-The bus isn't wired up. See [Cross-Session Bus](#cross-session-bus). Sessions work fine without it — they just won't have bubbles or connection lines.
+The bus isn't wired up. See [Wire up the bus](#wire-up-the-bus-optional). Sessions work fine without it — they just won't have bubbles or connection lines.
 
 **`/msg-check` doesn't inject when I click 📬.**
 Check that `xdotool` is installed and the session's terminal window is on the current desktop/workspace.
@@ -725,18 +185,20 @@ sudo hwclock --systohc                  # write the correct time to the RTC
 ```
 No restart needed once the token refreshes. `/status` shows the session's current auth method if you're unsure.
 
+More: [How it works](docs/USING.md#how-it-works) · full design in [`CONDUCTOR_SPEC.md`](CONDUCTOR_SPEC.md).
+
 ---
 
 ## Maintainer
 
-Built and maintained by **Kyle Fox** ([@kylefoxaustin](https://github.com/kylefoxaustin)).
-
-Got an idea, found a bug, or want to share how you're using it? Open an [issue](https://github.com/kylefoxaustin/claude-connect/issues) or ping me on GitHub.
+Built and maintained by **Kyle Fox** ([@kylefoxaustin](https://github.com/kylefoxaustin)). Ideas, bugs, or how you use it: open an [issue](https://github.com/kylefoxaustin/claude-connect/issues).
 
 ## Contributing
 
-Issues and PRs welcome. See [`CLAUDE.md`](CLAUDE.md) for the agent-friendly contributor guide.
+Issues and PRs welcome. Dev setup is the Quick Start with `pip install -e ".[dev]"`, then `make test`. [`CLAUDE.md`](CLAUDE.md) is the brief the project's own Claude sessions work from.
+
+<sub>The project and its Python package are **Conductor**; the repo keeps its original name, `claude-connect`, so existing clone URLs keep working.</sub>
 
 ## License
 
-[MIT](LICENSE) · © 2026 Kyle Fox. Free for any use — personal or commercial — with no warranty. Do whatever you like with it; acknowledgements are welcome of course.
+[MIT](LICENSE) · © 2026 Kyle Fox. Free for any use, personal or commercial, with no warranty.

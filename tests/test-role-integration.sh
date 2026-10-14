@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Integration test: role pre-check wired into persist-gate.sh. Jailed.
 set -u
-GATE=~/Documents/GitHub/claude-connect/bus/persist-gate.sh
+GATE="$(cd "$(dirname "$0")/.." && pwd)/bus/persist-gate.sh"
 J="$(mktemp -d)"
 export BUS_STATE_DIR="$J/bus-state"; mkdir -p "$BUS_STATE_DIR"
 CH="$J/claude"; mkdir -p "$CH"

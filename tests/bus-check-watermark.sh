@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # JAILED test of the bus.sh `check` watermark fix. Touches nothing live: its own HOME, its own bus.
 set -u
-BUS=~/Documents/GitHub/claude-connect/bus/bus.sh
+BUS="$(cd "$(dirname "$0")/.." && pwd)/bus/bus.sh"
 J="$(mktemp -d)"
 export HOME="$J/home"
 export BUS_PROJECTS_ROOT="$J/no-such-projects-root"   # so cwd is not under it

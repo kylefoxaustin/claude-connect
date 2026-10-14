@@ -3,7 +3,7 @@
 set -u
 J="$(mktemp -d)"
 export MEMBERS_FILE="$J/members"
-. ~/Documents/GitHub/claude-connect/bus/member-registry.sh
+. "$(cd "$(dirname "$0")/.." && pwd)/bus/member-registry.sh"
 
 pass=0; fail=0
 ck() { if [ "$2" = "$3" ]; then echo "  OK  $1"; pass=$((pass+1)); else echo "  XX  $1 : got[$2] want[$3]"; fail=$((fail+1)); fi; }
