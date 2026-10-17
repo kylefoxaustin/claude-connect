@@ -179,6 +179,7 @@ CH = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(HOME, ".claude")
 #   settings.json  -> hooks: arbitrary code on every tool call in every session
 #   bin/           -> bus.sh, push-gate.sh — executed BY those hooks
 #   commands/      -> slash-commands: instructions injected into other Claudes
+#   git-hooks/     -> pre-push/pre-commit, run by EVERY git push/commit on the box (the push gate)
 # NOT gated: projects/ (transcripts), bus-state/ (leases, cards, coordination — written
 # constantly by everyone; gating it would break the fleet and protect nothing).
 # ⚠️ ONE SPELLING FOR EVERY PLATFORM, DECIDED HERE.
@@ -225,6 +226,10 @@ GATED_PREFIXES = [
     _norm(os.path.join(CH, "bin")),
     _norm(os.path.join(CH, "commands")),
     _norm(os.path.join(CH, "hooks")),
+    # git-hooks/ IS the push gate's real enforcer (global core.hooksPath -> pre-push). It was not
+    # listed, so on 2026-10-17 a session installed a new pre-push there with no prompt at all —
+    # the control that holds every push was itself writable by any session. Found by doing it.
+    _norm(os.path.join(CH, "git-hooks")),
 ]
 GATED_FILES_RE = re.compile(re.escape(CH) + r"/settings[^/]*\.json$")
 

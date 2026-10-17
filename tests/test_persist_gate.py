@@ -88,6 +88,16 @@ def test_writing_the_hook_dir_is_gated(env):
     assert edit(env, env["_root"] / "claude" / "commands" / "x.md") == DENIED
 
 
+def test_the_git_hooks_dir_is_gated(env):
+    """~/.claude/git-hooks is the global core.hooksPath: its pre-push IS the push gate. It was
+    missing from the gated prefixes, and a session replaced the live pre-push with no prompt."""
+    gh = env["_root"] / "claude" / "git-hooks"
+    gh.mkdir()
+    assert edit(env, gh / "pre-push") == DENIED
+    assert bash(env, f"install -m755 bus/git-hooks/pre-push {gh}/pre-push") == DENIED
+    assert bash(env, f"cat {gh}/pre-push") == ALLOWED          # reading it stays free
+
+
 def test_a_systemd_unit_and_a_cron_job_are_gated(env):
     assert bash(env, "systemctl --user enable tenant-watch") == DENIED
     assert bash(env, "crontab -e") == DENIED
