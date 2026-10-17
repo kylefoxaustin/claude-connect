@@ -147,6 +147,44 @@ fi
 #
 # Unknown remote sha (we have not fetched it) => we cannot predict, so we do not: fall through and
 # behave exactly as before. Being wrong here must never be worse than today's behaviour.
+#
+# ⚠️ A FORCED PUSH IS NOT A RACE. "Remote tip is not an ancestor" is true of a lost race AND of a
+# deliberate history rewrite, and this block could not tell them apart: qualcomm, 2026-10-16, had
+# Kyle's approval for a filter-repo purge, pushed with --force-with-lease=main:138a65f while
+# origin/main WAS 138a65f, and was told the remote "has moved". The only way past was --no-verify,
+# which skips the whole gate — a guard whose sole exit is disabling the gate is a bug in the guard.
+#
+# git does not tell a hook its flags, so we read them from the git process that ran us (found by
+# /proc/<pid>/exe, never by comm). A force is let past THIS block only when the remote tip ALSO
+# equals our remote-tracking ref — i.e. nobody pushed since we fetched, so we know exactly what we
+# are overwriting. A bare --force over a remote that moved is still a lost race and still refused.
+# Neither case skips approval: section 5 below still needs Kyle's token. No env override exists,
+# on purpose — a variable a session can set is a bypass, not a switch.
+_push_is_forced() {
+  local pid="$PPID" exe ppid a ispush i
+  for i in 1 2 3 4 5 6; do
+    case "$pid" in ''|*[!0-9]*|0|1) return 1 ;; esac
+    exe="$(readlink "/proc/$pid/exe" 2>/dev/null || true)"
+    if [ "${exe##*/}" = git ] && [ -r "/proc/$pid/cmdline" ]; then
+      ispush=0
+      while IFS= read -r -d '' a; do
+        if [ "$ispush" = 0 ]; then [ "$a" = push ] && ispush=1; continue; fi
+        case "$a" in
+          --) break ;;
+          --force|--force-with-lease|--force-with-lease=*) return 0 ;;
+          --*) ;;
+          -*f*) return 0 ;;                     # -f, or a short cluster like -fu
+          +*) return 0 ;;                       # a +refspec forces that ref
+        esac
+      done < "/proc/$pid/cmdline"
+      [ "$ispush" = 1 ] && return 1             # found the push process, and it is not forced
+    fi
+    ppid="$(sed -E 's/^.*\) [A-Za-z] ([0-9]+).*/\1/' "/proc/$pid/stat" 2>/dev/null || true)"
+    pid="$ppid"
+  done
+  return 1
+}
+FORCED=0; _push_is_forced && FORCED=1
 NEEDS_REBASE=""
 while read -r lref lsha rref rsha <&9; do
   [ -z "$lsha" ] && continue
@@ -163,11 +201,21 @@ while read -r lref lsha rref rsha <&9; do
   # precondition production lacks is a mirror.
   # We are about to talk to the remote anyway, so fetching one ref costs nothing we were not
   # already paying. If it still cannot be resolved, fall through unchanged — no prediction.
+  # Read what we LAST FETCHED before anything below fetches: the fetch two lines down updates the
+  # remote-tracking ref too, and comparing after it made every moved remote look already-known —
+  # a bare --force then clobbered a commit nobody had seen. The test's race control caught it.
+  fetched=""
+  case "$rref" in refs/heads/*)
+    fetched="$(git rev-parse -q --verify "refs/remotes/$REMOTE_NAME/${rref#refs/heads/}" 2>/dev/null || true)" ;;
+  esac
   if ! git cat-file -e "$rsha^{commit}" 2>/dev/null; then
     git fetch -q "$REMOTE_NAME" "$rref" 2>/dev/null || true
     git cat-file -e "$rsha^{commit}" 2>/dev/null || continue
   fi
   if ! git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null; then
+    if [ "$FORCED" = 1 ] && [ -n "$fetched" ] && [ "$fetched" = "$rsha" ]; then
+      continue                                  # deliberate rewrite over the tip we fetched
+    fi
     NEEDS_REBASE="$rref"
   fi
 done 9<<EOF
