@@ -30,7 +30,7 @@
     <header class="topbar">
       <div class="topbar-left">
         <h1><img class="app-logo" src="/static/logo.svg" alt="" width="26" height="26" />Conductor</h1>
-        <span class="token-total" id="token-total" title="Total tokens across all sessions on the board (output generated · total processed)"></span>
+        <span class="token-total" id="token-total" role="button" tabindex="0" title="Total tokens across all sessions on the board (output generated · total processed)"></span>
         <span class="waiting-total" id="waiting-total" title="Sessions with unread messages addressed to them — auto-delivered when idle"></span>
       </div>
       <div class="topbar-meta">
@@ -38,6 +38,7 @@
         <span id="session-count">0 sessions</span>
         <button id="view3d-btn" title="Toggle the experimental 3D view">🧊 3D</button>
         <button id="heatmap-btn" title="Replay the whole bus history as a time-lapse">🕸 History</button>
+        <button id="tokens-btn" title="Replay every session's token spend, day by day, as a time-lapse">🪙 Tokens</button>
         <button id="projects-btn" title="Lead-owned multi-session projects — watch the job DAG flow, members, escalations">🗂 Projects</button>
         <button id="compose-btn" title="Send a message on the bus">✉ Compose</button>
         <button id="compact-btn" title="Collapse all tiles to a compact size (keeps them all visible)">⊟ Compact</button>

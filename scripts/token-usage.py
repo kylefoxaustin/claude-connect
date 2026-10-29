@@ -23,30 +23,30 @@ import os
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from conductor.token_history import ReplyDedup, usage_records  # noqa: E402
+
 KEYS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
 
 
 def usage_of(jsonl: Path) -> tuple[dict[str, int], int]:
+    """Sum one transcript, counting each reply ONCE (Claude Code repeats a reply's usage on every
+    content-block line; summing lines over-counted ~2.4x until 2026-10-29)."""
     sums = {k: 0 for k in KEYS}
     turns = 0
     try:
-        text = jsonl.read_text(encoding="utf-8", errors="replace")
+        data = jsonl.read_bytes()
     except OSError:
         return sums, 0
-    for line in text.splitlines():
-        try:
-            o = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
+    dedup = ReplyDedup()
+    for mid, _ts, _cwd, u in usage_records(data):
+        d = dedup.delta(mid, u)
+        if d is None:
             continue
-        msg = o.get("message") if isinstance(o, dict) else None
-        u = msg.get("usage") if isinstance(msg, dict) else None
-        if not isinstance(u, dict):
-            continue
-        turns += 1
+        if d is u:
+            turns += 1
         for k in KEYS:
-            v = u.get(k, 0)
-            if isinstance(v, int):
-                sums[k] += v
+            sums[k] += d[k]
     return sums, turns
 
 

@@ -1649,7 +1649,7 @@ body.view-3d .dock { display: none !important; }
   .topbar-meta { flex-wrap: wrap; gap: 6px; }
   /* Bigger tap targets; hide layout-only controls that don't apply to a stack. */
   .topbar-meta button { min-height: 40px; padding: 6px 10px; }
-  #view3d-btn, #heatmap-btn, #groups-btn, #reset-layout-btn { display: none; }
+  #view3d-btn, #heatmap-btn, #tokens-btn, #groups-btn, #reset-layout-btn { display: none; }
 
   /* Push inbox: prominent, buttons comfortable to tap. */
   .push-inbox { margin: 8px; }
@@ -2424,3 +2424,33 @@ body.link-mode .tile-actions { visibility: hidden; }
 .ask-ft:focus{outline:2px solid var(--accent, #7c5cff);outline-offset:1px}
 .ask-actions{display:flex;gap:6px;margin-top:6px}
 .ask-err{font-size:.78rem;color:var(--status-ended, #e0655c);margin-top:2px}
+
+/* 🪙 Token history time-lapse (tokens.js) — rides the 🕸 overlay's chrome (.hm-*) ---------- */
+.tk-odo-big {
+  fill: #ffe08a;
+  font-size: clamp(34px, 6vw, 64px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.tk-odo-small, .tk-odo-day {
+  fill: var(--text-dim);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.tk-odo-day { fill: var(--text); font-size: clamp(14px, 2vw, 20px); }
+.tk-bar-name, .tk-bar-val {
+  font-size: 12px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  dominant-baseline: middle;
+  font-variant-numeric: tabular-nums;
+}
+.tk-bar-name { fill: var(--text); }
+.tk-bar-val { fill: var(--text-dim); }
+.tk-axis { stroke: var(--border); stroke-width: 1; }
+.tk-tick { fill: var(--text-dim); font-size: 11px; font-family: ui-sans-serif, system-ui, sans-serif; }
+.tk-peak { fill: #ffe08a; font-size: 11px; font-family: ui-sans-serif, system-ui, sans-serif; }
+.tk-cursor { stroke: #ffe08a; stroke-width: 1.5; opacity: 0.8; }
+#token-total { cursor: pointer; }
+#token-total:hover { color: var(--text); }

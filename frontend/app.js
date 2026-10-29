@@ -167,6 +167,33 @@ heatmapBtn.addEventListener("click", async () => {
   }
 });
 
+// 🪙 Token history time-lapse — same lazy-overlay discipline as 🕸 History. The topbar token
+// line opens it too: that is where you are looking when you wonder where the tokens went.
+let tokensMod = null;
+async function openTokens() {
+  try {
+    if (!tokensMod) tokensMod = await import("/static/tokens.js");
+    tokensMod.activate();
+  } catch (err) {
+    console.error("token history failed to load", err);
+  }
+}
+document.getElementById("tokens-btn")?.addEventListener("click", openTokens);
+const tokenTotalEl = document.getElementById("token-total");
+tokenTotalEl?.addEventListener("click", openTokens);
+tokenTotalEl?.addEventListener("keydown", (e) => { if (e.key === "Enter") openTokens(); });
+
+// The all-time figure for the topbar. Day-granular data, so every 5 minutes is plenty.
+async function refreshAllTimeTokens() {
+  try {
+    const r = await fetch("/api/tokens/history?summary=1");
+    const j = r.ok ? await r.json() : null;
+    window.conductorAllTimeTokens = j && j.ready ? j.all_time : null;
+  } catch (_) { /* the live sum still renders without it */ }
+}
+refreshAllTimeTokens();
+setInterval(refreshAllTimeTokens, 5 * 60 * 1000);
+
 // 🗂 Projects — the lead-owned multi-session view (Project Layer slice 4). Same lazy-overlay
 // discipline as History: a failure in projects.js can never touch the board.
 let projectsMod = null;

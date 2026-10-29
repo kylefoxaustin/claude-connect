@@ -682,9 +682,13 @@ function updateTokenTotal(state) {
       out += s.tokens.output || 0; total += s.tokens.total || 0; turns += s.tokens.turns; any = true;
     }
   }
-  elm.textContent = any ? `tokens: ${humanTok(out)} out · ${humanTok(total)} total` : "";
-  if (any) elm.title = `All ${(state.sessions || []).filter((s) => s.tokens && s.tokens.turns).length} sessions on the board, ${turns.toLocaleString()} turns\n`
-    + `output generated: ${out.toLocaleString()}\ntotal processed: ${total.toLocaleString()} (mostly cheap cache re-reads)`;
+  const all = window.conductorAllTimeTokens;     // set by app.js from /api/tokens/history
+  elm.textContent = (any ? `tokens: ${humanTok(out)} out · ${humanTok(total)} total` : "")
+    + (all ? `${any ? " · " : "tokens: "}all-time ${humanTok(all.output)} out` : "");
+  elm.title = (any ? `All ${(state.sessions || []).filter((s) => s.tokens && s.tokens.turns).length} sessions on the board, ${turns.toLocaleString()} turns\n`
+    + `output generated: ${out.toLocaleString()}\ntotal processed: ${total.toLocaleString()} (mostly cheap cache re-reads)\n` : "")
+    + (all ? `\nAll-time, every session ever: ${all.output.toLocaleString()} output · ${all.total.toLocaleString()} processed · ${all.replies.toLocaleString()} replies\n` : "")
+    + "\nClick for the 🪙 token history time-lapse";
 }
 
 function el(tag, props = {}, ...children) {

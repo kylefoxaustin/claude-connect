@@ -95,6 +95,7 @@ from .models import BusEvent, BusTopology, ParkedSession, SessionRecord, Status
 from .registry import attach_cards
 from .resources import resources_state, slim_resource_cards, touch_lease_activity
 from .services import read_services
+from .token_history import CACHE_NAME as TOKEN_HISTORY_CACHE, FIRST_SCAN_THROTTLE, TokenHistory
 from .tokens import TokenAccountant
 from .scanner import (
     YOU_TAG,
@@ -145,6 +146,7 @@ _WD_RENUDGE_BACKOFF_S = (300.0, 600.0, 1200.0)
 # every project competes for the same API ceiling as Kyle's own session and every autonomy window.
 # This is the concurrency control (the acute risk, §5e); the cumulative token meter is slice 5.
 _PROJECT_MAX_IN_FLIGHT = 3
+TOKEN_HISTORY_INTERVAL_S = 300.0   # 🪙 history rescan; it's a day-granular chart, minutes are plenty
 # And a busy-fleet guard: if this many sessions are already ACTIVE/WARM, don't admit more work.
 _PROJECT_FLEET_BUSY_CEILING = 8
 
@@ -584,6 +586,10 @@ class AppState:
         # real scan errors. An observability feature must never break the fleet.
         self._webpush_broken = False
         self.token_accountant = TokenAccountant()             # per-session token tally
+        # Every session ever, by day and project — the 🪙 history. Persisted (transcripts get
+        # cleaned up; the history shouldn't), scanned off-thread by _token_history_loop.
+        self.token_history = TokenHistory(settings.scanner.claude_home_path / "projects",
+                                          self.coord_root / TOKEN_HISTORY_CACHE)
         self._scan_misses: dict[str, int] = {}              # consecutive scans a session was absent
         self.recent_events: deque[BusEvent] = deque(maxlen=RECENT_EVENTS_MAX)
         self.bus_total = 0
@@ -591,6 +597,7 @@ class AppState:
         self._scan_task: asyncio.Task | None = None
         self._activity_task: asyncio.Task | None = None
         self._bus_task: asyncio.Task | None = None
+        self._tokhist_task: asyncio.Task | None = None
 
     async def start(self) -> None:
         # Idempotent: a second start() must NOT spawn a second scan loop. create_task doesn't
@@ -614,9 +621,10 @@ class AppState:
         self._scan_task = asyncio.create_task(self._scan_loop(), name="scan-loop")
         self._activity_task = asyncio.create_task(self._activity_loop(), name="activity-loop")
         self._bus_task = asyncio.create_task(self._bus_loop(), name="bus-loop")
+        self._tokhist_task = asyncio.create_task(self._token_history_loop(), name="token-history")
 
     async def stop(self) -> None:
-        for t in (self._scan_task, self._activity_task, self._bus_task):
+        for t in (self._scan_task, self._activity_task, self._bus_task, self._tokhist_task):
             if t:
                 t.cancel()
         await self.activity.stop()
@@ -632,6 +640,19 @@ class AppState:
                 log.exception("scan loop error: %s", e)
             try:
                 await asyncio.sleep(self.settings.scanner.interval_seconds)
+            except asyncio.CancelledError:
+                return
+
+    async def _token_history_loop(self) -> None:
+        # Paced every time, not just the first: a deleted cache or a giant new transcript is a
+        # first scan in disguise, and on a delta of a few MB the pacing costs nothing.
+        while True:
+            try:
+                await asyncio.to_thread(self.token_history.scan, *FIRST_SCAN_THROTTLE)
+            except Exception as e:  # noqa: BLE001
+                log.exception("token history scan error: %s", e)
+            try:
+                await asyncio.sleep(TOKEN_HISTORY_INTERVAL_S)
             except asyncio.CancelledError:
                 return
 
@@ -2806,6 +2827,19 @@ def _launcher_prefs_view(state: AppState) -> dict[str, list[str]]:
             prefs["hidden"].pop(d, None)
         write_launcher_prefs(state.coord_root, prefs)
     return {"pins": sorted(prefs["pins"]), "hidden": sorted(prefs["hidden"])}
+
+
+@app.get("/api/tokens/history")
+async def get_token_history(request: Request, summary: bool = False) -> dict[str, Any]:
+    """🪙 Token spend by day × project over every transcript Conductor has seen (plus the
+    all-time total). Counts only — never content. ``ready`` is false until the first scan
+    finishes (a cold first scan is paced and takes minutes on a large tree). ``?summary=1``
+    returns just the totals, for the topbar's 5-minute poll."""
+    state: AppState = request.app.state.cond
+    snap = await asyncio.to_thread(state.token_history.snapshot)
+    if summary:
+        return {k: snap[k] for k in ("all_time", "ready", "scanned_at", "files")}
+    return snap
 
 
 @app.get("/api/launcher-prefs")

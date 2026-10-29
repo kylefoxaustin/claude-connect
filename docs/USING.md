@@ -39,7 +39,14 @@ tokens: 617K out · 103M total
 - **`out`** = tokens the model *generated* (the real "work done").
 - **`total`** = everything *processed* = `out` + all input. The gap is almost entirely **cache reads** — the whole conversation is re-read as input every turn (cheap: cached input bills at ~10% of fresh), which is why `total` dwarfs `out`.
 - **Hover** the line for the full breakdown (output / new input / cache creation / cache reads / turn count).
-- A **global sum sits next to the "Conductor" title** in the top bar — every session added up (`tokens: 41.7M out · 12.5B total`).
+- A **global sum sits next to the "Conductor" title** in the top bar — every session on the board added up, plus the **all-time** figure for every session Conductor has ever seen (`tokens: 4.1M out · 1.2B total · all-time 156M out`). Click it (or **🪙 Tokens**) for the history.
+- Each reply is counted **once**. Claude Code writes a reply as several transcript lines (one per thinking/text/tool block) and repeats its usage on every one; versions before 2026-10-29 summed the lines and over-counted ~2.4×.
+
+#### 🪙 Token history time-lapse
+
+**🪙 Tokens** replays every session's spend, day by day, from the first transcript on the box: a running odometer of the fleet total, a bar race of projects overtaking each other, and a strip of daily columns that light up as the playhead passes (the days ahead stay as faint ghosts). Toggle **Output** / **Total processed**, scrub, or change speed; **Space** pauses, **Esc** closes.
+
+The history is kept in `coord/token-history.json` (counts per day and project — no message content), because Claude Code deletes old transcripts and the history shouldn't forget them. The very first scan reads every transcript once, paced to ~20 MB/s so it never starves a spinning disk — a few minutes on a large machine; after that a rescan every 5 minutes reads only what's new. Delete the file to rebuild from whatever transcripts remain.
 
 Prefer the terminal? [`scripts/token-usage.py`](../scripts/token-usage.py) reports the same, for any scope:
 

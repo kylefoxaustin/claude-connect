@@ -4,6 +4,22 @@ Per-version detail, newest first (older v1.x–v2.x entries trail at the bottom 
 original order). Moved out of `CLAUDE.md` on 2026-10-11: it had grown to ~150k chars,
 over Claude Code's CLAUDE.md size limit, and was loaded into every session's context.
 
+- 🚧 Unreleased: 🪙 **TOKEN HISTORY, AND THE COUNTER WAS 2.4× HIGH.** Kyle: *"keep doing the total
+  number plus a history... maybe have a second history animation like we did with the per session
+  msg passing."* `conductor/token_history.py` buckets every transcript's usage (subagents included)
+  by local day × project, incrementally, and **persists** it (`coord/token-history.json`, counts only)
+  because Claude Code deletes old transcripts. `/api/tokens/history` (+ `?summary=1`), a topbar
+  **all-time** figure, and **🪙 Tokens** — a time-lapse (odometer + project bar race + lit day strip)
+  on the 🕸 History overlay's chrome. ⚠️ **ONE REPLY IS SEVERAL LINES.** Claude Code writes each content
+  block of a reply as its own transcript line and repeats the reply's `usage` on every one; the tile
+  counter (`tokens.py`), the CLI and the project spend meter all summed lines. MEASURED on this
+  session's transcript: 743 usage lines for 344 replies, **539K output summed vs 225K real**. Now
+  counted once per `message.id` (a later, larger record adds only the difference). ⚠️ **THE FIRST SCAN
+  STARVED THE DISK.** Unpaced, 6 GB of transcripts took 145 s and pushed IO pressure to ~30% (avg60) —
+  the starvation that has recycled skippy's desktop before. `/home` is a spinning disk under
+  mq-deadline, which ignores io priority, so pacing is the only lever: 8 MB then 0.4 s (~20 MB/s), and
+  throttled reads drop themselves from the page cache. Skippy's history: 154 days, 114 projects,
+  156M output / 62.5B processed, 154,078 replies.
 - ✅ v2.41.0: 🔁 **THE APPROVAL LOOP, AND FOUR WAYS A MESSAGE ABOUT AN APPROVAL CAN LIE.** Kyle:
   *"i'd rather all the quad sessions know what the process here is... they say push and please approve
   it and there's no approval until I tell them to push and then they go okay. now I've approved it but
